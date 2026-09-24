@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useEvaluatorStore } from '@pando/client/stores/evaluatorStore'
-import LoadingSpinner from '@/components/shared/LoadingSpinner'
+import { Spinner } from '@/components/ui'
 import MetricsCards from './MetricsCards'
 import UCBRankingTable from './UCBRankingTable'
 import SkillsList from './SkillsList'
@@ -13,35 +13,15 @@ export default function SelfImprovementView() {
   }, [fetchAll])
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        background: 'var(--bg)',
-        overflow: 'hidden',
-      }}
-    >
+    <div className="view">
       {/* Page title */}
-      <div
-        style={{
-          padding: '1rem 1.5rem 0',
-          flexShrink: 0,
-        }}
-      >
-        <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)' }}>Self-Improvement</h2>
+      <div className="flex-shrink-0 px-6 pt-5">
+        <h2 className="view-title">Self-Improvement</h2>
       </div>
 
       {loading && !metrics && templates.length === 0 ? (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flex: 1,
-          }}
-        >
-          <LoadingSpinner size={28} />
+        <div className="flex flex-1 items-center justify-center">
+          <Spinner size={26} />
         </div>
       ) : (
         <>
@@ -49,19 +29,10 @@ export default function SelfImprovementView() {
           <MetricsCards metrics={metrics} />
 
           {/* Divider */}
-          <div style={{ height: 1, background: 'var(--border)', flexShrink: 0, marginInline: '1.5rem' }} />
+          <div className="mx-6 h-px flex-shrink-0 bg-border" />
 
           {/* UCB table + skills list */}
-          <div
-            style={{
-              display: 'flex',
-              gap: '1rem',
-              padding: '1rem 1.5rem 1.5rem',
-              flex: 1,
-              minHeight: 0,
-              overflow: 'hidden',
-            }}
-          >
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-6 pt-4 md:flex-row md:overflow-hidden md:px-6">
             <UCBRankingTable templates={templates} />
             <SkillsList skills={skills} />
           </div>

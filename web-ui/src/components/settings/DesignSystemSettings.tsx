@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useDesignStore, type DesignExtractSource } from '@pando/client/stores/designStore'
+import { useUnsavedChangesGuard } from './unsavedChanges'
+import { Button, Input, SegmentedControl, SettingsRow, SettingsSection } from '@/components/ui'
 
 /**
  * DesignSystemSettings is where a project chooses the design system its
@@ -11,62 +13,6 @@ import { useDesignStore, type DesignExtractSource } from '@pando/client/stores/d
  * tokens hold CSS, and second-guessing what is valid CSS here would reject
  * values a browser accepts.
  */
-
-const sectionTitle: CSSProperties = {
-  fontSize: 18,
-  fontWeight: 700,
-  color: 'var(--fg)',
-  marginBottom: '1.25rem',
-}
-
-const groupTitle: CSSProperties = {
-  fontSize: 12,
-  fontWeight: 700,
-  color: 'var(--fg-muted)',
-  textTransform: 'uppercase',
-  letterSpacing: '0.04em',
-  margin: '1rem 0 0.5rem',
-}
-
-const dividerStyle: CSSProperties = {
-  borderTop: '1px solid var(--border)',
-  margin: '1.5rem 0',
-}
-
-const inputStyle: CSSProperties = {
-  flex: 1,
-  padding: '0.4rem 0.6rem',
-  background: 'var(--bg)',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-sm)',
-  color: 'var(--fg)',
-  fontSize: 13,
-  fontFamily: 'var(--font-mono, monospace)',
-}
-
-const buttonStyle: CSSProperties = {
-  padding: '0.45rem 0.9rem',
-  background: 'var(--primary)',
-  color: 'var(--bg)',
-  border: 'none',
-  borderRadius: 'var(--radius-sm)',
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-}
-
-const secondaryButtonStyle: CSSProperties = {
-  ...buttonStyle,
-  background: 'var(--surface)',
-  color: 'var(--fg)',
-  border: '1px solid var(--border)',
-}
-
-const pathStyle: CSSProperties = {
-  fontSize: 12,
-  color: 'var(--fg-muted)',
-  fontFamily: 'var(--font-mono, monospace)',
-}
 
 const sources: { id: DesignExtractSource; label: string; hint: string }[] = [
   { id: 'code', label: 'Code', hint: 'Directory to scan (blank = project root)' },
@@ -114,158 +60,131 @@ export default function DesignSystemSettings() {
     )
   }, [draft, name, system])
 
+  const resetDraft = () => {
+    if (!system) return
+    setDraft(structuredClone(system.system.tokens ?? {}))
+    setName(system.system.name ?? '')
+  }
+
+  useUnsavedChangesGuard({
+    id: 'design-system',
+    dirty,
+    // The store reports a failed save only through a toast; a successful one
+    // replaces `system` with the server's payload, so a new object means saved.
+    save: async () => {
+      const before = useDesignStore.getState().system
+      await saveSystemTokens(draft, { name })
+      return useDesignStore.getState().system !== before
+    },
+    discard: resetDraft,
+  })
+
   if (loading && !system) {
-    return <div style={{ padding: '2rem', color: 'var(--fg-muted)', fontSize: 14 }}>Loading…</div>
+    return <div className="settings-loading">Loading…</div>
   }
 
   const activeSource = sources.find((s) => s.id === source)!
 
   return (
-    <div style={{ maxWidth: 720 }}>
-      <h2 style={sectionTitle}>Design system</h2>
-
-      {system && !system.exists && (
-        <p style={{ fontSize: 13, color: 'var(--fg-muted)', marginBottom: '1rem' }}>
-          This project has not committed a design system yet. The values below are the neutral
-          defaults; saving or extracting writes them.
-        </p>
-      )}
+    <div>
+      <header className="settings-page-header">
+        <h2 className="settings-page-title">Design system</h2>
+        {system && !system.exists && (
+          <p className="settings-page-description">
+            This project has not committed a design system yet. The values below are the neutral
+            defaults; saving or extracting writes them.
+          </p>
+        )}
+      </header>
 
       {system && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', marginBottom: '1rem' }}>
-          <span style={pathStyle}>tokens: {system.tokens_path}</span>
-          <span style={pathStyle}>stylesheet: {system.stylesheet_path}</span>
-          <span style={pathStyle}>contract: {system.contract_path}</span>
+        <div className="flex flex-col gap-0.5 mb-4 font-mono text-xs text-muted">
+          <span>tokens: {system.tokens_path}</span>
+          <span>stylesheet: {system.stylesheet_path}</span>
+          <span>contract: {system.contract_path}</span>
         </div>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-        <label style={{ ...groupTitle, margin: 0 }}>Name</label>
-        <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} />
-      </div>
+      <SettingsSection>
+        <SettingsRow label="Name" htmlFor="design-system-name">
+          <Input id="design-system-name" className="font-mono" value={name} onChange={(e) => setName(e.target.value)} />
+        </SettingsRow>
+      </SettingsSection>
 
-      <div style={dividerStyle} />
-
-      <h3 style={{ ...groupTitle, marginTop: 0 }}>Extract from</h3>
-      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
-        {sources.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            onClick={() => setSource(s.id)}
-            style={{
-              ...secondaryButtonStyle,
-              background: s.id === source ? 'var(--selected)' : 'var(--surface)',
-              borderColor: s.id === source ? 'var(--primary)' : 'var(--border)',
-            }}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
-      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-        <input
-          style={inputStyle}
-          value={target}
-          placeholder={activeSource.hint}
-          onChange={(e) => setTarget(e.target.value)}
-        />
-        <button
-          type="button"
-          style={buttonStyle}
-          disabled={busy}
-          onClick={() => void extractSystem(source, target, { name })}
-        >
-          Extract
-        </button>
-        <button
-          type="button"
-          style={secondaryButtonStyle}
-          disabled={busy}
-          onClick={() => void extractSystem(source, target, { name, dryRun: true })}
-        >
-          Preview
-        </button>
-      </div>
-      {source === 'text' && examples.length > 0 && (
-        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
-          {examples.map((e) => (
-            <button
-              key={e.name}
-              type="button"
-              title={e.title}
-              style={{ ...secondaryButtonStyle, fontWeight: 400 }}
-              onClick={() => setTarget(e.name)}
-            >
-              {e.name}
-            </button>
-          ))}
-        </div>
-      )}
-      {lastExtraction?.notes?.length ? (
-        <ul style={{ margin: '0.6rem 0 0', paddingLeft: '1.1rem', fontSize: 12, color: 'var(--fg-muted)' }}>
-          {lastExtraction.notes.map((note) => (
-            <li key={note}>{note}</li>
-          ))}
-        </ul>
-      ) : null}
-
-      <div style={dividerStyle} />
-
-      <h3 style={{ ...groupTitle, marginTop: 0 }}>Tokens</h3>
-      {groups.map((group) => (
-        <div key={group}>
-          <div style={groupTitle}>{group}</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-            {Object.keys(draft[group]).sort().map((token) => (
-              <div key={token} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <code style={{ ...pathStyle, minWidth: 150 }}>
-                  --{group}-{token}
-                </code>
-                {group === 'color' && /^#[0-9a-fA-F]{6}$/.test(draft[group][token]) && (
-                  <input
-                    type="color"
-                    value={draft[group][token]}
-                    style={{ width: 32, height: 28, padding: 0, border: '1px solid var(--border)' }}
-                    onChange={(e) =>
-                      setDraft((d) => ({ ...d, [group]: { ...d[group], [token]: e.target.value } }))
-                    }
-                  />
-                )}
-                <input
-                  style={inputStyle}
-                  value={draft[group][token]}
-                  onChange={(e) =>
-                    setDraft((d) => ({ ...d, [group]: { ...d[group], [token]: e.target.value } }))
-                  }
-                />
-              </div>
-            ))}
+      <SettingsSection title="Extract from">
+        <div className="p-4 flex flex-col gap-3">
+          <SegmentedControl
+            aria-label="Extract from"
+            value={source}
+            onChange={(v) => setSource(v as DesignExtractSource)}
+            items={sources.map((s) => ({ value: s.id, label: s.label }))}
+          />
+          <div className="flex gap-2 items-center">
+            <Input
+              className="flex-1 font-mono"
+              value={target}
+              placeholder={activeSource.hint}
+              onChange={(e) => setTarget(e.target.value)}
+            />
+            <Button variant="primary" disabled={busy} onClick={() => void extractSystem(source, target, { name })}>
+              Extract
+            </Button>
+            <Button variant="secondary" disabled={busy} onClick={() => void extractSystem(source, target, { name, dryRun: true })}>
+              Preview
+            </Button>
           </div>
+          {source === 'text' && examples.length > 0 && (
+            <div className="flex gap-1.5 flex-wrap">
+              {examples.map((e) => (
+                <Button key={e.name} variant="secondary" size="sm" title={e.title} onClick={() => setTarget(e.name)}>
+                  {e.name}
+                </Button>
+              ))}
+            </div>
+          )}
+          {lastExtraction?.notes?.length ? (
+            <ul className="m-0 pl-4 text-xs text-muted">
+              {lastExtraction.notes.map((note) => (
+                <li key={note}>{note}</li>
+              ))}
+            </ul>
+          ) : null}
         </div>
+      </SettingsSection>
+
+      {groups.map((group) => (
+        <SettingsSection key={group} title={group}>
+          {Object.keys(draft[group]).sort().map((token) => (
+            <SettingsRow key={token} label={<code className="font-mono text-xs text-muted">--{group}-{token}</code>}>
+              {group === 'color' && /^#[0-9a-fA-F]{6}$/.test(draft[group][token]) && (
+                <input
+                  type="color"
+                  value={draft[group][token]}
+                  className="w-8 h-7 p-0 border border-border rounded-xs"
+                  onChange={(e) => setDraft((d) => ({ ...d, [group]: { ...d[group], [token]: e.target.value } }))}
+                />
+              )}
+              <Input
+                className="font-mono"
+                value={draft[group][token]}
+                onChange={(e) => setDraft((d) => ({ ...d, [group]: { ...d[group], [token]: e.target.value } }))}
+              />
+            </SettingsRow>
+          ))}
+        </SettingsSection>
       ))}
 
-      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.25rem' }}>
-        <button
-          type="button"
-          style={{ ...buttonStyle, opacity: dirty && !busy ? 1 : 0.5 }}
-          disabled={!dirty || busy}
-          onClick={() => void saveSystemTokens(draft, { name })}
-        >
+      <div className="settings-actions">
+        <Button variant="primary" disabled={!dirty || busy} onClick={() => void saveSystemTokens(draft, { name })}>
           Save
-        </button>
-        <button
-          type="button"
-          style={secondaryButtonStyle}
+        </Button>
+        <Button
+          variant="secondary"
           disabled={!dirty || busy}
-          onClick={() => {
-            if (!system) return
-            setDraft(structuredClone(system.system.tokens ?? {}))
-            setName(system.system.name ?? '')
-          }}
+          onClick={resetDraft}
         >
           Reset
-        </button>
+        </Button>
       </div>
     </div>
   )

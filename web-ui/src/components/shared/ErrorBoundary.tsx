@@ -1,7 +1,7 @@
 import { Component } from 'react'
 import type { ReactNode, ErrorInfo } from 'react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faExclamationTriangle, faRotateRight } from '@fortawesome/free-solid-svg-icons'
+import { TriangleAlert, RotateCw } from '@/components/ui/icons'
+import { Button } from '@/components/ui'
 
 interface Props {
   children: ReactNode
@@ -36,55 +36,15 @@ export default class ErrorBoundary extends Component<Props, State> {
       if (this.props.fallback) return this.props.fallback
 
       return (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '3rem',
-            gap: '1rem',
-            color: 'var(--fg)',
-          }}
-        >
-          <FontAwesomeIcon
-            icon={faExclamationTriangle}
-            style={{ fontSize: 36, color: 'var(--error)', marginBottom: '0.5rem' }}
-          />
-          <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Something went wrong</h2>
+        <div className="flex flex-col items-center justify-center gap-4 p-12 text-center text-fg">
+          <TriangleAlert size={36} className="text-danger" />
+          <h2 className="text-lg font-semibold">Something went wrong</h2>
           {this.state.error && (
-            <p
-              style={{
-                fontSize: 13,
-                color: 'var(--fg-muted)',
-                maxWidth: 480,
-                textAlign: 'center',
-                margin: 0,
-                fontFamily: 'monospace',
-              }}
-            >
-              {this.state.error.message}
-            </p>
+            <p className="max-w-md font-mono text-sm text-muted">{this.state.error.message}</p>
           )}
-          <button
-            onClick={() => this.reset()}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              padding: '0.5rem 1.25rem',
-              background: 'var(--primary)',
-              color: 'var(--primary-fg)',
-              border: 'none',
-              borderRadius: 'var(--radius-sm)',
-              cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: 600,
-            }}
-          >
-            <FontAwesomeIcon icon={faRotateRight} />
+          <Button variant="primary" icon={<RotateCw size={14} />} onClick={() => this.reset()}>
             Try again
-          </button>
+          </Button>
         </div>
       )
     }

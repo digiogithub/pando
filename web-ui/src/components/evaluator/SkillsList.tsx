@@ -10,37 +10,15 @@ export default function SkillsList({ skills }: SkillsListProps) {
   const top = [...skills].sort((a, b) => b.confidence - a.confidence).slice(0, 10)
 
   return (
-    <div
-      style={{
-        flex: 1,
-        minWidth: 280,
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius-md)',
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
-      <div
-        style={{
-          padding: '0.75rem 1rem',
-          fontWeight: 600,
-          fontSize: 13,
-          color: 'var(--fg)',
-          borderBottom: '1px solid var(--border)',
-          background: 'var(--surface)',
-        }}
-      >
+    <div className="flex min-w-[280px] flex-1 flex-col overflow-hidden rounded-md border border-border">
+      <div className="border-b border-border bg-shell px-4 py-2.5 text-sm font-semibold text-fg">
         Top Skills / Learned
       </div>
 
       {top.length === 0 ? (
-        <EmptyState
-          title="No skills learned yet"
-          description="Skills are discovered as self-improvement processes sessions."
-        />
+        <EmptyState title="No skills learned yet" description="Skills are discovered as self-improvement processes sessions." />
       ) : (
-        <div style={{ overflowY: 'auto', flex: 1 }}>
+        <div className="flex-1 overflow-y-auto">
           {top.map((skill) => (
             <SkillCard key={skill.id} skill={skill} />
           ))}

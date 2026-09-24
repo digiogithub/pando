@@ -1,6 +1,5 @@
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faCircle, faMicrochip } from '@fortawesome/free-solid-svg-icons'
 import { useTranslation } from 'react-i18next'
+import { useLocation } from 'react-router-dom'
 import { useSessionStore } from '@pando/client/stores/sessionStore'
 import { useServerStore } from '@pando/client/stores/serverStore'
 import { useSettingsStore } from '@pando/client/stores/settingsStore'
@@ -8,6 +7,7 @@ import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import ExternalAccessToggle from './ExternalAccessToggle'
 import ExtensionSlot from '@/components/extensions/ExtensionSlot'
 import MemorySyncIndicator from '@/components/extensions/MemorySyncIndicator'
+import { Cpu, FastForward } from '@/components/ui/icons'
 
 export default function StatusBar() {
   const { t } = useTranslation()
@@ -18,6 +18,10 @@ export default function StatusBar() {
   const activeSession = sessions.find((s) => s.id === activeSessionId)
   const defaultModel = useSettingsStore((s) => s.config.default_model)
   const setModelSwitcherOpen = useLayoutStore((s) => s.setModelSwitcherOpen)
+  // On chat routes the composer's model chip already shows (and switches) the
+  // model, so the status bar does not repeat it.
+  const { pathname } = useLocation()
+  const onChatRoute = pathname === '/' || pathname.startsWith('/chat')
 
   // Format model name: "claude-sonnet-4-6" → "Claude Sonnet 4.6", "copilot.gpt-4o" → "Copilot GPT-4o"
   const formatModel = (id: string): string => {
@@ -37,33 +41,21 @@ export default function StatusBar() {
   const modelLabel = formatModel(defaultModel)
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        height: 28,
-        padding: '0 1rem',
-        background: 'var(--bg-secondary)',
-        borderTop: '1px solid var(--border)',
-        fontSize: 11,
-        color: 'var(--fg-muted)',
-        flexShrink: 0,
-        gap: '1rem',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+    <footer className="shell-statusbar">
+      <div className="shell-status-group">
         {activeSession && (
           <>
-            <span>{t('common.session')}: <code style={{ fontSize: 10 }}>{activeSession.id.slice(0, 8)}…</code></span>
-            <span>·</span>
+            <span className="shell-status-hide-mobile">
+              {t('common.session')}: <code className="shell-status-code">{activeSession.id.slice(0, 8)}…</code>
+            </span>
+            <span className="shell-status-sep shell-status-hide-mobile" aria-hidden="true">·</span>
             <span>{activeSession.message_count} {t('common.messages')}</span>
             {(activeSession.prompt_tokens > 0 || activeSession.completion_tokens > 0) && (
               <>
-                <span>·</span>
+                <span className="shell-status-sep" aria-hidden="true">·</span>
                 <span
                   title={activeSession.tokens_estimated ? t('common.estimatedTokens', 'Estimated (updates live while the agent runs)') : undefined}
-                  style={activeSession.tokens_estimated ? { opacity: 0.6, fontStyle: 'italic' } : undefined}
+                  className={activeSession.tokens_estimated ? 'shell-status-estimated' : undefined}
                 >
                   {activeSession.tokens_estimated ? '~' : ''}
                   {(activeSession.prompt_tokens + activeSession.completion_tokens).toLocaleString()} {t('common.tokens')}
@@ -72,8 +64,9 @@ export default function StatusBar() {
             )}
             {activeSession.cost > 0 && (
               <>
-                <span>·</span>
+                <span className="shell-status-sep shell-status-hide-mobile" aria-hidden="true">·</span>
                 <span
+                  className="shell-status-hide-mobile"
                   title={
                     activeSession.cache_read_tokens || activeSession.reasoning_tokens
                       ? t(
@@ -97,75 +90,49 @@ export default function StatusBar() {
         {!activeSession && <span>{t('common.noActiveSession')}</span>}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+      <div className="shell-status-group">
         {/* Auto-approve ("auto mode") toggle — Shift+Tab also toggles it */}
         {activeSessionId && (
           <button
+            type="button"
+            className={`shell-status-btn${autoApprove ? ' is-warning' : ''}`}
             onClick={() => { void toggleAutoApprove(activeSessionId) }}
             title={t('common.toggleAutoApprove', 'Toggle auto-approve (Shift+Tab)')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.375rem',
-              background: autoApprove ? 'var(--warning, #d97706)' : 'none',
-              border: 'none',
-              cursor: 'pointer',
-              color: autoApprove ? '#fff' : 'var(--fg-muted)',
-              fontSize: 11,
-              fontWeight: autoApprove ? 600 : 400,
-              padding: '0 0.5rem',
-              height: 18,
-              borderRadius: 'var(--radius-sm)',
-              transition: 'color 0.15s, background 0.15s',
-            }}
+            aria-pressed={autoApprove}
           >
-            <span>{autoApprove ? '⏵⏵ auto-accept' : 'auto-accept off'}</span>
+            {autoApprove && <FastForward size={12} />}
+            <span>{autoApprove ? t('shell.autoAcceptOn', 'auto-accept') : t('shell.autoAcceptOff', 'auto-accept off')}</span>
           </button>
         )}
 
         {/* External access (0.0.0.0 bind) toggle */}
-        <ExternalAccessToggle />
+        <span className="shell-status-hide-mobile">
+          <ExternalAccessToggle />
+        </span>
 
-        {/* Model selector button */}
-        <button
-          onClick={() => setModelSwitcherOpen(true)}
-          title={t('common.clickToSwitchModel')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.375rem',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            color: 'var(--fg-muted)',
-            fontSize: 11,
-            padding: '0 0.25rem',
-            borderRadius: 'var(--radius-sm)',
-            transition: 'color 0.15s',
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--primary)')}
-          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--fg-muted)')}
-        >
-          <FontAwesomeIcon icon={faMicrochip} style={{ fontSize: 10 }} />
-          <span>{modelLabel}</span>
-        </button>
+        {/* Model selector button (hidden where the composer shows it) */}
+        {!onChatRoute && (
+          <button
+            type="button"
+            className="shell-status-btn"
+            onClick={() => setModelSwitcherOpen(true)}
+            title={t('common.clickToSwitchModel')}
+          >
+            <Cpu size={12} />
+            <span>{modelLabel}</span>
+          </button>
+        )}
 
-        <span style={{ opacity: 0.4 }}>·</span>
-
-        <FontAwesomeIcon
-          icon={faCircle}
-          style={{
-            fontSize: 7,
-            color: connected ? 'var(--success)' : 'var(--error)',
-          }}
-        />
-        <span>{connected ? t('common.connected') : t('common.disconnected')}</span>
+        <span className="shell-status-conn" title={connected ? t('common.connected') : t('common.disconnected')}>
+          <span className={`shell-dot ${connected ? 'is-ok' : 'is-danger'}`} aria-hidden="true" />
+          <span className="shell-status-hide-mobile">{connected ? t('common.connected') : t('common.disconnected')}</span>
+        </span>
 
         {/* Renders only when remembrance writes are leaving this machine. */}
         <MemorySyncIndicator />
 
         <ExtensionSlot slot="status-bar" />
       </div>
-    </div>
+    </footer>
   )
 }

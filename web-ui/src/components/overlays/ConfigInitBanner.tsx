@@ -1,6 +1,9 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useConfigInitStore } from '@pando/client/stores/configInitStore'
+import { Button } from '@/components/ui'
+import { Info } from '@/components/ui/icons'
+import '@/styles/overlays.css'
 
 /**
  * ConfigInitBanner — shown at the top of the layout when no local .pando.toml
@@ -31,60 +34,22 @@ export default function ConfigInitBanner() {
   }
 
   return (
-    <div
-      style={{
-        background: 'var(--primary)',
-        color: 'var(--bg)',
-        padding: '8px 16px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 12,
-        fontSize: 13,
-        fontWeight: 500,
-        zIndex: 200,
-        flexShrink: 0,
-      }}
-    >
-      <span>
+    <div className="ovl-banner">
+      <span className="ovl-banner-text">
+        <Info size={14} />
         {status.hasPandoDir
           ? 'Project is pre-initialised but has no local config file.'
           : 'No .pando.toml found in current directory.'}
         {' '}Generate one to configure providers and models.
       </span>
 
-      <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-        <button
-          onClick={handleGenerate}
-          disabled={generating}
-          style={{
-            background: 'var(--bg)',
-            color: 'var(--primary)',
-            border: 'none',
-            borderRadius: 4,
-            padding: '4px 12px',
-            cursor: generating ? 'not-allowed' : 'pointer',
-            fontWeight: 600,
-            fontSize: 12,
-          }}
-        >
+      <div className="ovl-banner-actions">
+        <Button size="sm" variant="secondary" loading={generating} onClick={handleGenerate}>
           {generating ? 'Generating…' : 'Generate .pando.toml'}
-        </button>
-
-        <button
-          onClick={handleDismiss}
-          style={{
-            background: 'transparent',
-            color: 'var(--bg)',
-            border: '1px solid var(--bg)',
-            borderRadius: 4,
-            padding: '4px 10px',
-            cursor: 'pointer',
-            fontSize: 12,
-          }}
-        >
+        </Button>
+        <Button size="sm" variant="ghost" onClick={handleDismiss}>
           Dismiss
-        </button>
+        </Button>
       </div>
     </div>
   )

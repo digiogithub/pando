@@ -1,36 +1,36 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useToolsStore } from '@pando/client/stores/settingsStore'
+import { useUnsavedChangesGuard } from './unsavedChanges'
 import api from '@pando/client/services/api'
-import { Toggle, TextInput, MaskedInput, SelectInput } from '@/components/shared/FormInput'
+import MaskedInput from '@/components/shared/MaskedInput'
 import type { BrowserInstallInfo, ToolsConfig } from '@pando/client/types'
+import { Button, Card, Input, Select, Switch } from '@/components/ui'
 
 // ---- Config status indicator ----
 
 type ConfigStatus = 'ok' | 'disabled' | 'incomplete'
 
+const STATUS_LABEL: Record<ConfigStatus, string> = {
+  ok: 'Configured',
+  disabled: 'Disabled',
+  incomplete: 'Missing config',
+}
+const STATUS_CLASS: Record<ConfigStatus, string> = {
+  ok: 'bg-success',
+  disabled: 'bg-faint',
+  incomplete: 'bg-warning',
+}
+
 function StatusDot({ status }: { status: ConfigStatus }) {
-  const colors: Record<ConfigStatus, string> = {
-    ok: '#22c55e',
-    disabled: '#94a3b8',
-    incomplete: '#f59e0b',
-  }
-  const labels: Record<ConfigStatus, string> = {
-    ok: 'Configured',
-    disabled: 'Disabled',
-    incomplete: 'Missing config',
-  }
+  return <span title={STATUS_LABEL[status]} className={`inline-block w-2 h-2 rounded-full shrink-0 ${STATUS_CLASS[status]}`} />
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <span
-      title={labels[status]}
-      style={{
-        display: 'inline-block',
-        width: 8,
-        height: 8,
-        borderRadius: '50%',
-        background: colors[status],
-        flexShrink: 0,
-      }}
-    />
+    <div className="settings-field">
+      <label className="settings-field-label">{label}</label>
+      {children}
+    </div>
   )
 }
 
@@ -45,47 +45,19 @@ interface ToolCardProps {
 }
 
 function ToolCard({ title, status, enabled, onToggle, children }: ToolCardProps) {
+  const id = `tool-${title.replace(/\W+/g, '-').toLowerCase()}`
   return (
-    <div
-      style={{
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius-sm)',
-        background: 'var(--surface, var(--input-bg))',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '0.75rem 1rem',
-          borderBottom: enabled && children ? '1px solid var(--border)' : 'none',
-          background: 'var(--sidebar-bg)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+    <Card padding="none">
+      <div className="flex items-center justify-between px-4 py-3">
+        <div className="flex items-center gap-2">
           <StatusDot status={status} />
-          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>{title}</span>
+          <span className="text-sm font-semibold text-fg">{title}</span>
         </div>
-        <Toggle label="" checked={enabled} onChange={onToggle} />
+        <Switch id={id} aria-label={title} checked={enabled} onCheckedChange={onToggle} />
       </div>
 
-      {/* Body — only visible when enabled */}
-      {enabled && children && (
-        <div
-          style={{
-            padding: '1rem',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '1rem',
-          }}
-        >
-          {children}
-        </div>
-      )}
-    </div>
+      {enabled && children && <div className="flex flex-col gap-4 p-4 border-t border-border">{children}</div>}
+    </Card>
   )
 }
 
@@ -114,21 +86,18 @@ function isRemoteBrowserType(type: string): boolean {
 
 // ---- Main component ----
 
-const dividerStyle: React.CSSProperties = {
-  borderTop: '1px solid var(--border)',
-  margin: '1.5rem 0',
-}
-
-const sectionTitle: React.CSSProperties = {
-  fontSize: 18,
-  fontWeight: 700,
-  color: 'var(--fg)',
-  marginBottom: '1.25rem',
-}
-
 export default function InternalToolsSettings() {
   const { config, dirtyKeys, dirty, loading, saving, error, fetchTools, updateField, updateApiKey, saveTools, resetTools } =
     useToolsStore()
+  useUnsavedChangesGuard({
+    id: 'tools',
+    dirty,
+    save: async () => {
+      await saveTools()
+      return !useToolsStore.getState().error
+    },
+    discard: resetTools,
+  })
   const [browsers, setBrowsers] = useState<BrowserInstallInfo[]>([])
 
   useEffect(() => {
@@ -163,11 +132,7 @@ export default function InternalToolsSettings() {
   )
 
   if (loading) {
-    return (
-      <div style={{ padding: '2rem', color: 'var(--fg-muted)', fontSize: 14 }}>
-        Loading tools configuration…
-      </div>
-    )
+    return <div className="settings-loading">Loading tools configuration…</div>
   }
 
   // Effective API key values: prefer the user-typed draft
@@ -176,132 +141,74 @@ export default function InternalToolsSettings() {
   }
 
   function handleApiKey(field: keyof ToolsConfig) {
-    return (e: React.ChangeEvent<HTMLInputElement>) => updateApiKey(field, e.target.value)
+    return (value: string) => updateApiKey(field, value)
   }
 
   return (
-    <div style={{ maxWidth: 680 }}>
-      <h2 style={sectionTitle}>Internal Tools</h2>
-      <p style={{ fontSize: 13, color: 'var(--fg-muted)', marginBottom: '1.5rem' }}>
-        Configure the built-in tools available to the AI assistant. Disabled tools are never invoked.
-      </p>
+    <div>
+      <header className="settings-page-header">
+        <h2 className="settings-page-title">Internal Tools</h2>
+        <p className="settings-page-description">
+          Configure the built-in tools available to the AI assistant. Disabled tools are never invoked.
+        </p>
+      </header>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-
-        {/* Fetch */}
-        <ToolCard
-          title="Fetch"
-          enabled={config.fetchEnabled}
-          status={simpleStatus(config.fetchEnabled)}
-          onToggle={(v) => updateField('fetchEnabled', v)}
-        >
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '0.125rem',
-            }}
-          >
-            <label
-              style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: 'var(--fg-muted)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.04em',
-              }}
-            >
-              Max Response Size (MB)
-            </label>
-            <input
+      <div className="flex flex-col gap-3">
+        <ToolCard title="Fetch" enabled={config.fetchEnabled} status={simpleStatus(config.fetchEnabled)} onToggle={(v) => updateField('fetchEnabled', v)}>
+          <Field label="Max response size (MB)">
+            <Input
               type="number"
               min={1}
               max={100}
               value={config.fetchMaxSizeMB}
               onChange={(e) => updateField('fetchMaxSizeMB', parseInt(e.target.value, 10) || 10)}
-              style={{
-                background: 'var(--input-bg)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-sm)',
-                color: 'var(--fg)',
-                fontSize: 14,
-                padding: '0.5rem 0.75rem',
-                outline: 'none',
-                width: '100%',
-                fontFamily: 'inherit',
-                boxSizing: 'border-box',
-              }}
             />
-          </div>
+          </Field>
         </ToolCard>
 
-        {/* Google Search */}
         <ToolCard
           title="Google Search"
           enabled={config.googleSearchEnabled}
           status={configStatus(config.googleSearchEnabled, config.googleApiKey, config.googleSearchEngineId)}
           onToggle={(v) => updateField('googleSearchEnabled', v)}
         >
-          <MaskedInput
-            label="API Key"
-            placeholder="Enter Google API key…"
-            value={apiKeyValue('googleApiKey')}
-            onChange={handleApiKey('googleApiKey')}
-          />
-          <TextInput
-            label="Custom Search Engine ID (CX)"
-            placeholder="e.g. 017576662512468239146:omuauf_lfve"
-            value={config.googleSearchEngineId}
-            onChange={(e) => updateField('googleSearchEngineId', e.target.value)}
-          />
+          <MaskedInput label="API key" placeholder="Enter Google API key…" value={apiKeyValue('googleApiKey')} onChange={handleApiKey('googleApiKey')} />
+          <Field label="Custom search engine ID (CX)">
+            <Input
+              placeholder="e.g. 017576662512468239146:omuauf_lfve"
+              value={config.googleSearchEngineId}
+              onChange={(e) => updateField('googleSearchEngineId', e.target.value)}
+            />
+          </Field>
         </ToolCard>
 
-        {/* Brave Search */}
         <ToolCard
           title="Brave Search"
           enabled={config.braveSearchEnabled}
           status={configStatus(config.braveSearchEnabled, config.braveApiKey)}
           onToggle={(v) => updateField('braveSearchEnabled', v)}
         >
-          <MaskedInput
-            label="API Key"
-            placeholder="Enter Brave Search API key…"
-            value={apiKeyValue('braveApiKey')}
-            onChange={handleApiKey('braveApiKey')}
-          />
+          <MaskedInput label="API key" placeholder="Enter Brave Search API key…" value={apiKeyValue('braveApiKey')} onChange={handleApiKey('braveApiKey')} />
         </ToolCard>
 
-        {/* Perplexity */}
         <ToolCard
           title="Perplexity"
           enabled={config.perplexitySearchEnabled}
           status={configStatus(config.perplexitySearchEnabled, config.perplexityApiKey)}
           onToggle={(v) => updateField('perplexitySearchEnabled', v)}
         >
-          <MaskedInput
-            label="API Key"
-            placeholder="Enter Perplexity API key…"
-            value={apiKeyValue('perplexityApiKey')}
-            onChange={handleApiKey('perplexityApiKey')}
-          />
+          <MaskedInput label="API key" placeholder="Enter Perplexity API key…" value={apiKeyValue('perplexityApiKey')} onChange={handleApiKey('perplexityApiKey')} />
         </ToolCard>
 
-        {/* Exa */}
         <ToolCard
           title="Exa AI Search"
           enabled={config.exaSearchEnabled}
           status={configStatus(config.exaSearchEnabled, config.exaApiKey)}
           onToggle={(v) => updateField('exaSearchEnabled', v)}
         >
-          <MaskedInput
-            label="API Key"
-            placeholder="Enter Exa API key…"
-            value={apiKeyValue('exaApiKey')}
-            onChange={handleApiKey('exaApiKey')}
-          />
+          <MaskedInput label="API key" placeholder="Enter Exa API key…" value={apiKeyValue('exaApiKey')} onChange={handleApiKey('exaApiKey')} />
         </ToolCard>
 
-        {/* Sourcegraph */}
         <ToolCard
           title="Sourcegraph Code Search"
           enabled={config.sourcegraphEnabled}
@@ -309,290 +216,138 @@ export default function InternalToolsSettings() {
           onToggle={(v) => updateField('sourcegraphEnabled', v)}
         >
           <MaskedInput
-            label="Access Token (optional — uses public API if empty)"
+            label="Access token (optional — uses public API if empty)"
             placeholder="sgp_…"
             value={apiKeyValue('sourcegraphToken')}
             onChange={handleApiKey('sourcegraphToken')}
           />
         </ToolCard>
 
-        {/* Context7 */}
-        <ToolCard
-          title="Context7 (Library Docs)"
-          enabled={config.context7Enabled}
-          status={simpleStatus(config.context7Enabled)}
-          onToggle={(v) => updateField('context7Enabled', v)}
-        />
+        <ToolCard title="Context7 (Library Docs)" enabled={config.context7Enabled} status={simpleStatus(config.context7Enabled)} onToggle={(v) => updateField('context7Enabled', v)} />
 
-        {/* Browser */}
-        <ToolCard
-          title="Browser (Chrome DevTools)"
-          enabled={config.browserEnabled}
-          status={simpleStatus(config.browserEnabled)}
-          onToggle={(v) => updateField('browserEnabled', v)}
-        >
-          <SelectInput
-            label="Browser"
-            value={config.browserType}
-            options={browserOptions}
-            onChange={(e) => {
-              const browserType = e.target.value
-              const selected = browsers.find((browser) => browser.type === browserType)
-              updateField('browserType', browserType)
-              updateField('browserExecutable', selected?.executable ?? '')
-              if (!config.browserUserDataDir && selected?.userDataDir) {
-                updateField('browserUserDataDir', selected.userDataDir)
-              }
-            }}
-          />
+        <ToolCard title="Browser (Chrome DevTools)" enabled={config.browserEnabled} status={simpleStatus(config.browserEnabled)} onToggle={(v) => updateField('browserEnabled', v)}>
+          <Field label="Browser">
+            <Select
+              value={config.browserType}
+              options={browserOptions}
+              onChange={(e) => {
+                const browserType = e.target.value
+                const selected = browsers.find((browser) => browser.type === browserType)
+                updateField('browserType', browserType)
+                updateField('browserExecutable', selected?.executable ?? '')
+                if (!config.browserUserDataDir && selected?.userDataDir) {
+                  updateField('browserUserDataDir', selected.userDataDir)
+                }
+              }}
+            />
+          </Field>
           {isRemoteBrowserType(config.browserType) && (
-            <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
+            <p className="text-xs text-muted m-0">
               Launched by Pando as a local CDP server; profile, user-data-dir and headless options do not apply.
-            </div>
+            </p>
           )}
-          <TextInput
-            label="Browser Executable"
-            placeholder="Auto-detected from selected browser"
-            value={config.browserExecutable}
-            onChange={(e) => updateField('browserExecutable', e.target.value)}
-          />
-          <TextInput
-            label="User Data Directory"
-            placeholder="/tmp/pando-browser"
-            value={config.browserUserDataDir}
-            onChange={(e) => updateField('browserUserDataDir', e.target.value)}
-          />
+          <Field label="Browser executable">
+            <Input placeholder="Auto-detected from selected browser" value={config.browserExecutable} onChange={(e) => updateField('browserExecutable', e.target.value)} />
+          </Field>
+          <Field label="User data directory">
+            <Input placeholder="/tmp/pando-browser" value={config.browserUserDataDir} onChange={(e) => updateField('browserUserDataDir', e.target.value)} />
+          </Field>
           {detectedBrowser && (
-            <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
+            <p className="text-xs text-muted m-0">
               Detected: {detectedBrowser.label} · {detectedBrowser.executable}
-            </div>
+            </p>
           )}
-          <Toggle
-            label="Headless mode"
-            description="Run browser without a visible window"
-            checked={config.browserHeadless}
-            onChange={(v) => updateField('browserHeadless', v)}
-          />
-          <div style={{ display: 'flex', gap: '1rem' }}>
-            <div style={{ flex: 1 }}>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: 'var(--fg-muted)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em',
-                  marginBottom: '0.375rem',
-                }}
-              >
-                Timeout (seconds)
-              </label>
-              <input
-                type="number"
-                min={5}
-                max={300}
-                value={config.browserTimeout}
-                onChange={(e) => updateField('browserTimeout', parseInt(e.target.value, 10) || 30)}
-                style={{
-                  background: 'var(--input-bg)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--fg)',
-                  fontSize: 14,
-                  padding: '0.5rem 0.75rem',
-                  outline: 'none',
-                  width: '100%',
-                  fontFamily: 'inherit',
-                  boxSizing: 'border-box',
-                }}
-              />
-            </div>
-            <div style={{ flex: 1 }}>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: 'var(--fg-muted)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em',
-                  marginBottom: '0.375rem',
-                }}
-              >
-                Max Sessions
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={20}
-                value={config.browserMaxSessions}
-                onChange={(e) => updateField('browserMaxSessions', parseInt(e.target.value, 10) || 3)}
-                style={{
-                  background: 'var(--input-bg)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--fg)',
-                  fontSize: 14,
-                  padding: '0.5rem 0.75rem',
-                  outline: 'none',
-                  width: '100%',
-                  fontFamily: 'inherit',
-                  boxSizing: 'border-box',
-                }}
-              />
-            </div>
+          <div className="flex items-center gap-3">
+            <Switch id="browser-headless" checked={config.browserHeadless} onCheckedChange={(v) => updateField('browserHeadless', v)} />
+            <label htmlFor="browser-headless" className="cursor-pointer">
+              <div className="text-sm font-medium text-fg">Headless mode</div>
+              <div className="text-xs text-muted">Run browser without a visible window</div>
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Timeout (seconds)">
+              <Input type="number" min={5} max={300} value={config.browserTimeout} onChange={(e) => updateField('browserTimeout', parseInt(e.target.value, 10) || 30)} />
+            </Field>
+            <Field label="Max sessions">
+              <Input type="number" min={1} max={20} value={config.browserMaxSessions} onChange={(e) => updateField('browserMaxSessions', parseInt(e.target.value, 10) || 3)} />
+            </Field>
           </div>
         </ToolCard>
 
-        {/* Desktop Controller */}
         <ToolCard
           title="Desktop Controller (Accessibility Automation)"
           enabled={config.desktopEnabled}
           status={simpleStatus(config.desktopEnabled)}
           onToggle={(v) => updateField('desktopEnabled', v)}
         >
-          <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
-            Lets the agent read and act on the user&apos;s desktop UI via the OS
-            accessibility tree. Can read and act on the whole desktop session — review
-            carefully before enabling.
+          <p className="text-xs text-muted m-0">
+            Lets the agent read and act on the user&apos;s desktop UI via the OS accessibility tree. Can read and act
+            on the whole desktop session — review carefully before enabling.
+          </p>
+          <Field label="Backend">
+            <Select
+              value={config.desktopBackend}
+              options={[
+                { value: 'auto', label: 'Auto (platform default)' },
+                { value: 'atspi', label: 'AT-SPI2 (Linux)' },
+                { value: 'uia', label: 'UI Automation (Windows)' },
+                { value: 'ax', label: 'Accessibility API (macOS)' },
+                { value: 'cdp', label: 'Chrome DevTools Protocol' },
+                { value: 'null', label: 'Disabled (Null)' },
+              ]}
+              onChange={(e) => updateField('desktopBackend', e.target.value)}
+            />
+          </Field>
+          <div className="flex items-center gap-3">
+            <Switch id="desktop-physical-input" checked={config.desktopAllowPhysicalInput} onCheckedChange={(v) => updateField('desktopAllowPhysicalInput', v)} />
+            <label htmlFor="desktop-physical-input" className="cursor-pointer">
+              <div className="text-sm font-medium text-fg">Allow physical input fallback</div>
+              <div className="text-xs text-muted">Fall back to synthetic mouse/keyboard when a native accessibility action is unsupported</div>
+            </label>
           </div>
-          <SelectInput
-            label="Backend"
-            value={config.desktopBackend}
-            options={[
-              { value: 'auto', label: 'Auto (platform default)' },
-              { value: 'atspi', label: 'AT-SPI2 (Linux)' },
-              { value: 'uia', label: 'UI Automation (Windows)' },
-              { value: 'ax', label: 'Accessibility API (macOS)' },
-              { value: 'cdp', label: 'Chrome DevTools Protocol' },
-              { value: 'null', label: 'Disabled (Null)' },
-            ]}
-            onChange={(e) => updateField('desktopBackend', e.target.value)}
-          />
-          <Toggle
-            label="Allow physical input fallback"
-            description="Fall back to synthetic mouse/keyboard when a native accessibility action is unsupported"
-            checked={config.desktopAllowPhysicalInput}
-            onChange={(v) => updateField('desktopAllowPhysicalInput', v)}
-          />
-          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 140 }}>
-              <TextInput
-                label="Max Nodes"
-                value={String(config.desktopMaxNodes)}
-                onChange={(e) => updateField('desktopMaxNodes', parseInt(e.target.value, 10) || 500)}
-              />
-            </div>
-            <div style={{ flex: 1, minWidth: 140 }}>
-              <TextInput
-                label="Default Depth"
-                value={String(config.desktopDefaultDepth)}
-                onChange={(e) => updateField('desktopDefaultDepth', parseInt(e.target.value, 10) || 3)}
-              />
-            </div>
-            <div style={{ flex: 1, minWidth: 140 }}>
-              <TextInput
-                label="Action Timeout (s)"
-                value={String(config.desktopActionTimeout)}
-                onChange={(e) => updateField('desktopActionTimeout', parseInt(e.target.value, 10) || 10)}
-              />
-            </div>
-            <div style={{ flex: 1, minWidth: 140 }}>
-              <TextInput
-                label="Snapshot TTL (s)"
-                value={String(config.desktopSnapshotTTL)}
-                onChange={(e) => updateField('desktopSnapshotTTL', parseInt(e.target.value, 10) || 60)}
-              />
-            </div>
-            <div style={{ flex: 1, minWidth: 140 }}>
-              <TextInput
-                label="Screenshot Scale"
-                value={String(config.desktopScreenshotScale)}
-                onChange={(e) => updateField('desktopScreenshotScale', parseFloat(e.target.value) || 1.0)}
-              />
-            </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <Field label="Max nodes">
+              <Input value={String(config.desktopMaxNodes)} onChange={(e) => updateField('desktopMaxNodes', parseInt(e.target.value, 10) || 500)} />
+            </Field>
+            <Field label="Default depth">
+              <Input value={String(config.desktopDefaultDepth)} onChange={(e) => updateField('desktopDefaultDepth', parseInt(e.target.value, 10) || 3)} />
+            </Field>
+            <Field label="Action timeout (s)">
+              <Input value={String(config.desktopActionTimeout)} onChange={(e) => updateField('desktopActionTimeout', parseInt(e.target.value, 10) || 10)} />
+            </Field>
+            <Field label="Snapshot TTL (s)">
+              <Input value={String(config.desktopSnapshotTTL)} onChange={(e) => updateField('desktopSnapshotTTL', parseInt(e.target.value, 10) || 60)} />
+            </Field>
+            <Field label="Screenshot scale">
+              <Input value={String(config.desktopScreenshotScale)} onChange={(e) => updateField('desktopScreenshotScale', parseFloat(e.target.value) || 1.0)} />
+            </Field>
           </div>
-          <TextInput
-            label="Allowed Apps (comma-separated, empty = all)"
-            placeholder="e.g. Firefox, VSCode"
-            value={(config.desktopAllowedApps ?? []).join(', ')}
-            onChange={(e) =>
-              updateField(
-                'desktopAllowedApps',
-                e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
-              )
-            }
-          />
-          <TextInput
-            label="Denied Apps (comma-separated)"
-            placeholder="e.g. 1Password, Keychain Access"
-            value={(config.desktopDeniedApps ?? []).join(', ')}
-            onChange={(e) =>
-              updateField(
-                'desktopDeniedApps',
-                e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
-              )
-            }
-          />
+          <Field label="Allowed apps (comma-separated, empty = all)">
+            <Input
+              placeholder="e.g. Firefox, VSCode"
+              value={(config.desktopAllowedApps ?? []).join(', ')}
+              onChange={(e) => updateField('desktopAllowedApps', e.target.value.split(',').map((s) => s.trim()).filter(Boolean))}
+            />
+          </Field>
+          <Field label="Denied apps (comma-separated)">
+            <Input
+              placeholder="e.g. 1Password, Keychain Access"
+              value={(config.desktopDeniedApps ?? []).join(', ')}
+              onChange={(e) => updateField('desktopDeniedApps', e.target.value.split(',').map((s) => s.trim()).filter(Boolean))}
+            />
+          </Field>
         </ToolCard>
-
       </div>
 
-      <div style={dividerStyle} />
+      {error && <div className="settings-banner settings-banner--danger mt-4" role="alert">{error}</div>}
 
-      {error && (
-        <div
-          style={{
-            marginBottom: '1rem',
-            padding: '0.625rem 0.875rem',
-            background: 'var(--error)',
-            color: 'var(--primary-fg)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 13,
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      <div style={{ display: 'flex', gap: '0.75rem' }}>
-        <button
-          onClick={saveTools}
-          disabled={!dirty || saving}
-          style={{
-            padding: '0.5rem 1.5rem',
-            background: !dirty || saving ? 'var(--border)' : 'var(--primary)',
-            color: !dirty || saving ? 'var(--fg-muted)' : 'var(--primary-fg)',
-            border: 'none',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: !dirty || saving ? 'not-allowed' : 'pointer',
-            transition: 'background 0.15s',
-            fontFamily: 'inherit',
-          }}
-        >
+      <div className="settings-actions">
+        <Button variant="primary" onClick={saveTools} disabled={!dirty || saving} loading={saving}>
           {saving ? 'Saving…' : 'Save'}
-        </button>
-        <button
-          onClick={resetTools}
-          disabled={!dirty}
-          style={{
-            padding: '0.5rem 1.5rem',
-            background: 'transparent',
-            color: !dirty ? 'var(--fg-dim)' : 'var(--fg-muted)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: !dirty ? 'not-allowed' : 'pointer',
-            transition: 'color 0.15s',
-            fontFamily: 'inherit',
-          }}
-        >
+        </Button>
+        <Button variant="secondary" onClick={resetTools} disabled={!dirty}>
           Reset
-        </button>
+        </Button>
       </div>
     </div>
   )

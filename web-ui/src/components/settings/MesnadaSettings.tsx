@@ -1,41 +1,30 @@
 import { useEffect } from 'react'
 import { useServicesSettingsStore } from '@pando/client/stores/servicesSettingsStore'
-import { TextInput, Toggle } from '@/components/shared/FormInput'
+import { useUnsavedChangesGuard } from './unsavedChanges'
 import type { MesnadaACPConfig, MesnadaACPServerConfig, MesnadaOrchestratorConfig, MesnadaTUIConfig, MesnadaServerConfig } from '@pando/client/types'
+import { Button, Input, Select, SettingsRow, SettingsSection, Switch } from '@/components/ui'
 
-const ENGINE_OPTIONS = ['pando', 'claude', 'copilot', 'openai', 'google', 'ollama']
-
-const dividerStyle: React.CSSProperties = {
-  borderTop: '1px solid var(--border)',
-  margin: '1.5rem 0',
-}
-
-const sectionTitle: React.CSSProperties = {
-  fontSize: 18,
-  fontWeight: 700,
-  color: 'var(--fg)',
-  marginBottom: '1.25rem',
-}
-
-const subSectionTitle: React.CSSProperties = {
-  fontSize: 14,
-  fontWeight: 700,
-  color: 'var(--fg)',
-  marginBottom: '0.875rem',
-  textTransform: 'uppercase' as const,
-  letterSpacing: '0.05em',
-}
+const ENGINE_OPTIONS = ['pando', 'claude', 'copilot', 'openai', 'google', 'ollama'].map((v) => ({ value: v, label: v }))
 
 export default function MesnadaSettings() {
   const { config, dirty, loading, saving, error, fetchServices, updateMesnada, saveServices, resetServices } =
     useServicesSettingsStore()
+  useUnsavedChangesGuard({
+    id: 'mesnada',
+    dirty,
+    save: async () => {
+      await saveServices()
+      return !useServicesSettingsStore.getState().error
+    },
+    discard: resetServices,
+  })
 
   useEffect(() => {
     fetchServices()
   }, [fetchServices])
 
   if (loading) {
-    return <div style={{ padding: '2rem', color: 'var(--fg-muted)', fontSize: 14 }}>Loading…</div>
+    return <div className="settings-loading">Loading…</div>
   }
 
   const mesnada = config.mesnada
@@ -61,237 +50,137 @@ export default function MesnadaSettings() {
   }
 
   return (
-    <div style={{ maxWidth: 640 }}>
-      <h2 style={sectionTitle}>Mesnada</h2>
+    <div>
+      <header className="settings-page-header">
+        <h2 className="settings-page-title">Mesnada</h2>
+      </header>
 
-      <Toggle
-        label="Enabled"
-        description="Enable Mesnada integration"
-        checked={mesnada.enabled}
-        onChange={(v) => updateMesnada('enabled', v)}
-      />
+      <SettingsSection>
+        <SettingsRow label="Enabled" description="Enable Mesnada integration" htmlFor="mesnada-enabled">
+          <Switch id="mesnada-enabled" checked={mesnada.enabled} onCheckedChange={(v) => updateMesnada('enabled', v)} />
+        </SettingsRow>
+      </SettingsSection>
 
-      <div style={dividerStyle} />
+      <SettingsSection title="Server">
+        <SettingsRow label="Host" htmlFor="mesnada-server-host">
+          <Input id="mesnada-server-host" value={mesnada.server.host} onChange={(e) => setServer('host', e.target.value)} placeholder="localhost" />
+        </SettingsRow>
+        <SettingsRow label="Port" htmlFor="mesnada-server-port">
+          <Input
+            id="mesnada-server-port"
+            type="number"
+            value={String(mesnada.server.port)}
+            onChange={(e) => setServer('port', Number(e.target.value))}
+            placeholder="9090"
+          />
+        </SettingsRow>
+      </SettingsSection>
 
-      {/* Server */}
-      <p style={subSectionTitle}>Server</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <TextInput
-          label="Host"
-          value={mesnada.server.host}
-          onChange={(e) => setServer('host', e.target.value)}
-          placeholder="localhost"
-        />
-        <TextInput
-          label="Port"
-          type="number"
-          value={String(mesnada.server.port)}
-          onChange={(e) => setServer('port', Number(e.target.value))}
-          placeholder="9090"
-        />
-      </div>
-
-      <div style={dividerStyle} />
-
-      {/* Orchestrator */}
-      <p style={subSectionTitle}>Orchestrator</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <TextInput
-          label="Store Path"
-          value={mesnada.orchestrator.storePath}
-          onChange={(e) => setOrchestrator('storePath', e.target.value)}
-          placeholder="/var/lib/mesnada/store"
-        />
-        <TextInput
-          label="Log Directory"
-          value={mesnada.orchestrator.logDir}
-          onChange={(e) => setOrchestrator('logDir', e.target.value)}
-          placeholder="/var/log/mesnada"
-        />
-
-        {/* MaxParallel slider */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            Max Parallel — <span style={{ color: 'var(--fg)', fontWeight: 700 }}>{mesnada.orchestrator.maxParallel}</span>
-          </label>
+      <SettingsSection title="Orchestrator">
+        <SettingsRow label="Store path" htmlFor="mesnada-orch-store">
+          <Input
+            id="mesnada-orch-store"
+            value={mesnada.orchestrator.storePath}
+            onChange={(e) => setOrchestrator('storePath', e.target.value)}
+            placeholder="/var/lib/mesnada/store"
+          />
+        </SettingsRow>
+        <SettingsRow label="Log directory" htmlFor="mesnada-orch-log">
+          <Input
+            id="mesnada-orch-log"
+            value={mesnada.orchestrator.logDir}
+            onChange={(e) => setOrchestrator('logDir', e.target.value)}
+            placeholder="/var/log/mesnada"
+          />
+        </SettingsRow>
+        <SettingsRow label="Max parallel" description={`Currently ${mesnada.orchestrator.maxParallel} (1–20)`} htmlFor="mesnada-orch-max-parallel">
           <input
+            id="mesnada-orch-max-parallel"
             type="range"
             min={1}
             max={20}
             value={mesnada.orchestrator.maxParallel}
             onChange={(e) => setOrchestrator('maxParallel', Number(e.target.value))}
-            style={{ width: '100%', accentColor: 'var(--primary)' }}
+            className="w-full accent-[var(--accent)]"
           />
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--fg-muted)' }}>
-            <span>1</span><span>20</span>
-          </div>
-        </div>
-
-        {/* DefaultEngine select */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            Default Engine
-          </label>
-          <select
+        </SettingsRow>
+        <SettingsRow label="Default engine" htmlFor="mesnada-orch-engine">
+          <Select
+            id="mesnada-orch-engine"
+            options={ENGINE_OPTIONS}
             value={mesnada.orchestrator.defaultEngine}
             onChange={(e) => setOrchestrator('defaultEngine', e.target.value)}
-            style={{
-              background: 'var(--input-bg)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-sm)',
-              color: 'var(--fg)',
-              fontSize: 14,
-              padding: '0.5rem 0.75rem',
-              outline: 'none',
-              width: '100%',
-              fontFamily: 'inherit',
-              cursor: 'pointer',
-            }}
-            onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--border-focus)')}
-            onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
-          >
-            {ENGINE_OPTIONS.map((opt) => (
-              <option key={opt} value={opt}>{opt}</option>
-            ))}
-          </select>
-        </div>
-
-        <TextInput
-          label="Default Model"
-          value={mesnada.orchestrator.defaultModel}
-          onChange={(e) => setOrchestrator('defaultModel', e.target.value)}
-          placeholder="(empty = engine default)"
-        />
-        <TextInput
-          label="Persona Path"
-          value={mesnada.orchestrator.personaPath}
-          onChange={(e) => setOrchestrator('personaPath', e.target.value)}
-          placeholder="/path/to/personas"
-        />
-      </div>
-
-      <div style={dividerStyle} />
-
-      {/* ACP */}
-      <p style={subSectionTitle}>ACP (Agent Communication Protocol)</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <Toggle
-          label="ACP Enabled"
-          checked={mesnada.acp.enabled}
-          onChange={(v) => setACP('enabled', v)}
-        />
-        <TextInput
-          label="Default Agent"
-          value={mesnada.acp.defaultAgent}
-          onChange={(e) => setACP('defaultAgent', e.target.value)}
-          placeholder="default"
-        />
-        <Toggle
-          label="Auto Permission"
-          description="Automatically grant permissions to agents"
-          checked={mesnada.acp.autoPermission}
-          onChange={(v) => setACP('autoPermission', v)}
-        />
-
-        <div style={{ paddingLeft: '1rem', borderLeft: '2px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-          <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>ACP Server</p>
-          <Toggle
-            label="ACP Server Enabled"
-            checked={mesnada.acp.server.enabled}
-            onChange={(v) => setACPServer('enabled', v)}
           />
-          <TextInput
-            label="Host"
-            value={mesnada.acp.server.host}
-            onChange={(e) => setACPServer('host', e.target.value)}
-            placeholder="localhost"
+        </SettingsRow>
+        <SettingsRow label="Default model" htmlFor="mesnada-orch-model">
+          <Input
+            id="mesnada-orch-model"
+            value={mesnada.orchestrator.defaultModel}
+            onChange={(e) => setOrchestrator('defaultModel', e.target.value)}
+            placeholder="(empty = engine default)"
           />
-          <TextInput
-            label="Port"
+        </SettingsRow>
+        <SettingsRow label="Persona path" htmlFor="mesnada-orch-persona">
+          <Input
+            id="mesnada-orch-persona"
+            value={mesnada.orchestrator.personaPath}
+            onChange={(e) => setOrchestrator('personaPath', e.target.value)}
+            placeholder="/path/to/personas"
+          />
+        </SettingsRow>
+      </SettingsSection>
+
+      <SettingsSection title="ACP" description="Agent Communication Protocol">
+        <SettingsRow label="ACP enabled" htmlFor="mesnada-acp-enabled">
+          <Switch id="mesnada-acp-enabled" checked={mesnada.acp.enabled} onCheckedChange={(v) => setACP('enabled', v)} />
+        </SettingsRow>
+        <SettingsRow label="Default agent" htmlFor="mesnada-acp-agent">
+          <Input id="mesnada-acp-agent" value={mesnada.acp.defaultAgent} onChange={(e) => setACP('defaultAgent', e.target.value)} placeholder="default" />
+        </SettingsRow>
+        <SettingsRow label="Auto permission" description="Automatically grant permissions to agents" htmlFor="mesnada-acp-auto-perm">
+          <Switch id="mesnada-acp-auto-perm" checked={mesnada.acp.autoPermission} onCheckedChange={(v) => setACP('autoPermission', v)} />
+        </SettingsRow>
+      </SettingsSection>
+
+      <SettingsSection title="ACP server">
+        <SettingsRow label="Enabled" htmlFor="mesnada-acp-server-enabled">
+          <Switch id="mesnada-acp-server-enabled" checked={mesnada.acp.server.enabled} onCheckedChange={(v) => setACPServer('enabled', v)} />
+        </SettingsRow>
+        <SettingsRow label="Host" htmlFor="mesnada-acp-server-host">
+          <Input id="mesnada-acp-server-host" value={mesnada.acp.server.host} onChange={(e) => setACPServer('host', e.target.value)} placeholder="localhost" />
+        </SettingsRow>
+        <SettingsRow label="Port" htmlFor="mesnada-acp-server-port">
+          <Input
+            id="mesnada-acp-server-port"
             type="number"
             value={String(mesnada.acp.server.port)}
             onChange={(e) => setACPServer('port', Number(e.target.value))}
             placeholder="9091"
           />
-          <Toggle
-            label="Require Auth"
-            checked={mesnada.acp.server.requireAuth}
-            onChange={(v) => setACPServer('requireAuth', v)}
-          />
-        </div>
-      </div>
+        </SettingsRow>
+        <SettingsRow label="Require auth" htmlFor="mesnada-acp-server-auth">
+          <Switch id="mesnada-acp-server-auth" checked={mesnada.acp.server.requireAuth} onCheckedChange={(v) => setACPServer('requireAuth', v)} />
+        </SettingsRow>
+      </SettingsSection>
 
-      <div style={dividerStyle} />
+      <SettingsSection title="TUI">
+        <SettingsRow label="TUI enabled" description="Enable the Terminal User Interface" htmlFor="mesnada-tui-enabled">
+          <Switch id="mesnada-tui-enabled" checked={mesnada.tui.enabled} onCheckedChange={(v) => setTUI('enabled', v)} />
+        </SettingsRow>
+        <SettingsRow label="Web UI enabled" description="Enable the Web User Interface" htmlFor="mesnada-tui-webui">
+          <Switch id="mesnada-tui-webui" checked={mesnada.tui.webui} onCheckedChange={(v) => setTUI('webui', v)} />
+        </SettingsRow>
+      </SettingsSection>
 
-      {/* TUI */}
-      <p style={subSectionTitle}>TUI</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <Toggle
-          label="TUI Enabled"
-          description="Enable the Terminal User Interface"
-          checked={mesnada.tui.enabled}
-          onChange={(v) => setTUI('enabled', v)}
-        />
-        <Toggle
-          label="Web UI Enabled"
-          description="Enable the Web User Interface"
-          checked={mesnada.tui.webui}
-          onChange={(v) => setTUI('webui', v)}
-        />
-      </div>
+      {error && <div className="settings-banner settings-banner--danger" role="alert">{error}</div>}
 
-      <div style={dividerStyle} />
-
-      {error && (
-        <div
-          style={{
-            marginBottom: '1rem',
-            padding: '0.625rem 0.875rem',
-            background: 'var(--error)',
-            color: 'var(--primary-fg)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 13,
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      <div style={{ display: 'flex', gap: '0.75rem' }}>
-        <button
-          onClick={saveServices}
-          disabled={!dirty || saving}
-          style={{
-            padding: '0.5rem 1.5rem',
-            background: !dirty || saving ? 'var(--border)' : 'var(--primary)',
-            color: !dirty || saving ? 'var(--fg-muted)' : 'var(--primary-fg)',
-            border: 'none',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: !dirty || saving ? 'not-allowed' : 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
+      <div className="settings-actions">
+        <Button variant="primary" onClick={saveServices} disabled={!dirty || saving} loading={saving}>
           {saving ? 'Saving…' : 'Save'}
-        </button>
-        <button
-          onClick={resetServices}
-          disabled={!dirty}
-          style={{
-            padding: '0.5rem 1.5rem',
-            background: 'transparent',
-            color: !dirty ? 'var(--fg-dim)' : 'var(--fg-muted)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: !dirty ? 'not-allowed' : 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
+        </Button>
+        <Button variant="secondary" onClick={resetServices} disabled={!dirty}>
           Reset
-        </button>
+        </Button>
       </div>
     </div>
   )

@@ -1,71 +1,50 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useServicesSettingsStore } from '@pando/client/stores/servicesSettingsStore'
-import { TextInput, Toggle } from '@/components/shared/FormInput'
+import { useUnsavedChangesGuard } from './unsavedChanges'
 import MaskedInput from '@/components/shared/MaskedInput'
 import DirBrowserDialog from '@/components/shared/DirBrowserDialog'
 import { useProjectStore } from '@pando/client/stores/projectStore'
 import { useToastStore } from '@pando/client/stores/toastStore'
 import api from '@pando/client/services/api'
 import type { CodeProjectInfo } from '@pando/client/types'
-
-const dividerStyle: React.CSSProperties = {
-  borderTop: '1px solid var(--border)',
-  margin: '1.5rem 0',
-}
-
-const sectionTitle: React.CSSProperties = {
-  fontSize: 18,
-  fontWeight: 700,
-  color: 'var(--fg)',
-  marginBottom: '1.25rem',
-}
-
-const subSectionTitle: React.CSSProperties = {
-  fontSize: 14,
-  fontWeight: 700,
-  color: 'var(--fg)',
-  marginBottom: '0.875rem',
-  textTransform: 'uppercase' as const,
-  letterSpacing: '0.05em',
-}
-
-const selectStyle: React.CSSProperties = {
-  background: 'var(--input-bg)',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-sm)',
-  color: 'var(--fg)',
-  fontSize: 14,
-  padding: '0.5rem 0.75rem',
-  outline: 'none',
-  width: '100%',
-  fontFamily: 'inherit',
-  cursor: 'pointer',
-}
+import { Badge, Button, Input, Select, SettingsRow, SettingsSection, Switch } from '@/components/ui'
 
 const EMBEDDING_PROVIDERS = ['', 'openai', 'openai-compatible', 'anthropic', 'ollama']
 
-const smallButtonStyle: React.CSSProperties = {
-  padding: '0.5rem 0.875rem',
-  background: 'transparent',
-  color: 'var(--fg)',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-sm)',
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  whiteSpace: 'nowrap',
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="settings-field">
+      <label className="settings-field-label">{label}</label>
+      {children}
+    </div>
+  )
 }
 
-const fieldLabelStyle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 600,
-  color: 'var(--fg-muted)',
-  textTransform: 'uppercase',
-  letterSpacing: '0.04em',
+/** A Switch + label/description pair for use inside a padded block that is
+ * not a `SettingsRow` list (e.g. a conditionally-revealed sub-section). */
+function ToggleField({
+  id,
+  label,
+  description,
+  checked,
+  onCheckedChange,
+}: {
+  id: string
+  label: string
+  description?: string
+  checked: boolean
+  onCheckedChange: (v: boolean) => void
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} />
+      <label htmlFor={id} className="cursor-pointer">
+        <div className="text-sm font-medium text-fg">{label}</div>
+        {description && <div className="text-xs text-muted">{description}</div>}
+      </label>
+    </div>
+  )
 }
-
-const hintStyle: React.CSSProperties = { fontSize: 12, color: 'var(--fg-dim)' }
 
 interface EmbeddingModelInfo {
   id: string
@@ -147,14 +126,14 @@ function EmbeddingModelPicker({
   }, [load])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-      <label style={fieldLabelStyle}>{label}</label>
-      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'stretch' }}>
-        <select
+    <div className="flex flex-col gap-1.5">
+      <label className="settings-field-label">{label}</label>
+      <div className="flex gap-2 items-stretch">
+        <Select
+          className="flex-1"
           value={models.some((m) => m.id === value) ? value : ''}
           onChange={(e) => e.target.value && onChange(e.target.value)}
           disabled={!provider || loading || models.length === 0}
-          style={{ ...selectStyle, flex: 1 }}
         >
           <option value="">
             {loading
@@ -168,35 +147,18 @@ function EmbeddingModelPicker({
               {m.size ? `${m.name || m.id} (${m.size})` : m.name || m.id}
             </option>
           ))}
-        </select>
-        <button type="button" onClick={() => void load()} disabled={!provider || loading} style={smallButtonStyle}>
+        </Select>
+        <Button type="button" variant="secondary" onClick={() => void load()} disabled={!provider || loading}>
           {loading ? '…' : 'Refresh'}
-        </button>
+        </Button>
       </div>
-      <input
-        value={value}
-        list={listId}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        style={{
-          background: 'var(--input-bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-sm)',
-          color: 'var(--fg)',
-          fontSize: 14,
-          padding: '0.5rem 0.75rem',
-          outline: 'none',
-          width: '100%',
-          fontFamily: 'inherit',
-          boxSizing: 'border-box',
-        }}
-      />
+      <Input value={value} list={listId} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
       <datalist id={listId}>
         {models.map((m) => (
           <option key={m.id} value={m.id} />
         ))}
       </datalist>
-      <span style={hintStyle}>
+      <span className="text-xs text-faint">
         {error
           ? `Could not list models: ${error}. Type the model name manually.`
           : source
@@ -222,9 +184,43 @@ interface TestConnectionResponse {
   code?: EmbeddingTestResult
 }
 
+function TestConnectionRow({
+  testing,
+  disabled,
+  result,
+  onTest,
+}: {
+  testing: boolean
+  disabled?: boolean
+  result: EmbeddingTestResult | null
+  onTest: () => void
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <Button variant="secondary" size="sm" onClick={onTest} disabled={testing || disabled} loading={testing}>
+        {testing ? 'Testing…' : 'Test connection'}
+      </Button>
+      {result && (
+        <Badge tone={result.ok ? 'success' : 'danger'} dot>
+          {result.ok ? `OK — ${result.dimension}d, ${result.latency_ms}ms` : result.error}
+        </Badge>
+      )}
+    </div>
+  )
+}
+
 export default function RemembrancesSettings() {
   const { config, dirty, loading, saving, error, fetchServices, updateRemembrances, saveServices, resetServices } =
     useServicesSettingsStore()
+  useUnsavedChangesGuard({
+    id: 'remembrances',
+    dirty,
+    save: async () => {
+      await saveServices()
+      return !useServicesSettingsStore.getState().error
+    },
+    discard: resetServices,
+  })
 
   const [projects, setProjects] = useState<CodeProjectInfo[]>([])
   const [indexing, setIndexing] = useState(false)
@@ -256,7 +252,7 @@ export default function RemembrancesSettings() {
   }, [config.remembrances.enabled])
 
   if (loading) {
-    return <div style={{ padding: '2rem', color: 'var(--fg-muted)', fontSize: 14 }}>Loading…</div>
+    return <div className="settings-loading">Loading…</div>
   }
 
   const rem = config.remembrances
@@ -334,170 +330,111 @@ export default function RemembrancesSettings() {
   }
 
   return (
-    <div style={{ maxWidth: 640 }}>
-      <h2 style={sectionTitle}>Remembrances</h2>
+    <div>
+      <header className="settings-page-header">
+        <h2 className="settings-page-title">Remembrances</h2>
+      </header>
 
-      <Toggle
-        label="Enabled"
-        description="Enable the Remembrances memory system"
-        checked={rem.enabled}
-        onChange={(v) => updateRemembrances('enabled', v)}
-      />
+      <SettingsSection>
+        <SettingsRow label="Enabled" description="Enable the Remembrances memory system" htmlFor="rem-enabled">
+          <Switch id="rem-enabled" checked={rem.enabled} onCheckedChange={(v) => updateRemembrances('enabled', v)} />
+        </SettingsRow>
+      </SettingsSection>
 
-      <div style={dividerStyle} />
-
-      {/* KB Filesystem Sync */}
-      <p style={subSectionTitle}>KB Filesystem Sync</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
-          <div style={{ flex: 1 }}>
-            <TextInput
-              label="KB Path"
-              value={rem.kb_path}
-              onChange={(e) => updateRemembrances('kb_path', e.target.value)}
-              placeholder="./.kb"
-            />
+      <SettingsSection title="KB filesystem sync">
+        <SettingsRow label="KB path" htmlFor="rem-kb-path">
+          <div className="flex gap-2 w-full">
+            <Input id="rem-kb-path" className="flex-1" value={rem.kb_path} onChange={(e) => updateRemembrances('kb_path', e.target.value)} placeholder="./.kb" />
+            <Button type="button" variant="secondary" onClick={() => setBrowsingKBPath(true)}>
+              Browse…
+            </Button>
           </div>
-          <button type="button" onClick={() => setBrowsingKBPath(true)} style={smallButtonStyle}>
-            Browse…
-          </button>
-        </div>
-        <Toggle
-          label="Watch KB Path"
-          description="Monitor markdown changes in real time and re-index automatically"
-          checked={rem.kb_watch}
-          onChange={(v) => updateRemembrances('kb_watch', v)}
-        />
-        <Toggle
-          label="Auto Import on Startup"
-          description="Import markdown files from KB path when Pando starts"
-          checked={rem.kb_auto_import}
-          onChange={(v) => updateRemembrances('kb_auto_import', v)}
-        />
-        <Toggle
-          label="Convert Documents"
+        </SettingsRow>
+        <SettingsRow label="Watch KB path" description="Monitor markdown changes in real time and re-index automatically" htmlFor="rem-kb-watch">
+          <Switch id="rem-kb-watch" checked={rem.kb_watch} onCheckedChange={(v) => updateRemembrances('kb_watch', v)} />
+        </SettingsRow>
+        <SettingsRow label="Auto import on startup" description="Import markdown files from KB path when Pando starts" htmlFor="rem-kb-auto-import">
+          <Switch id="rem-kb-auto-import" checked={rem.kb_auto_import} onCheckedChange={(v) => updateRemembrances('kb_auto_import', v)} />
+        </SettingsRow>
+        <SettingsRow
+          label="Convert documents"
           description="Convert docx/pdf/xlsx and other rich documents to Markdown on the fly and index them, referencing the original file"
-          checked={rem.kb_convert_documents}
-          onChange={(v) => updateRemembrances('kb_convert_documents', v)}
-        />
-        <Toggle
-          label="Wiki Links"
+          htmlFor="rem-kb-convert"
+        >
+          <Switch id="rem-kb-convert" checked={rem.kb_convert_documents} onCheckedChange={(v) => updateRemembrances('kb_convert_documents', v)} />
+        </SettingsRow>
+        <SettingsRow
+          label="Wiki links"
           description="Index [[wiki links]] written in KB documents as a navigable graph: backlinks, related documents and concepts still undocumented"
-          checked={rem.kb_wiki_links}
-          onChange={(v) => updateRemembrances('kb_wiki_links', v)}
-        />
-      </div>
+          htmlFor="rem-kb-wiki-links"
+        >
+          <Switch id="rem-kb-wiki-links" checked={rem.kb_wiki_links} onCheckedChange={(v) => updateRemembrances('kb_wiki_links', v)} />
+        </SettingsRow>
+      </SettingsSection>
 
-      <div style={dividerStyle} />
+      <SettingsSection title="Document embeddings">
+        <div className="p-4 flex flex-col gap-4">
+          <Field label="Embedding provider">
+            <Select
+              value={rem.document_embedding_provider}
+              onChange={(e) => updateRemembrances('document_embedding_provider', e.target.value)}
+              options={EMBEDDING_PROVIDERS.map((p) => ({ value: p, label: p || '— select provider —' }))}
+            />
+          </Field>
 
-      {/* Document Embeddings */}
-      <p style={subSectionTitle}>Document Embeddings</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            Embedding Provider
-          </label>
-          <select
-            value={rem.document_embedding_provider}
-            onChange={(e) => updateRemembrances('document_embedding_provider', e.target.value)}
-            style={selectStyle}
-            onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--border-focus)')}
-            onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
-          >
-            {EMBEDDING_PROVIDERS.map((p) => (
-              <option key={p} value={p}>{p || '— select provider —'}</option>
-            ))}
-          </select>
-        </div>
-
-        <EmbeddingModelPicker
-          label="Embedding Model"
-          listId="doc-embedding-models"
-          provider={rem.document_embedding_provider}
-          baseUrl={rem.document_embedding_base_url}
-          apiKey={rem.document_embedding_api_key}
-          value={rem.document_embedding_model}
-          placeholder="text-embedding-3-small"
-          onChange={(v) => updateRemembrances('document_embedding_model', v)}
-        />
-
-        {(rem.document_embedding_provider === 'openai-compatible' || rem.document_embedding_provider === 'ollama') && (
-          <TextInput
-            label="Base URL"
-            value={rem.document_embedding_base_url}
-            onChange={(e) => updateRemembrances('document_embedding_base_url', e.target.value)}
-            placeholder={rem.document_embedding_provider === 'ollama' ? 'http://localhost:11434' : 'https://api.example.com/v1'}
+          <EmbeddingModelPicker
+            label="Embedding model"
+            listId="doc-embedding-models"
+            provider={rem.document_embedding_provider}
+            baseUrl={rem.document_embedding_base_url}
+            apiKey={rem.document_embedding_api_key}
+            value={rem.document_embedding_model}
+            placeholder="text-embedding-3-small"
+            onChange={(v) => updateRemembrances('document_embedding_model', v)}
           />
-        )}
 
-        <MaskedInput
-          label="Embedding API Key"
-          value={rem.document_embedding_api_key}
-          onChange={(v) => updateRemembrances('document_embedding_api_key', v)}
-          placeholder="sk-…"
-        />
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.25rem' }}>
-          <button
-            onClick={handleTestDocEmbedding}
-            disabled={testingDoc || !rem.document_embedding_provider || !rem.document_embedding_model}
-            style={{
-              padding: '0.4rem 0.875rem',
-              background: 'transparent',
-              color: testingDoc ? 'var(--fg-dim)' : 'var(--primary)',
-              border: `1px solid ${testingDoc ? 'var(--border)' : 'var(--primary)'}`,
-              borderRadius: 'var(--radius-sm)',
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: testingDoc ? 'not-allowed' : 'pointer',
-              fontFamily: 'inherit',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {testingDoc ? 'Testing…' : 'Test Connection'}
-          </button>
-          {docTestResult && (
-            <span style={{ fontSize: 12, color: docTestResult.ok ? 'var(--success, #4ade80)' : 'var(--error, #f87171)' }}>
-              {docTestResult.ok
-                ? `✓ OK — ${docTestResult.dimension}d, ${docTestResult.latency_ms}ms`
-                : `✗ ${docTestResult.error}`}
-            </span>
+          {(rem.document_embedding_provider === 'openai-compatible' || rem.document_embedding_provider === 'ollama') && (
+            <Field label="Base URL">
+              <Input
+                value={rem.document_embedding_base_url}
+                onChange={(e) => updateRemembrances('document_embedding_base_url', e.target.value)}
+                placeholder={rem.document_embedding_provider === 'ollama' ? 'http://localhost:11434' : 'https://api.example.com/v1'}
+              />
+            </Field>
           )}
+
+          <MaskedInput
+            label="Embedding API key"
+            value={rem.document_embedding_api_key}
+            onChange={(v) => updateRemembrances('document_embedding_api_key', v)}
+            placeholder="sk-…"
+          />
+
+          <TestConnectionRow
+            testing={testingDoc}
+            disabled={!rem.document_embedding_provider || !rem.document_embedding_model}
+            result={docTestResult}
+            onTest={handleTestDocEmbedding}
+          />
         </div>
-      </div>
+      </SettingsSection>
 
-      <div style={dividerStyle} />
-
-      {/* Code Embeddings */}
-      <p style={subSectionTitle}>Code Embeddings</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <Toggle
-          label="Use Same Model as Document"
-          checked={rem.use_same_model}
-          onChange={(v) => updateRemembrances('use_same_model', v)}
-        />
-
+      <SettingsSection title="Code embeddings">
+        <SettingsRow label="Use same model as document" htmlFor="rem-use-same-model">
+          <Switch id="rem-use-same-model" checked={rem.use_same_model} onCheckedChange={(v) => updateRemembrances('use_same_model', v)} />
+        </SettingsRow>
         {!rem.use_same_model && (
-          <>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Code Embedding Provider
-              </label>
-              <select
+          <div className="p-4 flex flex-col gap-4 border-t border-border">
+            <Field label="Code embedding provider">
+              <Select
                 value={rem.code_embedding_provider}
                 onChange={(e) => updateRemembrances('code_embedding_provider', e.target.value)}
-                style={selectStyle}
-                onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--border-focus)')}
-                onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
-              >
-                {EMBEDDING_PROVIDERS.map((p) => (
-                  <option key={p} value={p}>{p || '— select provider —'}</option>
-                ))}
-              </select>
-            </div>
+                options={EMBEDDING_PROVIDERS.map((p) => ({ value: p, label: p || '— select provider —' }))}
+              />
+            </Field>
 
             <EmbeddingModelPicker
-              label="Code Embedding Model"
+              label="Code embedding model"
               listId="code-embedding-models"
               provider={rem.code_embedding_provider}
               baseUrl={rem.code_embedding_base_url}
@@ -508,139 +445,67 @@ export default function RemembrancesSettings() {
             />
 
             {(rem.code_embedding_provider === 'openai-compatible' || rem.code_embedding_provider === 'ollama') && (
-              <TextInput
-                label="Base URL"
-                value={rem.code_embedding_base_url}
-                onChange={(e) => updateRemembrances('code_embedding_base_url', e.target.value)}
-                placeholder={rem.code_embedding_provider === 'ollama' ? 'http://localhost:11434' : 'https://api.example.com/v1'}
-              />
+              <Field label="Base URL">
+                <Input
+                  value={rem.code_embedding_base_url}
+                  onChange={(e) => updateRemembrances('code_embedding_base_url', e.target.value)}
+                  placeholder={rem.code_embedding_provider === 'ollama' ? 'http://localhost:11434' : 'https://api.example.com/v1'}
+                />
+              </Field>
             )}
 
             <MaskedInput
-              label="Code Embedding API Key"
+              label="Code embedding API key"
               value={rem.code_embedding_api_key}
               onChange={(v) => updateRemembrances('code_embedding_api_key', v)}
               placeholder="sk-…"
             />
-          </>
+          </div>
         )}
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.25rem' }}>
-          <button
-            onClick={handleTestCodeEmbedding}
-            disabled={testingCode}
-            style={{
-              padding: '0.4rem 0.875rem',
-              background: 'transparent',
-              color: testingCode ? 'var(--fg-dim)' : 'var(--primary)',
-              border: `1px solid ${testingCode ? 'var(--border)' : 'var(--primary)'}`,
-              borderRadius: 'var(--radius-sm)',
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: testingCode ? 'not-allowed' : 'pointer',
-              fontFamily: 'inherit',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {testingCode ? 'Testing…' : 'Test Connection'}
-          </button>
-          {codeTestResult && (
-            <span style={{ fontSize: 12, color: codeTestResult.ok ? 'var(--success, #4ade80)' : 'var(--error, #f87171)' }}>
-              {codeTestResult.ok
-                ? `✓ OK — ${codeTestResult.dimension}d, ${codeTestResult.latency_ms}ms`
-                : `✗ ${codeTestResult.error}`}
-            </span>
-          )}
+        <div className="p-4 border-t border-border">
+          <TestConnectionRow testing={testingCode} result={codeTestResult} onTest={handleTestCodeEmbedding} />
         </div>
-      </div>
+      </SettingsSection>
 
-      <div style={dividerStyle} />
-
-      {/* Chunking */}
-      <p style={subSectionTitle}>Chunking</p>
-      <div style={{ display: 'flex', gap: '1rem' }}>
-        <div style={{ flex: 1 }}>
-          <TextInput
-            label="Chunk Size"
-            type="number"
-            value={String(rem.chunk_size)}
-            onChange={(e) => updateRemembrances('chunk_size', Number(e.target.value))}
-            placeholder="512"
-          />
+      <SettingsSection title="Chunking">
+        <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <Field label="Chunk size">
+            <Input type="number" value={String(rem.chunk_size)} onChange={(e) => updateRemembrances('chunk_size', Number(e.target.value))} placeholder="512" />
+          </Field>
+          <Field label="Chunk overlap">
+            <Input type="number" value={String(rem.chunk_overlap)} onChange={(e) => updateRemembrances('chunk_overlap', Number(e.target.value))} placeholder="64" />
+          </Field>
+          <Field label="Index workers">
+            <Input type="number" value={String(rem.index_workers)} onChange={(e) => updateRemembrances('index_workers', Number(e.target.value))} placeholder="2" />
+          </Field>
         </div>
-        <div style={{ flex: 1 }}>
-          <TextInput
-            label="Chunk Overlap"
-            type="number"
-            value={String(rem.chunk_overlap)}
-            onChange={(e) => updateRemembrances('chunk_overlap', Number(e.target.value))}
-            placeholder="64"
-          />
-        </div>
-        <div style={{ flex: 1 }}>
-          <TextInput
-            label="Index Workers"
-            type="number"
-            value={String(rem.index_workers)}
-            onChange={(e) => updateRemembrances('index_workers', Number(e.target.value))}
-            placeholder="2"
-          />
-        </div>
-      </div>
+      </SettingsSection>
 
-      <div style={dividerStyle} />
+      <SettingsSection title="Code indexing">
+        <SettingsRow label="Re-index all" description="Trigger a full re-index of all registered code projects.">
+          <Button variant="secondary" onClick={handleReindexAll}>
+            Re-index all
+          </Button>
+        </SettingsRow>
+      </SettingsSection>
 
-      {/* Code Indexing actions */}
-      <p style={subSectionTitle}>Code Indexing</p>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--fg-muted)', flex: 1 }}>
-          Trigger a full re-index of all registered code projects.
-        </p>
-        <button
-          onClick={handleReindexAll}
-          style={{
-            padding: '0.5rem 1rem',
-            background: 'transparent',
-            color: 'var(--primary)',
-            border: '1px solid var(--primary)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          Re-index All
-        </button>
-      </div>
-
-      <div style={dividerStyle} />
-
-      {/* Context Enrichment */}
-      <p style={subSectionTitle}>Context Enrichment</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <Toggle
-          label="Enable Context Enrichment"
+      <SettingsSection title="Context enrichment">
+        <SettingsRow
+          label="Enable context enrichment"
           description="Before each prompt, search KB and code index and prepend relevant context automatically"
-          checked={rem.context_enrichment_enabled}
-          onChange={(v) => updateRemembrances('context_enrichment_enabled', v)}
-        />
+          htmlFor="rem-ctx-enabled"
+        >
+          <Switch id="rem-ctx-enabled" checked={rem.context_enrichment_enabled} onCheckedChange={(v) => updateRemembrances('context_enrichment_enabled', v)} />
+        </SettingsRow>
 
         {rem.context_enrichment_enabled && (
-          <>
-            {/* Code Project selector */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Code Project
-              </label>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <select
+          <div className="p-4 flex flex-col gap-4 border-t border-border">
+            <Field label="Code project">
+              <div className="flex gap-2 items-center">
+                <Select
+                  className="flex-1"
                   value={rem.context_enrichment_code_project}
                   onChange={(e) => updateRemembrances('context_enrichment_code_project', e.target.value)}
-                  style={{ ...selectStyle, flex: 1 }}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--border-focus)')}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
                 >
                   <option value="">— none (KB only) —</option>
                   {projects.map((p) => (
@@ -648,266 +513,174 @@ export default function RemembrancesSettings() {
                       {p.name || p.project_id} ({p.root_path})
                     </option>
                   ))}
-                </select>
-                <button
+                </Select>
+                <Button
+                  variant="secondary"
                   onClick={handleIndexWorkdir}
                   disabled={indexing}
+                  loading={indexing}
                   title="Index the current working directory as a new code project"
-                  style={{
-                    padding: '0.5rem 0.875rem',
-                    background: 'transparent',
-                    color: indexing ? 'var(--fg-dim)' : 'var(--primary)',
-                    border: `1px solid ${indexing ? 'var(--border)' : 'var(--primary)'}`,
-                    borderRadius: 'var(--radius-sm)',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: indexing ? 'not-allowed' : 'pointer',
-                    fontFamily: 'inherit',
-                    whiteSpace: 'nowrap',
-                  }}
                 >
                   {indexing ? 'Indexing…' : '+ Index workdir'}
-                </button>
+                </Button>
               </div>
-              <p style={{ margin: 0, fontSize: 12, color: 'var(--fg-muted)' }}>
+              <p className="text-xs text-muted mt-1">
                 Select a previously indexed project to include code search results, or index the working directory.
               </p>
+            </Field>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label="KB results">
+                <Input type="number" value={String(rem.context_enrichment_kb_results)} onChange={(e) => updateRemembrances('context_enrichment_kb_results', Number(e.target.value))} placeholder="3" />
+              </Field>
+              <Field label="Code results">
+                <Input type="number" value={String(rem.context_enrichment_code_results)} onChange={(e) => updateRemembrances('context_enrichment_code_results', Number(e.target.value))} placeholder="5" />
+              </Field>
             </div>
 
-            {/* Results count — KB and Code */}
-            <div style={{ display: 'flex', gap: '1rem' }}>
-              <div style={{ flex: 1 }}>
-                <TextInput
-                  label="KB Results"
-                  type="number"
-                  value={String(rem.context_enrichment_kb_results)}
-                  onChange={(e) => updateRemembrances('context_enrichment_kb_results', Number(e.target.value))}
-                  placeholder="3"
-                />
-              </div>
-              <div style={{ flex: 1 }}>
-                <TextInput
-                  label="Code Results"
-                  type="number"
-                  value={String(rem.context_enrichment_code_results)}
-                  onChange={(e) => updateRemembrances('context_enrichment_code_results', Number(e.target.value))}
-                  placeholder="5"
-                />
-              </div>
+            <div>
+              <div className="settings-field-label mb-1">Past session events</div>
+              <p className="text-xs text-muted m-0">Search saved events from previous sessions and prepend relevant ones as context.</p>
             </div>
-
-            {/* Events enrichment */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Past Session Events
-              </label>
-              <p style={{ margin: 0, fontSize: 12, color: 'var(--fg-muted)' }}>
-                Search saved events from previous sessions and prepend relevant ones as context.
-              </p>
-            </div>
-            <div style={{ display: 'flex', gap: '1rem' }}>
-              <div style={{ flex: 1 }}>
-                <TextInput
-                  label="Events Results"
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label="Events results">
+                <Input
                   type="number"
                   value={String(rem.context_enrichment_events_results)}
                   onChange={(e) => updateRemembrances('context_enrichment_events_results', Number(e.target.value))}
                   placeholder="3"
                 />
-              </div>
-              <div style={{ flex: 1 }}>
-                <TextInput
-                  label="Last Days"
+              </Field>
+              <Field label="Last days">
+                <Input
                   type="number"
                   value={String(rem.context_enrichment_events_last_days)}
                   onChange={(e) => updateRemembrances('context_enrichment_events_last_days', Number(e.target.value))}
                   placeholder="30"
                 />
-              </div>
+              </Field>
             </div>
-            <TextInput
-              label="Subject Filter"
-              value={rem.context_enrichment_events_subject}
-              onChange={(e) => updateRemembrances('context_enrichment_events_subject', e.target.value)}
-              placeholder="e.g. pando  (leave empty for all subjects)"
-            />
+            <Field label="Subject filter">
+              <Input
+                value={rem.context_enrichment_events_subject}
+                onChange={(e) => updateRemembrances('context_enrichment_events_subject', e.target.value)}
+                placeholder="e.g. pando  (leave empty for all subjects)"
+              />
+            </Field>
 
-            {/* Agent loop enrichment */}
-            <Toggle
-              label="Agent Loop Enrichment"
+            <ToggleField
+              id="rem-ctx-agent-loop"
+              label="Agent loop enrichment"
               description="Run enrichment as a separate agent loop on the context-enricher model. It searches memory, KB and the code index iteratively; the main agent only receives the resulting context block."
               checked={rem.context_enrichment_agent_loop_enabled ?? false}
-              onChange={(v) => updateRemembrances('context_enrichment_agent_loop_enabled', v)}
+              onCheckedChange={(v) => updateRemembrances('context_enrichment_agent_loop_enabled', v)}
             />
 
             {rem.context_enrichment_agent_loop_enabled && (
               <>
-                <div style={{ display: 'flex', gap: '1rem' }}>
-                  <div style={{ flex: 1 }}>
-                    <TextInput
-                      label="Loop Timeout (s)"
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Field label="Loop timeout (s)">
+                    <Input
                       type="number"
                       value={String(rem.context_enrichment_agent_loop_timeout_seconds ?? 60)}
                       onChange={(e) => updateRemembrances('context_enrichment_agent_loop_timeout_seconds', Number(e.target.value))}
                       placeholder="60"
                     />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <TextInput
-                      label="Loop Max Chars"
+                  </Field>
+                  <Field label="Loop max chars">
+                    <Input
                       type="number"
                       value={String(rem.context_enrichment_agent_loop_max_chars ?? 6000)}
                       onChange={(e) => updateRemembrances('context_enrichment_agent_loop_max_chars', Number(e.target.value))}
                       placeholder="6000"
                     />
-                  </div>
+                  </Field>
                 </div>
-                <Toggle
-                  label="Run on Every Message"
+                <ToggleField
+                  id="rem-ctx-every-msg"
+                  label="Run on every message"
                   description="Off (default): the loop runs once per session, on the first message. On: it runs on every user turn."
                   checked={rem.context_enrichment_agent_loop_every_message ?? false}
-                  onChange={(v) => updateRemembrances('context_enrichment_agent_loop_every_message', v)}
+                  onCheckedChange={(v) => updateRemembrances('context_enrichment_agent_loop_every_message', v)}
                 />
-                <Toggle
-                  label="Announce in Chat"
+                <ToggleField
+                  id="rem-ctx-announce"
+                  label="Announce in chat"
                   description="Show start and end notices in the chat while the enrichment agent runs, like context compaction does"
                   checked={!(rem.context_enrichment_agent_loop_silent ?? false)}
-                  onChange={(v) => updateRemembrances('context_enrichment_agent_loop_silent', !v)}
+                  onCheckedChange={(v) => updateRemembrances('context_enrichment_agent_loop_silent', !v)}
                 />
-                <Toggle
-                  label="Fallback to Search"
+                <ToggleField
+                  id="rem-ctx-fallback"
+                  label="Fallback to search"
                   description="Use the classic search pipeline when the loop fails, times out or finds nothing"
                   checked={!(rem.context_enrichment_agent_loop_fallback_disabled ?? false)}
-                  onChange={(v) => updateRemembrances('context_enrichment_agent_loop_fallback_disabled', !v)}
+                  onCheckedChange={(v) => updateRemembrances('context_enrichment_agent_loop_fallback_disabled', !v)}
                 />
-                <Toggle
-                  label="Show Loop in Chat"
+                <ToggleField
+                  id="rem-ctx-show-loop"
+                  label="Show loop in chat"
                   description="Record the loop as a child session of the chat session so its tool calls can be inspected"
                   checked={!(rem.context_enrichment_agent_loop_hidden_in_chat ?? false)}
-                  onChange={(v) => updateRemembrances('context_enrichment_agent_loop_hidden_in_chat', !v)}
+                  onCheckedChange={(v) => updateRemembrances('context_enrichment_agent_loop_hidden_in_chat', !v)}
                 />
               </>
             )}
-          </>
+          </div>
         )}
-      </div>
+      </SettingsSection>
 
-      <div style={dividerStyle} />
-
-      {/* Memory System */}
-      <p style={subSectionTitle}>Memory System</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <Toggle
-          label="Memory Enabled"
+      <SettingsSection title="Memory system">
+        <SettingsRow
+          label="Memory enabled"
           description="Enable the key-value memory subsystem (stored memories survive across sessions)"
-          checked={rem.memory_enabled ?? false}
-          onChange={(v) => updateRemembrances('memory_enabled', v)}
-        />
-        <Toggle
+          htmlFor="rem-mem-enabled"
+        >
+          <Switch id="rem-mem-enabled" checked={rem.memory_enabled ?? false} onCheckedChange={(v) => updateRemembrances('memory_enabled', v)} />
+        </SettingsRow>
+        <SettingsRow
           label="Auto-inject in context"
           description="Prepend relevant stored memories into the system prompt before each turn"
-          checked={rem.memory_context_enrichment_enabled ?? false}
-          onChange={(v) => updateRemembrances('memory_context_enrichment_enabled', v)}
-        />
-        <div style={{ display: 'flex', gap: '1rem' }}>
-          <div style={{ flex: 1 }}>
-            <TextInput
-              label="Context max items"
-              type="number"
-              value={String(rem.memory_context_max_items ?? 10)}
-              onChange={(e) => updateRemembrances('memory_context_max_items', Number(e.target.value))}
-              placeholder="10"
-            />
-          </div>
-          <div style={{ flex: 1 }}>
-            <TextInput
-              label="Context max chars"
-              type="number"
-              value={String(rem.memory_context_max_chars ?? 2000)}
-              onChange={(e) => updateRemembrances('memory_context_max_chars', Number(e.target.value))}
-              placeholder="2000"
-            />
-          </div>
+          htmlFor="rem-mem-auto-inject"
+        >
+          <Switch
+            id="rem-mem-auto-inject"
+            checked={rem.memory_context_enrichment_enabled ?? false}
+            onCheckedChange={(v) => updateRemembrances('memory_context_enrichment_enabled', v)}
+          />
+        </SettingsRow>
+        <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-border">
+          <Field label="Context max items">
+            <Input type="number" value={String(rem.memory_context_max_items ?? 10)} onChange={(e) => updateRemembrances('memory_context_max_items', Number(e.target.value))} placeholder="10" />
+          </Field>
+          <Field label="Context max chars">
+            <Input type="number" value={String(rem.memory_context_max_chars ?? 2000)} onChange={(e) => updateRemembrances('memory_context_max_chars', Number(e.target.value))} placeholder="2000" />
+          </Field>
+          <Field label="Default TTL (days)">
+            <Input type="number" value={String(rem.memory_default_ttl_days ?? 0)} onChange={(e) => updateRemembrances('memory_default_ttl_days', Number(e.target.value))} placeholder="0 = no expiry" />
+          </Field>
+          <Field label="GC interval">
+            <Input value={rem.memory_gc_interval ?? '1h'} onChange={(e) => updateRemembrances('memory_gc_interval', e.target.value)} placeholder="1h" />
+          </Field>
         </div>
-        <div style={{ display: 'flex', gap: '1rem' }}>
-          <div style={{ flex: 1 }}>
-            <TextInput
-              label="Default TTL (days)"
-              type="number"
-              value={String(rem.memory_default_ttl_days ?? 0)}
-              onChange={(e) => updateRemembrances('memory_default_ttl_days', Number(e.target.value))}
-              placeholder="0 = no expiry"
-            />
-          </div>
-          <div style={{ flex: 1 }}>
-            <TextInput
-              label="GC interval"
-              value={rem.memory_gc_interval ?? '1h'}
-              onChange={(e) => updateRemembrances('memory_gc_interval', e.target.value)}
-              placeholder="1h"
-            />
-          </div>
-        </div>
-        <Toggle
+        <SettingsRow
           label="Auto-capture memories"
           description="Automatically extract and store key facts from conversations"
-          checked={rem.memory_auto_capture ?? false}
-          onChange={(v) => updateRemembrances('memory_auto_capture', v)}
-        />
-      </div>
-
-      <div style={dividerStyle} />
-
-      {error && (
-        <div
-          style={{
-            marginBottom: '1rem',
-            padding: '0.625rem 0.875rem',
-            background: 'var(--error)',
-            color: 'var(--primary-fg)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 13,
-          }}
+          htmlFor="rem-mem-auto-capture"
         >
-          {error}
-        </div>
-      )}
+          <Switch id="rem-mem-auto-capture" checked={rem.memory_auto_capture ?? false} onCheckedChange={(v) => updateRemembrances('memory_auto_capture', v)} />
+        </SettingsRow>
+      </SettingsSection>
 
-      <div style={{ display: 'flex', gap: '0.75rem' }}>
-        <button
-          onClick={saveServices}
-          disabled={!dirty || saving}
-          style={{
-            padding: '0.5rem 1.5rem',
-            background: !dirty || saving ? 'var(--border)' : 'var(--primary)',
-            color: !dirty || saving ? 'var(--fg-muted)' : 'var(--primary-fg)',
-            border: 'none',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: !dirty || saving ? 'not-allowed' : 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
+      {error && <div className="settings-banner settings-banner--danger" role="alert">{error}</div>}
+
+      <div className="settings-actions">
+        <Button variant="primary" onClick={saveServices} disabled={!dirty || saving} loading={saving}>
           {saving ? 'Saving…' : 'Save'}
-        </button>
-        <button
-          onClick={resetServices}
-          disabled={!dirty}
-          style={{
-            padding: '0.5rem 1.5rem',
-            background: 'transparent',
-            color: !dirty ? 'var(--fg-dim)' : 'var(--fg-muted)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: !dirty ? 'not-allowed' : 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
+        </Button>
+        <Button variant="secondary" onClick={resetServices} disabled={!dirty}>
           Reset
-        </button>
+        </Button>
       </div>
 
       {browsingKBPath && (

@@ -1,11 +1,8 @@
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faCamera } from '@fortawesome/free-solid-svg-icons'
+import { Camera } from '@/components/ui/icons'
+import { Button } from '@/components/ui'
 import type { Snapshot } from '@pando/client/types'
 import EmptyState from '@/components/shared/EmptyState'
 import SnapshotRow from './SnapshotRow'
-
-const HEADERS = ['Name', 'Session', 'Status', 'Date', 'Size', 'Actions']
-const WIDTHS = ['30%', '10%', '12%', '13%', '10%', '15%']
 
 interface SnapshotTableProps {
   snapshots: Snapshot[]
@@ -16,61 +13,37 @@ export default function SnapshotTable({ snapshots, onCreateClick }: SnapshotTabl
   if (snapshots.length === 0) {
     return (
       <EmptyState
-        icon={<FontAwesomeIcon icon={faCamera} />}
+        icon={<Camera size={22} />}
         title="No snapshots yet"
         description="Snapshots let you save and restore session states at any point in time."
         action={
-          <button
-            onClick={onCreateClick}
-            style={{
-              padding: '0.5rem 1.25rem',
-              borderRadius: 'var(--radius-sm)',
-              border: 'none',
-              background: 'var(--primary)',
-              color: 'white',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
-          >
+          <Button variant="primary" onClick={onCreateClick}>
             Create first snapshot
-          </button>
+          </Button>
         }
       />
     )
   }
 
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table
-        style={{
-          width: '100%',
-          borderCollapse: 'collapse',
-          tableLayout: 'fixed',
-        }}
-      >
+    <div className="view-table-wrap">
+      <table className="view-table" style={{ tableLayout: 'fixed' }}>
+        <colgroup>
+          <col style={{ width: '30%' }} />
+          <col style={{ width: '10%' }} />
+          <col style={{ width: '12%' }} />
+          <col style={{ width: '13%' }} />
+          <col style={{ width: '10%' }} />
+          <col style={{ width: '15%' }} />
+        </colgroup>
         <thead>
           <tr>
-            {HEADERS.map((h, i) => (
-              <th
-                key={h}
-                style={{
-                  padding: '0.5rem 0.75rem',
-                  fontSize: 11,
-                  fontWeight: 600,
-                  color: 'var(--fg-muted)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  textAlign: i === HEADERS.length - 1 ? 'right' : 'left',
-                  borderBottom: '1px solid var(--border)',
-                  width: WIDTHS[i],
-                  background: 'var(--surface)',
-                }}
-              >
-                {h}
-              </th>
-            ))}
+            <th>Name</th>
+            <th>Session</th>
+            <th>Status</th>
+            <th>Date</th>
+            <th>Size</th>
+            <th className="is-numeric">Actions</th>
           </tr>
         </thead>
         <tbody>

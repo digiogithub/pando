@@ -1,8 +1,11 @@
 import { useCallback, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { DiffEditor, type BeforeMount } from '@monaco-editor/react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faTimes, faFileCode } from '@fortawesome/free-solid-svg-icons'
 import type { FileChange } from '@pando/client/stores/fileChangesStore'
+import { IconButton, Kbd } from '@/components/ui'
+import { FileCode, X } from '@/components/ui/icons'
+import { useTheme } from '@/hooks/useTheme'
+import { cssVarHex } from '@/lib/cssColor'
 
 interface DiffViewerProps {
   file: FileChange
@@ -20,37 +23,44 @@ function detectLanguage(path: string): string {
   return map[ext] ?? 'plaintext'
 }
 
-const defineTheme: BeforeMount = (monacoInstance) => {
-  monacoInstance.editor.defineTheme('pando-dark', {
-    base: 'vs-dark',
+/** Reads a colour token from the document as strict hex (Monaco rejects `#fff`, rgb(), …). */
+const token = cssVarHex
+
+const THEME_NAME = 'pando-diff'
+
+/** Monaco theme built from the live Pando tokens (re-defined on each mount). */
+const defineTheme = (monacoInstance: Parameters<BeforeMount>[0], dark: boolean) => {
+  const bg = token('--bg', dark ? '#111113' : '#ffffff')
+  const fg = token('--fg', dark ? '#ececee' : '#18181b')
+  const faint = token('--fg-faint', '#85858c')
+  const raised = token('--bg-raised', dark ? '#252528' : '#efeff1')
+  const success = token('--success', '#15803d')
+  const danger = token('--danger', '#dc2626')
+  const accent = token('--accent', '#8a6516')
+  monacoInstance.editor.defineTheme(THEME_NAME, {
+    base: dark ? 'vs-dark' : 'vs',
     inherit: true,
-    rules: [
-      { token: 'comment', foreground: '6c7086', fontStyle: 'italic' },
-      { token: 'keyword', foreground: 'cba6f7', fontStyle: 'bold' },
-      { token: 'string', foreground: 'a6e3a1' },
-      { token: 'number', foreground: 'fab387' },
-      { token: 'type', foreground: 'f9e2af' },
-      { token: 'variable', foreground: 'cdd6f4' },
-      { token: 'function', foreground: '89b4fa' },
-      { token: 'operator', foreground: '89dceb' },
-    ],
+    rules: [{ token: 'comment', foreground: faint.slice(1), fontStyle: 'italic' }],
     colors: {
-      'editor.background': '#1e1e2e',
-      'editor.foreground': '#cdd6f4',
-      'editor.lineHighlightBackground': '#2a2a3d',
-      'editor.selectionBackground': '#3d5985',
-      'editorCursor.foreground': '#f5c2e7',
-      'editorLineNumber.foreground': '#45475a',
-      'editorLineNumber.activeForeground': '#cdd6f4',
-      'diffEditor.insertedTextBackground': '#a6e3a120',
-      'diffEditor.removedTextBackground': '#f38ba820',
-      'diffEditor.insertedLineBackground': '#a6e3a110',
-      'diffEditor.removedLineBackground': '#f38ba810',
+      'editor.background': bg,
+      'editor.foreground': fg,
+      'editor.lineHighlightBackground': raised,
+      'editor.selectionBackground': `${accent}40`,
+      'editorCursor.foreground': accent,
+      'editorLineNumber.foreground': faint,
+      'editorLineNumber.activeForeground': fg,
+      'diffEditor.insertedTextBackground': `${success}2e`,
+      'diffEditor.removedTextBackground': `${danger}2e`,
+      'diffEditor.insertedLineBackground': `${success}17`,
+      'diffEditor.removedLineBackground': `${danger}17`,
     },
   })
 }
 
 export default function DiffViewer({ file, onClose }: DiffViewerProps) {
+  const { t } = useTranslation()
+  const { resolvedMode, family, accent } = useTheme()
+  const dark = resolvedMode === 'dark'
   const language = detectLanguage(file.filePath)
 
   // Build the original and modified content by replaying edits sequentially.
@@ -59,85 +69,29 @@ export default function DiffViewer({ file, onClose }: DiffViewerProps) {
   const { original, modified } = buildDiffContent(file)
 
   const handleBeforeMount: BeforeMount = useCallback((monaco) => {
-    defineTheme(monaco)
-  }, [])
+    defineTheme(monaco, dark)
+  }, [dark])
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1000,
-        display: 'flex',
-        flexDirection: 'column',
-        background: 'var(--bg, #1e1e2e)',
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          height: 44,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '0 16px',
-          borderBottom: '1px solid var(--border)',
-          background: 'var(--sidebar-bg, #181825)',
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <FontAwesomeIcon icon={faFileCode} style={{ fontSize: 14, color: 'var(--primary)' }} />
-          <span
-            style={{
-              fontSize: 13,
-              fontWeight: 600,
-              color: 'var(--fg)',
-              fontFamily: "'JetBrains Mono', monospace",
-            }}
-          >
-            {file.filePath}
-          </span>
-          <span style={{ fontSize: 11, color: 'var(--fg-muted)', display: 'flex', gap: 8 }}>
-            {file.additions > 0 && <span style={{ color: '#a6e3a1' }}>+{file.additions}</span>}
-            {file.removals > 0 && <span style={{ color: '#f38ba8' }}>-{file.removals}</span>}
-            <span>{file.edits.length} edit{file.edits.length !== 1 ? 's' : ''}</span>
-          </span>
-        </div>
-        <button
-          onClick={onClose}
-          title="Close diff viewer"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 32,
-            height: 32,
-            borderRadius: 'var(--radius-sm, 4px)',
-            border: '1px solid var(--border)',
-            background: 'transparent',
-            color: 'var(--fg-muted)',
-            cursor: 'pointer',
-            fontSize: 14,
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'var(--error, #f38ba8)'
-            e.currentTarget.style.color = '#fff'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent'
-            e.currentTarget.style.color = 'var(--fg-muted)'
-          }}
-        >
-          <FontAwesomeIcon icon={faTimes} />
-        </button>
+    <div className="chat-diff" role="dialog" aria-label={file.filePath}>
+      <div className="chat-diff-head">
+        <FileCode size={16} />
+        <span className="chat-diff-path" title={file.filePath}>{file.filePath}</span>
+        <span className="chat-diff-stats">
+          {file.additions > 0 && <span className="chat-add">+{file.additions}</span>}
+          {file.removals > 0 && <span className="chat-del">-{file.removals}</span>}
+          <span>{t('chat.diff.edits', { count: file.edits.length })}</span>
+        </span>
+        <span className="chat-spacer" />
+        <IconButton aria-label={t('chat.diff.close')} tooltip icon={<X />} onClick={onClose} />
       </div>
 
-      {/* Diff editor */}
-      <div style={{ flex: 1, overflow: 'hidden' }}>
+      {/* Diff editor — remounted when the theme changes so colours follow it. */}
+      <div className="chat-diff-body">
         <DiffEditor
+          key={`${family}-${resolvedMode}-${accent ?? ''}`}
           height="100%"
-          theme="pando-dark"
+          theme={THEME_NAME}
           language={language}
           original={original}
           modified={modified}
@@ -145,7 +99,7 @@ export default function DiffViewer({ file, onClose }: DiffViewerProps) {
           options={{
             readOnly: true,
             fontSize: 13,
-            fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+            fontFamily: "'JetBrains Mono Variable', 'JetBrains Mono', monospace",
             fontLigatures: true,
             renderSideBySide: window.innerWidth >= 768,
             minimap: { enabled: false },
@@ -159,20 +113,8 @@ export default function DiffViewer({ file, onClose }: DiffViewerProps) {
         />
       </div>
 
-      {/* Keyboard hint */}
-      <div
-        style={{
-          height: 28,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderTop: '1px solid var(--border)',
-          background: 'var(--sidebar-bg, #181825)',
-          fontSize: 11,
-          color: 'var(--fg-dim)',
-        }}
-      >
-        Press <kbd style={{ margin: '0 4px', padding: '1px 5px', border: '1px solid var(--border)', borderRadius: 3, fontSize: 10 }}>Esc</kbd> or click X to close
+      <div className="chat-diff-foot">
+        <Kbd>Esc</Kbd> {t('chat.diff.escToClose')}
       </div>
 
       {/* Esc key handler */}

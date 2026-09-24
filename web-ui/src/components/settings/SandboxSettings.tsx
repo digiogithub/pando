@@ -1,84 +1,17 @@
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSandboxStore } from '@pando/client/stores/settingsStore'
-import { SelectInput, Toggle } from '@/components/shared/FormInput'
+import { useUnsavedChangesGuard } from './unsavedChanges'
 import TagListEditor from '@/components/shared/TagListEditor'
-
-const sectionTitle: React.CSSProperties = {
-  fontSize: 18,
-  fontWeight: 700,
-  color: 'var(--fg)',
-  marginBottom: '0.5rem',
-}
-
-const subsectionTitle: React.CSSProperties = {
-  fontSize: 14,
-  fontWeight: 600,
-  color: 'var(--fg)',
-  marginBottom: '0.375rem',
-}
-
-const helpText: React.CSSProperties = {
-  fontSize: 13,
-  color: 'var(--fg-muted)',
-  marginTop: 0,
-  marginBottom: '1rem',
-  lineHeight: 1.6,
-}
-
-const dividerStyle: React.CSSProperties = {
-  borderTop: '1px solid var(--border)',
-  margin: '1.5rem 0',
-}
-
-const fieldsWrap: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '1rem',
-}
-
-const lockedNote: React.CSSProperties = {
-  fontSize: 12,
-  color: 'var(--fg-muted)',
-  marginTop: '0.25rem',
-}
-
-const pathList: React.CSSProperties = {
-  margin: 0,
-  padding: '0.5rem 0.75rem',
-  listStyle: 'none',
-  background: 'var(--selected)',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-sm)',
-  fontFamily: 'var(--font-mono, monospace)',
-  fontSize: 12,
-  color: 'var(--fg-muted)',
-  overflowWrap: 'anywhere',
-  maxHeight: 180,
-  overflowY: 'auto',
-}
-
-function callout(color: string): React.CSSProperties {
-  return {
-    padding: '0.75rem 1rem',
-    border: `1px solid ${color}`,
-    borderLeft: `4px solid ${color}`,
-    borderRadius: 'var(--radius-sm)',
-    fontSize: 13,
-    color: 'var(--fg)',
-    marginBottom: '1.25rem',
-    lineHeight: 1.6,
-    background: 'var(--selected)',
-  }
-}
+import { Badge, Button, Select, SettingsRow, SettingsSection, Switch } from '@/components/ui'
 
 /** Read-only list used for resolved paths and for locked list fields. */
 function PathList({ items, empty }: { items: string[]; empty: string }) {
   if (items.length === 0) {
-    return <div style={{ ...helpText, marginBottom: 0 }}>{empty}</div>
+    return <div className="text-sm text-muted">{empty}</div>
   }
   return (
-    <ul style={pathList}>
+    <ul className="m-0 p-2 list-none bg-raised border border-border rounded-sm font-mono text-xs text-muted break-words max-h-[180px] overflow-y-auto">
       {items.map((p) => (
         <li key={p}>{p}</li>
       ))}
@@ -101,17 +34,22 @@ export default function SandboxSettings() {
     resetSandbox,
     isLocked,
   } = useSandboxStore()
+  useUnsavedChangesGuard({
+    id: 'sandbox',
+    dirty,
+    save: async () => {
+      await saveSandbox()
+      return !useSandboxStore.getState().error
+    },
+    discard: resetSandbox,
+  })
 
   useEffect(() => {
     fetchSandbox()
   }, [fetchSandbox])
 
   if (loading && !info) {
-    return (
-      <div style={{ padding: '2rem', color: 'var(--fg-muted)', fontSize: 14 }}>
-        {t('settings.sandbox.loading')}
-      </div>
-    )
+    return <div className="settings-loading">{t('settings.sandbox.loading')}</div>
   }
 
   const enabled = !config.disabled && config.mode !== 'off'
@@ -159,242 +97,179 @@ export default function SandboxSettings() {
     { value: 'never', label: t('settings.sandbox.bwrapNever') },
   ]
 
-  return (
-    <div style={{ maxWidth: 640 }}>
-      <h2 style={sectionTitle}>{t('settings.sandbox.title')}</h2>
-      <p style={helpText}>{t('settings.sandbox.description')}</p>
+  const statusTone: 'success' | 'warning' | 'danger' =
+    status?.active && status?.full !== false ? 'success' : status?.enabled ? 'warning' : 'danger'
 
-      {/* Live status */}
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: '0.5rem',
-          marginBottom: '1rem',
-          fontSize: 13,
-        }}
-      >
-        <span style={{ fontWeight: 600, color: 'var(--fg)' }}>{t('settings.sandbox.status')}:</span>
-        <span
-          style={{
-            padding: '0.125rem 0.5rem',
-            borderRadius: 'var(--radius-sm)',
-            border: `1px solid ${status?.active && status?.full !== false ? 'var(--success)' : status?.enabled ? 'var(--warning)' : 'var(--error)'}`,
-            color: status?.active && status?.full !== false ? 'var(--success)' : status?.enabled ? 'var(--warning)' : 'var(--error)',
-            fontFamily: 'var(--font-mono, monospace)',
-            overflowWrap: 'anywhere',
-          }}
-        >
-          {status?.label ?? '—'}
-        </span>
-      </div>
+  return (
+    <div>
+      <header className="settings-page-header">
+        <h2 className="settings-page-title">
+          {t('settings.sandbox.title')}
+          {status && <Badge tone={statusTone} dot>{status.label ?? '—'}</Badge>}
+        </h2>
+        <p className="settings-page-description">{t('settings.sandbox.description')}</p>
+      </header>
 
       {status && !status.enabled && (
-        <div style={callout('var(--error)')}>
-          <strong>{t('settings.sandbox.disabledWarningTitle')}</strong>
-          <br />
-          {t('settings.sandbox.disabledWarning')}
+        <div className="settings-banner settings-banner--danger">
+          <span>
+            <strong className="text-fg">{t('settings.sandbox.disabledWarningTitle')}</strong>
+            <br />
+            {t('settings.sandbox.disabledWarning')}
+          </span>
         </div>
       )}
       {status && status.enabled && !enforced && (
-        <div style={callout('var(--warning)')}>
-          <strong>{t('settings.sandbox.notEnforcedTitle')}</strong>
-          <br />
-          {t('settings.sandbox.notEnforced', { reason: capability?.reason || t('settings.sandbox.unavailable') })}
+        <div className="settings-banner settings-banner--warning">
+          <span>
+            <strong className="text-fg">{t('settings.sandbox.notEnforcedTitle')}</strong>
+            <br />
+            {t('settings.sandbox.notEnforced', { reason: capability?.reason || t('settings.sandbox.unavailable') })}
+          </span>
         </div>
       )}
       {info?.envOverride && (
-        <div style={callout('var(--warning)')}>
-          {t('settings.sandbox.envOverride', { value: info.envOverride })}
+        <div className="settings-banner settings-banner--warning">
+          <span>{t('settings.sandbox.envOverride', { value: info.envOverride })}</span>
         </div>
       )}
 
-      <div style={fieldsWrap}>
-        <Toggle
+      <SettingsSection>
+        <SettingsRow
           label={t('settings.sandbox.enabled')}
-          description={t('settings.sandbox.enabledDescription')}
-          checked={enabled}
-          onChange={setEnabled}
-          disabled={onOffLocked}
-          hint={onOffLocked ? lockedHint : undefined}
-        />
-
-        <div>
-          <SelectInput
-            label={t('settings.sandbox.mode')}
-            value={mode}
-            options={modeOptions}
-            disabled={onOffLocked}
-            onChange={(e) => setMode(e.target.value)}
-          />
-          <div style={lockedNote}>{onOffLocked ? lockedHint : t('settings.sandbox.modeHint')}</div>
-        </div>
-
-        <div>
-          <SelectInput
-            label={t('settings.sandbox.network')}
+          description={onOffLocked ? lockedHint : t('settings.sandbox.enabledDescription')}
+          htmlFor="sandbox-enabled"
+        >
+          <Switch id="sandbox-enabled" checked={enabled} onCheckedChange={setEnabled} disabled={onOffLocked} />
+        </SettingsRow>
+        <SettingsRow label={t('settings.sandbox.mode')} description={onOffLocked ? lockedHint : t('settings.sandbox.modeHint')} htmlFor="sandbox-mode">
+          <Select id="sandbox-mode" value={mode} options={modeOptions} disabled={onOffLocked} onChange={(e) => setMode(e.target.value)} />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.sandbox.network')}
+          description={isLocked('sandbox.network') ? lockedHint : t('settings.sandbox.networkHint')}
+          htmlFor="sandbox-network"
+        >
+          <Select
+            id="sandbox-network"
             value={network}
             options={networkOptions}
             disabled={isLocked('sandbox.network')}
             onChange={(e) => updateField('network', e.target.value === 'allowed' ? '' : e.target.value)}
           />
-          <div style={lockedNote}>
-            {isLocked('sandbox.network') ? lockedHint : t('settings.sandbox.networkHint')}
-          </div>
-        </div>
-
-        <Toggle
+        </SettingsRow>
+        <SettingsRow
           label={t('settings.sandbox.autoAllowBash')}
-          description={t('settings.sandbox.autoAllowBashDescription')}
-          checked={!config.autoAllowBashDisabled}
-          onChange={(v) => updateField('autoAllowBashDisabled', !v)}
-          disabled={isLocked('sandbox.autoAllowBashDisabled')}
-          hint={isLocked('sandbox.autoAllowBashDisabled') ? lockedHint : undefined}
-        />
-
-        <div>
-          <SelectInput
-            label={t('settings.sandbox.useBwrap')}
+          description={isLocked('sandbox.autoAllowBashDisabled') ? lockedHint : t('settings.sandbox.autoAllowBashDescription')}
+          htmlFor="sandbox-auto-allow-bash"
+        >
+          <Switch
+            id="sandbox-auto-allow-bash"
+            checked={!config.autoAllowBashDisabled}
+            onCheckedChange={(v) => updateField('autoAllowBashDisabled', !v)}
+            disabled={isLocked('sandbox.autoAllowBashDisabled')}
+          />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.sandbox.useBwrap')}
+          description={
+            isLocked('sandbox.useBwrap')
+              ? lockedHint
+              : isLinux
+                ? t('settings.sandbox.useBwrapHint')
+                : t('settings.sandbox.useBwrapNotLinux')
+          }
+          htmlFor="sandbox-use-bwrap"
+        >
+          <Select
+            id="sandbox-use-bwrap"
             value={useBwrap}
             options={bwrapOptions}
             disabled={isLocked('sandbox.useBwrap')}
             onChange={(e) => updateField('useBwrap', e.target.value === 'auto' ? '' : e.target.value)}
           />
-          <div style={lockedNote}>
-            {isLocked('sandbox.useBwrap')
-              ? lockedHint
-              : isLinux
-                ? t('settings.sandbox.useBwrapHint')
-                : t('settings.sandbox.useBwrapNotLinux')}
-          </div>
+        </SettingsRow>
+      </SettingsSection>
+
+      <SettingsSection title={t('settings.sandbox.writableRoots')} description={t('settings.sandbox.writableRootsHint')}>
+        <div className="p-4">
+          {isLocked('sandbox.writableRoots') ? (
+            <>
+              <PathList items={config.writableRoots ?? []} empty={t('settings.sandbox.none')} />
+              <div className="mt-1 text-xs text-muted">{lockedHint}</div>
+            </>
+          ) : (
+            <TagListEditor
+              items={config.writableRoots ?? []}
+              onChange={(items) => updateField('writableRoots', items)}
+              placeholder={t('settings.sandbox.addPath')}
+            />
+          )}
         </div>
-      </div>
+      </SettingsSection>
 
-      <div style={dividerStyle} />
+      <SettingsSection title={t('settings.sandbox.denyPaths')} description={t('settings.sandbox.denyPathsHint')}>
+        <div className="p-4">
+          {isLocked('sandbox.denyPaths') ? (
+            <>
+              <PathList items={config.denyPaths ?? []} empty={t('settings.sandbox.none')} />
+              <div className="mt-1 text-xs text-muted">{lockedHint}</div>
+            </>
+          ) : (
+            <TagListEditor
+              items={config.denyPaths ?? []}
+              onChange={(items) => updateField('denyPaths', items)}
+              placeholder={t('settings.sandbox.addPath')}
+            />
+          )}
+        </div>
+      </SettingsSection>
 
-      <div style={{ marginBottom: '1.5rem' }}>
-        <p style={subsectionTitle}>{t('settings.sandbox.writableRoots')}</p>
-        <p style={helpText}>{t('settings.sandbox.writableRootsHint')}</p>
-        {isLocked('sandbox.writableRoots') ? (
-          <>
-            <PathList items={config.writableRoots ?? []} empty={t('settings.sandbox.none')} />
-            <div style={lockedNote}>{lockedHint}</div>
-          </>
-        ) : (
-          <TagListEditor
-            label={t('settings.sandbox.writableRoots')}
-            items={config.writableRoots ?? []}
-            onChange={(items) => updateField('writableRoots', items)}
-            placeholder={t('settings.sandbox.addPath')}
-          />
-        )}
-      </div>
-
-      <div style={{ marginBottom: '1.5rem' }}>
-        <p style={subsectionTitle}>{t('settings.sandbox.denyPaths')}</p>
-        <p style={helpText}>{t('settings.sandbox.denyPathsHint')}</p>
-        {isLocked('sandbox.denyPaths') ? (
-          <>
-            <PathList items={config.denyPaths ?? []} empty={t('settings.sandbox.none')} />
-            <div style={lockedNote}>{lockedHint}</div>
-          </>
-        ) : (
-          <TagListEditor
-            label={t('settings.sandbox.denyPaths')}
-            items={config.denyPaths ?? []}
-            onChange={(items) => updateField('denyPaths', items)}
-            placeholder={t('settings.sandbox.addPath')}
-          />
-        )}
-      </div>
-
-      <div style={{ marginBottom: '1.5rem' }}>
-        <p style={subsectionTitle}>{t('settings.sandbox.extendTo')}</p>
-        <p style={helpText}>{t('settings.sandbox.extendToHint')}</p>
-        <div style={fieldsWrap}>
-          <Toggle
-            label={t('settings.sandbox.extendMcp')}
+      <SettingsSection title={t('settings.sandbox.extendTo')} description={t('settings.sandbox.extendToHint')}>
+        <SettingsRow label={t('settings.sandbox.extendMcp')} description={isLocked('sandbox.extendTo') ? lockedHint : undefined} htmlFor="sandbox-extend-mcp">
+          <Switch
+            id="sandbox-extend-mcp"
             checked={extendTo.includes('mcp')}
-            onChange={(v) => setExtend('mcp', v)}
+            onCheckedChange={(v) => setExtend('mcp', v)}
             disabled={isLocked('sandbox.extendTo')}
-            hint={isLocked('sandbox.extendTo') ? lockedHint : undefined}
           />
-          <Toggle
-            label={t('settings.sandbox.extendSubagents')}
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.sandbox.extendSubagents')}
+          description={isLocked('sandbox.extendTo') ? lockedHint : undefined}
+          htmlFor="sandbox-extend-subagents"
+        >
+          <Switch
+            id="sandbox-extend-subagents"
             checked={extendTo.includes('subagents')}
-            onChange={(v) => setExtend('subagents', v)}
+            onCheckedChange={(v) => setExtend('subagents', v)}
             disabled={isLocked('sandbox.extendTo')}
-            hint={isLocked('sandbox.extendTo') ? lockedHint : undefined}
           />
-        </div>
-      </div>
+        </SettingsRow>
+      </SettingsSection>
 
-      <div style={dividerStyle} />
-
-      {/* Resolved policy, read-only */}
       {info?.policy && status?.enabled && (
-        <div style={{ marginBottom: '1.5rem' }}>
-          <p style={subsectionTitle}>{t('settings.sandbox.effectiveWritable')}</p>
-          <PathList items={info.policy.writableRoots} empty={t('settings.sandbox.none')} />
-          <p style={{ ...subsectionTitle, marginTop: '1rem' }}>{t('settings.sandbox.protectedPaths')}</p>
-          <p style={helpText}>{t('settings.sandbox.protectedPathsHint')}</p>
-          <PathList items={info.policy.protectedPaths} empty={t('settings.sandbox.none')} />
-        </div>
+        <SettingsSection title={t('settings.sandbox.effectiveWritable')}>
+          <div className="p-4 flex flex-col gap-4">
+            <PathList items={info.policy.writableRoots} empty={t('settings.sandbox.none')} />
+            <div>
+              <p className="text-sm font-semibold text-fg mb-1">{t('settings.sandbox.protectedPaths')}</p>
+              <p className="text-xs text-muted mb-2">{t('settings.sandbox.protectedPathsHint')}</p>
+              <PathList items={info.policy.protectedPaths} empty={t('settings.sandbox.none')} />
+            </div>
+          </div>
+        </SettingsSection>
       )}
 
-      {error && (
-        <div
-          style={{
-            marginBottom: '1rem',
-            padding: '0.625rem 0.875rem',
-            background: 'var(--error)',
-            color: 'var(--primary-fg)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 13,
-          }}
-        >
-          {error}
-        </div>
-      )}
+      {error && <div className="settings-banner settings-banner--danger" role="alert">{error}</div>}
 
-      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-        <button
-          onClick={saveSandbox}
-          disabled={!dirty || saving}
-          style={{
-            padding: '0.5rem 1.5rem',
-            background: !dirty || saving ? 'var(--border)' : 'var(--primary)',
-            color: !dirty || saving ? 'var(--fg-muted)' : 'var(--primary-fg)',
-            border: 'none',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: !dirty || saving ? 'not-allowed' : 'pointer',
-            transition: 'background 0.15s',
-            fontFamily: 'inherit',
-          }}
-        >
+      <div className="settings-actions">
+        <Button variant="primary" onClick={saveSandbox} disabled={!dirty || saving} loading={saving}>
           {saving ? t('settings.sandbox.saving') : t('settings.sandbox.save')}
-        </button>
-        <button
-          onClick={resetSandbox}
-          disabled={!dirty}
-          style={{
-            padding: '0.5rem 1.5rem',
-            background: 'transparent',
-            color: !dirty ? 'var(--fg-dim)' : 'var(--fg-muted)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: !dirty ? 'not-allowed' : 'pointer',
-            transition: 'color 0.15s',
-            fontFamily: 'inherit',
-          }}
-        >
+        </Button>
+        <Button variant="secondary" onClick={resetSandbox} disabled={!dirty}>
           {t('settings.sandbox.reset')}
-        </button>
+        </Button>
       </div>
     </div>
   )

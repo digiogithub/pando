@@ -1,0 +1,19 @@
+/* ============================================================
+   Auth — login dialog
+   Class prefix: .auth-*
+   ============================================================ */
+
+.auth-shell {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.auth-card { width: 360px; max-width: 90vw; }
+.auth-form { display: flex; flex-direction: column; gap: 1rem; }
+.auth-title { font-size: var(--text-lg); font-weight: 600; color: var(--fg); margin-bottom: 0.4rem; }
+.auth-description { font-size: var(--text-sm); color: var(--fg-muted); line-height: 1.5; }
+.auth-error { padding: 0.5rem 0.75rem; background: var(--danger-soft); color: var(--danger); border-radius: var(--radius-sm); font-size: var(--text-sm); }

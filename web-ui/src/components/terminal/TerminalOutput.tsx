@@ -3,6 +3,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import type { TerminalEntry } from '@pando/client/stores/terminalStore'
+import { getXtermTheme, watchXtermTheme } from './xtermTheme'
 
 interface TerminalOutputProps {
   entries: TerminalEntry[]
@@ -22,15 +23,10 @@ export default function TerminalOutput({ entries, shell, cwd }: TerminalOutputPr
       convertEol: true,
       cursorBlink: true,
       disableStdin: true,
-      fontFamily: 'Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+      fontFamily: "'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, monospace",
       fontSize: 13,
       lineHeight: 1.35,
-      theme: {
-        background: '#0d1117',
-        foreground: '#e6edf3',
-        cursor: '#58a6ff',
-        selectionBackground: '#264f78',
-      },
+      theme: getXtermTheme(),
     })
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
@@ -40,10 +36,15 @@ export default function TerminalOutput({ entries, shell, cwd }: TerminalOutputPr
     const resizeObserver = new ResizeObserver(() => fitAddon.fit())
     resizeObserver.observe(containerRef.current)
 
+    const unwatchTheme = watchXtermTheme((theme) => {
+      terminal.options.theme = theme
+    })
+
     terminalRef.current = terminal
     fitAddonRef.current = fitAddon
 
     return () => {
+      unwatchTheme()
       resizeObserver.disconnect()
       terminal.dispose()
       terminalRef.current = null
@@ -81,10 +82,8 @@ export default function TerminalOutput({ entries, shell, cwd }: TerminalOutputPr
   }, [entries, shell, cwd])
 
   return (
-    <div
-      style={{ flex: 1, minHeight: 0, overflow: 'hidden', padding: '0.5rem 0.75rem', display: 'flex' }}
-    >
-      <div ref={containerRef} style={{ flex: 1, minHeight: 0, overflow: 'hidden' }} />
+    <div className="terminal-pane">
+      <div ref={containerRef} className="terminal-xterm-host" />
     </div>
   )
 }

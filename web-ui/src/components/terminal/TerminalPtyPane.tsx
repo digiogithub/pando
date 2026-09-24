@@ -9,17 +9,11 @@ import {
   type PtyConnection,
 } from '@pando/client/services/terminalPty'
 import { useTerminalStore, type TerminalTab } from '@pando/client/stores/terminalStore'
+import { getXtermTheme, watchXtermTheme } from './xtermTheme'
 
 interface TerminalPtyPaneProps {
   tab: TerminalTab
   active: boolean
-}
-
-const XTERM_THEME = {
-  background: '#0d1117',
-  foreground: '#e6edf3',
-  cursor: '#58a6ff',
-  selectionBackground: '#264f78',
 }
 
 /**
@@ -51,11 +45,11 @@ export default function TerminalPtyPane({ tab, active }: TerminalPtyPaneProps) {
 
     const terminal = new Terminal({
       cursorBlink: true,
-      fontFamily: 'Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+      fontFamily: "'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, monospace",
       fontSize: 13,
-      lineHeight: 1.2,
+      lineHeight: 1.3,
       scrollback: 10000,
-      theme: XTERM_THEME,
+      theme: getXtermTheme(),
     })
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
@@ -114,7 +108,13 @@ export default function TerminalPtyPane({ tab, active }: TerminalPtyPaneProps) {
     })
     resizeObserver.observe(container)
 
+    // Live-update colours when the app theme (family / mode / accent) changes.
+    const unwatchTheme = watchXtermTheme((theme) => {
+      terminal.options.theme = theme
+    })
+
     return () => {
+      unwatchTheme()
       resizeObserver.disconnect()
       dataSub.dispose()
       resizeSub.dispose()
@@ -149,16 +149,8 @@ export default function TerminalPtyPane({ tab, active }: TerminalPtyPaneProps) {
   }, [active])
 
   return (
-    <div
-      style={{
-        flex: 1,
-        minHeight: 0,
-        overflow: 'hidden',
-        padding: '0.5rem 0.75rem',
-        display: active ? 'flex' : 'none',
-      }}
-    >
-      <div ref={containerRef} style={{ flex: 1, minHeight: 0, overflow: 'hidden' }} />
+    <div className="terminal-pane" style={{ display: active ? 'flex' : 'none' }}>
+      <div ref={containerRef} className="terminal-xterm-host" />
     </div>
   )
 }

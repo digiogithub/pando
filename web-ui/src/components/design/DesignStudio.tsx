@@ -1,18 +1,16 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import {
-  faArrowLeft, faRotate, faArrowUpRightFromSquare, faComments,
-  faCrosshairs, faClockRotateLeft, faSpinner, faBorderAll,
-} from '@fortawesome/free-solid-svg-icons'
 import { useDesignStore, type DesignArtifact } from '@pando/client/stores/designStore'
 import ChatView from '@/components/chat/ChatView'
+import { Button, IconButton, SegmentedControl, Tabs } from '@/components/ui'
+import { ArrowLeft, Crosshair, ExternalLink, History, LayoutGrid, MessageSquare, RotateCw } from '@/components/ui/icons'
 import PreviewFrame from './PreviewFrame'
 import InspectorPanel from './InspectorPanel'
 import VersionTimeline from './VersionTimeline'
 import SlideStrip from './SlideStrip'
 import { openExternal } from '../../services/desktopRuntime'
 import ExportMenu from './ExportMenu'
+import '@/styles/design.css'
 
 const MOBILE_QUERY = '(max-width: 1024px)'
 
@@ -72,100 +70,53 @@ export default function DesignStudio({ artifact, onBack }: DesignStudioProps) {
   const emptyMessage = previewEmptyMessage(t, status, artifact)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div className="design-view-shell">
       {/* Toolbar */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-          padding: '0.4rem 0.6rem',
-          borderBottom: '1px solid var(--border)',
-          flexShrink: 0,
-          flexWrap: 'wrap',
-        }}
-      >
-        <button
-          onClick={onBack}
-          title={t('design.backToGallery')}
-          style={toolbarButton}
-        >
-          <FontAwesomeIcon icon={faArrowLeft} style={{ fontSize: 10 }} />
-        </button>
-        <span style={{ fontSize: 13, fontWeight: 600 }}>{artifact.title}</span>
-        <span style={{ fontSize: 10.5, color: 'var(--fg-muted)' }}>
+      <div className="design-studio-toolbar">
+        <IconButton aria-label={t('design.backToGallery')} tooltip icon={<ArrowLeft size={14} />} onClick={onBack} />
+        <span className="design-studio-title">{artifact.title}</span>
+        <span className="design-studio-meta">
           {t(`design.kind.${artifact.kind}`)} · v{artifact.current_version}
         </span>
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <button
-            onClick={() => void render(artifact.id)}
-            disabled={rendering}
-            title={t('design.renderHint')}
-            style={{ ...toolbarButton, cursor: rendering ? 'wait' : 'pointer' }}
-          >
-            <FontAwesomeIcon icon={rendering ? faSpinner : faRotate} spin={rendering} style={{ fontSize: 10 }} />
+        <div className="design-studio-actions">
+          <Button size="sm" variant="secondary" icon={<RotateCw size={12} />} loading={rendering} onClick={() => void render(artifact.id)} title={t('design.renderHint')}>
             {t('design.render')}
-          </button>
-          <button
-            onClick={() => void openCanvas()}
-            title={t('design.openCanvas')}
-            style={toolbarButton}
-          >
-            <FontAwesomeIcon icon={faBorderAll} style={{ fontSize: 10 }} />
+          </Button>
+          <Button size="sm" variant="secondary" icon={<LayoutGrid size={12} />} onClick={() => void openCanvas()} title={t('design.openCanvas')}>
             {t('design.canvasWindow')}
-          </button>
+          </Button>
           {artifact.url && (
-            <button
-              onClick={() => void openExternal(artifact.url!)}
-              title={t('design.openExternal')}
-              style={toolbarButton}
-            >
-              <FontAwesomeIcon icon={faArrowUpRightFromSquare} style={{ fontSize: 10 }} />
-            </button>
+            <IconButton aria-label={t('design.openExternal')} tooltip icon={<ExternalLink size={13} />} onClick={() => void openExternal(artifact.url!)} />
           )}
           <ExportMenu artifactId={artifact.id} slide={slide} />
         </div>
 
         {isMobile && (
-          <div style={{ display: 'flex', gap: '0.3rem', width: '100%', marginTop: '0.35rem' }}>
-            <PaneTab active={pane === 'chat'} onClick={() => setPane('chat')} icon={faComments} label={t('design.pane.chat')} />
-            <PaneTab active={pane === 'canvas'} onClick={() => setPane('canvas')} icon={faRotate} label={t('design.pane.canvas')} />
-            <PaneTab active={pane === 'side'} onClick={() => setPane('side')} icon={faCrosshairs} label={t('design.pane.inspector')} />
+          <div className="design-pane-tabs">
+            <SegmentedControl
+              size="sm"
+              aria-label={t('design.title')}
+              value={pane}
+              onChange={setPane}
+              items={[
+                { value: 'chat', label: t('design.pane.chat'), icon: <MessageSquare size={11} /> },
+                { value: 'canvas', label: t('design.pane.canvas'), icon: <RotateCw size={11} /> },
+                { value: 'side', label: t('design.pane.inspector'), icon: <Crosshair size={11} /> },
+              ]}
+            />
           </div>
         )}
       </div>
 
       <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
         {showChat && (
-          <div
-            style={{
-              width: isMobile ? '100%' : 380,
-              flexShrink: 0,
-              borderRight: isMobile ? 'none' : '1px solid var(--border)',
-              display: 'flex',
-              flexDirection: 'column',
-              minWidth: 0,
-              overflow: 'hidden',
-            }}
-          >
+          <div className="design-chat-col" style={{ width: isMobile ? '100%' : 380, borderRight: isMobile ? 'none' : undefined }}>
             {selection && (
-              <div
-                style={{
-                  padding: '0.35rem 0.6rem',
-                  borderBottom: '1px solid var(--border)',
-                  fontSize: 10.5,
-                  color: 'var(--fg-muted)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.35rem',
-                }}
-              >
-                <FontAwesomeIcon icon={faCrosshairs} style={{ fontSize: 9, color: 'var(--primary)' }} />
-                <code style={{ color: 'var(--primary)' }}>{selection.selection}</code>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {selection.text}
-                </span>
+              <div className="design-selection-banner">
+                <Crosshair size={10} />
+                <code>{selection.selection}</code>
+                <span className="design-selection-banner-text">{selection.text}</span>
               </div>
             )}
             <div style={{ flex: 1, minHeight: 0 }}>
@@ -175,7 +126,7 @@ export default function DesignStudio({ artifact, onBack }: DesignStudioProps) {
         )}
 
         {showCanvas && (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: 'var(--bg)' }}>
+          <div className="design-canvas-col">
             <PreviewFrame
               url={previewURL}
               nonce={reloadNonce}
@@ -188,19 +139,17 @@ export default function DesignStudio({ artifact, onBack }: DesignStudioProps) {
         )}
 
         {showSide && (
-          <div
-            style={{
-              width: isMobile ? '100%' : 300,
-              flexShrink: 0,
-              borderLeft: isMobile ? 'none' : '1px solid var(--border)',
-              display: 'flex',
-              flexDirection: 'column',
-              minWidth: 0,
-            }}
-          >
-            <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-              <SideTab active={sidePanel === 'inspector'} onClick={() => setSidePanel('inspector')} icon={faCrosshairs} label={t('design.inspector.title')} />
-              <SideTab active={sidePanel === 'versions'} onClick={() => setSidePanel('versions')} icon={faClockRotateLeft} label={t('design.versions.title')} />
+          <div className="design-side-col" style={{ width: isMobile ? '100%' : 300, borderLeft: isMobile ? 'none' : undefined }}>
+            <div className="design-side-tabs">
+              <Tabs
+                aria-label={t('design.inspector.title')}
+                value={sidePanel}
+                onChange={setSidePanel}
+                items={[
+                  { value: 'inspector', label: t('design.inspector.title'), icon: <Crosshair size={13} /> },
+                  { value: 'versions', label: t('design.versions.title'), icon: <History size={13} /> },
+                ]}
+              />
             </div>
             <div style={{ flex: 1, minHeight: 0 }}>
               {sidePanel === 'inspector' ? (
@@ -225,68 +174,4 @@ function previewEmptyMessage(
   if (status && !status.preview && status.preview_reason) return status.preview_reason
   if (artifact.file_url && !artifact.bridge_url) return t('design.canvas.noPreviewServer')
   return t('design.canvas.notRenderedYet')
-}
-
-const toolbarButton: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '0.35rem',
-  padding: '0.25rem 0.5rem',
-  fontSize: 11,
-  background: 'var(--surface)',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-sm)',
-  color: 'var(--fg-muted)',
-  cursor: 'pointer',
-  textDecoration: 'none',
-}
-
-function PaneTab({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: typeof faComments; label: string }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        flex: 1,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '0.3rem',
-        padding: '0.3rem',
-        fontSize: 11,
-        background: active ? 'var(--primary)' : 'var(--surface)',
-        color: active ? 'white' : 'var(--fg-muted)',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius-sm)',
-        cursor: 'pointer',
-      }}
-    >
-      <FontAwesomeIcon icon={icon} style={{ fontSize: 10 }} />
-      {label}
-    </button>
-  )
-}
-
-function SideTab({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: typeof faComments; label: string }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        flex: 1,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '0.3rem',
-        padding: '0.4rem',
-        fontSize: 11,
-        background: active ? 'var(--surface)' : 'transparent',
-        color: active ? 'var(--fg)' : 'var(--fg-muted)',
-        border: 'none',
-        borderBottom: active ? '2px solid var(--primary)' : '2px solid transparent',
-        cursor: 'pointer',
-      }}
-    >
-      <FontAwesomeIcon icon={icon} style={{ fontSize: 10 }} />
-      {label}
-    </button>
-  )
 }

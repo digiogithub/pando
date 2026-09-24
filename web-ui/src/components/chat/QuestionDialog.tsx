@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useSessionStore } from '@pando/client/stores/sessionStore'
 import type { QuestionAnswer } from '@pando/client/types'
+import { Button, Dialog, Input } from '@/components/ui'
+import { Check } from '@/components/ui/icons'
 
 /**
  * QuestionDialog surfaces AskUserQuestion prompts emitted by the agent. It mirrors
@@ -11,6 +14,7 @@ import type { QuestionAnswer } from '@pando/client/types'
  * Only the first pending request is shown at a time.
  */
 export default function QuestionDialog() {
+  const { t } = useTranslation()
   const pending = useSessionStore((s) => s.pendingQuestions)
   const respond = useSessionStore((s) => s.respondQuestion)
   const cancel = useSessionStore((s) => s.cancelQuestion)
@@ -76,164 +80,85 @@ export default function QuestionDialog() {
     void respond(req.id, req.session_id, answers)
   }
 
+  const title = summary ? t('chat.question.reviewTitle') : q.question
+  const eyebrow = summary
+    ? undefined
+    : `${questions.length > 1 ? t('chat.question.counter', { current: qIndex + 1, total: questions.length }) : t('chat.question.single')}${q.header ? ` · ${q.header}` : ''}`
+
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.6)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1100,
-      }}
-    >
-      <div
-        style={{
-          background: 'var(--card-bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-lg)',
-          padding: '1.5rem',
-          width: 520,
-          maxWidth: '92vw',
-          maxHeight: '85vh',
-          overflowY: 'auto',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-        }}
-      >
-        {summary ? (
-          <>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)', marginBottom: '0.75rem' }}>
-              Revisa tus respuestas
-            </h3>
-            <div style={{ marginBottom: '1rem' }}>
-              {questions.map((item, i) => {
-                const labels = [...(selected[i] ?? [])]
-                if (otherText[i]) labels.push(`Otro: ${otherText[i]}`)
-                return (
-                  <div key={item.id} style={{ marginBottom: '0.75rem' }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg)' }}>{item.question}</div>
-                    <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>
-                      → {labels.length > 0 ? labels.join(', ') : '(sin selección)'}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </>
-        ) : (
-          <>
-            <div style={{ fontSize: 11, color: 'var(--fg-muted)', marginBottom: '0.25rem' }}>
-              {questions.length > 1 ? `Pregunta ${qIndex + 1}/${questions.length}` : 'Pregunta'}
-              {q.header ? ` · ${q.header}` : ''}
-            </div>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)', marginBottom: '0.75rem' }}>
-              {q.question}
-            </h3>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '0.75rem' }}>
-              {q.options.map((opt) => {
-                const isOn = (selected[qIndex] ?? []).includes(opt.label)
-                return (
-                  <button
-                    key={opt.label}
-                    onClick={() => toggleOption(opt.label)}
-                    style={{
-                      textAlign: 'left',
-                      padding: '0.6rem 0.75rem',
-                      borderRadius: 'var(--radius-sm)',
-                      border: `1px solid ${isOn ? 'var(--primary)' : 'var(--border)'}`,
-                      background: isOn ? 'color-mix(in srgb, var(--primary) 15%, transparent)' : 'transparent',
-                      color: 'var(--fg)',
-                      fontSize: 13,
-                      cursor: 'pointer',
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    <span style={{ marginRight: 8 }}>
-                      {q.multi_select ? (isOn ? '☑' : '☐') : isOn ? '◉' : '○'}
-                    </span>
-                    <strong>{opt.label}</strong>
-                    {opt.description ? (
-                      <span style={{ color: 'var(--fg-muted)' }}> — {opt.description}</span>
-                    ) : null}
-                  </button>
-                )
-              })}
-
-              <input
-                type="text"
-                value={otherText[qIndex] ?? ''}
-                placeholder="Otra respuesta (texto libre)..."
-                onChange={(e) => setOtherText((prev) => ({ ...prev, [qIndex]: e.target.value }))}
-                style={{
-                  padding: '0.6rem 0.75rem',
-                  borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--border)',
-                  background: 'transparent',
-                  color: 'var(--fg)',
-                  fontSize: 13,
-                  fontFamily: 'inherit',
-                }}
-              />
-            </div>
-          </>
-        )}
-
-        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-          <button
-            onClick={() => void cancel(req.id, req.session_id)}
-            style={{
-              padding: '0.5rem 1rem',
-              borderRadius: 'var(--radius-sm)',
-              border: '1px solid var(--border)',
-              background: 'transparent',
-              color: 'var(--fg)',
-              fontSize: 13,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
-          >
-            Cancelar
-          </button>
-
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            {(qIndex > 0 || summary) && (
-              <button
-                onClick={prev}
-                style={{
-                  padding: '0.5rem 1rem',
-                  borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--border)',
-                  background: 'transparent',
-                  color: 'var(--fg)',
-                  fontSize: 13,
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                }}
-              >
-                Atrás
-              </button>
-            )}
-            <button
-              onClick={summary ? confirm : next}
-              style={{
-                padding: '0.5rem 1rem',
-                borderRadius: 'var(--radius-sm)',
-                border: 'none',
-                background: 'var(--primary)',
-                color: 'white',
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              {summary ? 'Confirmar' : qIndex < questions.length - 1 ? 'Siguiente' : 'Revisar'}
-            </button>
+    <Dialog
+      open
+      // The agent is blocked on the answer: cancelling is an explicit action.
+      onClose={() => {}}
+      dismissible={false}
+      hideClose
+      size="md"
+      title={
+        <>
+          {eyebrow && <span className="chat-q-eyebrow">{eyebrow}</span>}
+          {title}
+        </>
+      }
+      footer={
+        <div className="chat-dialog-footer-split">
+          <Button variant="ghost" onClick={() => void cancel(req.id, req.session_id)}>
+            {t('chat.question.cancel')}
+          </Button>
+          <div>
+            {(qIndex > 0 || summary) && <Button onClick={prev}>{t('chat.question.back')}</Button>}
+            <Button variant="primary" onClick={summary ? confirm : next}>
+              {summary ? t('chat.question.confirm') : qIndex < questions.length - 1 ? t('chat.question.next') : t('chat.question.review')}
+            </Button>
           </div>
         </div>
-      </div>
-    </div>
+      }
+    >
+      {summary ? (
+        <div className="chat-q-summary">
+          {questions.map((item, i) => {
+            const labels = [...(selected[i] ?? [])]
+            if (otherText[i]) labels.push(t('chat.question.otherAnswer', { text: otherText[i] }))
+            return (
+              <div key={item.id}>
+                <div className="chat-q-summary-q">{item.question}</div>
+                <div className="chat-q-summary-a">→ {labels.length > 0 ? labels.join(', ') : t('chat.question.noSelection')}</div>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="chat-q-options" role={q.multi_select ? 'group' : 'radiogroup'}>
+          {q.options.map((opt) => {
+            const isOn = (selected[qIndex] ?? []).includes(opt.label)
+            return (
+              <button
+                key={opt.label}
+                type="button"
+                role={q.multi_select ? 'checkbox' : 'radio'}
+                aria-checked={isOn}
+                className="chat-q-option"
+                onClick={() => toggleOption(opt.label)}
+              >
+                <span className={q.multi_select ? 'chat-q-mark chat-q-mark--multi' : 'chat-q-mark'}>
+                  {isOn && <Check size={11} strokeWidth={3} />}
+                </span>
+                <span>
+                  <span className="chat-q-option-label">{opt.label}</span>
+                  {opt.description ? <span className="chat-q-option-desc"> — {opt.description}</span> : null}
+                </span>
+              </button>
+            )
+          })}
+
+          <Input
+            type="text"
+            value={otherText[qIndex] ?? ''}
+            placeholder={t('chat.question.otherPlaceholder')}
+            aria-label={t('chat.question.otherPlaceholder')}
+            onChange={(e) => setOtherText((prev) => ({ ...prev, [qIndex]: e.target.value }))}
+          />
+        </div>
+      )}
+    </Dialog>
   )
 }

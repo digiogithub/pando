@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faFileExport, faSpinner } from '@fortawesome/free-solid-svg-icons'
 import { useDesignStore, type ExportFormat } from '@pando/client/stores/designStore'
 import { getBaseURL } from '@pando/client/services/api'
 import api from '@pando/client/services/api'
 import { saveUrlToDisk } from '../../services/desktopRuntime'
+import { Button, Menu, MenuItem } from '@/components/ui'
+import { Upload } from '@/components/ui/icons'
 
 interface ExportMenuProps {
   artifactId: string
@@ -25,6 +25,7 @@ const FORMATS: ExportFormat[] = ['html', 'png', 'pdf']
 export default function ExportMenu({ artifactId, slide }: ExportMenuProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const exporting = useDesignStore((s) => s.exporting)
   const exportArtifact = useDesignStore((s) => s.exportArtifact)
 
@@ -43,63 +44,24 @@ export default function ExportMenu({ artifactId, slide }: ExportMenuProps) {
   }
 
   return (
-    <div style={{ position: 'relative' }}>
-      <button
+    <>
+      <Button
+        ref={triggerRef}
+        size="sm"
+        variant="secondary"
+        icon={<Upload size={12} />}
+        loading={exporting}
         onClick={() => setOpen((v) => !v)}
-        disabled={exporting}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.35rem',
-          padding: '0.25rem 0.5rem',
-          fontSize: 11,
-          background: 'var(--surface)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-sm)',
-          color: 'var(--fg-muted)',
-          cursor: exporting ? 'wait' : 'pointer',
-        }}
       >
-        <FontAwesomeIcon icon={exporting ? faSpinner : faFileExport} spin={exporting} style={{ fontSize: 10 }} />
         {t('design.export.label')}
-      </button>
-
-      {open && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '100%',
-            right: 0,
-            marginTop: 4,
-            background: 'var(--surface)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-            zIndex: 20,
-            minWidth: 140,
-          }}
-        >
-          {FORMATS.map((format) => (
-            <button
-              key={format}
-              onClick={() => void run(format)}
-              style={{
-                display: 'block',
-                width: '100%',
-                textAlign: 'left',
-                padding: '0.4rem 0.6rem',
-                fontSize: 11,
-                background: 'none',
-                border: 'none',
-                color: 'var(--fg)',
-                cursor: 'pointer',
-              }}
-            >
-              {t(`design.export.${format}`)}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+      </Button>
+      <Menu open={open} onClose={() => setOpen(false)} anchorRef={triggerRef} placement="bottom-end" aria-label={t('design.export.label')}>
+        {FORMATS.map((format) => (
+          <MenuItem key={format} onSelect={() => void run(format)}>
+            {t(`design.export.${format}`)}
+          </MenuItem>
+        ))}
+      </Menu>
+    </>
   )
 }

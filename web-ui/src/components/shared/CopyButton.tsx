@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faCopy, faCheck } from '@fortawesome/free-solid-svg-icons'
+import clsx from 'clsx'
+import { Copy, Check } from '@/components/ui/icons'
 import { copyToClipboard } from '@/utils/clipboard'
 
 interface CopyButtonProps {
@@ -41,32 +41,22 @@ export default function CopyButton({
     }
   }
 
-  const fontSize = size === 'md' ? 12 : 10
+  const iconSize = size === 'md' ? 13 : 11
 
   return (
     <button
       type="button"
       onClick={handleCopy}
       title={copied ? 'Copied!' : title}
-      className={className}
-      style={{
-        background: copied ? 'color-mix(in srgb, var(--success) 15%, var(--surface))' : 'var(--surface)',
-        border: `1px solid ${copied ? 'var(--success)' : 'var(--border)'}`,
-        borderRadius: 'var(--radius-sm)',
-        padding: size === 'md' ? '0.3rem 0.6rem' : '0.2rem 0.45rem',
-        cursor: 'pointer',
-        color: copied ? 'var(--success)' : 'var(--fg-dim)',
-        fontSize,
-        lineHeight: 1,
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '0.25rem',
-        transition: 'all 0.15s ease',
-        fontFamily: 'inherit',
-        ...style,
-      }}
+      className={clsx(
+        'inline-flex items-center gap-1 rounded-sm border font-sans transition-colors',
+        size === 'md' ? 'px-2.5 py-1 text-xs' : 'px-1.5 py-0.5 text-[11px]',
+        copied ? 'border-success bg-success-soft text-success' : 'border-border bg-card text-faint hover:text-fg hover:bg-raised',
+        className,
+      )}
+      style={style}
     >
-      <FontAwesomeIcon icon={copied ? faCheck : faCopy} style={{ fontSize: fontSize - 1 }} />
+      {copied ? <Check size={iconSize} /> : <Copy size={iconSize} />}
       {copied ? 'copied' : label}
     </button>
   )

@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPalette, faTriangleExclamation, faBorderAll } from '@fortawesome/free-solid-svg-icons'
 import { useDesignStore } from '@pando/client/stores/designStore'
 import { openExternal } from '../../services/desktopRuntime'
+import { Button, SegmentedControl } from '@/components/ui'
+import { LayoutGrid, Palette, TriangleAlert } from '@/components/ui/icons'
 import ArtifactGallery from './ArtifactGallery'
 import TemplateGallery from './TemplateGallery'
 import DesignStudio from './DesignStudio'
+import '@/styles/design.css'
 
 /**
  * DesignView is the Design section: the gallery at /design, one artifact's
@@ -72,70 +73,31 @@ export default function DesignView() {
   }
 
   if (id && !artifact && !loading && activeId !== id) {
-    return (
-      <div style={{ padding: '2rem', color: 'var(--fg-muted)', fontSize: 13 }}>
-        {t('design.notFound')}
-      </div>
-    )
+    return <div style={{ padding: '2rem', color: 'var(--fg-muted)', fontSize: 13 }}>{t('design.notFound')}</div>
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-          padding: '0.6rem 1rem',
-          borderBottom: '1px solid var(--border)',
-          flexShrink: 0,
-        }}
-      >
-        <FontAwesomeIcon icon={faPalette} style={{ fontSize: 12, color: 'var(--primary)' }} />
-        <span style={{ fontSize: 14, fontWeight: 600 }}>{t('design.title')}</span>
+    <div className="design-view-shell">
+      <div className="design-toolbar">
+        <Palette size={14} />
+        <span className="design-toolbar-title">{t('design.title')}</span>
         {status && !status.renderer && (
-          <span style={{ fontSize: 10.5, color: 'var(--warning, var(--fg-muted))', marginLeft: '0.5rem' }}>
-            <FontAwesomeIcon icon={faTriangleExclamation} style={{ fontSize: 10, marginRight: 4 }} />
+          <span className="design-toolbar-warning">
+            <TriangleAlert size={11} />
             {t('design.noRenderer')}
           </span>
         )}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.25rem' }}>
-          <button
-            type="button"
-            onClick={() => void openCanvas()}
-            title={t('design.openCanvas')}
-            style={{
-              padding: '0.25rem 0.6rem',
-              fontSize: 12,
-              cursor: 'pointer',
-              borderRadius: 4,
-              border: '1px solid var(--border)',
-              background: 'transparent',
-              color: 'var(--fg-muted)',
-              marginRight: '0.35rem',
-            }}
-          >
-            <FontAwesomeIcon icon={faBorderAll} style={{ fontSize: 10, marginRight: 5 }} />
+        <div className="design-toolbar-actions">
+          <Button size="sm" variant="secondary" icon={<LayoutGrid size={12} />} onClick={() => void openCanvas()} title={t('design.openCanvas')}>
             {t('design.canvasWindow')}
-          </button>
-          {(['artifacts', 'templates'] as const).map((name) => (
-            <button
-              key={name}
-              type="button"
-              onClick={() => setTab(name)}
-              style={{
-                padding: '0.25rem 0.6rem',
-                fontSize: 12,
-                cursor: 'pointer',
-                borderRadius: 4,
-                border: '1px solid var(--border)',
-                background: tab === name ? 'var(--surface)' : 'transparent',
-                color: tab === name ? 'var(--fg)' : 'var(--fg-muted)',
-              }}
-            >
-              {t(`design.tab.${name}`)}
-            </button>
-          ))}
+          </Button>
+          <SegmentedControl
+            size="sm"
+            aria-label={t('design.title')}
+            value={tab}
+            onChange={setTab}
+            items={(['artifacts', 'templates'] as const).map((name) => ({ value: name, label: t(`design.tab.${name}`) }))}
+          />
         </div>
       </div>
       {tab === 'templates' ? (
@@ -150,23 +112,11 @@ export default function DesignView() {
 function DesignDisabled() {
   const { t } = useTranslation()
   return (
-    <div style={{ padding: '2rem', maxWidth: 620, color: 'var(--fg-muted)', fontSize: 13, lineHeight: 1.7 }}>
-      <FontAwesomeIcon icon={faPalette} style={{ fontSize: 22, marginBottom: '0.75rem', display: 'block' }} />
-      <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)', marginBottom: '0.5rem' }}>
-        {t('design.disabledTitle')}
-      </div>
+    <div className="design-disabled">
+      <Palette size={22} />
+      <div className="design-disabled-title">{t('design.disabledTitle')}</div>
       <p>{t('design.disabledBody')}</p>
-      <pre
-        style={{
-          marginTop: '0.75rem',
-          padding: '0.6rem 0.8rem',
-          background: 'var(--surface)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-sm)',
-          fontSize: 12,
-          overflowX: 'auto',
-        }}
-      >{`[design]\nEnabled = true`}</pre>
+      <pre>{`[design]\nEnabled = true`}</pre>
     </div>
   )
 }

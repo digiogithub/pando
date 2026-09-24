@@ -1,9 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import {
-  faCircle, faColumns, faChevronDown, faChevronRight, faPlus, faMicrochip, faTerminal,
-} from '@fortawesome/free-solid-svg-icons'
+import { useTranslation } from 'react-i18next'
 import { format } from 'date-fns'
 import { useChat } from '@pando/client/hooks/useChat'
 import { useSessionStore } from '@pando/client/stores/sessionStore'
@@ -12,15 +9,20 @@ import { useSettingsStore } from '@pando/client/stores/settingsStore'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useFileChangesStore } from '@pando/client/stores/fileChangesStore'
 import { authenticate } from '@pando/client/services/auth'
-import MessageList from './MessageList'
+import MessageList, { ChatEmptyHead, ChatSuggestions } from './MessageList'
 import ChatInput from './ChatInput'
 import FileChangesBar from './FileChangesBar'
 import ChatInfoSidebar from './ChatInfoSidebar'
 import ModelSwitcher from '@/components/overlays/ModelSwitcher'
 import QuickMenu from '@/components/overlays/QuickMenu'
 import NetworkErrorBanner from '@/components/shared/NetworkErrorBanner'
+import { Button, IconButton } from '@/components/ui'
+import {
+  ChevronRight, CircleAlert, Columns2, PanelLeft, Plus, SquareTerminal,
+} from '@/components/ui/icons'
 
 export default function SimpleChatView() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const {
     messages,
@@ -34,8 +36,7 @@ export default function SimpleChatView() {
     loadMoreSessions,
   } = useSessionStore()
   const { connected, startHealthCheck, setConnected } = useServerStore()
-  const { config: settingsConfig, fetchSettings } = useSettingsStore()
-  const defaultModel = settingsConfig.default_model
+  const { fetchSettings } = useSettingsStore()
   const {
     modelSwitcherOpen,
     quickMenuOpen,
@@ -85,21 +86,6 @@ export default function SimpleChatView() {
     ? activeSession.prompt_tokens + activeSession.completion_tokens
     : 0
 
-  const formatModel = (id: string): string => {
-    if (id.startsWith('copilot.')) return 'Copilot ' + formatModel(id.slice(8))
-    if (id.startsWith('claude-')) {
-      const rest = id.slice(7)
-      const dash = rest.indexOf('-')
-      if (dash === -1) return 'Claude ' + rest.charAt(0).toUpperCase() + rest.slice(1)
-      const name = rest.slice(0, dash)
-      const version = rest.slice(dash + 1).replace(/-/g, '.')
-      return 'Claude ' + name.charAt(0).toUpperCase() + name.slice(1) + ' ' + version
-    }
-    if (id.startsWith('gpt-')) return 'GPT-' + id.slice(4)
-    if (id.startsWith('gemini-')) return 'Gemini ' + id.slice(7)
-    return id
-  }
-  const modelLabel = formatModel(defaultModel)
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -116,154 +102,78 @@ export default function SimpleChatView() {
     return () => window.removeEventListener('keydown', handler)
   }, [setModelSwitcherOpen, setQuickMenuOpen])
 
-  return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100vh',
-        background: 'var(--bg)',
-        color: 'var(--fg)',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.75rem',
-          padding: '0 1rem',
-          height: 48,
-          background: 'var(--sidebar-bg)',
-          borderBottom: '1px solid var(--border)',
-          flexShrink: 0,
-        }}
-      >
-        {/* Toggle sidebar */}
-        <button
-          onClick={() => setSidebarOpen((v) => !v)}
-          title="Toggle sessions panel"
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            color: 'var(--fg-muted)',
-            padding: '0.25rem',
-            display: 'flex',
-            alignItems: 'center',
-          }}
-        >
-          <FontAwesomeIcon icon={faChevronRight} style={{ fontSize: 12, transform: sidebarOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
-        </button>
+  const newSession = () => useSessionStore.setState({ activeSessionId: null, messages: [] })
+  const isEmpty = messages.length === 0 && !streaming
+  const composer = <ChatInput onSend={sendMessage} streaming={streaming} onCancel={cancelStreaming} />
 
-        {/* Logo */}
-        <span
-          aria-label="Pando"
-          style={{
-            fontSize: 20,
-            lineHeight: 1,
-            color: 'var(--primary)',
-            fontFamily: 'serif',
-            flexShrink: 0,
-            userSelect: 'none',
-          }}
-        >
-          木
+  return (
+    <div className="chat-simple">
+      {/* Header */}
+      <header className="chat-simple-header">
+        <IconButton
+          size="sm"
+          aria-label={t('chat.simple.toggleSessions')}
+          tooltip
+          active={sidebarOpen}
+          icon={<PanelLeft size={16} />}
+          onClick={() => setSidebarOpen((v) => !v)}
+        />
+        <span className="chat-simple-brand" aria-label="Pando">
+          <img src="/pando-icon.svg" alt="" />
+          Pando
         </span>
-        <span style={{ fontWeight: 800, fontSize: 18, color: 'var(--primary)', letterSpacing: '0.3em' }}>PANDO</span>
 
         {activeSession && (
           <>
-            <span style={{ color: 'var(--border)', fontSize: 16, userSelect: 'none' }}>·</span>
-            <span
-              style={{
-                fontSize: 13,
-                color: 'var(--fg-muted)',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                maxWidth: 260,
-              }}
-            >
-              {activeSession.title || `Session ${activeSession.id.slice(0, 8)}`}
+            <span className="chat-simple-sep">/</span>
+            <span className="chat-simple-title">
+              {activeSession.title || t('chat.simple.sessionFallback', { id: activeSession.id.slice(0, 8) })}
             </span>
           </>
         )}
 
-        <div style={{ flex: 1 }} />
+        <span className="chat-spacer" />
 
-        {/* Botón para ir a vista avanzada */}
-        <button
+        {/* Switch to the advanced view */}
+        <IconButton
+          size="sm"
+          aria-label={t('chat.simple.advanced')}
+          tooltip
+          icon={<Columns2 size={16} />}
           onClick={() => { setChatMode('advanced'); navigate('/') }}
-          title="Switch to advanced view"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            padding: '0.25rem 0.5rem',
-            background: 'var(--selected)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            cursor: 'pointer',
-            color: 'var(--primary)',
-          }}
-        >
-          <FontAwesomeIcon icon={faColumns} style={{ fontSize: 13 }} />
-        </button>
-      </div>
+        />
+      </header>
 
       <NetworkErrorBanner />
 
       {/* Body: sidebar + chat */}
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', position: 'relative' }}>
-
+      <div className="chat-simple-body">
         {/* Sessions sidebar */}
         {sidebarOpen && (
-          <aside
-            style={{
-              width: 220,
-              flexShrink: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              background: 'var(--sidebar-bg)',
-              borderRight: '1px solid var(--border)',
-              overflow: 'hidden',
-            }}
-          >
-            {/* Sessions header */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                padding: '0.375rem 0.75rem',
-                cursor: 'pointer',
-                userSelect: 'none',
-              }}
-              onClick={() => setSessionsOpen((v) => !v)}
-            >
-              <FontAwesomeIcon
-                icon={sessionsOpen ? faChevronDown : faChevronRight}
-                style={{ fontSize: 9, color: 'var(--fg-dim)', marginRight: '0.375rem' }}
-              />
-              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-dim)', textTransform: 'uppercase', letterSpacing: '0.05em', flex: 1 }}>
-                Sessions
-              </span>
+          <aside className="chat-simple-sessions">
+            <div className="chat-simple-sessions-head">
               <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  useSessionStore.setState({ activeSessionId: null, messages: [] })
-                }}
-                title="New session"
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--fg-muted)', padding: '0 2px' }}
+                type="button"
+                className="chat-simple-sessions-toggle"
+                aria-expanded={sessionsOpen}
+                onClick={() => setSessionsOpen((v) => !v)}
               >
-                <FontAwesomeIcon icon={faPlus} style={{ fontSize: 11 }} />
+                <ChevronRight size={14} className="chat-chevron" />
+                {t('chat.simple.sessions')}
               </button>
+              <IconButton
+                size="sm"
+                aria-label={t('nav.newSession')}
+                tooltip
+                icon={<Plus size={16} />}
+                onClick={newSession}
+              />
             </div>
 
             {/* Session list */}
             {sessionsOpen && (
               <div
-                style={{ flex: 1, overflowY: 'auto', padding: '0.25rem 0' }}
+                className="chat-simple-list"
                 onScroll={(e) => {
                   // Lazy-load the next page when the list is scrolled near its end.
                   const el = e.currentTarget
@@ -275,218 +185,83 @@ export default function SimpleChatView() {
                 {sessions.map((s) => (
                   <button
                     key={s.id}
-                    title={s.prompt_preview || s.title || 'Untitled session'}
+                    type="button"
+                    className="chat-simple-session"
+                    aria-current={s.id === activeSessionId}
+                    title={s.prompt_preview || s.title || t('chat.simple.untitled')}
                     onClick={() => setActiveSession(s.id)}
-                    style={{
-                      width: 'calc(100% - 1rem)',
-                      background: s.id === activeSessionId ? 'var(--selected)' : 'transparent',
-                      border: 'none',
-                      borderRadius: 'var(--radius-sm)',
-                      margin: '1px 0.5rem',
-                      padding: '0.375rem 0.5rem',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                    }}
                   >
-                    <FontAwesomeIcon
-                      icon={faCircle}
-                      style={{ fontSize: 6, color: s.id === activeSessionId ? 'var(--primary)' : 'var(--fg-dim)', flexShrink: 0 }}
-                    />
-                    <div style={{ flex: 1, overflow: 'hidden' }}>
-                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {s.title || 'Untitled session'}
-                      </div>
-                      <div style={{ fontSize: 10, color: 'var(--fg-muted)' }}>
-                        {s.message_count} msgs · {format(new Date(s.updated_at), 'MMM d')}
-                      </div>
-                    </div>
+                    <span className="chat-simple-session-title">{s.title || t('chat.simple.untitled')}</span>
+                    <span className="chat-simple-session-meta">
+                      {t('chat.simple.msgs', { count: s.message_count })} · {format(new Date(s.updated_at), 'MMM d')}
+                    </span>
                   </button>
                 ))}
                 {sessionsHasMore && (
-                  <button
-                    onClick={() => void loadMoreSessions()}
-                    disabled={sessionsLoadingMore}
-                    style={{
-                      width: 'calc(100% - 1rem)',
-                      margin: '0.25rem 0.5rem',
-                      padding: '0.375rem 0.5rem',
-                      borderRadius: 'var(--radius-sm)',
-                      border: '1px solid var(--border)',
-                      background: 'transparent',
-                      color: 'var(--fg-muted)',
-                      fontSize: 11,
-                      cursor: sessionsLoadingMore ? 'not-allowed' : 'pointer',
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    {sessionsLoadingMore ? 'Loading…' : `Load more (${sessions.length}/${sessionsTotal})`}
-                  </button>
+                  <Button size="sm" variant="ghost" block loading={sessionsLoadingMore} onClick={() => void loadMoreSessions()}>
+                    {sessionsLoadingMore
+                      ? t('common.loading')
+                      : t('chat.simple.loadMore', { loaded: sessions.length, total: sessionsTotal })}
+                  </Button>
                 )}
-                {sessions.length === 0 && (
-                  <div style={{ padding: '0.5rem 1rem', fontSize: 12, color: 'var(--fg-dim)' }}>
-                    No sessions yet
-                  </div>
-                )}
+                {sessions.length === 0 && <div className="chat-simple-empty">{t('chat.simple.noSessions')}</div>}
               </div>
             )}
           </aside>
         )}
 
         {/* Main chat area */}
-        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-          {/* Watermark — Pando mascot */}
-          <div className="pando-mascot-watermark">
-            <img src="/pando_mascot.svg" alt="" />
-          </div>
-          {/* Content above watermark */}
-          <div style={{ position: 'relative', zIndex: 1, flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            {/* New session FAB — visible only when sessions panel is collapsed */}
-            {!sidebarOpen && (
-              <button
-                title="New session"
-                onClick={() => useSessionStore.setState({ activeSessionId: null, messages: [] })}
-                style={{
-                  position: 'absolute',
-                  top: '0.5rem',
-                  left: '0.5rem',
-                  zIndex: 10,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.375rem',
-                  padding: '0.375rem 0.625rem',
-                  background: 'var(--surface)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer',
-                  color: 'var(--fg-muted)',
-                  fontSize: 12,
-                  lineHeight: 1,
-                  boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = 'var(--fg)'
-                  e.currentTarget.style.borderColor = 'var(--primary)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = 'var(--fg-muted)'
-                  e.currentTarget.style.borderColor = 'var(--border)'
-                }}
-              >
-                <FontAwesomeIcon icon={faPlus} style={{ fontSize: 10 }} />
-                New session
-              </button>
-            )}
-            <MessageList messages={messages} streaming={streaming} streamingState={streamingState} pendingFeedback={pendingFeedback} />
+        <div className={isEmpty ? 'chat-pane chat-pane--empty' : 'chat-pane'}>
+          {/* New session — visible only when the sessions panel is collapsed */}
+          {!sidebarOpen && (
+            <div className="chat-float chat-float--left">
+              <Button variant="ghost" size="sm" icon={<Plus size={14} />} onClick={newSession}>
+                {t('nav.newSession')}
+              </Button>
+            </div>
+          )}
 
-            {/* Error banner */}
-            {error && (
-              <div
-                style={{
-                  margin: '0 1rem 0.5rem',
-                  padding: '0.5rem 0.75rem',
-                  background: 'var(--error)',
-                  color: 'white',
-                  borderRadius: 'var(--radius-sm)',
-                  fontSize: 13,
-                }}
-              >
-                {error}
-              </div>
-            )}
-
-            {/* File changes + Input */}
-            <FileChangesBar />
-            <ChatInput onSend={sendMessage} streaming={streaming} onCancel={cancelStreaming} />
-          </div>
+          {isEmpty ? <ChatEmptyHead /> : (
+          <MessageList messages={messages} streaming={streaming} streamingState={streamingState} pendingFeedback={pendingFeedback} />
+        )}
+        <div className="chat-column">
+          {error && (
+            <div className="chat-error" role="alert">
+              <CircleAlert size={14} />
+              <span>{error}</span>
+            </div>
+          )}
+          {!isEmpty && <FileChangesBar />}
+        </div>
+        {composer}
+        {isEmpty && <ChatSuggestions />}
         </div>
 
         <ChatInfoSidebar plan={streamingState.plan} />
       </div>
 
       {/* Footer status bar */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          height: 28,
-          padding: '0 1rem',
-          background: 'var(--bg-secondary)',
-          borderTop: '1px solid var(--border)',
-          fontSize: 11,
-          color: 'var(--fg-muted)',
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <button
-            onClick={() => setQuickMenuOpen(true)}
-            title="Open command launcher"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.375rem',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              color: 'var(--fg-muted)',
-              fontSize: 11,
-              padding: '0 0.25rem',
-              borderRadius: 'var(--radius-sm)',
-              transition: 'color 0.15s',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--primary)')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--fg-muted)')}
-          >
-            <FontAwesomeIcon icon={faTerminal} style={{ fontSize: 10 }} />
-            <span>Commands</span>
-            <span style={{ opacity: 0.7 }}>Ctrl+P</span>
+      <footer className="chat-simple-footer">
+        <div>
+          <button type="button" className="chat-simple-link" onClick={() => setQuickMenuOpen(true)} title={t('chat.simple.openCommands')}>
+            <SquareTerminal size={13} />
+            <span>{t('chat.simple.commands')}</span>
+            <span className="chat-simple-hide-mobile">Ctrl+P</span>
           </button>
-          <span style={{ opacity: 0.4 }}>·</span>
-          <FontAwesomeIcon
-            icon={faCircle}
-            style={{ fontSize: 7, color: connected ? 'var(--success)' : 'var(--error)' }}
-          />
-          <span>{connected ? 'Connected' : 'Disconnected'}</span>
+          <span className="chat-meta-item">
+            <span className={connected ? 'chat-conn-dot chat-conn-dot--on' : 'chat-conn-dot'} />
+            {connected ? t('common.connected') : t('common.disconnected')}
+          </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <div>
           {activeSession && totalTokens > 0 && (
-            <>
-              <span>{activeSession.message_count} messages</span>
-              <span>·</span>
-              <span>{totalTokens.toLocaleString()} tokens</span>
-              <span style={{ opacity: 0.4 }}>·</span>
-            </>
+            <span className="chat-meta-item">
+              {activeSession.message_count} {t('common.messages')} · {totalTokens.toLocaleString()} {t('common.tokens')}
+            </span>
           )}
-          {/* Model selector */}
-          <button
-            onClick={() => setModelSwitcherOpen(true)}
-            title="Click to switch model"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.375rem',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              color: 'var(--fg-muted)',
-              fontSize: 11,
-              padding: '0 0.25rem',
-              borderRadius: 'var(--radius-sm)',
-              transition: 'color 0.15s',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--primary)')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--fg-muted)')}
-          >
-            <FontAwesomeIcon icon={faMicrochip} style={{ fontSize: 10 }} />
-            <span>{modelLabel}</span>
-          </button>
         </div>
-      </div>
+      </footer>
 
       {/* Overlays */}
       {quickMenuOpen && <QuickMenu />}

@@ -101,23 +101,7 @@ export default function PreviewFrame({ url, nonce, selectedNodeId, slide, emptyM
   }, [slide, post, nonce])
 
   if (!url) {
-    return (
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '2rem',
-          textAlign: 'center',
-          color: 'var(--fg-muted)',
-          fontSize: 13,
-          lineHeight: 1.6,
-        }}
-      >
-        {emptyMessage}
-      </div>
-    )
+    return <div className="design-canvas-empty">{emptyMessage}</div>
   }
 
   return (
@@ -129,12 +113,7 @@ export default function PreviewFrame({ url, nonce, selectedNodeId, slide, emptyM
       key={`${url}#${nonce}`}
       src={url}
       title="design preview"
-      style={{
-        flex: 1,
-        width: '100%',
-        border: 'none',
-        background: 'white',
-      }}
+      className="design-canvas-frame"
     />
   )
 }

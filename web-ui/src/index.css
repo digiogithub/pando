@@ -1,34 +1,117 @@
 @import './styles/tokens.css';
 @import 'tailwindcss';
+@import './styles/ui.css' layer(components);
+@import './styles/chat.css';
+@import './styles/views.css';
+@import './styles/shared.css';
+@import './styles/settings.css';
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+/* Map semantic tokens into Tailwind 4 utilities (bg-shell, text-muted,
+   border-border, bg-accent-soft, ...). `inline` makes each utility reference
+   the runtime CSS variable, so theme switches need no rebuild.
+   Radii (--radius-*), font sizes (--text-*) and families (--font-sans/mono)
+   share Tailwind's names and are overridden directly by tokens.css, so
+   `rounded-md`, `text-sm`, `font-mono` already use Pando values. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-shell: var(--bg-shell);
+  --color-raised: var(--bg-raised);
+  --color-card: var(--bg-card);
+  --color-input: var(--bg-input);
+  --color-overlay: var(--bg-overlay);
+  --color-hover: var(--bg-hover);
+  --color-fg: var(--fg);
+  --color-muted: var(--fg-muted);
+  --color-faint: var(--fg-faint);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-focus: var(--focus-ring);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --ease-pando: var(--ease);
+}
+
+/* Reset lives in the base layer so Tailwind spacing utilities (p-*, m-*)
+   and ui.css classes can override it. */
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Element defaults stay in the base layer: ui.css is imported as
+     layer(components), and an unlayered element rule would beat every
+     primitive (e.g. a double focus ring on inputs, a mono <Kbd>). */
+  code, kbd, pre, samp {
+    font-family: var(--font-mono);
+    font-feature-settings: normal;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  font-feature-settings: 'cv11', 'ss01';
+  font-optical-sizing: auto;
   background-color: var(--bg);
   color: var(--fg);
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-/* Scrollbar styling */
+::selection {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+
+/* ── Scrollbars — thin, rounded, quiet ─────────────────────────────────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--fg-dim);
+  background: var(--fg-faint);
+  background-clip: padding-box;
 }
-
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
 
 @keyframes spin {
   to { transform: rotate(360deg); }
@@ -39,110 +122,17 @@ body {
   50% { opacity: 0; }
 }
 
-/* ── Pando mascot watermark ──────────────────────────────────────────────── */
-.pando-mascot-watermark {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -52%);
-  width: 340px;
-  height: 340px;
-  opacity: 0.12;
-  user-select: none;
-  pointer-events: none;
-  z-index: 0;
-}
-.pando-mascot-watermark img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-[data-theme="dark"] .pando-mascot-watermark {
-  opacity: 0.06;
-}
-[data-theme="dark"] .pando-mascot-watermark img {
-  filter: drop-shadow(0 4px 24px rgba(212,175,55,.28)) brightness(1.05) saturate(1.05) contrast(1.02) invert(1) hue-rotate(170deg) sepia(.05);
-}
-
-.markdown-content { line-height: 1.6; }
-.markdown-content p { margin: 0.25rem 0; }
-.markdown-content ul, .markdown-content ol { padding-left: 1.25rem; margin: 0.25rem 0; }
-.markdown-content li { margin: 0.1rem 0; }
-.markdown-content h1, .markdown-content h2, .markdown-content h3 {
-  margin: 0.75rem 0 0.25rem; font-weight: 600; color: var(--fg);
-}
-.markdown-content table { border-collapse: collapse; width: 100%; margin: 0.5rem 0; }
-.markdown-content th, .markdown-content td {
-  border: 1px solid var(--border); padding: 0.375rem 0.625rem; text-align: left; font-size: 13px;
-}
-.markdown-content th { background: var(--surface); font-weight: 600; }
-.markdown-content blockquote {
-  border-left: 3px solid var(--primary); padding-left: 0.75rem; margin: 0.5rem 0; color: var(--fg-muted);
-}
-.markdown-content code:not(pre code) {
-  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
-  font-size: 0.85em;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 0.1em 0.35em;
-  color: var(--accent);
-}
-.markdown-content pre {
-  margin: 0.5rem 0;
-  border-radius: var(--radius-sm);
-  overflow-x: auto;
-  border: 1px solid var(--border);
-}
-.markdown-content pre code {
-  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
-  font-size: 12px;
-  display: block;
-  padding: 0.75rem 1rem;
-  background: var(--surface);
-  color: var(--fg);
-  border: none;
-  border-radius: 0;
-}
-.markdown-content a {
-  color: var(--info);
-  text-decoration: underline;
-}
-.markdown-content hr {
-  border: none;
-  border-top: 1px solid var(--border);
-  margin: 0.75rem 0;
-}
-
-/* ── Mobile message bubble layout ──────────────────────────────────────────── */
-@media (max-width: 768px) {
-  .msg-user-wrapper {
-    flex-direction: column !important;
-    align-items: flex-end !important;
-  }
-  .msg-user-avatar {
-    margin-bottom: 0.25rem;
-  }
-  .msg-user-bubble {
-    max-width: 100% !important;
-    width: 100% !important;
-  }
-  .msg-assistant-wrapper {
-    flex-direction: column !important;
-    align-items: flex-start !important;
-  }
-  .msg-assistant-avatar {
-    margin-top: 0 !important;
-    margin-bottom: 0.25rem;
-  }
-  .msg-assistant-bubble {
-    width: 100% !important;
-  }
-}
+/* Markdown prose, highlight.js theme and chat message layout: styles/chat.css */
 
 /* Pulsing dot animation for running sessions */
 @keyframes pulse-dot {
-  0%   { box-shadow: 0 0 0 0 rgba(34,197,94,0.5); }
-  70%  { box-shadow: 0 0 0 5px rgba(34,197,94,0); }
-  100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 50%, transparent); }
+  70%  { box-shadow: 0 0 0 5px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+  }
 }

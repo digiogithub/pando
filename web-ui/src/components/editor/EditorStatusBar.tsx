@@ -1,6 +1,5 @@
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faCodeBranch } from '@fortawesome/free-solid-svg-icons'
 import { useEditorStore } from '@pando/client/stores/editorStore'
+import { GitBranch } from '@/components/ui/icons'
 
 interface EditorStatusBarProps {
   gitBranch?: string
@@ -18,60 +17,39 @@ export default function EditorStatusBar({ gitBranch = 'main' }: EditorStatusBarP
   const displayLanguage = language.charAt(0).toUpperCase() + language.slice(1)
 
   return (
-    <div
-      style={{
-        height: 28,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 12px',
-        background: 'var(--sidebar-bg)',
-        borderTop: '1px solid var(--border)',
-        flexShrink: 0,
-        fontSize: 12,
-        color: 'var(--fg-muted, #a0a0b0)',
-        userSelect: 'none',
-      }}
-    >
+    <div className="editor-status-bar">
       {/* Left: git branch */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <FontAwesomeIcon icon={faCodeBranch} style={{ fontSize: 11, color: 'var(--primary)' }} />
-        <span>{gitBranch}</span>
+      <div className="editor-status-group">
+        <span className="editor-status-branch">
+          <GitBranch size={12} />
+          {gitBranch}
+        </span>
         {activeFile && (
           <>
-            <span style={{ margin: '0 4px', opacity: 0.4 }}>|</span>
-            <span
-              style={{
-                maxWidth: 200,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-              title={activeFile.path}
-            >
+            <span className="editor-status-sep">|</span>
+            <span className="editor-status-path" title={activeFile.path}>
               {activeFile.path}
             </span>
-            {activeFile.isDirty && (
-              <span style={{ color: 'var(--warning)', fontWeight: 700 }}>●</span>
-            )}
+            {activeFile.isDirty && <span className="editor-status-dirty">●</span>}
           </>
         )}
       </div>
 
       {/* Right: language | encoding | cursor */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        {activeFile && (
+      <div className="editor-status-group">
+        {activeFile ? (
           <>
             <span>{displayLanguage}</span>
-            <span style={{ opacity: 0.5 }}>|</span>
+            <span className="editor-status-sep">|</span>
             <span>UTF-8</span>
-            <span style={{ opacity: 0.5 }}>|</span>
+            <span className="editor-status-sep">|</span>
             <span>
               Ln {line}, Col {col}
             </span>
           </>
+        ) : (
+          <span className="editor-status-sep">No file open</span>
         )}
-        {!activeFile && <span style={{ opacity: 0.5 }}>No file open</span>}
       </div>
     </div>
   )

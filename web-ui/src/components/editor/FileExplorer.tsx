@@ -1,21 +1,19 @@
 import { useState, useCallback, useEffect } from 'react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import {
-  faFolder,
-  faFolderOpen,
-  faFile,
-  faCode,
-  faFileAlt,
-  faFileCode,
-  faPalette,
-  faSearch,
-  faPlus,
-  faFolderPlus,
-  faXmark,
-} from '@fortawesome/free-solid-svg-icons'
+import clsx from 'clsx'
 import type { FileNode } from '@pando/client/types'
 import { useEditorStore } from '@pando/client/stores/editorStore'
 import api from '@pando/client/services/api'
+import { IconButton, Input } from '@/components/ui'
+import {
+  Folder,
+  FolderOpen,
+  FileIcon,
+  FileCode,
+  FileText,
+  ImageIcon,
+  Plus,
+  X,
+} from '@/components/ui/icons'
 
 interface FileExplorerProps {
   files: FileNode[]
@@ -33,42 +31,18 @@ interface ContextMenuState {
   node: FileNode | null
 }
 
-function getFileIcon(name: string, isDir: boolean, isOpen: boolean) {
-  if (isDir) {
-    return {
-      icon: isOpen ? faFolderOpen : faFolder,
-      color: 'var(--warning)',
-    }
-  }
+const CODE_EXTS = new Set(['go', 'ts', 'tsx', 'js', 'jsx', 'py', 'css', 'html', 'sh', 'bash', 'rs', 'sql', 'lua', 'toml'])
+const TEXT_EXTS = new Set(['md', 'txt', 'yaml', 'yml', 'json'])
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif'])
+
+/** Icon shape only — no per-language colour coding, to keep one restrained accent. */
+function FileTreeIcon({ name, isDir, isOpen }: { name: string; isDir: boolean; isOpen: boolean }) {
+  if (isDir) return isOpen ? <FolderOpen size={15} /> : <Folder size={15} />
   const ext = name.split('.').pop()?.toLowerCase() ?? ''
-  switch (ext) {
-    case 'go':
-      return { icon: faCode, color: '#7dcfff' }
-    case 'ts':
-    case 'tsx':
-      return { icon: faCode, color: '#4fc1ff' }
-    case 'js':
-    case 'jsx':
-      return { icon: faCode, color: '#f9c74f' }
-    case 'py':
-      return { icon: faCode, color: '#a6e3a1' }
-    case 'md':
-      return { icon: faFileAlt, color: '#a0a0b0' }
-    case 'json':
-      return { icon: faFileCode, color: '#fab387' }
-    case 'yaml':
-    case 'yml':
-      return { icon: faFileCode, color: '#fab387' }
-    case 'css':
-      return { icon: faPalette, color: '#cba6f7' }
-    case 'html':
-      return { icon: faFileCode, color: '#f38ba8' }
-    case 'sh':
-    case 'bash':
-      return { icon: faCode, color: '#a6e3a1' }
-    default:
-      return { icon: faFile, color: 'var(--fg-muted, #a0a0b0)' }
-  }
+  if (IMAGE_EXTS.has(ext)) return <ImageIcon size={15} />
+  if (CODE_EXTS.has(ext)) return <FileCode size={15} />
+  if (TEXT_EXTS.has(ext)) return <FileText size={15} />
+  return <FileIcon size={15} />
 }
 
 interface TreeNodeProps {
@@ -82,7 +56,6 @@ interface TreeNodeProps {
 function TreeNode({ node, depth, filter, treeVersion, onContextMenu }: TreeNodeProps) {
   const { fileTreeExpanded, toggleTreeNode, openFile, openBinaryFile, setActiveFile } = useEditorStore()
   const isOpen = fileTreeExpanded[node.path] ?? false
-  const { icon, color } = getFileIcon(node.name, node.is_dir, isOpen)
   const [children, setChildren] = useState<FileNode[]>([])
   const [childrenLoaded, setChildrenLoaded] = useState(false)
 
@@ -131,8 +104,7 @@ function TreeNode({ node, depth, filter, treeVersion, onContextMenu }: TreeNodeP
       toggleTreeNode(node.path)
     } else {
       const ext = node.name.split('.').pop()?.toLowerCase() ?? ''
-      const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif']
-      if (imageExts.includes(ext)) {
+      if (IMAGE_EXTS.has(ext)) {
         openBinaryFile(node.path, 'image')
         setActiveFile(node.path)
         return
@@ -157,39 +129,13 @@ function TreeNode({ node, depth, filter, treeVersion, onContextMenu }: TreeNodeP
       <div
         onClick={handleClick}
         onContextMenu={(e) => onContextMenu(e, node)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          paddingLeft: depth * 16 + 8,
-          paddingRight: 8,
-          paddingTop: 4,
-          paddingBottom: 4,
-          cursor: 'pointer',
-          borderRadius: 4,
-          fontSize: 13,
-          color: 'var(--fg)',
-          userSelect: 'none',
-          transition: 'background 0.1s',
-        }}
-        onMouseEnter={(e) => {
-          ;(e.currentTarget as HTMLDivElement).style.background = 'var(--hover-bg)'
-        }}
-        onMouseLeave={(e) => {
-          ;(e.currentTarget as HTMLDivElement).style.background = 'transparent'
-        }}
+        className="editor-tree-row"
+        style={{ paddingLeft: depth * 16 + 8 }}
       >
-        <FontAwesomeIcon icon={icon} style={{ fontSize: 12, color, flexShrink: 0 }} />
-        <span
-          style={{
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            flex: 1,
-          }}
-        >
-          {node.name}
+        <span className="editor-tree-row-icon">
+          <FileTreeIcon name={node.name} isDir={node.is_dir} isOpen={isOpen} />
         </span>
+        <span className="editor-tree-row-label">{node.name}</span>
       </div>
       {node.is_dir && isOpen && (
         <div>
@@ -204,16 +150,7 @@ function TreeNode({ node, depth, filter, treeVersion, onContextMenu }: TreeNodeP
             />
           ))}
           {childrenLoaded && children.length === 0 && (
-            <div
-              style={{
-                paddingLeft: (depth + 1) * 16 + 8,
-                paddingTop: 3,
-                paddingBottom: 3,
-                fontSize: 12,
-                color: 'var(--fg-muted, #a0a0b0)',
-                fontStyle: 'italic',
-              }}
-            >
+            <div className="editor-tree-empty-child" style={{ paddingLeft: (depth + 1) * 16 + 8 }}>
               Empty folder
             </div>
           )}
@@ -301,199 +238,6 @@ export default function FileExplorer({ files, treeVersion = 0, onRefresh, onClos
     closeContextMenu()
   }, [contextMenu.node, onRefresh, closeContextMenu])
 
-  return (
-    <div
-      style={{
-        width: 250,
-        flexShrink: 0,
-        background: 'var(--sidebar-bg)',
-        borderRight: '1px solid var(--border)',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-      }}
-      onClick={contextMenu.visible ? closeContextMenu : undefined}
-    >
-      {/* Search input */}
-      <div
-        style={{
-          padding: '8px 10px',
-          borderBottom: '1px solid var(--border)',
-          flexShrink: 0,
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            background: 'var(--bg)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            padding: '4px 8px',
-          }}
-        >
-          <FontAwesomeIcon icon={faSearch} style={{ fontSize: 11, color: 'var(--fg-muted, #a0a0b0)', flexShrink: 0 }} />
-          <input
-            type="text"
-            placeholder="Filter files..."
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            style={{
-              flex: 1,
-              background: 'transparent',
-              border: 'none',
-              outline: 'none',
-              color: 'var(--fg)',
-              fontSize: 12,
-              fontFamily: 'inherit',
-            }}
-          />
-        </div>
-      </div>
-
-      {/* Tree header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '6px 10px 4px',
-          flexShrink: 0,
-        }}
-      >
-        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-muted, #a0a0b0)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          Explorer
-        </span>
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button
-            title="New File"
-            onClick={() => handleNewFileFromHeader()}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              color: 'var(--fg-muted, #a0a0b0)',
-              padding: 2,
-              borderRadius: 3,
-            }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--fg)' }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--fg-muted, #a0a0b0)' }}
-          >
-            <FontAwesomeIcon icon={faPlus} style={{ fontSize: 12 }} />
-          </button>
-          <button
-            title="New Folder"
-            onClick={() => handleNewFolderFromHeader()}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              color: 'var(--fg-muted, #a0a0b0)',
-              padding: 2,
-              borderRadius: 3,
-            }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--fg)' }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--fg-muted, #a0a0b0)' }}
-          >
-            <FontAwesomeIcon icon={faFolderPlus} style={{ fontSize: 12 }} />
-          </button>
-          {onClose && (
-            <button
-              title="Hide explorer"
-              onClick={onClose}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                color: 'var(--fg-muted, #a0a0b0)',
-                padding: 2,
-                borderRadius: 3,
-              }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--fg)' }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--fg-muted, #a0a0b0)' }}
-            >
-              <FontAwesomeIcon icon={faXmark} style={{ fontSize: 12 }} />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* File tree */}
-      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '0 4px 8px' }}>
-        {files.map((node) => (
-          <TreeNode
-            key={node.path}
-            node={node}
-            depth={0}
-            filter={filter}
-            treeVersion={treeVersion}
-            onContextMenu={handleContextMenu}
-          />
-        ))}
-        {files.length === 0 && (
-          <div
-            style={{
-              padding: '24px 12px',
-              textAlign: 'center',
-              color: 'var(--fg-muted, #a0a0b0)',
-              fontSize: 12,
-            }}
-          >
-            No files in working directory
-          </div>
-        )}
-      </div>
-
-      {/* Context menu */}
-      {contextMenu.visible && (
-        <div
-          style={{
-            position: 'fixed',
-            top: contextMenu.y,
-            left: contextMenu.x,
-            background: 'var(--card-bg)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
-            zIndex: 1000,
-            minWidth: 160,
-            overflow: 'hidden',
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {[
-            { label: 'New File', action: handleNewFile },
-            { label: 'New Folder', action: handleNewFolder },
-            { label: 'Rename', action: handleRename },
-            { label: 'Delete', action: handleDelete },
-          ].map(({ label, action }) => (
-            <button
-              key={label}
-              onClick={action}
-              style={{
-                display: 'block',
-                width: '100%',
-                padding: '8px 14px',
-                textAlign: 'left',
-                background: 'transparent',
-                border: 'none',
-                color: label === 'Delete' ? 'var(--error)' : 'var(--fg)',
-                fontSize: 13,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--hover-bg)' }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-
   async function handleNewFileFromHeader() {
     const name = window.prompt('New file name:')
     if (!name) return
@@ -515,4 +259,69 @@ export default function FileExplorer({ files, treeVersion = 0, onRefresh, onClos
       console.error('Failed to create folder:', err)
     }
   }
+
+  return (
+    <div className="editor-explorer" onClick={contextMenu.visible ? closeContextMenu : undefined}>
+      {/* Search input */}
+      <div className="editor-explorer-search">
+        <Input
+          size="sm"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter files…"
+          aria-label="Filter files"
+        />
+      </div>
+
+      {/* Tree header */}
+      <div className="editor-explorer-header">
+        <span className="editor-explorer-label">Explorer</span>
+        <div className="editor-explorer-actions">
+          <IconButton aria-label="New file" tooltip icon={<Plus size={13} />} size="sm" onClick={() => void handleNewFileFromHeader()} />
+          <IconButton aria-label="New folder" tooltip icon={<Folder size={13} />} size="sm" onClick={() => void handleNewFolderFromHeader()} />
+          {onClose && <IconButton aria-label="Hide explorer" tooltip icon={<X size={13} />} size="sm" onClick={onClose} />}
+        </div>
+      </div>
+
+      {/* File tree */}
+      <div className="editor-tree">
+        {files.map((node) => (
+          <TreeNode
+            key={node.path}
+            node={node}
+            depth={0}
+            filter={filter}
+            treeVersion={treeVersion}
+            onContextMenu={handleContextMenu}
+          />
+        ))}
+        {files.length === 0 && <div className="editor-tree-empty">No files in working directory</div>}
+      </div>
+
+      {/* Context menu */}
+      {contextMenu.visible && (
+        <div
+          className="editor-context-menu"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {[
+            { label: 'New File', action: handleNewFile, danger: false },
+            { label: 'New Folder', action: handleNewFolder, danger: false },
+            { label: 'Rename', action: handleRename, danger: false },
+            { label: 'Delete', action: handleDelete, danger: true },
+          ].map(({ label, action, danger }) => (
+            <button
+              key={label}
+              type="button"
+              onClick={action}
+              className={clsx('ui-menu-item', danger && 'ui-menu-item--danger')}
+            >
+              <span className="ui-menu-item-label">{label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }

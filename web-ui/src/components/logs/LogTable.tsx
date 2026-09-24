@@ -1,40 +1,20 @@
 import { useEffect, useRef } from 'react'
+import { Badge, type BadgeTone } from '@/components/ui'
 import { useLogsStore } from '@pando/client/stores/logsStore'
 import type { LogEntry } from '@pando/client/types'
 
-const LEVEL_COLORS: Record<string, string> = {
-  debug: 'var(--fg-dim)',
-  info: 'var(--info)',
-  warn: 'var(--warning)',
-  error: 'var(--error)',
-}
-
-const LEVEL_BG: Record<string, string> = {
-  debug: 'transparent',
-  info: 'rgba(41,128,185,0.12)',
-  warn: 'rgba(232,201,75,0.15)',
-  error: 'rgba(192,57,43,0.12)',
+const LEVEL_TONE: Record<string, BadgeTone> = {
+  debug: 'neutral',
+  info: 'info',
+  warn: 'warning',
+  error: 'danger',
 }
 
 function LevelBadge({ level }: { level: string }) {
   return (
-    <span
-      style={{
-        display: 'inline-block',
-        padding: '0.125rem 0.5rem',
-        borderRadius: 6,
-        fontSize: 11,
-        fontWeight: 700,
-        letterSpacing: '0.04em',
-        textTransform: 'uppercase',
-        color: LEVEL_COLORS[level] ?? 'var(--fg)',
-        background: LEVEL_BG[level] ?? 'transparent',
-        border: `1px solid ${LEVEL_COLORS[level] ?? 'var(--border)'}`,
-        whiteSpace: 'nowrap',
-      }}
-    >
+    <Badge tone={LEVEL_TONE[level] ?? 'neutral'} outline className="uppercase tracking-wide">
       {level}
-    </span>
+    </Badge>
   )
 }
 
@@ -75,55 +55,27 @@ export default function LogTable() {
 
   if (filtered.length === 0) {
     return (
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'var(--fg-muted)',
-          fontSize: 14,
-          padding: '2rem',
-        }}
-      >
-        No log entries found.
+      <div className="centered-fill">
+        <span className="text-sm">No log entries found.</span>
       </div>
     )
   }
 
-  const colStyle = (width?: string | number): React.CSSProperties => ({
-    padding: '0.5rem 0.75rem',
-    fontSize: 13,
-    color: 'var(--fg-muted)',
-    fontWeight: 600,
-    borderBottom: '1px solid var(--border)',
-    whiteSpace: 'nowrap',
-    width: width ?? 'auto',
-  })
-
-  const cellStyle: React.CSSProperties = {
-    padding: '0.4rem 0.75rem',
-    fontSize: 13,
-    color: 'var(--fg)',
-    borderBottom: '1px solid var(--border)',
-    verticalAlign: 'middle',
-  }
-
   return (
-    <div style={{ flex: 1, overflow: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+    <div className="flex-1 overflow-auto">
+      <table className="view-table log-table" style={{ tableLayout: 'fixed' }}>
         <colgroup>
           <col style={{ width: 90 }} />
           <col style={{ width: 80 }} />
-          <col style={{ width: 110 }} />
+          <col style={{ width: 130 }} />
           <col />
         </colgroup>
-        <thead style={{ position: 'sticky', top: 0, background: 'var(--card-bg)', zIndex: 1 }}>
+        <thead>
           <tr>
-            <th style={{ ...colStyle(90), textAlign: 'left' }}>Time</th>
-            <th style={{ ...colStyle(80), textAlign: 'left' }}>Level</th>
-            <th style={{ ...colStyle(110), textAlign: 'left' }}>Source</th>
-            <th style={{ ...colStyle(), textAlign: 'left' }}>Message</th>
+            <th>Time</th>
+            <th>Level</th>
+            <th>Source</th>
+            <th>Message</th>
           </tr>
         </thead>
         <tbody>
@@ -133,45 +85,15 @@ export default function LogTable() {
               <tr
                 key={entry.id}
                 onClick={() => setSelectedEntry(isSelected ? null : entry)}
-                style={{
-                  background: isSelected ? 'var(--selected)' : 'transparent',
-                  cursor: 'pointer',
-                  transition: 'background 0.1s',
-                }}
-                onMouseEnter={(e) => {
-                  if (!isSelected) e.currentTarget.style.background = 'var(--hover)'
-                }}
-                onMouseLeave={(e) => {
-                  if (!isSelected) e.currentTarget.style.background = 'transparent'
-                }}
+                data-clickable="true"
+                data-selected={isSelected || undefined}
               >
-                <td style={{ ...cellStyle, color: 'var(--fg-dim)', fontFamily: 'monospace', fontSize: 12 }}>
-                  {formatTime(entry.timestamp)}
-                </td>
-                <td style={cellStyle}>
+                <td className="log-row-time">{formatTime(entry.timestamp)}</td>
+                <td>
                   <LevelBadge level={entry.level} />
                 </td>
-                <td
-                  style={{
-                    ...cellStyle,
-                    color: 'var(--fg-muted)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {entry.source}
-                </td>
-                <td
-                  style={{
-                    ...cellStyle,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {entry.message}
-                </td>
+                <td className="is-ellipsis log-row-source">{entry.source}</td>
+                <td className="is-ellipsis log-row-message">{entry.message}</td>
               </tr>
             )
           })}

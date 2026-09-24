@@ -1,21 +1,12 @@
 import { useEffect, useMemo } from 'react'
-import type { CSSProperties, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import clsx from 'clsx'
+import { Badge, IconButton } from '@/components/ui'
 import {
-  faAngleDoubleLeft,
-  faAngleDoubleRight,
-  faCheck,
-  faClock,
-  faCode,
-  faFileCode,
-  faFolderOpen,
-  faGaugeHigh,
-  faListCheck,
-  faRobot,
-  faShieldHalved,
-  faSpinner,
-} from '@fortawesome/free-solid-svg-icons'
+  Bot, Code, FileCode, FolderOpen, Gauge, ListChecks, PanelRight, PanelRightClose, Shield, type LucideIcon,
+} from '@/components/ui/icons'
+import { PlanStatusIcon } from './PlanView'
 import type { PlanEntry } from '@pando/client/hooks/useChat'
 import { useSessionStore } from '@pando/client/stores/sessionStore'
 import { useFileChangesStore } from '@pando/client/stores/fileChangesStore'
@@ -25,10 +16,6 @@ import { useProjectStore } from '@pando/client/stores/projectStore'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useSandboxStore } from '@pando/client/stores/settingsStore'
 import ExtensionSlot from '@/components/extensions/ExtensionSlot'
-
-/** Width of the expanded panel, and of the floating tab left behind when collapsed. */
-const PANEL_WIDTH = 264
-const RAIL_WIDTH = 34
 
 /** Poll interval for the live subagent counts, in milliseconds. */
 const SUBAGENT_POLL_MS = 5000
@@ -107,14 +94,15 @@ export default function ChatInfoSidebar({ plan = [] }: ChatInfoSidebarProps) {
 
   if (!infoSidebarOpen) {
     return (
-      <button
-        onClick={toggleInfoSidebar}
-        title={t('chat.info.show')}
-        aria-label={t('chat.info.show')}
-        style={railTabStyle}
-      >
-        <FontAwesomeIcon icon={faAngleDoubleLeft} style={{ fontSize: 12 }} />
-      </button>
+      <div className="chat-float chat-float--right">
+        <IconButton
+          size="sm"
+          aria-label={t('chat.info.show')}
+          tooltip
+          icon={<PanelRight size={16} />}
+          onClick={toggleInfoSidebar}
+        />
+      </div>
     )
   }
 
@@ -131,217 +119,164 @@ export default function ChatInfoSidebar({ plan = [] }: ChatInfoSidebarProps) {
   return (
     <>
       {/* Mobile backdrop — the panel turns into an overlay drawer below 768px. */}
-      <div
-        className="chat-info-backdrop"
-        onClick={toggleInfoSidebar}
-        style={{ display: 'none', position: 'absolute', inset: 0, zIndex: 99, background: 'rgba(0,0,0,0.4)' }}
-      />
-      <aside className="chat-info-panel" style={{ ...panelStyle, width: PANEL_WIDTH }}>
-      {/* Header — session title + collapse control */}
-      <div style={headerStyle}>
-        <div style={{ flex: 1, overflow: 'hidden' }}>
-          <div style={eyebrowStyle}>{t('chat.info.session')}</div>
-          <div style={sessionTitleStyle} title={session?.title}>
-            {session?.title || t('chat.info.noSession')}
+      <div className="chat-info-backdrop" onClick={toggleInfoSidebar} />
+      <aside className="chat-info">
+        {/* Header — session title + collapse control */}
+        <div className="chat-info-head">
+          <div className="chat-info-titles">
+            <div className="chat-info-eyebrow">{t('chat.info.session')}</div>
+            <div className="chat-info-title" title={session?.title}>
+              {session?.title || t('chat.info.noSession')}
+            </div>
           </div>
+          <IconButton
+            size="sm"
+            aria-label={t('chat.info.hide')}
+            tooltip
+            icon={<PanelRightClose size={16} />}
+            onClick={toggleInfoSidebar}
+          />
         </div>
-        <button
-          onClick={toggleInfoSidebar}
-          title={t('chat.info.hide')}
-          aria-label={t('chat.info.hide')}
-          style={toggleButtonStyle}
-        >
-          <FontAwesomeIcon icon={faAngleDoubleRight} style={{ fontSize: 12 }} />
-        </button>
-      </div>
 
-      <div style={scrollAreaStyle}>
-        {/* Workspace — the instance's working directory, mirroring the TUI's "cwd:" line */}
-        {workspace?.cwd && (
-          <Section icon={faFolderOpen} title={t('chat.info.workingDir')}>
-            <div style={workingDirStyle} title={workspace.cwd}>
-              {workspace.cwd}
-            </div>
-          </Section>
-        )}
+        <div className="chat-info-scroll">
+          {/* Workspace — the instance's working directory, mirroring the TUI's "cwd:" line */}
+          {workspace?.cwd && (
+            <Section icon={FolderOpen} title={t('chat.info.workingDir')}>
+              <div className="chat-info-mono" title={workspace.cwd}>{workspace.cwd}</div>
+            </Section>
+          )}
 
-        {/* Sandbox — host command sandbox status, mirroring the TUI "Sandbox:" line */}
-        {sandboxStatus && (
-          <Section icon={faShieldHalved} title={t('chat.info.sandbox')}>
-            <div
-              style={{
-                ...workingDirStyle,
-                color: sandboxStatus.active
-                  ? 'var(--success)'
-                  : sandboxStatus.enabled
-                    ? 'var(--warning)'
-                    : 'var(--error)',
-              }}
-              title={sandboxStatus.label}
-            >
-              {sandboxStatus.label}
-            </div>
-            {sandboxStatus.enabled && !sandboxStatus.active && (
-              <div style={{ fontSize: 11, color: 'var(--fg-dim)', marginTop: '0.25rem' }}>
-                {t('chat.info.sandboxNotEnforced')}
+          {/* Sandbox — host command sandbox status, mirroring the TUI "Sandbox:" line */}
+          {sandboxStatus && (
+            <Section icon={Shield} title={t('chat.info.sandbox')}>
+              <div className="chat-info-mono chat-sandbox" title={sandboxStatus.label}>
+                <span
+                  className={clsx(
+                    'chat-sandbox-dot',
+                    sandboxStatus.active ? 'chat-sandbox--ok' : sandboxStatus.enabled ? 'chat-sandbox--warn' : 'chat-sandbox--off',
+                  )}
+                  aria-hidden="true"
+                />
+                <span>{sandboxStatus.label}</span>
               </div>
-            )}
-          </Section>
-        )}
+              {sandboxStatus.enabled && !sandboxStatus.active && (
+                <div className="chat-info-note">{t('chat.info.sandboxNotEnforced')}</div>
+              )}
+            </Section>
+          )}
 
-        {/* Usage */}
-        {session && (
-          <Section icon={faGaugeHigh} title={t('chat.info.usage')}>
-            {contextWindow > 0 ? (
-              <div style={{ marginBottom: '0.6rem' }}>
-                <div style={{ ...rowStyle, marginBottom: '0.3rem' }}>
-                  <span style={labelStyle}>{t('chat.info.context')}</span>
-                  <span style={valueStyle}>
-                    {formatCount(totalTokens)} / {formatCount(contextWindow)}
-                    <span style={{ color: 'var(--fg-dim)' }}> ({pct.toFixed(0)}%)</span>
+          {/* Usage */}
+          {session && (
+            <Section icon={Gauge} title={t('chat.info.usage')}>
+              {contextWindow > 0 ? (
+                <div className="chat-info-meter">
+                  <div className="chat-info-row">
+                    <span className="chat-info-label">{t('chat.info.context')}</span>
+                    <span className="chat-info-value">
+                      {formatCount(totalTokens)} / {formatCount(contextWindow)}
+                      <span className="chat-info-label"> ({pct.toFixed(0)}%)</span>
+                    </span>
+                  </div>
+                  <div className="chat-info-track">
+                    <div
+                      className={clsx('chat-info-fill', pct >= 90 ? 'chat-info-fill--danger' : pct >= 70 && 'chat-info-fill--warn')}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <Row label={t('chat.info.totalTokens')} value={formatCount(totalTokens)} />
+              )}
+
+              <Row
+                label={t('chat.info.inputOutput')}
+                value={`${formatCount(promptTokens)} / ${formatCount(completionTokens)}`}
+              />
+              {(cacheRead > 0 || cacheWrite > 0) && (
+                <Row label={t('chat.info.cache')} value={`${formatCount(cacheRead)} / ${formatCount(cacheWrite)}`} />
+              )}
+              {reasoning > 0 && <Row label={t('chat.info.reasoning')} value={formatCount(reasoning)} />}
+              {cost > 0 && <Row label={t('chat.info.cost')} value={`$${cost.toFixed(4)}`} accent />}
+            </Section>
+          )}
+
+          {/* Subagents — only while some delegated task is unfinished */}
+          {unfinished > 0 && (
+            <Section icon={Bot} title={t('chat.info.subagents')}>
+              <Row label={t('chat.info.runningPending')} value={`${running} / ${unfinished}`} accent />
+            </Section>
+          )}
+
+          {/* Plan */}
+          {plan.length > 0 && (
+            <Section
+              icon={ListChecks}
+              title={t('chat.info.plan')}
+              badge={`${plan.filter((e) => e.status === 'completed').length}/${plan.length}`}
+            >
+              {plan.map((entry, i) => (
+                <div key={i} className={`chat-info-plan chat-info-plan--${entry.status}`}>
+                  <PlanStatusIcon status={entry.status} size={13} />
+                  <span title={entry.title}>{entry.title}</span>
+                </div>
+              ))}
+            </Section>
+          )}
+
+          {/* LSPs */}
+          {activeLSPs.length > 0 && (
+            <Section icon={Code} title={t('chat.info.lsps')} badge={String(activeLSPs.length)}>
+              <div className="chat-info-chips">
+                {activeLSPs.map((language) => (
+                  <Badge key={language}>{language}</Badge>
+                ))}
+              </div>
+            </Section>
+          )}
+
+          {/* Modified files */}
+          <Section icon={FileCode} title={t('chat.info.modifiedFiles')} badge={files.length ? String(files.length) : undefined}>
+            {files.length === 0 ? (
+              <div className="chat-info-note">{t('chat.info.noModifiedFiles')}</div>
+            ) : (
+              files.map((file) => (
+                <div key={file.filePath} className="chat-info-file" title={file.filePath}>
+                  <span className="chat-info-file-path">{`\u200e${file.filePath}\u200e`}</span>
+                  <span className="chat-info-file-stats">
+                    {file.additions > 0 && <span className="chat-add">+{file.additions}</span>}
+                    {file.removals > 0 && <span className="chat-del">-{file.removals}</span>}
                   </span>
                 </div>
-                <div style={meterTrackStyle}>
-                  <div style={{ ...meterFillStyle, width: `${pct}%`, background: meterColor(pct) }} />
-                </div>
-              </div>
-            ) : (
-              <Row label={t('chat.info.totalTokens')} value={formatCount(totalTokens)} />
-            )}
-
-            <Row
-              label={t('chat.info.inputOutput')}
-              value={`${formatCount(promptTokens)} / ${formatCount(completionTokens)}`}
-            />
-            {(cacheRead > 0 || cacheWrite > 0) && (
-              <Row
-                label={t('chat.info.cache')}
-                value={`${formatCount(cacheRead)} / ${formatCount(cacheWrite)}`}
-              />
-            )}
-            {reasoning > 0 && <Row label={t('chat.info.reasoning')} value={formatCount(reasoning)} />}
-            {cost > 0 && (
-              <Row label={t('chat.info.cost')} value={`$${cost.toFixed(4)}`} accent />
+              ))
             )}
           </Section>
-        )}
 
-        {/* Subagents — only while some delegated task is unfinished */}
-        {unfinished > 0 && (
-          <Section icon={faRobot} title={t('chat.info.subagents')}>
-            <Row label={t('chat.info.runningPending')} value={`${running} / ${unfinished}`} accent />
-          </Section>
-        )}
-
-        {/* Plan */}
-        {plan.length > 0 && (
-          <Section
-            icon={faListCheck}
-            title={t('chat.info.plan')}
-            badge={`${plan.filter((e) => e.status === 'completed').length}/${plan.length}`}
-          >
-            {plan.map((entry, i) => (
-              <div key={i} style={planItemStyle(entry.status)}>
-                <span style={{ width: 12, flexShrink: 0, textAlign: 'center' }}>{planIcon(entry.status)}</span>
-                <span
-                  style={{
-                    textDecoration: entry.status === 'completed' ? 'line-through' : 'none',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                  title={entry.title}
-                >
-                  {entry.title}
-                </span>
-              </div>
-            ))}
-          </Section>
-        )}
-
-        {/* LSPs */}
-        {activeLSPs.length > 0 && (
-          <Section icon={faCode} title={t('chat.info.lsps')} badge={String(activeLSPs.length)}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              {activeLSPs.map((language) => (
-                <span key={language} style={chipStyle}>
-                  {language}
-                </span>
-              ))}
-            </div>
-          </Section>
-        )}
-
-        {/* Modified files */}
-        <Section icon={faFileCode} title={t('chat.info.modifiedFiles')} badge={files.length ? String(files.length) : undefined}>
-          {files.length === 0 ? (
-            <div style={{ fontSize: 11, color: 'var(--fg-dim)' }}>{t('chat.info.noModifiedFiles')}</div>
-          ) : (
-            files.map((file) => (
-              <div key={file.filePath} style={fileRowStyle} title={file.filePath}>
-                <span style={filePathStyle}>{file.filePath}</span>
-                <span style={{ display: 'flex', gap: 4, flexShrink: 0, fontSize: 10 }}>
-                  {file.additions > 0 && <span style={{ color: 'var(--success)' }}>+{file.additions}</span>}
-                  {file.removals > 0 && <span style={{ color: 'var(--error)' }}>-{file.removals}</span>}
-                </span>
-              </div>
-            ))
-          )}
-        </Section>
-
-        {/* Panels contributed by compiled-in extensions, always last so they
-            cannot push core information out of view. */}
-        <ExtensionSlot slot="chat-side" />
-      </div>
-
-      <style>{`
-        @media (max-width: 768px) {
-          .chat-info-backdrop {
-            display: block !important;
-          }
-          /* Overlay the chat body instead of stealing width from it. Both chat
-             views mark the flex row that holds this panel as positioned. It
-             stops short of the bottom so the message input stays reachable. */
-          .chat-info-panel {
-            position: absolute !important;
-            top: 0 !important;
-            right: 0 !important;
-            bottom: auto !important;
-            max-height: 65% !important;
-            z-index: 100 !important;
-            width: min(280px, 85vw) !important;
-            border-bottom: 1px solid var(--border);
-            border-bottom-left-radius: var(--radius-sm, 4px);
-          }
-          /* The backdrop must not swallow taps on the input either. */
-          .chat-info-backdrop {
-            bottom: auto !important;
-            height: 65% !important;
-          }
-        }
-      `}</style>
+          {/* Panels contributed by compiled-in extensions, always last so they
+              cannot push core information out of view. */}
+          <ExtensionSlot slot="chat-side" />
+        </div>
       </aside>
     </>
   )
 }
 
 function Section({
-  icon,
+  icon: Icon,
   title,
   badge,
   children,
 }: {
-  icon: typeof faCode
+  icon: LucideIcon
   title: string
   badge?: string
   children: ReactNode
 }) {
   return (
-    <section style={sectionStyle}>
-      <div style={sectionHeaderStyle}>
-        <FontAwesomeIcon icon={icon} style={{ fontSize: 10, color: 'var(--primary)' }} />
-        <span style={{ flex: 1 }}>{title}</span>
-        {badge && <span style={badgeStyle}>{badge}</span>}
+    <section className="chat-info-section">
+      <div className="chat-info-section-head">
+        <Icon size={13} aria-hidden />
+        <span className="chat-info-section-title">{title}</span>
+        {badge && <span className="chat-info-count">{badge}</span>}
       </div>
       {children}
     </section>
@@ -350,9 +285,9 @@ function Section({
 
 function Row({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div style={rowStyle}>
-      <span style={labelStyle}>{label}</span>
-      <span style={{ ...valueStyle, color: accent ? 'var(--primary)' : 'var(--fg)' }}>{value}</span>
+    <div className="chat-info-row">
+      <span className="chat-info-label">{label}</span>
+      <span className={clsx('chat-info-value', accent && 'chat-info-value--accent')}>{value}</span>
     </div>
   )
 }
@@ -362,215 +297,4 @@ function formatCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
   return String(n)
-}
-
-/** meterColor shifts the context meter from primary to warning to error as it fills. */
-function meterColor(pct: number): string {
-  if (pct >= 90) return 'var(--error)'
-  if (pct >= 70) return 'var(--warning, #f9e2af)'
-  return 'var(--primary)'
-}
-
-function planIcon(status: string) {
-  switch (status) {
-    case 'completed':
-      return <FontAwesomeIcon icon={faCheck} style={{ fontSize: 9, color: 'var(--success)' }} />
-    case 'in_progress':
-      return <FontAwesomeIcon icon={faSpinner} spin style={{ fontSize: 9, color: 'var(--primary)' }} />
-    default:
-      return <FontAwesomeIcon icon={faClock} style={{ fontSize: 9, color: 'var(--fg-dim)' }} />
-  }
-}
-
-const panelStyle: CSSProperties = {
-  flexShrink: 0,
-  display: 'flex',
-  flexDirection: 'column',
-  background: 'var(--sidebar-bg, var(--bg-secondary))',
-  borderLeft: '1px solid var(--border)',
-  overflow: 'hidden',
-}
-
-/**
- * Collapsed state: a small tab floating over the top-right corner of the chat
- * instead of a rail in the flex flow, so the panel costs no chat width at all
- * while it is hidden.
- */
-const railTabStyle: CSSProperties = {
-  position: 'absolute',
-  top: '0.5rem',
-  right: 0,
-  zIndex: 10,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: RAIL_WIDTH,
-  height: 26,
-  padding: 0,
-  background: 'var(--surface)',
-  border: '1px solid var(--border)',
-  borderRight: 'none',
-  borderRadius: 'var(--radius-sm) 0 0 var(--radius-sm)',
-  boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
-  cursor: 'pointer',
-  color: 'var(--fg-muted)',
-}
-
-const headerStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'flex-start',
-  gap: '0.5rem',
-  padding: '0.6rem 0.75rem',
-  borderBottom: '1px solid var(--border)',
-  flexShrink: 0,
-}
-
-const eyebrowStyle: CSSProperties = {
-  fontSize: 9,
-  fontWeight: 600,
-  letterSpacing: '0.09em',
-  textTransform: 'uppercase',
-  color: 'var(--fg-dim)',
-}
-
-const sessionTitleStyle: CSSProperties = {
-  fontSize: 12.5,
-  fontWeight: 600,
-  color: 'var(--fg)',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-  marginTop: 2,
-}
-
-const toggleButtonStyle: CSSProperties = {
-  background: 'none',
-  border: 'none',
-  cursor: 'pointer',
-  color: 'var(--fg-muted)',
-  padding: '0.15rem 0.25rem',
-  height: 22,
-  display: 'flex',
-  alignItems: 'center',
-}
-
-const scrollAreaStyle: CSSProperties = {
-  flex: 1,
-  overflowY: 'auto',
-  padding: '0.5rem',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '0.5rem',
-}
-
-const sectionStyle: CSSProperties = {
-  background: 'var(--surface, var(--bg))',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-sm, 4px)',
-  padding: '0.5rem 0.6rem',
-}
-
-const sectionHeaderStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '0.4rem',
-  marginBottom: '0.4rem',
-  fontSize: 10,
-  fontWeight: 700,
-  letterSpacing: '0.08em',
-  textTransform: 'uppercase',
-  color: 'var(--fg-muted)',
-}
-
-const badgeStyle: CSSProperties = {
-  fontSize: 9,
-  fontWeight: 600,
-  letterSpacing: 0,
-  padding: '1px 5px',
-  borderRadius: 999,
-  background: 'color-mix(in srgb, var(--primary) 18%, transparent)',
-  color: 'var(--primary)',
-}
-
-const rowStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'baseline',
-  justifyContent: 'space-between',
-  gap: '0.5rem',
-  fontSize: 11,
-  lineHeight: 1.7,
-}
-
-const labelStyle: CSSProperties = {
-  color: 'var(--fg-muted)',
-  whiteSpace: 'nowrap',
-}
-
-const valueStyle: CSSProperties = {
-  color: 'var(--fg)',
-  fontFamily: "'JetBrains Mono', 'Fira Mono', monospace",
-  fontSize: 11,
-  whiteSpace: 'nowrap',
-}
-
-const meterTrackStyle: CSSProperties = {
-  height: 4,
-  borderRadius: 999,
-  background: 'color-mix(in srgb, var(--fg-dim) 25%, transparent)',
-  overflow: 'hidden',
-}
-
-const meterFillStyle: CSSProperties = {
-  height: '100%',
-  borderRadius: 999,
-  transition: 'width 0.3s ease, background 0.3s ease',
-}
-
-const planItemStyle = (status: string): CSSProperties => ({
-  display: 'flex',
-  alignItems: 'center',
-  gap: '0.4rem',
-  fontSize: 11,
-  lineHeight: 1.8,
-  color: status === 'in_progress' ? 'var(--fg)' : 'var(--fg-muted)',
-  fontWeight: status === 'in_progress' ? 600 : 400,
-  opacity: status === 'completed' ? 0.65 : 1,
-})
-
-const chipStyle: CSSProperties = {
-  fontSize: 10,
-  padding: '2px 6px',
-  borderRadius: 999,
-  border: '1px solid var(--border)',
-  background: 'var(--bg-secondary, var(--bg))',
-  color: 'var(--fg-muted)',
-}
-
-// The path can be long and matters most at its tail (the project folder), so it
-// wraps on separators instead of being truncated away.
-const workingDirStyle: CSSProperties = {
-  fontSize: 11,
-  lineHeight: 1.5,
-  color: 'var(--fg)',
-  fontFamily: "'JetBrains Mono', 'Fira Mono', monospace",
-  overflowWrap: 'anywhere',
-}
-
-const fileRowStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: '0.4rem',
-  fontSize: 11,
-  lineHeight: 1.8,
-}
-
-const filePathStyle: CSSProperties = {
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-  direction: 'rtl',
-  textAlign: 'left',
-  color: 'var(--fg)',
-  fontFamily: "'JetBrains Mono', 'Fira Mono', monospace",
 }

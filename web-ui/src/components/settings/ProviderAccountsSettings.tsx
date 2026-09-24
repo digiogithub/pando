@@ -3,95 +3,48 @@ import api from '@pando/client/services/api'
 import type { ProviderAccount, ProviderAccountTestResult } from '@pando/client/types'
 import KeyValueEditor, { type KVPair } from '@/components/shared/KeyValueEditor'
 import ConfirmDialog from '@/components/shared/ConfirmDialog'
-import { TextInput, Toggle } from '@/components/shared/FormInput'
 import { useToast } from '@pando/client/stores/toastStore'
+import { Badge, Button, Card, Dialog, EmptyState, IconButton, Input, Menu, MenuItem, MenuLabel, Select, Switch } from '@/components/ui'
+import {
+  Bot,
+  Brain,
+  CircleCheck,
+  CircleX,
+  Cloud,
+  Code,
+  Eye,
+  EyeOff,
+  Globe,
+  Network,
+  Package,
+  Plug,
+  Plus,
+  Rocket,
+  Server,
+  Sparkles,
+  Zap,
+  type LucideIcon,
+} from '@/components/ui/icons'
 
-const PROVIDER_TYPES = [
-  { value: 'anthropic', label: 'Anthropic', icon: '🤖' },
-  { value: 'openai', label: 'OpenAI', icon: '🧠' },
-  { value: 'openai-compatible', label: 'OpenAI Compatible (custom)', icon: '🔌' },
-  { value: 'ollama', label: 'Ollama', icon: '🦙' },
-  { value: 'gemini', label: 'Google Gemini', icon: '✨' },
-  { value: 'groq', label: 'Groq', icon: '⚡' },
-  { value: 'openrouter', label: 'OpenRouter', icon: '🔀' },
-  { value: 'xai', label: 'xAI (Grok)', icon: '🌌' },
-  { value: 'azure', label: 'Azure OpenAI', icon: '☁️' },
-  { value: 'bedrock', label: 'AWS Bedrock', icon: '🏔️' },
-  { value: 'vertexai', label: 'Google Vertex AI', icon: '🔷' },
-  { value: 'copilot', label: 'GitHub Copilot', icon: '🐙' },
-  { value: 'antigravity', label: 'Antigravity', icon: '🪐' },
+const PROVIDER_TYPES: { value: string; label: string; icon: LucideIcon }[] = [
+  { value: 'anthropic', label: 'Anthropic', icon: Bot },
+  { value: 'openai', label: 'OpenAI', icon: Brain },
+  { value: 'openai-compatible', label: 'OpenAI Compatible (custom)', icon: Plug },
+  { value: 'ollama', label: 'Ollama', icon: Package },
+  { value: 'gemini', label: 'Google Gemini', icon: Sparkles },
+  { value: 'groq', label: 'Groq', icon: Zap },
+  { value: 'openrouter', label: 'OpenRouter', icon: Network },
+  { value: 'xai', label: 'xAI (Grok)', icon: Rocket },
+  { value: 'azure', label: 'Azure OpenAI', icon: Cloud },
+  { value: 'bedrock', label: 'AWS Bedrock', icon: Server },
+  { value: 'vertexai', label: 'Google Vertex AI', icon: Globe },
+  { value: 'copilot', label: 'GitHub Copilot', icon: Code },
+  { value: 'antigravity', label: 'Antigravity', icon: Sparkles },
 ]
 
 const TYPES_WITH_BASE_URL = ['openai-compatible', 'azure', 'ollama', 'openai']
 const TYPES_WITH_EXTRA_HEADERS = ['openai-compatible', 'azure', 'openai', 'anthropic', 'openrouter']
 const TYPES_WITH_OAUTH = ['copilot', 'vertexai', 'antigravity']
-
-const labelStyle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 600,
-  color: 'var(--fg-muted)',
-  textTransform: 'uppercase',
-  letterSpacing: '0.04em',
-}
-
-const selectStyle: React.CSSProperties = {
-  background: 'var(--input-bg)',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-sm)',
-  color: 'var(--fg)',
-  fontSize: 14,
-  padding: '0.5rem 0.75rem',
-  fontFamily: 'inherit',
-  cursor: 'pointer',
-  width: '100%',
-}
-
-const primaryBtn: React.CSSProperties = {
-  padding: '0.5rem 1.25rem',
-  background: 'var(--primary)',
-  color: 'var(--primary-fg)',
-  border: 'none',
-  borderRadius: 'var(--radius-sm)',
-  fontSize: 14,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-}
-
-const cancelBtn: React.CSSProperties = {
-  padding: '0.5rem 1.25rem',
-  background: 'transparent',
-  color: 'var(--fg)',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-sm)',
-  fontSize: 14,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-}
-
-const dividerStyle: React.CSSProperties = {
-  borderTop: '1px solid var(--border)',
-  margin: '1.5rem 0',
-}
-
-function StatusBadge({ disabled }: { disabled?: boolean }) {
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        padding: '0.125rem 0.5rem',
-        borderRadius: 9999,
-        fontSize: 11,
-        fontWeight: 600,
-        background: !disabled ? 'rgba(34,197,94,0.15)' : 'var(--border)',
-        color: !disabled ? '#16a34a' : 'var(--fg-muted)',
-      }}
-    >
-      {!disabled ? 'Enabled' : 'Disabled'}
-    </span>
-  )
-}
 
 function MaskedApiKeyInput({
   maskedValue,
@@ -114,48 +67,24 @@ function MaskedApiKeyInput({
   }
 
   return (
-    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-      <input
+    <div className="relative flex items-center">
+      <Input
         type={showKey ? 'text' : 'password'}
         autoComplete="new-password"
         value={displayValue}
         placeholder={inputPlaceholder}
         onChange={handleChange}
-        style={{
-          background: 'var(--input-bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-sm)',
-          color: 'var(--fg)',
-          fontSize: 14,
-          padding: '0.5rem 2.5rem 0.5rem 0.75rem',
-          outline: 'none',
-          width: '100%',
-          fontFamily: 'monospace',
-          boxSizing: 'border-box',
-          transition: 'border-color 0.15s',
-        }}
-        onFocus={(e) => { e.target.style.borderColor = 'var(--border-focus)' }}
-        onBlur={(e) => { e.target.style.borderColor = 'var(--border)' }}
+        className="font-mono pr-10"
       />
-      <button
-        type="button"
+      <IconButton
+        className="absolute right-1"
         tabIndex={-1}
+        aria-label={showKey ? 'Hide key' : 'Show key'}
+        tooltip
+        size="sm"
+        icon={showKey ? <EyeOff size={14} /> : <Eye size={14} />}
         onClick={() => setShowKey((v) => !v)}
-        title={showKey ? 'Hide key' : 'Show key'}
-        style={{
-          position: 'absolute',
-          right: '0.5rem',
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer',
-          color: 'var(--fg-muted)',
-          fontSize: 14,
-          padding: 0,
-          lineHeight: 1,
-        }}
-      >
-        {showKey ? '🙈' : '👁'}
-      </button>
+      />
     </div>
   )
 }
@@ -254,115 +183,47 @@ function AccountCard({
   testStatus: TestStatus
 }) {
   const meta = PROVIDER_TYPES.find((t) => t.value === account.type)
-  const icon = meta?.icon ?? '🔌'
   const typeLabel = meta?.label ?? account.type
 
   return (
-    <div
-      style={{
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius)',
-        padding: '0.875rem 1rem',
-        background: 'var(--card-bg, var(--input-bg))',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.875rem',
-      }}
-    >
-      <span style={{ fontSize: 22, flexShrink: 0 }}>{icon}</span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)' }}>
-            {account.displayName}
-          </span>
-          <span style={{ fontSize: 11, color: 'var(--fg-muted)', fontFamily: 'monospace' }}>
-            {account.id}
-          </span>
-          <StatusBadge disabled={account.disabled} />
+    <Card padding="sm" className="flex items-center gap-3.5">
+      {meta ? (
+        <meta.icon size={22} className="shrink-0 text-muted" aria-hidden />
+      ) : (
+        <Plug size={22} className="shrink-0 text-muted" aria-hidden />
+      )}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-md font-semibold text-fg">{account.displayName}</span>
+          <span className="text-xs text-muted font-mono">{account.id}</span>
+          <Badge tone={account.disabled ? 'neutral' : 'success'} dot>
+            {account.disabled ? 'Disabled' : 'Enabled'}
+          </Badge>
         </div>
-        <div style={{ fontSize: 12, color: 'var(--fg-muted)', marginTop: '0.2rem' }}>
+        <div className="text-xs text-muted mt-0.5">
           {typeLabel}
-          {account.apiKey && (
-            <span style={{ marginLeft: '0.5rem', fontFamily: 'monospace' }}>
-              · {account.apiKey}
-            </span>
-          )}
+          {account.apiKey && <span className="ml-2 font-mono">· {account.apiKey}</span>}
         </div>
       </div>
-      <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center', flexShrink: 0 }}>
+      <div className="flex items-center gap-1.5 shrink-0">
         {onLogin && (
-          <button
-            onClick={onLogin}
-            style={{
-              padding: '0.25rem 0.625rem',
-              background: 'transparent',
-              border: '1px solid var(--primary)',
-              borderRadius: 'var(--radius-sm)',
-              fontSize: 12,
-              cursor: 'pointer',
-              color: 'var(--primary)',
-              fontWeight: 600,
-              fontFamily: 'inherit',
-            }}
-          >
+          <Button variant="secondary" size="sm" onClick={onLogin}>
             Login
-          </button>
+          </Button>
         )}
-        <button
-          onClick={onEdit}
-          style={{
-            padding: '0.25rem 0.625rem',
-            background: 'transparent',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 12,
-            cursor: 'pointer',
-            color: 'var(--fg)',
-            fontFamily: 'inherit',
-          }}
-        >
+        <Button variant="secondary" size="sm" onClick={onEdit}>
           Edit
-        </button>
-        <button
-          onClick={onTest}
-          disabled={testStatus === 'testing'}
-          style={{
-            padding: '0.25rem 0.625rem',
-            background: 'transparent',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 12,
-            cursor: testStatus === 'testing' ? 'not-allowed' : 'pointer',
-            color: 'var(--fg)',
-            fontFamily: 'inherit',
-            opacity: testStatus === 'testing' ? 0.6 : 1,
-          }}
-        >
-          {testStatus === 'testing' ? '…' : 'Test'}
-        </button>
-        {testStatus === 'ok' && (
-          <span style={{ color: 'var(--success, #16a34a)', fontSize: 14 }} title="Connection OK">✓</span>
-        )}
-        {testStatus === 'fail' && (
-          <span style={{ color: 'var(--error, #dc2626)', fontSize: 14 }} title="Connection failed">✗</span>
-        )}
-        <button
-          onClick={onDelete}
-          style={{
-            padding: '0.25rem 0.625rem',
-            background: 'transparent',
-            border: '1px solid var(--error, #dc2626)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 12,
-            cursor: 'pointer',
-            color: 'var(--error, #dc2626)',
-            fontFamily: 'inherit',
-          }}
-        >
+        </Button>
+        <Button variant="secondary" size="sm" onClick={onTest} loading={testStatus === 'testing'}>
+          Test
+        </Button>
+        {testStatus === 'ok' && <CircleCheck size={16} className="text-success" aria-label="Connection OK" />}
+        {testStatus === 'fail' && <CircleX size={16} className="text-danger" aria-label="Connection failed" />}
+        <Button variant="danger" size="sm" onClick={onDelete}>
           Delete
-        </button>
+        </Button>
       </div>
-    </div>
+    </Card>
   )
 }
 
@@ -370,104 +231,29 @@ function AccountCard({
 
 function AddProviderDropdown({ onSelect }: { onSelect: (type: string) => void }) {
   const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  // Close when clicking outside
-  useEffect(() => {
-    if (!open) return
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [open])
+  const anchorRef = useRef<HTMLButtonElement>(null)
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        style={{
-          ...primaryBtn,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.375rem',
-        }}
-      >
-        + Add Provider
-        <span
-          style={{
-            fontSize: 10,
-            display: 'inline-block',
-            transform: open ? 'rotate(180deg)' : 'none',
-            transition: 'transform 0.15s',
-          }}
-        >
-          ▼
-        </span>
-      </button>
-
-      {open && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 'calc(100% + 4px)',
-            right: 0,
-            background: 'var(--card-bg, var(--input-bg))',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius)',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
-            minWidth: 240,
-            zIndex: 200,
-            overflow: 'hidden',
-          }}
-        >
-          <div
-            style={{
-              padding: '0.375rem 0.75rem',
-              fontSize: 11,
-              fontWeight: 700,
-              color: 'var(--fg-muted)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-              borderBottom: '1px solid var(--border)',
+    <>
+      <Button ref={anchorRef} variant="primary" icon={<Plus size={16} />} onClick={() => setOpen((v) => !v)}>
+        Add provider
+      </Button>
+      <Menu open={open} onClose={() => setOpen(false)} anchorRef={anchorRef} aria-label="Select provider type">
+        <MenuLabel>Select provider type</MenuLabel>
+        {PROVIDER_TYPES.map((pt) => (
+          <MenuItem
+            key={pt.value}
+            icon={<pt.icon size={16} />}
+            onSelect={() => {
+              setOpen(false)
+              onSelect(pt.value)
             }}
           >
-            Select Provider Type
-          </div>
-          {PROVIDER_TYPES.map((pt) => (
-            <button
-              key={pt.value}
-              onClick={() => {
-                setOpen(false)
-                onSelect(pt.value)
-              }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.625rem',
-                width: '100%',
-                padding: '0.5rem 0.875rem',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                textAlign: 'left',
-                fontSize: 14,
-                color: 'var(--fg)',
-                fontFamily: 'inherit',
-                transition: 'background 0.1s',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--hover, rgba(255,255,255,0.05))' }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'none' }}
-            >
-              <span style={{ fontSize: 18 }}>{pt.icon}</span>
-              <span>{pt.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+            {pt.label}
+          </MenuItem>
+        ))}
+      </Menu>
+    </>
   )
 }
 
@@ -505,136 +291,93 @@ function AccountModal({
   }
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.6)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-      }}
-      onClick={onClose}
+    <Dialog
+      open
+      onClose={onClose}
+      title={editId ? `Edit: ${editId}` : 'Add Provider Account'}
+      size="md"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={onSave} disabled={saving} loading={saving}>
+            Save
+          </Button>
+        </>
+      }
     >
-      <div
-        style={{
-          background: 'var(--card-bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-lg)',
-          padding: '1.5rem',
-          width: 560,
-          maxWidth: '95vw',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)', marginBottom: '1.25rem' }}>
-          {editId ? `Edit: ${editId}` : 'Add Provider Account'}
-        </h3>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {/* ID — only for new accounts */}
-          {!editId && (
-            <TextInput
-              label="Account ID"
+      <div className="flex flex-col gap-4">
+        {!editId && (
+          <div className="settings-field">
+            <label className="settings-field-label">Account ID</label>
+            <Input
               placeholder="my-account (lowercase, letters, numbers, hyphens)"
               value={form.id}
               onChange={(e) => setField('id', sanitizeAccountId(e.target.value))}
             />
-          )}
-
-          <TextInput
-            label="Display Name"
-            placeholder="My Anthropic Account"
-            value={form.displayName}
-            onChange={handleDisplayNameChange}
-          />
-
-          {/* Type selector */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-            <label style={labelStyle}>Provider Type</label>
-            <select
-              value={form.type}
-              onChange={(e) => setField('type', e.target.value)}
-              style={selectStyle}
-            >
-              {PROVIDER_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
           </div>
+        )}
 
-          {/* API Key */}
-          {needsAPIKey && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-              <label style={labelStyle}>API Key</label>
-              <MaskedApiKeyInput
-                maskedValue={editId ? (accounts.find((a) => a.id === editId)?.apiKey ?? '') : ''}
-                onChange={(val) => {
-                  setField('apiKey', val)
-                  setField('apiKeyTouched', true)
-                }}
-              />
-            </div>
-          )}
-
-          {/* Base URL — conditional */}
-          {showBaseUrl && (
-            <TextInput
-              label="Base URL"
-              placeholder="https://api.example.com/v1"
-              value={form.baseUrl}
-              onChange={(e) => setField('baseUrl', e.target.value)}
-            />
-          )}
-
-          {/* Extra Headers — conditional */}
-          {showExtraHeaders && (
-            <KeyValueEditor
-              label="Extra Headers"
-              pairs={form.extraHeaderPairs}
-              onChange={(v) => setField('extraHeaderPairs', v)}
-              keyPlaceholder="Header-Name"
-              valuePlaceholder="value"
-            />
-          )}
-
-          {/* UseOAuth toggle — conditional */}
-          {showOAuth && (
-            <Toggle
-              label="Use OAuth"
-              description="Authenticate via OAuth instead of an API key"
-              checked={form.useOAuth}
-              onChange={(v) => setField('useOAuth', v)}
-            />
-          )}
-
-          {/* Enabled toggle */}
-          <Toggle
-            label="Enabled"
-            description="Allow this account to be used for AI requests"
-            checked={!form.disabled}
-            onChange={(v) => setField('disabled', !v)}
-          />
+        <div className="settings-field">
+          <label className="settings-field-label">Display Name</label>
+          <Input placeholder="My Anthropic Account" value={form.displayName} onChange={handleDisplayNameChange} />
         </div>
 
-        <div style={dividerStyle} />
+        <div className="settings-field">
+          <label className="settings-field-label">Provider Type</label>
+          <Select value={form.type} onChange={(e) => setField('type', e.target.value)} options={PROVIDER_TYPES.map((t) => ({ value: t.value, label: t.label }))} />
+        </div>
 
-        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={cancelBtn}>
-            Cancel
-          </button>
-          <button onClick={onSave} disabled={saving} style={primaryBtn}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+        {needsAPIKey && (
+          <div className="settings-field">
+            <label className="settings-field-label">API Key</label>
+            <MaskedApiKeyInput
+              maskedValue={editId ? (accounts.find((a) => a.id === editId)?.apiKey ?? '') : ''}
+              onChange={(val) => {
+                setField('apiKey', val)
+                setField('apiKeyTouched', true)
+              }}
+            />
+          </div>
+        )}
+
+        {showBaseUrl && (
+          <div className="settings-field">
+            <label className="settings-field-label">Base URL</label>
+            <Input placeholder="https://api.example.com/v1" value={form.baseUrl} onChange={(e) => setField('baseUrl', e.target.value)} />
+          </div>
+        )}
+
+        {showExtraHeaders && (
+          <KeyValueEditor
+            label="Extra Headers"
+            pairs={form.extraHeaderPairs}
+            onChange={(v) => setField('extraHeaderPairs', v)}
+            keyPlaceholder="Header-Name"
+            valuePlaceholder="value"
+          />
+        )}
+
+        {showOAuth && (
+          <div className="flex items-center gap-3">
+            <Switch id="account-use-oauth" checked={form.useOAuth} onCheckedChange={(v) => setField('useOAuth', v)} />
+            <label htmlFor="account-use-oauth" className="cursor-pointer">
+              <div className="text-sm font-medium text-fg">Use OAuth</div>
+              <div className="text-xs text-muted">Authenticate via OAuth instead of an API key</div>
+            </label>
+          </div>
+        )}
+
+        <div className="flex items-center gap-3">
+          <Switch id="account-enabled" checked={!form.disabled} onCheckedChange={(v) => setField('disabled', !v)} />
+          <label htmlFor="account-enabled" className="cursor-pointer">
+            <div className="text-sm font-medium text-fg">Enabled</div>
+            <div className="text-xs text-muted">Allow this account to be used for AI requests</div>
+          </label>
         </div>
       </div>
-    </div>
+    </Dialog>
   )
 }
 
@@ -814,50 +557,32 @@ export default function ProviderAccountsSettings() {
   }
 
   return (
-    <div style={{ maxWidth: 760 }}>
-      {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '0.75rem',
-        }}
-      >
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--fg)', margin: 0 }}>
-          Providers
-        </h2>
-        <AddProviderDropdown onSelect={openAdd} />
-      </div>
+    <div>
+      <header className="settings-page-header settings-page-header--row">
+        <div className="settings-page-header-text">
+          <h2 className="settings-page-title">Providers</h2>
+          <p className="settings-page-description">
+            Manage AI provider accounts. Each account has its own credentials and can be assigned to agents
+            independently.
+          </p>
+        </div>
+        <div className="settings-page-header-actions">
+          <AddProviderDropdown onSelect={openAdd} />
+        </div>
+      </header>
 
-      <p style={{ fontSize: 14, color: 'var(--fg-muted)', marginBottom: '1.5rem' }}>
-        Manage AI provider accounts. Each account has its own credentials and can be assigned to
-        agents independently.
-      </p>
-
-      {loading && (
-        <div style={{ color: 'var(--fg-muted)', fontSize: 14 }}>Loading…</div>
-      )}
+      {loading && <div className="settings-loading">Loading…</div>}
 
       {!loading && accounts.length === 0 && (
-        <div
-          style={{
-            border: '2px dashed var(--border)',
-            borderRadius: 'var(--radius)',
-            padding: '2.5rem',
-            textAlign: 'center',
-            color: 'var(--fg-muted)',
-            fontSize: 14,
-          }}
-        >
-          <div style={{ fontSize: 32, marginBottom: '0.75rem' }}>🔌</div>
-          <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>No providers configured</div>
-          <div>Use the "Add Provider" button above to configure your first provider.</div>
-        </div>
+        <EmptyState
+          icon={<Plug size={20} />}
+          title="No providers configured"
+          description={'Use the "Add provider" button above to configure your first provider.'}
+        />
       )}
 
       {!loading && accounts.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+        <div className="flex flex-col gap-2.5">
           {accounts.map((a) => (
             <AccountCard
               key={a.id}
@@ -872,7 +597,6 @@ export default function ProviderAccountsSettings() {
         </div>
       )}
 
-      {/* Add/Edit Modal */}
       {modalOpen && (
         <AccountModal
           editId={editId}
@@ -885,7 +609,6 @@ export default function ProviderAccountsSettings() {
         />
       )}
 
-      {/* Delete confirm dialog */}
       {confirmDelete && (
         <ConfirmDialog
           title="Delete Provider Account"

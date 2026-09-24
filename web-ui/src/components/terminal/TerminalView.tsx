@@ -1,5 +1,4 @@
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlus, faTerminal, faTrash, faXmark } from '@fortawesome/free-solid-svg-icons'
+import clsx from 'clsx'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useTerminalStore } from '@pando/client/stores/terminalStore'
@@ -7,7 +6,9 @@ import { sendPtyInput } from '@pando/client/services/terminalPty'
 import TerminalOutput from './TerminalOutput'
 import TerminalInput from './TerminalInput'
 import TerminalPtyPane from './TerminalPtyPane'
-import LoadingSpinner from '@/components/shared/LoadingSpinner'
+import { Button, Spinner } from '@/components/ui'
+import { Plus, SquareTerminal, Trash2, X } from '@/components/ui/icons'
+import '@/styles/terminal.css'
 
 export default function TerminalView() {
   const { tabs, activeTabId, setActiveTab, createTab, closeTab, clearEntries } = useTerminalStore()
@@ -34,47 +35,27 @@ export default function TerminalView() {
   }
 
   return (
-    <div
-      onMouseDown={() => setFocusKey((value) => value + 1)}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        minHeight: 0,
-        overflow: 'hidden',
-        background: '#0d1117',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '0.625rem 1rem',
-          background: '#161b22',
-          borderBottom: '1px solid #30363d',
-          flexShrink: 0,
-          gap: '1rem',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-            <FontAwesomeIcon icon={faTerminal} style={{ color: '#3fb950', fontSize: 13 }} />
-            <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>Terminal</span>
+    <div className="terminal-shell" onMouseDown={() => setFocusKey((value) => value + 1)}>
+      <div className="terminal-header">
+        <div className="terminal-header-left">
+          <div className="terminal-header-title">
+            <SquareTerminal size={15} />
+            <span className="terminal-header-title-text">Terminal</span>
             {activeTab.running && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                <LoadingSpinner size={12} />
-                <span style={{ fontSize: 11, color: '#6e7681' }}>running…</span>
+              <div className="terminal-running">
+                <Spinner size={12} />
+                <span>running…</span>
               </div>
             )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', overflowX: 'auto', minWidth: 0 }}>
+          <div className="terminal-tabs">
             {tabs.map((tab) => {
               const active = tab.id === activeTab.id
               return (
                 <button
                   key={tab.id}
+                  type="button"
                   onClick={() => setActiveTab(tab.id)}
                   onMouseDown={(event) => {
                     if (event.button === 1) {
@@ -83,80 +64,38 @@ export default function TerminalView() {
                       closeTab(tab.id)
                     }
                   }}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                    padding: '0.3rem 0.6rem',
-                    borderRadius: 6,
-                    border: `1px solid ${active ? '#58a6ff' : '#30363d'}`,
-                    background: active ? '#1f2937' : '#0d1117',
-                    color: active ? '#e6edf3' : '#8b949e',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
+                  className={clsx('terminal-tab', active && 'terminal-tab--active')}
                 >
-                  <FontAwesomeIcon icon={faTerminal} style={{ fontSize: 10, color: active ? '#3fb950' : undefined }} />
-                  <span style={{ fontSize: 12 }}>{tab.title}</span>
-                  {tab.running && <LoadingSpinner size={10} />}
+                  <SquareTerminal size={11} className={active ? 'terminal-tab-icon--active' : undefined} />
+                  <span>{tab.title}</span>
+                  {tab.running && <Spinner size={10} />}
                   <span
+                    role="button"
+                    aria-label={`Close ${tab.title}`}
                     onClick={(event) => {
                       event.stopPropagation()
                       closeTab(tab.id)
                     }}
-                    style={{ display: 'inline-flex', alignItems: 'center', color: '#6e7681' }}
+                    className="terminal-tab-close"
                   >
-                    <FontAwesomeIcon icon={faXmark} style={{ fontSize: 10 }} />
+                    <X size={11} />
                   </span>
                 </button>
               )
             })}
-            <button
-              onClick={createTab}
-              title="New terminal tab"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                padding: '0.3rem 0.6rem',
-                borderRadius: 6,
-                border: '1px solid #30363d',
-                background: '#0d1117',
-                color: '#8b949e',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              <FontAwesomeIcon icon={faPlus} style={{ fontSize: 10 }} />
-              <span style={{ fontSize: 12 }}>New</span>
+            <button type="button" onClick={createTab} title="New terminal tab" className="terminal-new-btn">
+              <Plus size={11} />
+              <span>New</span>
             </button>
           </div>
         </div>
 
-        <button
-          onClick={handleClear}
-          title="Clear terminal"
-          disabled={clearDisabled}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.3rem',
-            background: 'none',
-            border: '1px solid #30363d',
-            borderRadius: 'var(--radius-sm)',
-            padding: '0.25rem 0.6rem',
-            cursor: clearDisabled ? 'not-allowed' : 'pointer',
-            color: clearDisabled ? '#6e7681' : '#8b949e',
-            fontSize: 12,
-            flexShrink: 0,
-          }}
-        >
-          <FontAwesomeIcon icon={faTrash} style={{ fontSize: 10 }} />
+        <Button size="sm" variant="ghost" icon={<Trash2 size={12} />} disabled={clearDisabled} onClick={handleClear} title="Clear terminal">
           Clear
-        </button>
+        </Button>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div className="terminal-body">
         {/* Every PTY tab stays mounted, hidden with CSS when inactive, so its
             shell keeps running and its screen survives tab switches. */}
         {tabs
@@ -168,16 +107,7 @@ export default function TerminalView() {
         {activeTab.mode === 'exec' && (
           <>
             {activeTab.fallbackReason && (
-              <div
-                style={{
-                  padding: '0.4rem 0.75rem',
-                  background: '#2d2211',
-                  borderBottom: '1px solid #9e6a03',
-                  color: '#d29922',
-                  fontSize: 11,
-                  flexShrink: 0,
-                }}
-              >
+              <div className="terminal-fallback-banner">
                 {t('terminal.ptyUnavailable', { reason: activeTab.fallbackReason })}
               </div>
             )}

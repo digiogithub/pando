@@ -1,5 +1,5 @@
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faTimes, faRobot, faMicrochip, faClock, faUserTie } from '@fortawesome/free-solid-svg-icons'
+import { Bot, Cpu, Clock, User, X } from '@/components/ui/icons'
+import { IconButton } from '@/components/ui'
 import type { OrchestratorTask, OrchestratorToolCall } from '@pando/client/types'
 import StatusBadge from '@/components/shared/StatusBadge'
 import ProgressBar from '@/components/shared/ProgressBar'
@@ -24,71 +24,41 @@ function formatStructured(value: unknown): string {
 
 function ToolCallCard({ toolCall }: { toolCall: OrchestratorToolCall }) {
   return (
-    <div
-      style={{
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius-sm)',
-        padding: '0.75rem',
-        background: 'var(--bg)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.5rem',
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center' }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg)' }}>{toolCall.title || toolCall.name}</div>
-          <div style={{ fontSize: 11, color: 'var(--fg-muted)', fontFamily: 'monospace' }}>{toolCall.name}</div>
+    <div className="entity-card">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-fg">{toolCall.title || toolCall.name}</div>
+          <div className="font-mono text-xs text-muted">{toolCall.name}</div>
         </div>
         <StatusBadge status={toolCall.status as 'running' | 'completed' | 'error' | 'pending'} />
       </div>
 
       {toolCall.arguments && Object.keys(toolCall.arguments).length > 0 && (
         <div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-muted)', marginBottom: '0.25rem', textTransform: 'uppercase' }}>
-            Input
-          </div>
-          <pre style={preStyle}>{formatStructured(toolCall.arguments)}</pre>
+          <div className="detail-field-label">Input</div>
+          <pre className="code-block">{formatStructured(toolCall.arguments)}</pre>
         </div>
       )}
 
       {toolCall.result && (
         <div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-muted)', marginBottom: '0.25rem', textTransform: 'uppercase' }}>
-            Result
-          </div>
-          <pre style={preStyle}>{toolCall.result}</pre>
+          <div className="detail-field-label">Result</div>
+          <pre className="code-block">{toolCall.result}</pre>
         </div>
       )}
 
       {toolCall.locations && toolCall.locations.length > 0 && (
         <div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-muted)', marginBottom: '0.25rem', textTransform: 'uppercase' }}>
-            Locations
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+          <div className="detail-field-label">Locations</div>
+          <div className="flex flex-col gap-1">
             {toolCall.locations.map((location) => (
-              <code key={location} style={{ fontSize: 11, color: 'var(--fg)', wordBreak: 'break-all' }}>{location}</code>
+              <code key={location} className="break-all text-xs text-fg">{location}</code>
             ))}
           </div>
         </div>
       )}
     </div>
   )
-}
-
-const preStyle: React.CSSProperties = {
-  background: 'var(--surface)',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-sm)',
-  padding: '0.625rem 0.75rem',
-  fontSize: 12,
-  fontFamily: 'monospace',
-  color: 'var(--fg)',
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word',
-  overflow: 'auto',
-  margin: 0,
 }
 
 export default function TaskDetail({
@@ -99,120 +69,70 @@ export default function TaskDetail({
   onClose: () => void
 }) {
   return (
-    <div
-      style={{
-        width: 300,
-        flexShrink: 0,
-        borderLeft: '1px solid var(--border)',
-        display: 'flex',
-        flexDirection: 'column',
-        background: 'var(--surface)',
-        overflow: 'hidden',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '0.75rem 1rem',
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg)' }}>Task Detail</span>
-        <button
-          onClick={onClose}
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            color: 'var(--fg-muted)',
-            padding: '0.2rem',
-          }}
-          title="Close detail"
-        >
-          <FontAwesomeIcon icon={faTimes} />
-        </button>
+    <div className="view-detail">
+      <div className="view-detail-header">
+        <span className="view-detail-title">Task Detail</span>
+        <IconButton aria-label="Close detail" tooltip icon={<X size={14} />} size="sm" onClick={onClose} />
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>
-        <div style={{ marginBottom: '1rem' }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--fg)', marginBottom: '0.375rem' }}>
-            {task.name}
-          </div>
+      <div className="view-detail-body">
+        <div>
+          <div className="mb-1.5 text-[15px] font-semibold text-fg">{task.name}</div>
           <StatusBadge status={task.status} />
         </div>
 
         {task.prompt && (
-          <div style={{ marginBottom: '1rem' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--fg-muted)', marginBottom: '0.375rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Prompt
-            </div>
-            <div
-              style={{
-                background: 'var(--selected)',
-                borderLeft: '3px solid var(--primary)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '0.625rem 0.75rem',
-                fontSize: 12,
-                color: 'var(--fg)',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-                fontFamily: 'inherit',
-              }}
-            >
+          <div>
+            <div className="detail-field-label">Prompt</div>
+            <div className="whitespace-pre-wrap break-words rounded-md border-l-2 border-accent bg-accent-soft px-3 py-2.5 text-xs text-fg">
               {task.prompt}
             </div>
           </div>
         )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: 12, color: 'var(--fg-muted)' }}>
-            <FontAwesomeIcon icon={faRobot} style={{ width: 12 }} />
-            <span>Agent: <span style={{ color: 'var(--fg)', fontWeight: 500 }}>{task.agent}</span></span>
+        <div className="flex flex-col gap-2">
+          <div className="detail-meta-row">
+            <Bot size={12} />
+            <span>Agent: <span className="value">{task.agent}</span></span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: 12, color: 'var(--fg-muted)' }}>
-            <FontAwesomeIcon icon={faMicrochip} style={{ width: 12 }} />
-            <span>Model: <span style={{ color: 'var(--fg)', fontWeight: 500, fontFamily: 'monospace' }}>{task.model}</span></span>
+          <div className="detail-meta-row">
+            <Cpu size={12} />
+            <span>Model: <span className="value font-mono">{task.model}</span></span>
           </div>
           {task.persona && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: 12, color: 'var(--fg-muted)' }}>
-              <FontAwesomeIcon icon={faUserTie} style={{ width: 12 }} />
-              <span>Persona: <span style={{ color: 'var(--fg)', fontWeight: 500 }}>{task.persona}</span></span>
+            <div className="detail-meta-row">
+              <User size={12} />
+              <span>Persona: <span className="value">{task.persona}</span></span>
             </div>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: 12, color: 'var(--fg-muted)' }}>
-            <FontAwesomeIcon icon={faClock} style={{ width: 12 }} />
-            <span>Created: <span style={{ color: 'var(--fg)' }}>{formatDate(task.created_at)}</span></span>
+          <div className="detail-meta-row">
+            <Clock size={12} />
+            <span>Created: <span className="value font-normal">{formatDate(task.created_at)}</span></span>
           </div>
           {task.current_tool && (
-            <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
-              Current tool: <span style={{ color: 'var(--fg)', fontWeight: 500 }}>{task.current_tool}</span>
+            <div className="text-sm text-muted">
+              Current tool: <span className="value">{task.current_tool}</span>
             </div>
           )}
         </div>
 
-        <div style={{ marginBottom: '1rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--fg-muted)', marginBottom: '0.375rem' }}>
+        <div>
+          <div className="mb-1.5 flex justify-between text-xs text-muted">
             <span>Progress</span>
             <span>{task.progress}%</span>
           </div>
           <ProgressBar value={task.progress} />
         </div>
 
-        <div style={{ marginBottom: '1rem' }}>
-          <div style={{ fontSize: 12, color: 'var(--fg-muted)', marginBottom: '0.25rem' }}>Tokens used</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--primary)', fontFamily: 'monospace' }}>
-            {task.tokens.toLocaleString()}
-          </div>
+        <div>
+          <div className="mb-1 text-xs text-muted">Tokens used</div>
+          <div className="font-mono text-lg font-semibold text-fg">{task.tokens.toLocaleString()}</div>
         </div>
 
         {task.tool_calls && task.tool_calls.length > 0 && (
-          <div style={{ marginBottom: '1rem' }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-muted)', marginBottom: '0.375rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Tool Calls
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <div>
+            <div className="detail-field-label">Tool Calls</div>
+            <div className="flex flex-col gap-3">
               {task.tool_calls.map((toolCall) => (
                 <ToolCallCard key={toolCall.id} toolCall={toolCall} />
               ))}
@@ -222,10 +142,8 @@ export default function TaskDetail({
 
         {task.output && (
           <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-muted)', marginBottom: '0.375rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Output
-            </div>
-            <pre style={{ ...preStyle, maxHeight: 300 }}>{task.output}</pre>
+            <div className="detail-field-label">Output</div>
+            <pre className="code-block" style={{ maxHeight: 300 }}>{task.output}</pre>
           </div>
         )}
       </div>

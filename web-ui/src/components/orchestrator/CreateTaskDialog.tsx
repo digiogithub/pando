@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useOrchestratorStore } from '@pando/client/stores/orchestratorStore'
 import ModelCombobox from '@/components/shared/ModelCombobox'
+import { Button, Dialog, Input, Textarea } from '@/components/ui'
 import api from '@pando/client/services/api'
 
 export default function CreateTaskDialog() {
@@ -31,142 +32,58 @@ export default function CreateTaskDialog() {
     }
   }
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%',
-    padding: '0.5rem 0.75rem',
-    background: 'var(--bg)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-sm)',
-    color: 'var(--fg)',
-    fontSize: 13,
-    outline: 'none',
-    boxSizing: 'border-box',
-  }
-
-  const labelStyle: React.CSSProperties = {
-    display: 'block',
-    fontSize: 12,
-    fontWeight: 600,
-    color: 'var(--fg-muted)',
-    marginBottom: '0.375rem',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-  }
-
   return (
-    /* Overlay backdrop */
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-      }}
-      onClick={() => setCreateDialogOpen(false)}
+    <Dialog
+      open
+      onClose={() => setCreateDialogOpen(false)}
+      title="Create Orchestrator Task"
+      size="sm"
+      footer={
+        <>
+          <Button variant="secondary" onClick={() => setCreateDialogOpen(false)}>
+            Cancel
+          </Button>
+          <Button type="submit" form="create-task-form" variant="primary" loading={submitting} disabled={!name.trim()}>
+            {submitting ? 'Creating…' : 'Create Task'}
+          </Button>
+        </>
+      }
     >
-      {/* Dialog panel */}
-      <div
-        style={{
-          background: 'var(--surface)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius)',
-          padding: '1.5rem',
-          width: 440,
-          maxWidth: '90vw',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)', marginBottom: '1.25rem' }}>
-          Create Orchestrator Task
-        </h3>
-
-        <form onSubmit={handleSubmit}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {/* Name */}
-            <div>
-              <label style={labelStyle}>Task Name *</label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Refactor auth module"
-                required
-                style={inputStyle}
-                autoFocus
-              />
-            </div>
-
-            {/* Description / prompt */}
-            <div>
-              <label style={labelStyle}>Description / Prompt</label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe what the agent should do..."
-                rows={4}
-                style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }}
-              />
-            </div>
-
-            {/* Model */}
-            <div>
-              <label style={labelStyle}>Model</label>
-              <ModelCombobox
-                value={model}
-                onChange={setModel}
-                placeholder="Default model"
-              />
-            </div>
-
-            {/* Error */}
-            {error && (
-              <div style={{ fontSize: 12, color: 'var(--error)', background: 'color-mix(in srgb, var(--error) 10%, transparent)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-sm)' }}>
-                {error}
-              </div>
-            )}
-
-            {/* Actions */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
-              <button
-                type="button"
-                onClick={() => setCreateDialogOpen(false)}
-                style={{
-                  padding: '0.5rem 1rem',
-                  background: 'none',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer',
-                  color: 'var(--fg)',
-                  fontSize: 13,
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={submitting || !name.trim()}
-                style={{
-                  padding: '0.5rem 1rem',
-                  background: 'var(--primary)',
-                  border: 'none',
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: submitting ? 'not-allowed' : 'pointer',
-                  color: 'white',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  opacity: submitting || !name.trim() ? 0.6 : 1,
-                }}
-              >
-                {submitting ? 'Creating…' : 'Create Task'}
-              </button>
-            </div>
+      <form onSubmit={handleSubmit} id="create-task-form">
+        <div className="flex flex-col gap-4">
+          {/* Name */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wide text-muted">Task Name *</label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Refactor auth module"
+              required
+              data-autofocus
+            />
           </div>
-        </form>
-      </div>
-    </div>
+
+          {/* Description / prompt */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wide text-muted">Description / Prompt</label>
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Describe what the agent should do..."
+              rows={4}
+            />
+          </div>
+
+          {/* Model */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wide text-muted">Model</label>
+            <ModelCombobox value={model} onChange={setModel} placeholder="Default model" />
+          </div>
+
+          {/* Error */}
+          {error && <div className="rounded-sm bg-danger-soft px-3 py-2 text-xs text-danger">{error}</div>}
+        </div>
+      </form>
+    </Dialog>
   )
 }

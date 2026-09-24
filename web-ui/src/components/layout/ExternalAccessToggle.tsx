@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faGlobe } from '@fortawesome/free-solid-svg-icons'
+import { Globe } from '@/components/ui/icons'
 import { useToastStore } from '@pando/client/stores/toastStore'
 import api from '@pando/client/services/api'
 
@@ -79,27 +78,15 @@ export default function ExternalAccessToggle() {
 
   return (
     <button
+      type="button"
+      className={`shell-status-btn${status.enabled ? ' is-success' : ''}`}
       onClick={() => { void toggle() }}
       disabled={busy || fixed}
+      aria-busy={busy || undefined}
+      aria-pressed={status.enabled}
       title={fixed ? t('externalAccess.fixedTooltip') : title}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.375rem',
-        background: status.enabled ? 'var(--success, #16a34a)' : 'none',
-        border: 'none',
-        cursor: busy || fixed ? 'default' : 'pointer',
-        color: status.enabled ? '#fff' : 'var(--fg-muted)',
-        fontSize: 11,
-        fontWeight: status.enabled ? 600 : 400,
-        opacity: busy ? 0.6 : 1,
-        padding: '0 0.5rem',
-        height: 18,
-        borderRadius: 'var(--radius-sm)',
-        transition: 'color 0.15s, background 0.15s',
-      }}
     >
-      <FontAwesomeIcon icon={faGlobe} style={{ fontSize: 10 }} />
+      <Globe size={12} />
       <span>{status.enabled ? t('externalAccess.on') : t('externalAccess.off')}</span>
     </button>
   )

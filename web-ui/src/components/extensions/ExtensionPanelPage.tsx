@@ -19,7 +19,7 @@ export default function ExtensionPanelPage() {
   if (!panel) return loaded ? <NotFound /> : null
 
   return (
-    <div style={{ padding: '1rem', height: '100%', overflow: 'auto' }}>
+    <div className="h-full overflow-auto p-4">
       <ExtensionPanel panel={panel} />
     </div>
   )

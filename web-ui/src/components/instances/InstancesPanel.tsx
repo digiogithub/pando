@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faServer, faSpinner, faSyncAlt } from '@fortawesome/free-solid-svg-icons'
+import { Server, RefreshCw } from '@/components/ui/icons'
+import { Button, Spinner } from '@/components/ui'
 import { useInstancesStore } from '@pando/client/stores/instancesStore'
 import InstanceCard from './InstanceCard'
 import RemoteSessionView from './RemoteSessionView'
+import EmptyState from '@/components/shared/EmptyState'
 
 export default function InstancesPanel() {
   const {
@@ -21,7 +22,7 @@ export default function InstancesPanel() {
       mountedRef.current = true
       void fetchInstances()
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const selectedInstance = instances.find((i) => i.instance_id === selectedInstanceId) ?? null
@@ -35,126 +36,44 @@ export default function InstancesPanel() {
   }, {})
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        background: 'var(--bg)',
-      }}
-    >
+    <div className="view">
       {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '1rem 1.5rem',
-          borderBottom: '1px solid var(--border)',
-          flexShrink: 0,
-          flexWrap: 'wrap',
-          gap: '0.5rem',
-        }}
-      >
-        <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)', margin: 0 }}>
-          <FontAwesomeIcon icon={faServer} style={{ marginRight: '0.5rem', color: 'var(--primary)' }} />
-          Instances{' '}
-          <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--fg-muted)' }}>
-            ({instances.length})
-          </span>
-        </h2>
-        <button
-          onClick={() => void fetchInstances()}
-          disabled={loading}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.375rem',
-            padding: '0.5rem 0.875rem',
-            borderRadius: 'var(--radius-sm)',
-            border: '1px solid var(--border)',
-            background: 'transparent',
-            color: 'var(--fg-muted)',
-            fontSize: 13,
-            cursor: loading ? 'not-allowed' : 'pointer',
-            opacity: loading ? 0.6 : 1,
-            fontFamily: 'inherit',
-          }}
-        >
-          {loading ? (
-            <FontAwesomeIcon icon={faSpinner} spin style={{ fontSize: 11 }} />
-          ) : (
-            <FontAwesomeIcon icon={faSyncAlt} style={{ fontSize: 11 }} />
-          )}
-          Refresh
-        </button>
+      <div className="view-header">
+        <div className="view-title">
+          <Server size={16} className="text-muted" />
+          Instances <span className="view-title-count">({instances.length})</span>
+        </div>
+        <div className="view-header-actions">
+          <Button
+            variant="secondary"
+            icon={loading ? <Spinner size={12} /> : <RefreshCw size={13} />}
+            disabled={loading}
+            onClick={() => void fetchInstances()}
+          >
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Body: two columns */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+      <div className="split-pane">
         {/* Left column: instances list */}
-        <div
-          style={{
-            width: 280,
-            flexShrink: 0,
-            borderRight: '1px solid var(--border)',
-            overflow: 'auto',
-          }}
-        >
+        <div className="split-pane-side" style={{ width: 280 }}>
           {loading && instances.length === 0 ? (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: 120,
-                color: 'var(--fg-muted)',
-                gap: '0.5rem',
-                fontSize: 13,
-              }}
-            >
-              <FontAwesomeIcon icon={faSpinner} spin />
-              Loading instances…
+            <div className="flex h-32 items-center justify-center gap-2 text-sm text-muted">
+              <Spinner size={14} /> Loading instances…
             </div>
           ) : instances.length === 0 ? (
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '2.5rem 1.5rem',
-                color: 'var(--fg-muted)',
-                gap: '0.75rem',
-                textAlign: 'center',
-              }}
-            >
-              <FontAwesomeIcon icon={faServer} style={{ fontSize: 28, opacity: 0.3 }} />
-              <p style={{ margin: 0, fontSize: 13 }}>No running instances found.</p>
-              <p style={{ margin: 0, fontSize: 12, color: 'var(--fg-dim)' }}>
-                Start another Pando instance to see it listed here.
-              </p>
-            </div>
+            <EmptyState
+              icon={<Server size={22} />}
+              title="No running instances found."
+              description="Start another Pando instance to see it listed here."
+            />
           ) : (
             Object.entries(grouped).map(([path, group]) => (
               <div key={path}>
                 {/* Group header */}
-                <div
-                  style={{
-                    padding: '0.4rem 1rem',
-                    fontSize: 10,
-                    fontWeight: 600,
-                    color: 'var(--fg-dim)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    background: 'var(--sidebar-bg)',
-                    borderBottom: '1px solid var(--border)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                  title={path}
-                >
+                <div className="entity-row-group-header" title={path}>
                   {path.replace(/^\/home\/[^/]+/, '~').replace(/^\/Users\/[^/]+/, '~')}
                 </div>
                 {group.map((inst) => (
@@ -171,21 +90,11 @@ export default function InstancesPanel() {
         </div>
 
         {/* Right column: sessions / stream */}
-        <div style={{ flex: 1, overflow: 'hidden' }}>
+        <div className="split-pane-main">
           {!selectedInstance ? (
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '100%',
-                color: 'var(--fg-muted)',
-                gap: '0.75rem',
-              }}
-            >
-              <FontAwesomeIcon icon={faServer} style={{ fontSize: 32, opacity: 0.25 }} />
-              <p style={{ margin: 0, fontSize: 14 }}>Select an instance to view its sessions</p>
+            <div className="centered-fill">
+              <Server size={30} className="text-faint opacity-70" />
+              <p className="text-sm">Select an instance to view its sessions</p>
             </div>
           ) : (
             <RemoteSessionView instance={selectedInstance} />

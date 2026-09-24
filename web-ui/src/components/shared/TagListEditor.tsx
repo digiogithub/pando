@@ -1,4 +1,5 @@
 import { useState, KeyboardEvent } from 'react'
+import { Button, Input } from '@/components/ui'
 
 interface TagListEditorProps {
   label?: string
@@ -30,54 +31,16 @@ export default function TagListEditor({ label, items, onChange, placeholder = 'A
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      {label && (
-        <label
-          style={{
-            fontSize: 12,
-            fontWeight: 600,
-            color: 'var(--fg-muted)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.04em',
-          }}
-        >
-          {label}
-        </label>
-      )}
+    <div className="flex flex-col gap-2">
+      {label && <label className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</label>}
 
       {/* Tags */}
       {items.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+        <div className="tag-list">
           {items.map((item, idx) => (
-            <span
-              key={idx}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.25rem',
-                background: 'var(--selected)',
-                color: 'var(--fg)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '0.125rem 0.5rem',
-                fontSize: 12,
-                fontFamily: 'monospace',
-              }}
-            >
+            <span key={idx} className="tag-chip">
               {item}
-              <button
-                onClick={() => removeItem(idx)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: 'var(--fg-muted)',
-                  padding: '0 0.125rem',
-                  lineHeight: 1,
-                  fontSize: 14,
-                  fontFamily: 'inherit',
-                }}
-                title="Remove"
-              >
+              <button onClick={() => removeItem(idx)} className="tag-chip-remove" title="Remove">
                 ×
               </button>
             </span>
@@ -86,42 +49,15 @@ export default function TagListEditor({ label, items, onChange, placeholder = 'A
       )}
 
       {/* Input row */}
-      <div style={{ display: 'flex', gap: '0.5rem' }}>
-        <input
+      <div className="flex gap-2">
+        <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          style={{
-            flex: 1,
-            background: 'var(--input-bg)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            color: 'var(--fg)',
-            fontSize: 13,
-            padding: '0.375rem 0.625rem',
-            outline: 'none',
-            fontFamily: 'monospace',
-          }}
-          onFocus={(e) => { e.target.style.borderColor = 'var(--border-focus)' }}
-          onBlur={(e) => { e.target.style.borderColor = 'var(--border)' }}
+          className="flex-1 font-mono"
         />
-        <button
-          onClick={addItem}
-          style={{
-            padding: '0.375rem 0.75rem',
-            background: 'var(--primary)',
-            color: 'var(--primary-fg)',
-            border: 'none',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 13,
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-            fontWeight: 600,
-          }}
-        >
-          Add
-        </button>
+        <Button onClick={addItem}>Add</Button>
       </div>
     </div>
   )

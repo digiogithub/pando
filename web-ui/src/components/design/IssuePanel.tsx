@@ -1,31 +1,25 @@
+import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import {
-  faCircleCheck,
-  faTriangleExclamation,
-  faCircleExclamation,
-  faCircleInfo,
-  faGavel,
-  faRotate,
-} from '@fortawesome/free-solid-svg-icons'
 import { useDesignStore, type DesignIssue } from '@pando/client/stores/designStore'
+import { Button } from '@/components/ui'
+import { CircleAlert, CircleCheck, CircleQuestionMark, Gavel, RotateCw, TriangleAlert } from '@/components/ui/icons'
 
 interface IssuePanelProps {
   artifactId: string
 }
 
-const severityColor: Record<string, string> = {
-  blocking: 'var(--error, #e5484d)',
-  error: 'var(--error, #e5484d)',
-  warning: 'var(--warning, #d97706)',
-  info: 'var(--fg-muted)',
+const severityTone: Record<string, string> = {
+  blocking: 'blocking',
+  error: 'error',
+  warning: 'warning',
+  info: 'info',
 }
 
 const severityIcon = {
-  blocking: faGavel,
-  error: faCircleExclamation,
-  warning: faTriangleExclamation,
-  info: faCircleInfo,
+  blocking: Gavel,
+  error: CircleAlert,
+  warning: TriangleAlert,
+  info: CircleQuestionMark,
 } as const
 
 /**
@@ -54,81 +48,45 @@ export default function IssuePanel({ artifactId }: IssuePanelProps) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      <div style={{ padding: '0.6rem 0.75rem', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+      <div className="design-issue-header">
+        <div className="design-issue-header-row">
           {critique ? (
-            <span
-              style={{
-                fontSize: 15,
-                fontWeight: 700,
-                color: decision?.pass ? 'var(--success, #30a46c)' : 'var(--warning, #d97706)',
-              }}
-            >
+            <span className="design-issue-score" style={{ color: decision?.pass ? 'var(--success)' : 'var(--warning)' }}>
               {t('design.critique.score', { score: critique.score.toFixed(1) })}
             </span>
           ) : (
-            <span style={{ fontSize: 12, fontWeight: 600 }}>{t('design.critique.title')}</span>
+            <span className="design-issue-title">{t('design.critique.title')}</span>
           )}
           {decision && (
-            <span style={{ fontSize: 11, color: 'var(--fg-muted)' }}>
+            <span className="design-issue-verdict">
               {verdict} · {t('design.critique.round', { round: decision.round, max: decision.max_rounds })}
             </span>
           )}
-          <button
+          <Button
+            size="sm"
+            variant="primary"
+            icon={<RotateCw size={11} />}
+            loading={running}
             onClick={() => void runCritique(artifactId)}
-            disabled={running}
-            style={{
-              marginLeft: 'auto',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.35rem',
-              padding: '0.25rem 0.5rem',
-              fontSize: 11,
-              background: 'var(--primary)',
-              color: 'white',
-              border: 'none',
-              borderRadius: 'var(--radius-sm)',
-              cursor: running ? 'default' : 'pointer',
-              opacity: running ? 0.6 : 1,
-            }}
+            style={{ marginLeft: 'auto' }}
           >
-            <FontAwesomeIcon icon={faRotate} spin={running} style={{ fontSize: 10 }} />
             {running ? t('design.critique.running') : t('design.critique.run')}
-          </button>
+          </Button>
         </div>
         {settings && (
-          <div style={{ fontSize: 10.5, color: 'var(--fg-muted)', marginTop: 4 }}>
-            {t('design.critique.policy', {
-              policy: settings.policy,
-              threshold: settings.threshold.toFixed(1),
-            })}
+          <div className="design-issue-policy">
+            {t('design.critique.policy', { policy: settings.policy, threshold: settings.threshold.toFixed(1) })}
           </div>
         )}
-        {decision?.reason && (
-          <div style={{ fontSize: 11, color: 'var(--fg-muted)', marginTop: 4, lineHeight: 1.5 }}>
-            {decision.reason}
-          </div>
-        )}
+        {decision?.reason && <div className="design-issue-reason">{decision.reason}</div>}
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      <div className="design-issue-list">
         {!critique ? (
-          <div style={{ padding: '1rem 0.75rem', fontSize: 12, color: 'var(--fg-muted)', lineHeight: 1.6 }}>
-            {loaded ? t('design.critique.never') : ''}
-          </div>
+          <div className="design-issue-empty">{loaded ? t('design.critique.never') : ''}</div>
         ) : critique.issues.length === 0 ? (
-          <div
-            style={{
-              padding: '1rem 0.75rem',
-              fontSize: 12,
-              color: 'var(--fg-muted)',
-              lineHeight: 1.6,
-              display: 'flex',
-              gap: '0.5rem',
-              alignItems: 'flex-start',
-            }}
-          >
-            <FontAwesomeIcon icon={faCircleCheck} style={{ color: 'var(--success, #30a46c)', marginTop: 2 }} />
+          <div className="design-issue-none">
+            <CircleCheck size={14} />
             {t('design.critique.none')}
           </div>
         ) : (
@@ -156,32 +114,23 @@ export default function IssuePanel({ artifactId }: IssuePanelProps) {
 
 function IssueRow({ issue, onSelect }: { issue: DesignIssue; onSelect?: () => void }) {
   const { t } = useTranslation()
-  const color = severityColor[issue.severity] ?? 'var(--fg-muted)'
-  const icon = severityIcon[issue.severity] ?? faCircleInfo
+  const tone = severityTone[issue.severity] ?? 'info'
+  const Icon = severityIcon[issue.severity as keyof typeof severityIcon] ?? CircleQuestionMark
 
   return (
     <div
       onClick={onSelect}
       title={onSelect ? t('design.critique.select') : undefined}
-      style={{
-        padding: '0.45rem 0.75rem',
-        borderBottom: '1px solid var(--border)',
-        borderLeft: `2px solid ${color}`,
-        cursor: onSelect ? 'pointer' : 'default',
-      }}
+      className={clsx('design-issue-row', `design-issue-row--${tone}`, onSelect && 'design-issue-row--clickable')}
     >
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem' }}>
-        <FontAwesomeIcon icon={icon} style={{ fontSize: 10, color }} />
-        {issue.code && (
-          <span style={{ fontSize: 10, color: 'var(--fg-muted)', fontFamily: "'JetBrains Mono', monospace" }}>
-            {issue.code}
-          </span>
-        )}
-        {issue.node_id && <span style={{ fontSize: 10, color: 'var(--primary)' }}>{issue.node_id}</span>}
+      <div className="design-issue-row-top">
+        <Icon size={11} className={`tone-${tone}`} />
+        {issue.code && <span className="design-issue-code">{issue.code}</span>}
+        {issue.node_id && <span className="design-issue-node">{issue.node_id}</span>}
       </div>
-      <div style={{ fontSize: 11.5, marginTop: 3, lineHeight: 1.5 }}>{issue.message}</div>
+      <div className="design-issue-message">{issue.message}</div>
       {issue.fix && (
-        <div style={{ fontSize: 11, marginTop: 3, color: 'var(--fg-muted)', lineHeight: 1.5 }}>
+        <div className="design-issue-fix">
           {t('design.critique.fix')}: {issue.fix}
         </div>
       )}

@@ -1,6 +1,6 @@
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faTimes } from '@fortawesome/free-solid-svg-icons'
+import clsx from 'clsx'
 import { useEditorStore } from '@pando/client/stores/editorStore'
+import { X } from '@/components/ui/icons'
 
 export default function EditorTabs() {
   const { openFiles, activeFilePath, setActiveFile, closeFile } = useEditorStore()
@@ -23,23 +23,15 @@ export default function EditorTabs() {
   const getFileName = (path: string) => path.split('/').pop() ?? path
 
   return (
-    <div
-      style={{
-        height: 36,
-        display: 'flex',
-        alignItems: 'stretch',
-        background: 'var(--sidebar-bg)',
-        borderBottom: '1px solid var(--border)',
-        overflowX: 'auto',
-        overflowY: 'hidden',
-        flexShrink: 0,
-      }}
-    >
+    <div className="editor-tabs" role="tablist" aria-label="Open files">
       {openFiles.map((file) => {
         const isActive = file.path === activeFilePath
         return (
-          <div
+          <button
             key={file.path}
+            type="button"
+            role="tab"
+            aria-selected={isActive}
             onClick={() => setActiveFile(file.path)}
             onMouseDown={(e) => {
               if (e.button === 1) {
@@ -53,82 +45,22 @@ export default function EditorTabs() {
               }
             }}
             title={file.path}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '0 12px 0 14px',
-              cursor: 'pointer',
-              flexShrink: 0,
-              maxWidth: 200,
-              minWidth: 80,
-              background: isActive ? 'var(--bg)' : 'transparent',
-              borderRight: '1px solid var(--border)',
-              borderBottom: isActive ? `2px solid var(--primary)` : '2px solid transparent',
-              fontSize: 13,
-              color: isActive ? 'var(--fg)' : 'var(--fg-muted, #a0a0b0)',
-              position: 'relative',
-              transition: 'background 0.1s',
-            }}
-            onMouseEnter={(e) => {
-              if (!isActive) {
-                ;(e.currentTarget as HTMLDivElement).style.background = 'var(--hover-bg)'
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!isActive) {
-                ;(e.currentTarget as HTMLDivElement).style.background = 'transparent'
-              }
-            }}
+            className={clsx('editor-tab', isActive && 'editor-tab--active')}
           >
-            <span
-              style={{
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                flex: 1,
-              }}
-            >
+            <span className="editor-tab-label">
               {getFileName(file.path)}
-              {file.isDirty && (
-                <span
-                  style={{
-                    marginLeft: 4,
-                    color: 'var(--primary)',
-                    fontWeight: 700,
-                  }}
-                >
-                  •
-                </span>
-              )}
+              {file.isDirty && <span className="editor-tab-dirty">•</span>}
             </span>
-            <button
+            <span
+              role="button"
+              aria-label={`Close ${getFileName(file.path)}`}
               onClick={(e) => handleClose(e, file.path, file.isDirty)}
               title="Close tab"
-              style={{
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                color: 'var(--fg-muted, #a0a0b0)',
-                padding: '2px 4px',
-                borderRadius: 3,
-                display: 'flex',
-                alignItems: 'center',
-                flexShrink: 0,
-                lineHeight: 1,
-              }}
-              onMouseEnter={(e) => {
-                ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--fg)'
-                ;(e.currentTarget as HTMLButtonElement).style.background = 'var(--hover-bg)'
-              }}
-              onMouseLeave={(e) => {
-                ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--fg-muted, #a0a0b0)'
-                ;(e.currentTarget as HTMLButtonElement).style.background = 'transparent'
-              }}
+              className="editor-tab-close"
             >
-              <FontAwesomeIcon icon={faTimes} style={{ fontSize: 10 }} />
-            </button>
-          </div>
+              <X size={12} />
+            </span>
+          </button>
         )
       })}
     </div>

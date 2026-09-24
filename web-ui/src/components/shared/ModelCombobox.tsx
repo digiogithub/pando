@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { Popover } from '@/components/ui'
+import { ChevronDown, Search, TriangleAlert } from '@/components/ui/icons'
 import api from '@pando/client/services/api'
 
 interface ModelInfo {
@@ -12,13 +13,6 @@ interface ModelInfo {
   costPer1MIn?: number
   costPer1MOut?: number
   knowledge?: string
-}
-
-const BADGE_COLORS: Record<string, string> = {
-  fast: 'var(--success)',
-  cost: '#F59E0B',
-  capable: 'var(--info)',
-  reasoning: 'var(--primary)',
 }
 
 /** 200000 -> "200K", 1000000 -> "1M". */
@@ -51,25 +45,6 @@ export function modelMetaLine(model: {
   return parts.join(' · ')
 }
 
-const inputStyle: React.CSSProperties = {
-  background: 'var(--input-bg)',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-sm)',
-  color: 'var(--fg)',
-  fontSize: 14,
-  padding: '0.5rem 0.75rem',
-  outline: 'none',
-  width: '100%',
-  fontFamily: 'inherit',
-  boxSizing: 'border-box',
-  cursor: 'pointer',
-  textAlign: 'left',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  transition: 'border-color 0.15s',
-}
-
 export default function ModelCombobox({
   value,
   onChange,
@@ -86,18 +61,16 @@ export default function ModelCombobox({
   const [models, setModels] = useState<ModelInfo[]>([])
   const [providerErrors, setProviderErrors] = useState<Record<string, string>>({})
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const [dropdownRect, setDropdownRect] = useState<DOMRect | null>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const [triggerWidth, setTriggerWidth] = useState<number>()
   const buttonRef = useRef<HTMLButtonElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
   const [fetching, setFetching] = useState(false)
   const fetchedRef = useRef(false)
+
   const openDropdown = useCallback(() => {
-    if (buttonRef.current) {
-      setDropdownRect(buttonRef.current.getBoundingClientRect())
-    }
+    setTriggerWidth(buttonRef.current?.offsetWidth)
     setOpen(true)
     setQuery('')
     setSelectedIndex(0)
@@ -120,36 +93,6 @@ export default function ModelCombobox({
     setOpen(false)
     setQuery('')
   }, [])
-
-  // Recalculate dropdown position on scroll/resize while open
-  useEffect(() => {
-    if (!open) return
-    const update = () => {
-      if (buttonRef.current) {
-        setDropdownRect(buttonRef.current.getBoundingClientRect())
-      }
-    }
-    window.addEventListener('scroll', update, true)
-    window.addEventListener('resize', update)
-    return () => {
-      window.removeEventListener('scroll', update, true)
-      window.removeEventListener('resize', update)
-    }
-  }, [open])
-
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      const target = e.target as Node
-      const inContainer = containerRef.current?.contains(target)
-      const inPortal = (document.getElementById('model-combobox-portal'))?.contains(target)
-      if (!inContainer && !inPortal) {
-        closeDropdown()
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open, closeDropdown])
 
   const q = query.toLowerCase()
   // Support "provider.model" syntax: if query contains a dot, split into provider prefix and model filter
@@ -175,7 +118,7 @@ export default function ModelCombobox({
 
   useEffect(() => {
     if (!open) return
-    const el = listRef.current?.querySelector<HTMLElement>('[data-selected="true"]')
+    const el = listRef.current?.querySelector<HTMLElement>('[data-active="true"]')
     el?.scrollIntoView({ block: 'nearest' })
   }, [normalizedSelectedIndex, open])
 
@@ -188,56 +131,39 @@ export default function ModelCombobox({
     [onChange, onSelect, closeDropdown],
   )
 
+  const activeModel = models.find((m) => m.id === value)
+
   return (
-    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
+    <div className="relative w-full">
       <button
         ref={buttonRef}
         type="button"
         onClick={open ? closeDropdown : openDropdown}
-        style={inputStyle as React.CSSProperties}
-        onFocus={(e) => { e.currentTarget.style.borderColor = 'var(--border-focus)' }}
-        onBlur={(e) => { if (!open) e.currentTarget.style.borderColor = 'var(--border)' }}
+        className="model-combo-trigger"
       >
-        <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+        <span className="model-combo-value">
           {value ? (
             <>
-              {(() => {
-                const activeModel = models.find((m) => m.id === value)
-                return activeModel ? (
-                  <span style={{ fontSize: 11, color: 'var(--fg-dim)', background: 'var(--sidebar-bg)', border: '1px solid var(--border)', borderRadius: 3, padding: '0 4px', flexShrink: 0 }}>
-                    {activeModel.provider}
-                  </span>
-                ) : null
-              })()}
+              {activeModel && <span className="model-combo-provider-tag">{activeModel.provider}</span>}
               <span>{value}</span>
             </>
           ) : (
-            <span style={{ color: 'var(--fg-dim)' }}>{placeholder}</span>
+            <span className="model-combo-placeholder">{placeholder}</span>
           )}
         </span>
-        <span style={{ color: 'var(--fg-dim)', fontSize: 11, marginLeft: '0.5rem', flexShrink: 0 }}>▼</span>
+        <ChevronDown size={14} className="model-combo-chevron" />
       </button>
 
-      {open && dropdownRect && createPortal(
+      <Popover open={open} onClose={closeDropdown} anchorRef={buttonRef} placement="bottom-start" padded={false}>
         <div
-          id="model-combobox-portal"
-          style={{
-            position: 'fixed',
-            top: dropdownRect.bottom + 4,
-            left: dropdownRect.left,
-            width: dropdownRect.width,
-            zIndex: 9999,
-            background: 'var(--card-bg, var(--input-bg))',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius)',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.16)',
-            display: 'flex',
-            flexDirection: 'column',
-            maxHeight: 320,
-            overflow: 'hidden',
-          }}
+          className="model-combo-panel"
+          style={{ width: triggerWidth }}
           onKeyDown={(e) => {
-            if (e.key === 'Escape') { closeDropdown(); return }
+            if (e.key === 'Escape') {
+              e.preventDefault()
+              closeDropdown()
+              return
+            }
             if (e.key === 'ArrowDown') {
               e.preventDefault()
               setSelectedIndex((i) => Math.min(i + 1, flatModels.length - 1))
@@ -251,69 +177,37 @@ export default function ModelCombobox({
             }
           }}
         >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              padding: '0.5rem 0.75rem',
-              borderBottom: '1px solid var(--border)',
-              gap: '0.5rem',
-            }}
-          >
-            <span style={{ color: 'var(--fg-dim)', fontSize: 12 }}>⌕</span>
+          <div className="model-combo-search">
+            <Search size={13} />
             <input
               ref={searchRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search models..."
-              style={{
-                flex: 1,
-                background: 'none',
-                border: 'none',
-                outline: 'none',
-                fontSize: 13,
-                color: 'var(--fg)',
-                fontFamily: 'inherit',
-              }}
             />
           </div>
 
           {/* Per-provider error warnings */}
           {Object.keys(providerErrors).length > 0 && (
-            <div style={{ borderBottom: '1px solid var(--border)' }}>
+            <div className="border-b border-border">
               {Object.entries(providerErrors).map(([prov, msg]) => (
-                <div
-                  key={prov}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: '0.4rem',
-                    padding: '0.35rem 0.75rem',
-                    fontSize: 11,
-                    color: '#ca8a04',
-                    background: 'rgba(234,179,8,0.06)',
-                  }}
-                >
-                  <span style={{ flexShrink: 0, fontWeight: 700 }}>⚠ {prov}:</span>
-                  <span style={{ color: 'var(--fg-muted)' }}>{msg}</span>
+                <div key={prov} className="model-combo-error">
+                  <TriangleAlert size={11} className="mt-0.5 shrink-0" />
+                  <span>
+                    <strong className="font-semibold">{prov}:</strong> {msg}
+                  </span>
                 </div>
               ))}
             </div>
           )}
 
-          <div ref={listRef} style={{ overflowY: 'auto', flex: 1 }}>
+          <div ref={listRef} className="model-combo-list">
             {fetching ? (
-              <div style={{ padding: '1rem', textAlign: 'center', fontSize: 13, color: 'var(--fg-muted)' }}>
-                Loading models…
-              </div>
+              <div className="p-4 text-center text-sm text-muted">Loading models…</div>
             ) : models.length === 0 ? (
-              <div style={{ padding: '1rem', textAlign: 'center', fontSize: 13, color: 'var(--fg-muted)' }}>
-                No models found — configure a provider first
-              </div>
+              <div className="p-4 text-center text-sm text-muted">No models found — configure a provider first</div>
             ) : flatModels.length === 0 ? (
-              <div style={{ padding: '1rem', textAlign: 'center', fontSize: 13, color: 'var(--fg-muted)' }}>
-                No models found
-              </div>
+              <div className="p-4 text-center text-sm text-muted">No models found</div>
             ) : (
               providers.map((provider) => {
                 const pModels = filtered.filter((m) => m.provider === provider)
@@ -321,18 +215,7 @@ export default function ModelCombobox({
                 const pOffset = flatModels.findIndex((m) => m.provider === provider)
                 return (
                   <div key={provider}>
-                    <div
-                      style={{
-                        padding: '0.375rem 0.75rem 0.125rem',
-                        fontSize: 10,
-                        fontWeight: 700,
-                        color: 'var(--fg-dim)',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.06em',
-                      }}
-                    >
-                      {provider}
-                    </div>
+                    <div className="model-combo-group-label">{provider}</div>
                     {pModels.map((model, idx) => {
                       const flatIdx = pOffset + idx
                       const isSelected = normalizedSelectedIndex === flatIdx
@@ -340,62 +223,21 @@ export default function ModelCombobox({
                       return (
                         <div
                           key={model.id}
-                          data-selected={isSelected ? 'true' : undefined}
+                          data-active={isSelected ? 'true' : undefined}
+                          data-current={isActive ? 'true' : undefined}
                           onClick={() => selectModel(model)}
                           onMouseEnter={() => setSelectedIndex(flatIdx)}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.5rem',
-                            padding: '0.375rem 0.75rem',
-                            cursor: 'pointer',
-                            background: isSelected ? 'var(--selected, rgba(99,102,241,0.08))' : 'transparent',
-                            fontSize: 13,
-                            color: isActive ? 'var(--primary)' : 'var(--fg)',
-                            fontWeight: isActive ? 600 : 400,
-                          }}
+                          className="model-combo-option"
                         >
-                          <span style={{ flex: 1, minWidth: 0 }}>
-                            <span
-                              style={{
-                                display: 'block',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              {model.id}
-                            </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="model-combo-option-id">{model.id}</span>
                             {modelMetaLine(model) && (
-                              <span
-                                style={{
-                                  display: 'block',
-                                  fontSize: 10,
-                                  color: 'var(--fg-dim)',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                {modelMetaLine(model)}
-                              </span>
+                              <span className="model-combo-option-meta">{modelMetaLine(model)}</span>
                             )}
                           </span>
-                          <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+                          <div className="model-combo-badges">
                             {model.badges.map((badge) => (
-                              <span
-                                key={badge}
-                                style={{
-                                  fontSize: 9,
-                                  fontWeight: 600,
-                                  padding: '1px 5px',
-                                  borderRadius: 3,
-                                  background: `${BADGE_COLORS[badge] ?? 'var(--fg-dim)'}22`,
-                                  color: BADGE_COLORS[badge] ?? 'var(--fg-dim)',
-                                  border: `1px solid ${BADGE_COLORS[badge] ?? 'var(--fg-dim)'}44`,
-                                  textTransform: 'lowercase',
-                                }}
-                              >
+                              <span key={badge} className={`model-combo-badge model-combo-badge--${badge}`}>
                                 {badge}
                               </span>
                             ))}
@@ -408,9 +250,8 @@ export default function ModelCombobox({
               })
             )}
           </div>
-        </div>,
-        document.body
-      )}
+        </div>
+      </Popover>
     </div>
   )
 }

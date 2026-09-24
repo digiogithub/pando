@@ -1,57 +1,24 @@
 import { InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes, useState } from 'react'
+import { Input, Select, Switch, Textarea as UITextarea, IconButton } from '@/components/ui'
+import { Eye, EyeOff } from '@/components/ui/icons'
 
 // Base label + field wrapper
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-      <label
-        style={{
-          fontSize: 12,
-          fontWeight: 600,
-          color: 'var(--fg-muted)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.04em',
-        }}
-      >
-        {label}
-      </label>
+    <div className="flex flex-col gap-1.5">
+      <label className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</label>
       {children}
     </div>
   )
 }
 
-const inputStyle: React.CSSProperties = {
-  background: 'var(--input-bg)',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-sm)',
-  color: 'var(--fg)',
-  fontSize: 14,
-  padding: '0.5rem 0.75rem',
-  outline: 'none',
-  width: '100%',
-  transition: 'border-color 0.15s',
-  fontFamily: 'inherit',
-  boxSizing: 'border-box',
-}
-
 export function TextInput({
   label,
   ...props
-}: { label: string } & InputHTMLAttributes<HTMLInputElement>) {
+}: { label: string } & Omit<InputHTMLAttributes<HTMLInputElement>, 'size'>) {
   return (
     <Field label={label}>
-      <input
-        {...props}
-        style={inputStyle}
-        onFocus={(e) => {
-          e.target.style.borderColor = 'var(--border-focus)'
-          props.onFocus?.(e)
-        }}
-        onBlur={(e) => {
-          e.target.style.borderColor = 'var(--border)'
-          props.onBlur?.(e)
-        }}
-      />
+      <Input {...props} />
     </Field>
   )
 }
@@ -63,25 +30,10 @@ export function SelectInput({
 }: {
   label: string
   options: { value: string; label: string }[]
-} & SelectHTMLAttributes<HTMLSelectElement>) {
+} & Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size'>) {
   return (
     <Field label={label}>
-      <select
-        {...props}
-        style={{ ...inputStyle, cursor: 'pointer' }}
-        onFocus={(e) => {
-          e.currentTarget.style.borderColor = 'var(--border-focus)'
-        }}
-        onBlur={(e) => {
-          e.currentTarget.style.borderColor = 'var(--border)'
-        }}
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+      <Select {...props} options={options} />
     </Field>
   )
 }
@@ -92,16 +44,7 @@ export function Textarea({
 }: { label: string } & TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <Field label={label}>
-      <textarea
-        {...props}
-        style={{ ...inputStyle, resize: 'vertical', minHeight: 80 }}
-        onFocus={(e) => {
-          e.target.style.borderColor = 'var(--border-focus)'
-        }}
-        onBlur={(e) => {
-          e.target.style.borderColor = 'var(--border)'
-        }}
-      />
+      <UITextarea {...props} />
     </Field>
   )
 }
@@ -113,43 +56,20 @@ export function Textarea({
 export function MaskedInput({
   label,
   ...props
-}: { label: string } & InputHTMLAttributes<HTMLInputElement>) {
+}: { label: string } & Omit<InputHTMLAttributes<HTMLInputElement>, 'size'>) {
   const [visible, setVisible] = useState(false)
   return (
     <Field label={label}>
-      <div style={{ position: 'relative' }}>
-        <input
-          {...props}
-          type={visible ? 'text' : 'password'}
-          style={{ ...inputStyle, paddingRight: '2.5rem' }}
-          onFocus={(e) => {
-            e.target.style.borderColor = 'var(--border-focus)'
-          }}
-          onBlur={(e) => {
-            e.target.style.borderColor = 'var(--border)'
-          }}
-        />
-        <button
+      <div className="masked-input-wrap">
+        <Input {...props} type={visible ? 'text' : 'password'} />
+        <IconButton
           type="button"
-          onClick={() => setVisible((v) => !v)}
-          style={{
-            position: 'absolute',
-            right: '0.5rem',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            color: 'var(--fg-muted)',
-            fontSize: 13,
-            padding: 0,
-            fontFamily: 'inherit',
-            lineHeight: 1,
-          }}
           aria-label={visible ? 'Hide value' : 'Show value'}
-        >
-          {visible ? '🙈' : '👁'}
-        </button>
+          icon={visible ? <EyeOff size={14} /> : <Eye size={14} />}
+          size="sm"
+          className="masked-input-toggle"
+          onClick={() => setVisible((v) => !v)}
+        />
       </div>
     </Field>
   )
@@ -171,68 +91,13 @@ export function Toggle({
   /** Shown under description, e.g. why the toggle is disabled. */
   hint?: string
 }) {
-  const toggle = () => {
-    if (disabled) return
-    onChange(!checked)
-  }
-
   return (
-    <div
-      role="switch"
-      aria-checked={checked}
-      aria-disabled={disabled || undefined}
-      tabIndex={disabled ? -1 : 0}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.75rem',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.55 : 1,
-      }}
-      onClick={toggle}
-      onKeyDown={(e) => {
-        if (disabled) return
-        if (e.key === ' ' || e.key === 'Enter') {
-          e.preventDefault()
-          onChange(!checked)
-        }
-      }}
-    >
-      {/* Track */}
-      <div
-        style={{
-          width: 36,
-          height: 20,
-          borderRadius: 0,
-          background: checked ? 'var(--primary)' : 'var(--border)',
-          position: 'relative',
-          transition: 'background 0.2s',
-          flexShrink: 0,
-        }}
-      >
-        {/* Thumb */}
-        <div
-          style={{
-            width: 16,
-            height: 16,
-            borderRadius: '50%',
-            background: 'white',
-            position: 'absolute',
-            top: 2,
-            left: checked ? 18 : 2,
-            transition: 'left 0.2s',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-          }}
-        />
-      </div>
+    <div className="flex items-center gap-3">
+      <Switch checked={checked} onCheckedChange={onChange} disabled={disabled} aria-label={label} />
       <div>
-        <div style={{ fontSize: 14, color: 'var(--fg)', fontWeight: 500 }}>{label}</div>
-        {description && (
-          <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>{description}</div>
-        )}
-        {hint && (
-          <div style={{ fontSize: 12, color: 'var(--warning, var(--fg-muted))', marginTop: '0.2rem' }}>{hint}</div>
-        )}
+        <div className="text-sm font-medium text-fg">{label}</div>
+        {description && <div className="text-xs text-muted">{description}</div>}
+        {hint && <div className="mt-0.5 text-xs text-warning">{hint}</div>}
       </div>
     </div>
   )

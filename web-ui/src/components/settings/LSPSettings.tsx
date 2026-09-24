@@ -3,8 +3,9 @@ import { useLSPStore } from '@pando/client/stores/lspStore'
 import type { LSPConfig, LSPServerStatus } from '@pando/client/types'
 import TagListEditor from '@/components/shared/TagListEditor'
 import ConfirmDialog from '@/components/shared/ConfirmDialog'
-import { TextInput, Toggle } from '@/components/shared/FormInput'
 import { useToast } from '@pando/client/stores/toastStore'
+import { Badge, Button, Dialog, IconButton, Input, Select, SettingsRow, SettingsSection, Switch, type BadgeTone } from '@/components/ui'
+import { ChevronDown, ChevronRight, Pencil, Plus, RefreshCw, Trash2 } from '@/components/ui/icons'
 
 const ACTIVATE_ON_OPTIONS = [
   { value: 'edits', label: 'edits — files Pando edits (default)' },
@@ -20,39 +21,16 @@ const RUNNER_OPTIONS = [
   { value: 'off', label: 'off — never use bun or npm' },
 ]
 
-/** Colour of the availability badge: installed, installable by Pando, or manual. */
-function availabilityColor(availability: string): string {
+/** Tone of the availability badge: installed, installable by Pando, or manual. */
+function availabilityTone(availability: string): BadgeTone {
   switch (availability) {
     case 'installed':
-      return 'var(--success)'
+      return 'success'
     case 'installable':
-      return 'var(--primary)'
+      return 'accent'
     default:
-      return 'var(--secondary)'
+      return 'neutral'
   }
-}
-
-const sectionTitle: React.CSSProperties = {
-  fontSize: 18,
-  fontWeight: 700,
-  color: 'var(--fg)',
-  marginBottom: '1.25rem',
-}
-
-const dividerStyle: React.CSSProperties = {
-  borderTop: '1px solid var(--border)',
-  margin: '1.5rem 0',
-}
-
-const actionBtn: React.CSSProperties = {
-  padding: '0.25rem 0.625rem',
-  background: 'transparent',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-sm)',
-  fontSize: 12,
-  cursor: 'pointer',
-  color: 'var(--fg)',
-  fontFamily: 'inherit',
 }
 
 interface ModalFormState {
@@ -192,424 +170,276 @@ export default function LSPSettings() {
   }
 
   return (
-    <div style={{ maxWidth: 800 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
-        <h2 style={{ ...sectionTitle, marginBottom: 0 }}>Language Servers (LSP)</h2>
-        <button
-          onClick={openAdd}
-          style={{
-            padding: '0.5rem 1.25rem',
-            background: 'var(--primary)',
-            color: 'var(--primary-fg)',
-            border: 'none',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
-          + Add LSP
-        </button>
-      </div>
+    <div>
+      <header className="settings-page-header settings-page-header--row">
+        <div className="settings-page-header-text">
+          <h2 className="settings-page-title">Language Servers (LSP)</h2>
+          <p className="settings-page-description">Configure LSP servers Pando starts to read diagnostics and navigate code.</p>
+        </div>
+        <div className="settings-page-header-actions">
+          <Button variant="primary" icon={<Plus size={14} />} onClick={openAdd}>
+            Add LSP
+          </Button>
+        </div>
+      </header>
 
-      {/* Global on-demand activation */}
-      <div
-        style={{
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-md)',
-          padding: '1rem',
-          marginBottom: '1.5rem',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '0.875rem',
-        }}
-      >
-        <Toggle
+      <SettingsSection title="On-demand activation">
+        <SettingsRow
           label="On-demand activation"
           description="Start a language server when Pando touches a file it handles, instead of at boot"
-          checked={activation.autoActivate}
-          onChange={(v) => saveActivation({ ...activation, autoActivate: v })}
-        />
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            Activate on
-          </label>
-          <select
+          htmlFor="lsp-auto-activate"
+        >
+          <Switch
+            id="lsp-auto-activate"
+            checked={activation.autoActivate}
+            onCheckedChange={(v) => saveActivation({ ...activation, autoActivate: v })}
+          />
+        </SettingsRow>
+        <SettingsRow label="Activate on" htmlFor="lsp-activate-on">
+          <Select
+            id="lsp-activate-on"
             value={activation.activateOn}
+            options={ACTIVATE_ON_OPTIONS}
             disabled={!activation.autoActivate || saving}
             onChange={(e) => saveActivation({ ...activation, activateOn: e.target.value })}
-            style={{ background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--fg)', fontSize: 13, padding: '0.5rem 0.75rem', fontFamily: 'inherit', cursor: 'pointer' }}
-          >
-            {ACTIVATE_ON_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </div>
-
-        <Toggle
+          />
+        </SettingsRow>
+        <SettingsRow
           label="Install servers automatically"
           description="Install npm-distributed servers with bun or npm when their binary is missing"
-          checked={activation.autoInstall}
-          onChange={(v) => saveActivation({ ...activation, autoInstall: v })}
-        />
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            Package manager
-          </label>
-          <select
+          htmlFor="lsp-auto-install"
+        >
+          <Switch
+            id="lsp-auto-install"
+            checked={activation.autoInstall}
+            onCheckedChange={(v) => saveActivation({ ...activation, autoInstall: v })}
+          />
+        </SettingsRow>
+        <SettingsRow
+          label="Package manager"
+          description={'With "off", npm-distributed servers are only used when their binary is already on PATH.'}
+          htmlFor="lsp-runner"
+        >
+          <Select
+            id="lsp-runner"
             value={activation.runner}
+            options={RUNNER_OPTIONS}
             disabled={saving}
             onChange={(e) => saveActivation({ ...activation, runner: e.target.value })}
-            style={{ background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--fg)', fontSize: 13, padding: '0.5rem 0.75rem', fontFamily: 'inherit', cursor: 'pointer' }}
-          >
-            {RUNNER_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-          <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
-            With “off”, npm-distributed servers are only used when their binary is already on PATH.
-          </span>
-        </div>
-
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 160px' }}>
-            <TextInput
-              label="Startup timeout"
-              value={startupTimeout}
-              placeholder="20s"
-              onChange={(e) => setStartupTimeout(e.target.value)}
-              onBlur={() => {
-                if (startupTimeout !== activation.startupTimeout) {
-                  saveActivation({ ...activation, startupTimeout })
-                }
-              }}
-            />
+          />
+        </SettingsRow>
+        <SettingsRow label="Timeouts" stacked>
+          <div className="settings-field-grid">
+            <div className="settings-field">
+              <label className="settings-field-label" htmlFor="lsp-startup-timeout">Startup timeout</label>
+              <Input
+                id="lsp-startup-timeout"
+                value={startupTimeout}
+                placeholder="20s"
+                onChange={(e) => setStartupTimeout(e.target.value)}
+                onBlur={() => {
+                  if (startupTimeout !== activation.startupTimeout) {
+                    saveActivation({ ...activation, startupTimeout })
+                  }
+                }}
+              />
+            </div>
+            <div className="settings-field">
+              <label className="settings-field-label" htmlFor="lsp-install-timeout">Install timeout</label>
+              <Input
+                id="lsp-install-timeout"
+                value={installTimeout}
+                placeholder="2m"
+                onChange={(e) => setInstallTimeout(e.target.value)}
+                onBlur={() => {
+                  if (installTimeout !== activation.installTimeout) {
+                    saveActivation({ ...activation, installTimeout })
+                  }
+                }}
+              />
+            </div>
           </div>
-          <div style={{ flex: '1 1 160px' }}>
-            <TextInput
-              label="Install timeout"
-              value={installTimeout}
-              placeholder="2m"
-              onChange={(e) => setInstallTimeout(e.target.value)}
-              onBlur={() => {
-                if (installTimeout !== activation.installTimeout) {
-                  saveActivation({ ...activation, installTimeout })
-                }
-              }}
-            />
-          </div>
-        </div>
-      </div>
+        </SettingsRow>
+      </SettingsSection>
 
-      {loading && (
-        <div style={{ color: 'var(--fg-muted)', fontSize: 14 }}>Loading…</div>
-      )}
+      {loading && <div className="settings-loading">Loading…</div>}
 
       {!loading && configs.length === 0 && (
-        <div style={{ color: 'var(--fg-muted)', fontSize: 14, padding: '1rem 0' }}>
+        <div className="settings-empty-row">
           No language server configured explicitly. Pando still activates the built-in catalogue below on demand.
         </div>
       )}
 
       {!loading && configs.length > 0 && (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['Language', 'Command', 'Args', 'Status', 'Actions'].map((h) => (
-                <th
-                  key={h}
-                  style={{
-                    textAlign: 'left',
-                    padding: '0.5rem 0.75rem',
-                    color: 'var(--fg-muted)',
-                    fontWeight: 600,
-                    fontSize: 11,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.04em',
-                  }}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {configs.map((c) => (
-              <tr
-                key={c.language}
-                style={{ borderBottom: '1px solid var(--border)', verticalAlign: 'middle' }}
-              >
-                <td style={{ padding: '0.625rem 0.75rem', fontFamily: 'monospace', color: 'var(--fg)', fontWeight: 600 }}>
-                  {c.language}
-                </td>
-                <td style={{ padding: '0.625rem 0.75rem', fontFamily: 'monospace', color: 'var(--fg-muted)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {c.command}
-                </td>
-                <td style={{ padding: '0.625rem 0.75rem', color: 'var(--fg-muted)' }}>
-                  {(c.args ?? []).length > 0 ? (
-                    <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{c.args.join(' ')}</span>
-                  ) : (
-                    <span style={{ color: 'var(--fg-dim)', fontSize: 12 }}>—</span>
+        <SettingsSection title="Configured servers">
+          {configs.map((c) => {
+            const status = statusByName[c.language]
+            return (
+              <div className="ui-settings-row" key={c.language}>
+                <div className="ui-settings-row-text">
+                  <span className="ui-settings-row-label font-mono">{c.language}</span>
+                  <p className="ui-settings-row-description font-mono truncate">
+                    {c.command}
+                    {(c.args ?? []).length > 0 && <span className="text-faint"> {c.args.join(' ')}</span>}
+                  </p>
+                </div>
+                <div className="ui-settings-row-control flex-wrap justify-end">
+                  <Badge tone={c.disabled ? 'neutral' : 'success'}>{c.disabled ? 'Disabled' : 'Enabled'}</Badge>
+                  {status && (
+                    <Badge tone={availabilityTone(status.availability)} title={status.reason || status.hint || ''}>
+                      {status.availabilityLabel}
+                    </Badge>
                   )}
-                </td>
-                <td style={{ padding: '0.625rem 0.75rem' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-start' }}>
-                    <span
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        padding: '0.125rem 0.5rem',
-                        borderRadius: 9999,
-                        fontSize: 11,
-                        fontWeight: 600,
-                        background: c.disabled ? 'var(--secondary)' : 'var(--success)',
-                        color: c.disabled ? 'var(--fg)' : 'white',
-                      }}
-                    >
-                      {c.disabled ? 'Disabled' : 'Enabled'}
-                    </span>
-                    {statusByName[c.language] && (
-                      <span
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          padding: '0.125rem 0.5rem',
-                          borderRadius: 9999,
-                          fontSize: 11,
-                          fontWeight: 600,
-                          background: availabilityColor(statusByName[c.language].availability),
-                          color: statusByName[c.language].availability === 'manual' ? 'var(--fg)' : 'white',
-                        }}
-                        title={statusByName[c.language].reason || statusByName[c.language].hint || ''}
-                      >
-                        {statusByName[c.language].availabilityLabel}
-                      </span>
-                    )}
-                    {statusByName[c.language]?.runState === 'ready' && (
-                      <span style={{ fontSize: 11, color: 'var(--fg-muted)' }}>running</span>
-                    )}
-                  </div>
-                </td>
-                <td style={{ padding: '0.625rem 0.75rem' }}>
-                  <div style={{ display: 'flex', gap: '0.375rem' }}>
-                    <button onClick={() => openEdit(c)} style={actionBtn}>Edit</button>
-                    <button
-                      onClick={() => handleTestConnection(c)}
-                      disabled={testing === c.language}
-                      style={{ ...actionBtn, opacity: testing === c.language ? 0.6 : 1 }}
-                    >
-                      {testing === c.language ? '…' : 'Test'}
-                    </button>
-                    <button
-                      onClick={() => setConfirmDelete(c.language)}
-                      style={{ ...actionBtn, color: 'var(--error)', borderColor: 'var(--error)' }}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  {status?.runState === 'ready' && <Badge tone="info">running</Badge>}
+                  <IconButton aria-label={`Edit ${c.language}`} tooltip icon={<Pencil size={14} />} size="sm" onClick={() => openEdit(c)} />
+                  <IconButton
+                    aria-label={`Test ${c.language}`}
+                    tooltip
+                    icon={<RefreshCw size={14} />}
+                    size="sm"
+                    loading={testing === c.language}
+                    onClick={() => handleTestConnection(c)}
+                  />
+                  <IconButton
+                    aria-label={`Delete ${c.language}`}
+                    tooltip
+                    variant="danger"
+                    icon={<Trash2 size={14} />}
+                    size="sm"
+                    onClick={() => setConfirmDelete(c.language)}
+                  />
+                </div>
+              </div>
+            )
+          })}
+        </SettingsSection>
       )}
 
       {/* Built-in catalogue */}
       {!loading && available.length > 0 && (
-        <div style={{ marginTop: '1.5rem' }}>
-          <button
-            onClick={() => setShowCatalog((v) => !v)}
-            style={{ ...actionBtn, fontSize: 13 }}
-          >
-            {showCatalog ? '▾' : '▸'} Built-in catalogue ({available.length} more servers)
-          </button>
+        <SettingsSection>
+          <div className="p-2">
+            <Button variant="ghost" size="sm" icon={showCatalog ? <ChevronDown size={14} /> : <ChevronRight size={14} />} onClick={() => setShowCatalog((v) => !v)}>
+              Built-in catalogue ({available.length} more servers)
+            </Button>
 
-          {showCatalog && (
-            <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
-                These servers are activated on demand without any configuration. Servers marked
-                <strong> installable</strong> are installed by Pando with bun or npm the first time they are needed;
-                <strong> opt-in</strong> servers stay off until you add them.
-              </div>
-              {available.map((s) => (
-                <div
-                  key={s.name}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '0.75rem',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius-sm)',
-                    padding: '0.5rem 0.75rem',
-                  }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      <span style={{ fontFamily: 'monospace', fontWeight: 600, color: 'var(--fg)', fontSize: 13 }}>
-                        {s.name}
-                      </span>
-                      <span
-                        style={{
-                          padding: '0.125rem 0.5rem',
-                          borderRadius: 9999,
-                          fontSize: 11,
-                          fontWeight: 600,
-                          background: availabilityColor(s.availability),
-                          color: s.availability === 'manual' ? 'var(--fg)' : 'white',
-                        }}
-                      >
-                        {s.availabilityLabel}
-                      </span>
-                      {s.optIn && (
-                        <span style={{ fontSize: 11, color: 'var(--fg-muted)', fontStyle: 'italic' }}>opt-in</span>
+            {showCatalog && (
+              <div className="mt-2 flex flex-col gap-2">
+                <p className="text-xs text-muted px-2">
+                  These servers are activated on demand without any configuration. Servers marked
+                  <strong className="text-fg"> installable</strong> are installed by Pando with bun or npm the first
+                  time they are needed; <strong className="text-fg">opt-in</strong> servers stay off until you add
+                  them.
+                </p>
+                {available.map((s) => (
+                  <div key={s.name} className="ui-settings-row">
+                    <div className="ui-settings-row-text">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="ui-settings-row-label font-mono">{s.name}</span>
+                        <Badge tone={availabilityTone(s.availability)}>{s.availabilityLabel}</Badge>
+                        {s.optIn && <span className="text-xs text-muted italic">opt-in</span>}
+                      </div>
+                      <p className="ui-settings-row-description">
+                        {s.description}
+                        {(s.languages ?? []).length > 0 && ` · ${(s.languages ?? []).join(' ')}`}
+                        {(s.filenames ?? []).length > 0 && ` · ${(s.filenames ?? []).join(' ')}`}
+                      </p>
+                      {s.availability === 'manual' && (s.hint || s.reason) && (
+                        <p className="ui-settings-row-description font-mono">{s.hint ? `run: ${s.hint}` : s.reason}</p>
                       )}
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--fg-muted)', marginTop: '0.125rem' }}>
-                      {s.description}
-                      {(s.languages ?? []).length > 0 && ` · ${(s.languages ?? []).join(' ')}`}
-                      {(s.filenames ?? []).length > 0 && ` · ${(s.filenames ?? []).join(' ')}`}
+                    <div className="ui-settings-row-control">
+                      <Button variant="secondary" size="sm" onClick={() => enablePreset(s)}>
+                        {s.optIn ? 'Enable' : 'Customize'}
+                      </Button>
                     </div>
-                    {s.availability === 'manual' && (s.hint || s.reason) && (
-                      <div style={{ fontSize: 12, color: 'var(--fg-dim)', marginTop: '0.125rem', fontFamily: 'monospace' }}>
-                        {s.hint ? `run: ${s.hint}` : s.reason}
-                      </div>
-                    )}
                   </div>
-                  <button onClick={() => enablePreset(s)} style={actionBtn}>
-                    {s.optIn ? 'Enable' : 'Customize'}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </SettingsSection>
       )}
 
       {/* Add/Edit Modal */}
-      {modalOpen && (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
-          onClick={() => setModalOpen(false)}
-        >
-          <div
-            style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '1.5rem', width: 520, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)', marginBottom: '1.25rem' }}>
-              {editLang ? `Edit: ${editLang}` : 'Add Language Server'}
-            </h3>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {/* Language key: preset selector when adding */}
-              {!editLang ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    Language
-                  </label>
-                  <select
-                    value={statusByName[form.language] ? form.language : ''}
-                    onChange={(e) => {
-                      const preset = statusByName[e.target.value]
-                      if (preset) {
-                        setForm(statusToForm(preset))
-                      } else {
-                        setField('language', '')
-                      }
-                    }}
-                    style={{ background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--fg)', fontSize: 14, padding: '0.5rem 0.75rem', fontFamily: 'inherit', cursor: 'pointer', marginBottom: '0.25rem' }}
-                  >
-                    <option value="">Select a catalogue server…</option>
-                    {available.map((s) => (
-                      <option key={s.name} value={s.name}>
-                        {s.name} — {s.description} [{s.availabilityLabel}]
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    value={form.language}
-                    onChange={(e) => setField('language', e.target.value)}
-                    placeholder="or type a custom key (e.g. kotlin)"
-                    style={{ background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--fg)', fontSize: 13, padding: '0.5rem 0.75rem', fontFamily: 'monospace', outline: 'none' }}
-                    onFocus={(e) => { e.target.style.borderColor = 'var(--border-focus)' }}
-                    onBlur={(e) => { e.target.style.borderColor = 'var(--border)' }}
-                  />
-                </div>
-              ) : (
-                <TextInput
-                  label="Language"
-                  value={form.language}
-                  onChange={(e) => setField('language', e.target.value)}
-                  disabled
-                />
-              )}
-
-              <TextInput
-                label="Command"
-                placeholder="gopls"
-                value={form.command}
-                onChange={(e) => setField('command', e.target.value)}
+      <Dialog
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editLang ? `Edit: ${editLang}` : 'Add Language Server'}
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={handleSave} disabled={saving} loading={saving}>
+              {saving ? 'Saving…' : 'Save'}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          {!editLang ? (
+            <div className="settings-field">
+              <label className="settings-field-label" htmlFor="lsp-form-preset">Language</label>
+              <Select
+                id="lsp-form-preset"
+                value={statusByName[form.language] ? form.language : ''}
+                onChange={(e) => {
+                  const preset = statusByName[e.target.value]
+                  if (preset) {
+                    setForm(statusToForm(preset))
+                  } else {
+                    setField('language', '')
+                  }
+                }}
+                options={[
+                  { value: '', label: 'Select a catalogue server…' },
+                  ...available.map((s) => ({ value: s.name, label: `${s.name} — ${s.description} [${s.availabilityLabel}]` })),
+                ]}
               />
-
-              <TagListEditor
-                label="Args"
-                items={form.args}
-                onChange={(v) => setField('args', v)}
-                placeholder="Add argument…"
-              />
-
-              <TagListEditor
-                label="Language file extensions (optional)"
-                items={form.languages}
-                onChange={(v) => setField('languages', v)}
-                placeholder=".go"
-              />
-
-              <TagListEditor
-                label="File names (optional)"
-                items={form.filenames}
-                onChange={(v) => setField('filenames', v)}
-                placeholder="Dockerfile"
-              />
-
-              <Toggle
-                label="Autostart"
-                description="Start this server at boot instead of waiting for a matching file"
-                checked={form.autostart}
-                onChange={(v) => setField('autostart', v)}
-              />
-
-              <Toggle
-                label="Disabled"
-                description="Disable this language server without removing it"
-                checked={form.disabled}
-                onChange={(v) => setField('disabled', v)}
+              <Input
+                className="font-mono mt-1"
+                value={form.language}
+                onChange={(e) => setField('language', e.target.value)}
+                placeholder="or type a custom key (e.g. kotlin)"
               />
             </div>
-
-            <div style={dividerStyle} />
-
-            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => setModalOpen(false)}
-                style={{ padding: '0.5rem 1.25rem', background: 'transparent', color: 'var(--fg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                style={{ padding: '0.5rem 1.25rem', background: 'var(--primary)', color: 'var(--primary-fg)', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: 14, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}
-              >
-                {saving ? 'Saving…' : 'Save'}
-              </button>
+          ) : (
+            <div className="settings-field">
+              <label className="settings-field-label" htmlFor="lsp-form-language">Language</label>
+              <Input id="lsp-form-language" value={form.language} disabled />
             </div>
+          )}
+
+          <div className="settings-field">
+            <label className="settings-field-label" htmlFor="lsp-form-command">Command</label>
+            <Input id="lsp-form-command" placeholder="gopls" value={form.command} onChange={(e) => setField('command', e.target.value)} />
+          </div>
+
+          <TagListEditor items={form.args} onChange={(v) => setField('args', v)} placeholder="Add argument…" />
+
+          <TagListEditor items={form.languages} onChange={(v) => setField('languages', v)} placeholder=".go" />
+
+          <TagListEditor items={form.filenames} onChange={(v) => setField('filenames', v)} placeholder="Dockerfile" />
+
+          <div className="flex items-center gap-3">
+            <Switch id="lsp-form-autostart" checked={form.autostart} onCheckedChange={(v) => setField('autostart', v)} />
+            <label htmlFor="lsp-form-autostart" className="cursor-pointer">
+              <div className="text-sm font-medium text-fg">Autostart</div>
+              <div className="text-xs text-muted">Start this server at boot instead of waiting for a matching file</div>
+            </label>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Switch id="lsp-form-disabled" checked={form.disabled} onCheckedChange={(v) => setField('disabled', v)} />
+            <label htmlFor="lsp-form-disabled" className="cursor-pointer">
+              <div className="text-sm font-medium text-fg">Disabled</div>
+              <div className="text-xs text-muted">Disable this language server without removing it</div>
+            </label>
           </div>
         </div>
-      )}
+      </Dialog>
 
       {/* Delete confirm */}
       {confirmDelete && (

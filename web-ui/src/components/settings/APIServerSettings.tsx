@@ -1,27 +1,25 @@
 import { useEffect, useState } from 'react'
 import { useServicesSettingsStore } from '@pando/client/stores/servicesSettingsStore'
-import { TextInput, Toggle } from '@/components/shared/FormInput'
+import { useUnsavedChangesGuard } from './unsavedChanges'
 import RestartRequiredBanner from '@/components/shared/RestartRequiredBanner'
 import MaskedInput from '@/components/shared/MaskedInput'
 import ConfirmDialog from '@/components/shared/ConfirmDialog'
 import { useToastStore } from '@pando/client/stores/toastStore'
 import api from '@pando/client/services/api'
-
-const dividerStyle: React.CSSProperties = {
-  borderTop: '1px solid var(--border)',
-  margin: '1.5rem 0',
-}
-
-const sectionTitle: React.CSSProperties = {
-  fontSize: 18,
-  fontWeight: 700,
-  color: 'var(--fg)',
-  marginBottom: '1.25rem',
-}
+import { Button, Input, SettingsRow, SettingsSection, Switch } from '@/components/ui'
 
 export default function APIServerSettings() {
   const { config, dirty, loading, saving, error, fetchServices, updateServer, saveServices, resetServices } =
     useServicesSettingsStore()
+  useUnsavedChangesGuard({
+    id: 'api-server',
+    dirty,
+    save: async () => {
+      await saveServices()
+      return !useServicesSettingsStore.getState().error
+    },
+    discard: resetServices,
+  })
 
   const [authToken, setAuthToken] = useState('')
   const [showRegenConfirm, setShowRegenConfirm] = useState(false)
@@ -31,7 +29,7 @@ export default function APIServerSettings() {
   }, [fetchServices])
 
   if (loading) {
-    return <div style={{ padding: '2rem', color: 'var(--fg-muted)', fontSize: 14 }}>Loading…</div>
+    return <div className="settings-loading">Loading…</div>
   }
 
   const server = config.server
@@ -52,128 +50,70 @@ export default function APIServerSettings() {
   }
 
   return (
-    <div style={{ maxWidth: 640 }}>
-      <h2 style={sectionTitle}>API Server</h2>
+    <div>
+      <header className="settings-page-header">
+        <h2 className="settings-page-title">API Server</h2>
+      </header>
 
       <RestartRequiredBanner />
 
-      <Toggle
-        label="Enabled"
-        description="Enable the HTTP API server"
-        checked={server.enabled}
-        onChange={(v) => updateServer('enabled', v)}
-      />
-
-      <div style={dividerStyle} />
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <TextInput
-          label="Host"
-          value={server.host}
-          onChange={(e) => updateServer('host', e.target.value)}
-          placeholder="localhost"
-        />
-        <TextInput
-          label="Port"
-          type="number"
-          value={String(server.port)}
-          onChange={(e) => updateServer('port', Number(e.target.value))}
-          placeholder="9999"
-        />
-      </div>
-
-      <div
-        style={{
-          marginTop: '0.875rem',
-          padding: '0.5rem 0.75rem',
-          background: 'rgba(217, 119, 6, 0.08)',
-          border: '1px solid rgba(217, 119, 6, 0.2)',
-          borderRadius: 'var(--radius-sm)',
-          fontSize: 12,
-          color: 'var(--fg-muted)',
-        }}
-      >
-        Changing host or port requires restarting the API server.
-      </div>
-
-      <div style={dividerStyle} />
-
-      {/* Auth */}
-      <Toggle
-        label="Require Authentication"
-        description="Protect API endpoints with a bearer token"
-        checked={server.requireAuth}
-        onChange={(v) => updateServer('requireAuth', v)}
-      />
-
-      {server.requireAuth && (
-        <div style={{ marginTop: '1rem' }}>
-          <MaskedInput
-            label="Auth Token"
-            value={authToken}
-            onChange={setAuthToken}
-            placeholder="Token will appear after regeneration"
-            actionLabel="Regenerate"
-            onAction={() => setShowRegenConfirm(true)}
+      <SettingsSection>
+        <SettingsRow label="Enabled" description="Enable the HTTP API server" htmlFor="api-server-enabled">
+          <Switch id="api-server-enabled" checked={server.enabled} onCheckedChange={(v) => updateServer('enabled', v)} />
+        </SettingsRow>
+        <SettingsRow label="Host" htmlFor="api-server-host">
+          <Input
+            id="api-server-host"
+            value={server.host}
+            onChange={(e) => updateServer('host', e.target.value)}
+            placeholder="localhost"
           />
-          <p style={{ marginTop: '0.375rem', fontSize: 12, color: 'var(--fg-muted)' }}>
-            Click "Regenerate" to create a new secure token. The token is shown once.
-          </p>
-        </div>
-      )}
+        </SettingsRow>
+        <SettingsRow label="Port" description="Changing host or port requires restarting the API server." htmlFor="api-server-port">
+          <Input
+            id="api-server-port"
+            type="number"
+            value={String(server.port)}
+            onChange={(e) => updateServer('port', Number(e.target.value))}
+            placeholder="9999"
+          />
+        </SettingsRow>
+      </SettingsSection>
 
-      <div style={dividerStyle} />
-
-      {error && (
-        <div
-          style={{
-            marginBottom: '1rem',
-            padding: '0.625rem 0.875rem',
-            background: 'var(--error)',
-            color: 'var(--primary-fg)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 13,
-          }}
+      <SettingsSection>
+        <SettingsRow
+          label="Require authentication"
+          description="Protect API endpoints with a bearer token"
+          htmlFor="api-server-auth"
         >
-          {error}
-        </div>
-      )}
+          <Switch id="api-server-auth" checked={server.requireAuth} onCheckedChange={(v) => updateServer('requireAuth', v)} />
+        </SettingsRow>
+        {server.requireAuth && (
+          <div className="border-t border-border p-4">
+            <MaskedInput
+              label="Auth token"
+              value={authToken}
+              onChange={setAuthToken}
+              placeholder="Token will appear after regeneration"
+              actionLabel="Regenerate"
+              onAction={() => setShowRegenConfirm(true)}
+            />
+            <p className="mt-2 text-xs text-muted">
+              Click &quot;Regenerate&quot; to create a new secure token. The token is shown once.
+            </p>
+          </div>
+        )}
+      </SettingsSection>
 
-      <div style={{ display: 'flex', gap: '0.75rem' }}>
-        <button
-          onClick={saveServices}
-          disabled={!dirty || saving}
-          style={{
-            padding: '0.5rem 1.5rem',
-            background: !dirty || saving ? 'var(--border)' : 'var(--primary)',
-            color: !dirty || saving ? 'var(--fg-muted)' : 'var(--primary-fg)',
-            border: 'none',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: !dirty || saving ? 'not-allowed' : 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
+      {error && <div className="settings-banner settings-banner--danger" role="alert">{error}</div>}
+
+      <div className="settings-actions">
+        <Button variant="primary" onClick={saveServices} disabled={!dirty || saving} loading={saving}>
           {saving ? 'Saving…' : 'Save'}
-        </button>
-        <button
-          onClick={resetServices}
-          disabled={!dirty}
-          style={{
-            padding: '0.5rem 1.5rem',
-            background: 'transparent',
-            color: !dirty ? 'var(--fg-dim)' : 'var(--fg-muted)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: !dirty ? 'not-allowed' : 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
+        </Button>
+        <Button variant="secondary" onClick={resetServices} disabled={!dirty}>
           Reset
-        </button>
+        </Button>
       </div>
 
       {showRegenConfirm && (

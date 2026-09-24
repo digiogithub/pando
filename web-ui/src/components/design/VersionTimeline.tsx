@@ -1,8 +1,9 @@
+import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faClockRotateLeft, faRotateLeft } from '@fortawesome/free-solid-svg-icons'
 import { format } from 'date-fns'
 import { useDesignStore } from '@pando/client/stores/designStore'
+import { Button } from '@/components/ui'
+import { History, RotateCcw } from '@/components/ui/icons'
 
 interface VersionTimelineProps {
   artifactId: string
@@ -25,66 +26,38 @@ export default function VersionTimeline({ artifactId, currentVersion }: VersionT
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border)' }}>
-        <FontAwesomeIcon icon={faClockRotateLeft} style={{ fontSize: 11, color: 'var(--fg-muted)' }} />
-        <span style={{ fontSize: 12, fontWeight: 600 }}>{t('design.versions.title')}</span>
+      <div className="design-versions-header">
+        <History size={11} />
+        <span className="design-versions-title">{t('design.versions.title')}</span>
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto' }}>
-        {versions.length === 0 && (
-          <div style={{ padding: '0.75rem', fontSize: 12, color: 'var(--fg-muted)' }}>{t('design.versions.empty')}</div>
-        )}
+      <div className="design-versions-list">
+        {versions.length === 0 && <div className="design-versions-empty">{t('design.versions.empty')}</div>}
         {versions.map((version) => {
           const isCurrent = version.number === currentVersion
           return (
-            <div
-              key={version.number}
-              style={{
-                padding: '0.5rem 0.75rem',
-                borderBottom: '1px solid var(--border)',
-                borderLeft: isCurrent ? '2px solid var(--primary)' : '2px solid transparent',
-                background: isCurrent ? 'var(--surface)' : 'transparent',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <span style={{ fontSize: 11, fontWeight: 700 }}>v{version.number}</span>
-                {isCurrent && (
-                  <span style={{ fontSize: 10, color: 'var(--primary)' }}>{t('design.versions.current')}</span>
-                )}
+            <div key={version.number} className={clsx('design-version-row', isCurrent && 'design-version-row--current')}>
+              <div className="design-version-top">
+                <span className="design-version-number">v{version.number}</span>
+                {isCurrent && <span className="design-version-current-tag">{t('design.versions.current')}</span>}
                 {typeof version.critique?.score === 'number' && (
-                  <span style={{ fontSize: 10, color: 'var(--fg-muted)' }}>
-                    {t('design.versions.score', { score: version.critique.score.toFixed(1) })}
-                  </span>
+                  <span className="design-version-score">{t('design.versions.score', { score: version.critique.score.toFixed(1) })}</span>
                 )}
                 {!isCurrent && (
-                  <button
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={<RotateCcw size={9} />}
                     onClick={() => void checkout(artifactId, version.number)}
                     title={t('design.versions.checkoutHint')}
-                    style={{
-                      marginLeft: 'auto',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.3rem',
-                      background: 'none',
-                      border: '1px solid var(--border)',
-                      borderRadius: 'var(--radius-sm)',
-                      padding: '0.15rem 0.4rem',
-                      fontSize: 10,
-                      color: 'var(--fg-muted)',
-                      cursor: 'pointer',
-                    }}
+                    className="design-version-checkout"
                   >
-                    <FontAwesomeIcon icon={faRotateLeft} style={{ fontSize: 9 }} />
                     {t('design.versions.checkout')}
-                  </button>
+                  </Button>
                 )}
               </div>
-              {version.summary && (
-                <div style={{ fontSize: 11, color: 'var(--fg-muted)', marginTop: 3 }}>{version.summary}</div>
-              )}
-              <div style={{ fontSize: 10, color: 'var(--fg-muted)', marginTop: 2, opacity: 0.75 }}>
-                {safeDate(version.created_at)}
-              </div>
+              {version.summary && <div className="design-version-summary">{version.summary}</div>}
+              <div className="design-version-date">{safeDate(version.created_at)}</div>
             </div>
           )
         })}

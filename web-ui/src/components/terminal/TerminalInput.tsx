@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlay } from '@fortawesome/free-solid-svg-icons'
 import type { TerminalTab } from '@pando/client/stores/terminalStore'
 import { useTerminalStore } from '@pando/client/stores/terminalStore'
+import { Play } from '@/components/ui/icons'
 
 interface TerminalInputProps {
   tab: TerminalTab
@@ -51,29 +50,8 @@ export default function TerminalInput({ tab, focusKey = 0 }: TerminalInputProps)
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.5rem',
-        padding: '0.5rem 0.75rem',
-        background: '#161b22',
-        borderTop: '1px solid #30363d',
-        flexShrink: 0,
-      }}
-    >
-      <span
-        style={{
-          color: '#3fb950',
-          fontFamily: 'monospace',
-          fontSize: 14,
-          fontWeight: 700,
-          flexShrink: 0,
-        }}
-      >
-        $
-      </span>
+    <form onSubmit={handleSubmit} className="terminal-input-form">
+      <span className="terminal-input-prompt">$</span>
       <input
         ref={inputRef}
         type="text"
@@ -82,41 +60,14 @@ export default function TerminalInput({ tab, focusKey = 0 }: TerminalInputProps)
         onKeyDown={handleKeyDown}
         placeholder="type a command..."
         disabled={tab.running}
-        style={{
-          flex: 1,
-          background: 'transparent',
-          border: 'none',
-          outline: 'none',
-          color: '#e2e8f0',
-          fontFamily: 'monospace',
-          fontSize: 13,
-          caretColor: '#3fb950',
-        }}
+        className="terminal-input-field"
         autoComplete="off"
         autoCorrect="off"
         autoCapitalize="off"
         spellCheck={false}
       />
-      <button
-        type="submit"
-        disabled={tab.running || !value.trim()}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.3rem',
-          padding: '0.35rem 0.75rem',
-          background: tab.running || !value.trim() ? '#21262d' : 'var(--primary)',
-          border: 'none',
-          borderRadius: 'var(--radius-sm)',
-          cursor: tab.running || !value.trim() ? 'not-allowed' : 'pointer',
-          color: tab.running || !value.trim() ? '#6e7681' : 'white',
-          fontSize: 12,
-          fontWeight: 600,
-          flexShrink: 0,
-          transition: 'background 0.15s ease',
-        }}
-      >
-        <FontAwesomeIcon icon={faPlay} style={{ fontSize: 10 }} />
+      <button type="submit" disabled={tab.running || !value.trim()} className="terminal-run-btn">
+        <Play size={11} />
         Run
       </button>
     </form>

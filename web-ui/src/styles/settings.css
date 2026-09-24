@@ -1,0 +1,310 @@
+/* ============================================================
+   Settings — native settings window (macOS System Settings /
+   Zeron / Claude Desktop style): compact category nav on --bg-shell,
+   centered content column built from ui-settings-section/row.
+   Classes prefixed `.settings-`; never restyle `.ui-*` here.
+   ============================================================ */
+
+.settings-shell {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* ---- Category nav ------------------------------------------------------ */
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 232px;
+  padding: 10px 8px 16px;
+  overflow-y: auto;
+  background: var(--bg-shell);
+  border-right: 1px solid var(--border);
+}
+.settings-nav--mobile {
+  width: 100%;
+  padding: 6px 12px 24px;
+  border-right: none;
+}
+
+.settings-nav-group + .settings-nav-group {
+  margin-top: 4px;
+}
+.settings-nav-group-label {
+  padding: 14px 10px 4px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--fg-faint);
+}
+
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.settings-nav-item:hover { background: var(--bg-hover); color: var(--fg); }
+.settings-nav-item:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.settings-nav-item[aria-current='true'] { background: var(--bg-raised); color: var(--fg); font-weight: 500; }
+.settings-nav-item[aria-current='true'] svg { color: var(--accent); }
+.settings-nav-item svg { flex-shrink: 0; color: currentColor; opacity: 0.9; }
+.settings-nav-item-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Content column ------------------------------------------------------ */
+.settings-content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+.settings-content-inner {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 32px 32px 72px;
+}
+@media (max-width: 640px) {
+  .settings-content-inner { padding: 20px 16px 56px; }
+}
+
+.settings-page-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 24px;
+}
+/* Header with trailing actions: title + description left, buttons right. */
+.settings-page-header--row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 16px;
+}
+.settings-page-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 280px;
+  min-width: 0;
+}
+.settings-page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.settings-page-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--text-xl);
+  font-weight: 600;
+  color: var(--fg);
+}
+.settings-page-title svg { color: var(--fg-muted); }
+.settings-page-description {
+  max-width: 560px;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  line-height: 1.55;
+}
+
+.settings-mobile-back {
+  margin-bottom: 16px;
+}
+
+.settings-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding: 10px 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--fg);
+  line-height: 1.5;
+}
+.settings-banner a { color: var(--accent); }
+
+/* Restart-required / warning banner variant (status colour, still paired
+   with text — see README rule 4). */
+.settings-banner--warning {
+  background: var(--warning-soft);
+  border-left-color: var(--warning);
+}
+.settings-banner--danger {
+  background: var(--danger-soft);
+  border-left-color: var(--danger);
+}
+.settings-banner--success {
+  background: var(--success-soft);
+  border-left-color: var(--success);
+}
+
+/* Generic action row under a section (Save / Reset, Add, etc.) */
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+/* Small monospace/code value display (ids, paths) inside a row. */
+.settings-code-value {
+  padding: 5px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+/* Field list inside a stacked SettingsRow (label above, full-width control
+   list below, e.g. a group of related inputs). */
+.settings-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 640px) {
+  .settings-field-grid { grid-template-columns: 1fr; }
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.settings-field-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+.settings-loading {
+  padding: 32px 4px;
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+
+/* Empty list placeholder inside a section (kept lighter than ui-empty). */
+.settings-empty-row {
+  padding: 16px;
+  color: var(--fg-faint);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+/* ---- Appearance: font-size preview inside SegmentedControl labels ------- */
+.settings-fontsize-sample {
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* Accent swatch row: first entry is the theme-default multi-tone swatch. */
+.settings-swatch-default {
+  background: conic-gradient(from -30deg, var(--accent) 0deg 120deg, var(--danger) 120deg 240deg, var(--info) 240deg 360deg);
+}
+
+/* ---- Interface font size (UI scale) ------------------------------------ *
+ * `data-ui-size` is applied on <html> by index.html's boot script (no
+ * flash) and kept in sync by components/settings/uiScale.ts. "default"
+ * removes the attribute, so no rule is needed for it. */
+:root[data-ui-size='small'] {
+  --text-sm: 12px;
+  --text-base: 13px;
+}
+:root[data-ui-size='large'] {
+  --text-sm: 14px;
+  --text-base: 15px;
+}
+
+/* Compact list of configured entries (MCP servers): one bordered group,
+   name + badges on top, command/URL below, count + icon actions on the right. */
+.settings-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  overflow: hidden;
+}
+.settings-list-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 10px 16px;
+}
+.settings-list-row + .settings-list-row { border-top: 1px solid var(--border); }
+.settings-list-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.settings-list-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.settings-list-name { font-size: var(--text-base); font-weight: 600; color: var(--fg); margin-right: 2px; }
+.settings-list-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+.settings-list-count {
+  flex-shrink: 0;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.settings-list-count:hover { background: var(--bg-raised); color: var(--fg); }
+.settings-list-actions { flex-shrink: 0; display: flex; align-items: center; gap: 2px; }
+@media (max-width: 768px) {
+  .settings-list-row { flex-wrap: wrap; }
+  .settings-list-main { flex-basis: 100%; }
+  .settings-list-actions { margin-left: auto; }
+}
+
+/* Unsaved-changes dialog (portaled, so not nested under .settings-shell). */
+.settings-unsaved-text {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.settings-unsaved-error {
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}

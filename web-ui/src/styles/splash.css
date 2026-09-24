@@ -1,0 +1,85 @@
+/* ============================================================
+   Splash screen — quiet mark + wordmark + subtle progress
+   Class prefix: .splash-*
+   ============================================================ */
+
+.splash-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  background: var(--bg);
+  transition: opacity 0.5s var(--ease), transform 0.5s var(--ease);
+}
+.splash-shell--fade-out { opacity: 0; transform: scale(1.01); }
+
+.splash-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: 'Noto Serif CJK JP', 'Songti SC', serif;
+  font-size: 28px;
+  line-height: 1;
+  animation: splash-pulse 2.4s ease-in-out infinite;
+}
+.splash-mark--done { animation: none; }
+
+.splash-wordmark {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--fg);
+  animation: splash-fade-in 0.5s var(--ease);
+}
+
+.splash-tagline {
+  font-size: 12px;
+  color: var(--fg-faint);
+  animation: splash-fade-in 0.5s var(--ease) 0.1s both;
+}
+
+.splash-status {
+  margin-top: 0.5rem;
+  font-size: 11px;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  min-width: 140px;
+  text-align: center;
+  animation: splash-fade-in 0.5s var(--ease) 0.2s both;
+}
+.splash-status--error { color: var(--danger); }
+
+.splash-progress-track {
+  width: 160px;
+  height: 2px;
+  background: var(--border);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.splash-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+  transition: width 0.7s var(--ease);
+}
+
+@keyframes splash-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.75; transform: scale(0.96); }
+}
+@keyframes splash-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}

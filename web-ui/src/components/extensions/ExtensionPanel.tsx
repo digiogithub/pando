@@ -53,7 +53,7 @@ export default function ExtensionPanel({ panel }: Props) {
 
   if (error) {
     return (
-      <div style={{ padding: '0.5rem', fontSize: 12, color: 'var(--error)' }}>
+      <div className="p-2 text-xs text-danger">
         {panel.title || panel.id}: {error}
       </div>
     )

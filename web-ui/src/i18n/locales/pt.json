@@ -1,4 +1,19 @@
 {
+  "shell": {
+    "switchToLight": "Mudar para modo claro",
+    "switchToDark": "Mudar para modo escuro",
+    "openMenu": "Abrir menu",
+    "closeMenu": "Fechar menu",
+    "collapseSidebar": "Recolher barra lateral",
+    "expandSidebar": "Expandir barra lateral",
+    "documentation": "Documentação",
+    "sidebar": "Barra lateral",
+    "searchSessions": "Pesquisar sessões",
+    "running": "Em execução",
+    "noMatches": "Nenhuma sessão corresponde",
+    "autoAcceptOn": "auto-aceitar",
+    "autoAcceptOff": "auto-aceitar desligado"
+  },
   "common": {
     "save": "Salvar",
     "saving": "Salvando…",
@@ -64,6 +79,7 @@
   "settings": {
     "categories": {
       "general": "Geral",
+      "appearance": "Aparência",
       "providers": "Provedores",
       "agents": "Agentes",
       "mcpServers": "Servidores MCP",
@@ -94,6 +110,9 @@
       "theme": "Tema",
       "themeLight": "Claro",
       "themeDark": "Escuro",
+      "themeSystem": "Sistema",
+      "accent": "Cor de destaque",
+      "accentDefault": "Padrão",
       "llmCache": "Cache de prompts LLM",
       "llmCacheDescription": "Habilitar cache de prompts para provedores LLM (principalmente Anthropic)",
       "modelsDev": "Catálogo de modelos (models.dev)",
@@ -227,6 +246,15 @@
       "revealFailed": "Falha ao mostrar a palavra-passe"
     },
     "backToCategories": "Categorias",
+    "unsaved": {
+      "title": "Alterações não salvas",
+      "description": "Você tem alterações não salvas. Deseja salvá-las antes de sair?",
+      "descriptionSections": "Você tem alterações não salvas em {{sections}}. Deseja salvá-las antes de sair?",
+      "saveAndContinue": "Salvar e continuar",
+      "discard": "Descartar alterações",
+      "cancel": "Cancelar",
+      "saveFailed": "Não foi possível salvar as alterações. Verifique o erro na seção e tente novamente, ou descarte-as."
+    },
     "sandbox": {
       "title": "Sandbox de comandos",
       "loading": "Carregando a configuração do sandbox…",
@@ -275,6 +303,21 @@
       "save": "Salvar",
       "saving": "Salvando…",
       "reset": "Redefinir"
+    },
+    "appearance": {
+      "description": "Escolha a aparência do Pando neste dispositivo. O modo e o tema também são usados pela TUI; a cor de destaque e o tamanho da fonte são locais a este navegador.",
+      "mode": "Modo de aparência",
+      "modeDescription": "Sistema segue a configuração do seu sistema operativo e muda em tempo real.",
+      "fontSize": "Tamanho da fonte da interface",
+      "fontSizeDescription": "Ajusta o tamanho base do texto em toda a aplicação.",
+      "fontSizeSmall": "Pequeno",
+      "fontSizeDefault": "Padrão",
+      "fontSizeLarge": "Grande",
+      "themeFamily": "Tema",
+      "themeFamilyDescription": "Uma família de cores para superfícies e texto. O modo acima decide claro ou escuro.",
+      "accent": "Cor de destaque",
+      "accentDescription": "Usada na ação principal, no foco e na seleção. Todo o resto permanece neutro.",
+      "accentDefault": "Padrão do tema"
     }
   },
   "chat": {
@@ -318,6 +361,128 @@
       "sessionScopePrefix": "\"Permitir na sessão\" cobre comandos que começam com: {{prefix}}",
       "sessionScopeExact": "\"Permitir na sessão\" cobre apenas este comando exato.",
       "runOnce": "Executar fora do sandbox"
+    },
+    "thinking": "Pensando",
+    "thought": "Raciocínio",
+    "persona": "Prompt de persona",
+    "copied": "Copiado",
+    "copyCode": "Copiar código",
+    "copyMessage": "Copiar mensagem",
+    "queued": "Na fila",
+    "queuedHint": "Na fila — será injetado na execução no próximo ponto seguro",
+    "scrollToBottom": "Ir para o fim",
+    "slashCommands": "Comandos",
+    "activity": {
+      "commands_one": "executou {{count}} comando",
+      "commands_other": "executou {{count}} comandos",
+      "read_one": "leu {{count}} arquivo",
+      "read_other": "leu {{count}} arquivos",
+      "edited_one": "editou {{count}} arquivo",
+      "edited_other": "editou {{count}} arquivos",
+      "searched_one": "pesquisou {{count}} vez",
+      "searched_other": "pesquisou {{count}} vezes",
+      "fetched_one": "baixou {{count}} página",
+      "fetched_other": "baixou {{count}} páginas",
+      "tools_one": "usou {{count}} ferramenta",
+      "tools_other": "usou {{count}} ferramentas",
+      "thought_one": "raciocinou",
+      "thought_other": "raciocinou {{count}} vezes",
+      "failed_one": "{{count}} falhou",
+      "failed_other": "{{count}} falharam"
+    },
+    "tool": {
+      "command": "Comando",
+      "output": "Saída",
+      "error": "Erro",
+      "input": "Entrada",
+      "removed": "Removido",
+      "added": "Adicionado",
+      "lines": "linhas",
+      "exitCode": "Código de saída: {{code}}"
+    },
+    "composer": {
+      "placeholder": "Pergunte qualquer coisa ao Pando…",
+      "placeholderRunning": "Oriente o agente em execução…",
+      "send": "Enviar mensagem",
+      "queue": "Enfileirar feedback",
+      "stop": "Parar geração",
+      "hintIdle": "Enter para enviar · Shift+Enter para nova linha · / para comandos",
+      "hintRunning": "Enter enfileira o feedback para o próximo ponto seguro",
+      "hintGoal": "Digite / para comandos",
+      "chars": "{{count}} / {{max}} caracteres",
+      "context": "{{pct}}% do contexto",
+      "tokens": "{{formatted}} tokens"
+    },
+    "empty": {
+      "title": "No que vamos trabalhar?",
+      "suggestions": {
+        "explain": "Explicar este código",
+        "bug": "Encontrar e corrigir um bug",
+        "tests": "Escrever testes",
+        "review": "Revisar minhas alterações"
+      },
+      "prompts": {
+        "explain": "Dê-me uma visão geral deste código: estrutura, componentes principais e como se encaixam.",
+        "bug": "Ajude-me a encontrar e corrigir um bug. Isto é o que acontece:",
+        "tests": "Escreva testes para as alterações mais recentes deste projeto.",
+        "review": "Revise minhas alterações não commitadas e aponte bugs ou código arriscado."
+      }
+    },
+    "files": {
+      "changed_one": "{{count}} arquivo alterado",
+      "changed_other": "{{count}} arquivos alterados",
+      "viewDiff": "Ver diff: {{path}}"
+    },
+    "diff": {
+      "close": "Fechar visualizador de diff",
+      "edits_one": "{{count}} edição",
+      "edits_other": "{{count}} edições",
+      "escToClose": "para fechar"
+    },
+    "goal": {
+      "title": "Objetivo",
+      "cancel": "Cancelar",
+      "cancelling": "Cancelando…",
+      "iteration": "Iteração {{current}}/{{max}}",
+      "started": "Iniciado {{time}}",
+      "finished": "Concluído {{time}}",
+      "progress": "Progresso",
+      "nextStep": "Próximo passo",
+      "loading": "Carregando status do objetivo…",
+      "status": {
+        "running": "Em execução",
+        "completed": "Concluído",
+        "blocked": "Bloqueado",
+        "cancelled": "Cancelado",
+        "idle": "Inativo",
+        "loading": "Carregando"
+      }
+    },
+    "question": {
+      "reviewTitle": "Revise suas respostas",
+      "counter": "Pergunta {{current}}/{{total}}",
+      "single": "Pergunta",
+      "otherAnswer": "Outro: {{text}}",
+      "noSelection": "(sem seleção)",
+      "otherPlaceholder": "Outra resposta (texto livre)…",
+      "cancel": "Cancelar",
+      "back": "Voltar",
+      "next": "Próximo",
+      "review": "Revisar",
+      "confirm": "Confirmar"
+    },
+    "simple": {
+      "toggleSessions": "Mostrar/ocultar sessões",
+      "advanced": "Mudar para a visão avançada",
+      "sessions": "Sessões",
+      "untitled": "Sessão sem título",
+      "sessionFallback": "Sessão {{id}}",
+      "msgs_one": "{{count}} mensagem",
+      "msgs_other": "{{count}} mensagens",
+      "loadMore": "Carregar mais ({{loaded}}/{{total}})",
+      "noSessions": "Ainda não há sessões",
+      "commands": "Comandos",
+      "openCommands": "Abrir o lançador de comandos"
     }
   },
   "terminal": {

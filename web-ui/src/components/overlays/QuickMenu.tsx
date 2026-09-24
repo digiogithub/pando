@@ -1,37 +1,38 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import {
-  faMagnifyingGlass,
-  faComments,
-  faCog,
-  faFileLines,
-  faNetworkWired,
-  faCodeBranch,
-  faStar,
-  faCode,
-  faTerminal,
-  faMoon,
-  faRotateRight,
-  faFile,
-  faRightToBracket,
-  faCircleInfo,
-  faArrowRightFromBracket,
-  faChartColumn,
-  faKey,
-} from '@fortawesome/free-solid-svg-icons'
-import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useTheme } from '@/hooks/useTheme'
 import { useToast } from '@pando/client/stores/toastStore'
 import { loadLauncherCommands, type LauncherCommand } from '@pando/client/services/commandLauncher'
+import { Kbd } from '@/components/ui'
+import {
+  Search,
+  MessageSquare,
+  Settings,
+  FileText,
+  Network,
+  GitBranch,
+  Star,
+  Code,
+  SquareTerminal,
+  Moon,
+  RefreshCw,
+  FileIcon,
+  LogIn,
+  Key,
+  Info,
+  LogOut,
+  ChartColumn,
+  type LucideIcon,
+} from '@/components/ui/icons'
+import '@/styles/overlays.css'
 
 const RECENT_KEY = 'pando-quick-menu-recent'
 
 interface MenuItem {
   id: string
   label: string
-  icon: IconDefinition
+  icon: LucideIcon
   group: 'view' | 'command' | 'recent' | 'account'
   path?: string
   action?: () => void | Promise<void>
@@ -40,14 +41,14 @@ interface MenuItem {
 }
 
 const VIEWS: Omit<MenuItem, 'group'>[] = [
-  { id: 'chat', label: 'Chat', icon: faComments, path: '/', description: '/' },
-  { id: 'settings', label: 'Settings', icon: faCog, path: '/settings', description: '/settings' },
-  { id: 'logs', label: 'Logs', icon: faFileLines, path: '/logs', description: '/logs' },
-  { id: 'orchestrator', label: 'Orchestrator', icon: faNetworkWired, path: '/orchestrator', description: '/orchestrator' },
-  { id: 'snapshots', label: 'Agent VCS', icon: faCodeBranch, path: '/snapshots', description: '/snapshots — version control' },
-  { id: 'evaluator', label: 'Self-Improvement', icon: faStar, path: '/evaluator', description: '/evaluator' },
-  { id: 'editor', label: 'Code Editor', icon: faCode, path: '/editor', description: '/editor' },
-  { id: 'terminal', label: 'Terminal', icon: faTerminal, path: '/terminal', description: '/terminal' },
+  { id: 'chat', label: 'Chat', icon: MessageSquare, path: '/', description: '/' },
+  { id: 'settings', label: 'Settings', icon: Settings, path: '/settings', description: '/settings' },
+  { id: 'logs', label: 'Logs', icon: FileText, path: '/logs', description: '/logs' },
+  { id: 'orchestrator', label: 'Orchestrator', icon: Network, path: '/orchestrator', description: '/orchestrator' },
+  { id: 'snapshots', label: 'Agent VCS', icon: GitBranch, path: '/snapshots', description: '/snapshots — version control' },
+  { id: 'evaluator', label: 'Self-Improvement', icon: Star, path: '/evaluator', description: '/evaluator' },
+  { id: 'editor', label: 'Code Editor', icon: Code, path: '/editor', description: '/editor' },
+  { id: 'terminal', label: 'Terminal', icon: SquareTerminal, path: '/terminal', description: '/terminal' },
 ]
 
 function loadRecent(): string[] {
@@ -71,19 +72,19 @@ function addToRecent(id: string) {
   saveRecent([id, ...prev])
 }
 
-const AUTH_ICONS: Record<string, IconDefinition> = {
-  'anthropic:login': faRightToBracket,
-  'anthropic:complete-login': faKey,
-  'anthropic:status': faCircleInfo,
-  'anthropic:logout': faArrowRightFromBracket,
-  'anthropic:usage': faChartColumn,
-  'copilot:login': faRightToBracket,
-  'copilot:status': faCircleInfo,
-  'copilot:logout': faArrowRightFromBracket,
+const AUTH_ICONS: Record<string, LucideIcon> = {
+  'anthropic:login': LogIn,
+  'anthropic:complete-login': Key,
+  'anthropic:status': Info,
+  'anthropic:logout': LogOut,
+  'anthropic:usage': ChartColumn,
+  'copilot:login': LogIn,
+  'copilot:status': Info,
+  'copilot:logout': LogOut,
 }
 
-function iconForCommand(command: LauncherCommand): IconDefinition {
-  return AUTH_ICONS[command.id] ?? faCircleInfo
+function iconForCommand(command: LauncherCommand): LucideIcon {
+  return AUTH_ICONS[command.id] ?? Info
 }
 
 export default function QuickMenu() {
@@ -141,7 +142,7 @@ export default function QuickMenu() {
     {
       id: 'web-ui-settings',
       label: 'Web UI Settings',
-      icon: faCog,
+      icon: Settings,
       group: 'command',
       path: '/settings',
       description: 'Web UI Settings',
@@ -149,14 +150,14 @@ export default function QuickMenu() {
     {
       id: 'toggle-dark-mode',
       label: 'Toggle Dark Mode',
-      icon: faMoon,
+      icon: Moon,
       group: 'command',
       action: () => { toggleTheme(); close() },
     },
     {
       id: 'reload',
       label: 'Reload',
-      icon: faRotateRight,
+      icon: RefreshCw,
       group: 'command',
       action: () => { window.location.reload() },
     },
@@ -251,101 +252,25 @@ export default function QuickMenu() {
   }, [normalizedSelectedIndex])
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1000,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        paddingTop: '10vh',
-        animation: 'qm-fade-in 0.15s ease',
-      }}
-      onClick={close}
-    >
-      <style>{`
-        @keyframes qm-fade-in {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes qm-slide-up {
-          from { opacity: 0; transform: translateY(12px) scale(0.98); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-      `}</style>
-      <div
-        style={{
-          width: 620,
-          maxWidth: 'calc(100vw - 2rem)',
-          maxHeight: 500,
-          background: 'var(--card-bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-lg)',
-          boxShadow: '0 16px 48px rgba(0,0,0,0.24)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          animation: 'qm-slide-up 0.15s ease',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="ovl-scrim" onClick={close}>
+      <div className="ovl-panel" onClick={(e) => e.stopPropagation()}>
         {/* Search input */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-            padding: '0.875rem 1rem',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <FontAwesomeIcon
-            icon={faMagnifyingGlass}
-            style={{ color: 'var(--fg-dim)', fontSize: 14, flexShrink: 0 }}
-          />
+        <div className="ovl-search">
+          <Search size={14} />
           <input
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search files and commands..."
-            style={{
-              flex: 1,
-              background: 'none',
-              border: 'none',
-              outline: 'none',
-              fontSize: 14,
-              color: 'var(--fg)',
-            }}
+            className="ovl-search-input"
           />
-          <kbd
-            style={{
-              fontSize: 11,
-              color: 'var(--fg-dim)',
-              background: 'var(--surface)',
-              border: '1px solid var(--border)',
-              borderRadius: 0,
-              padding: '1px 5px',
-            }}
-          >
-            ESC
-          </kbd>
+          <Kbd>ESC</Kbd>
         </div>
 
         {/* Results */}
-        <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: '0.25rem 0' }}>
+        <div ref={listRef} className="ovl-list">
           {groups.length === 0 ? (
-            <div
-              style={{
-                padding: '2rem',
-                textAlign: 'center',
-                fontSize: 13,
-                color: 'var(--fg-muted)',
-              }}
-            >
-              No results for &ldquo;{query}&rdquo;
-            </div>
+            <div className="ovl-empty">No results for &ldquo;{query}&rdquo;</div>
           ) : (
             groups.map((group) => {
               let flatOffset = 0
@@ -355,62 +280,21 @@ export default function QuickMenu() {
               }
               return (
                 <div key={group.label}>
-                  <div
-                    style={{
-                      padding: '0.5rem 1rem 0.25rem',
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: 'var(--fg-dim)',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
-                    }}
-                  >
-                    {group.label}
-                  </div>
+                  <div className="ovl-group-label">{group.label}</div>
                   {group.items.map((item, idx) => {
                     const isSelected = normalizedSelectedIndex === flatOffset + idx
+                    const Icon = group.label === 'Recently Used' ? FileIcon : item.icon
                     return (
                       <div
                         key={`${group.label}-${item.id}`}
                         data-selected={isSelected ? 'true' : undefined}
                         onClick={() => { void execute(item) }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.75rem',
-                          padding: '0.5rem 1rem',
-                          cursor: 'pointer',
-                          background: isSelected ? 'var(--selected)' : 'transparent',
-                          borderRadius: 'var(--radius-sm)',
-                          margin: '1px 0.5rem',
-                          transition: 'background 0.1s',
-                        }}
                         onMouseEnter={() => setSelectedIndex(flatOffset + idx)}
+                        className="ovl-item"
                       >
-                        <FontAwesomeIcon
-                          icon={group.label === 'Recently Used' ? faFile : item.icon}
-                          style={{
-                            fontSize: 13,
-                            color: isSelected ? 'var(--primary)' : 'var(--fg-muted)',
-                            width: 16,
-                            flexShrink: 0,
-                          }}
-                        />
-                        <span
-                          style={{
-                            flex: 1,
-                            fontSize: 13,
-                            color: 'var(--fg)',
-                            fontWeight: isSelected ? 500 : 400,
-                          }}
-                        >
-                          {item.label}
-                        </span>
-                        {item.description && (
-                          <span style={{ fontSize: 11, color: 'var(--fg-dim)' }}>
-                            {item.description}
-                          </span>
-                        )}
+                        <span className="ovl-item-icon"><Icon size={14} /></span>
+                        <span className="ovl-item-label">{item.label}</span>
+                        {item.description && <span className="ovl-item-desc">{item.description}</span>}
                       </div>
                     )
                   })}

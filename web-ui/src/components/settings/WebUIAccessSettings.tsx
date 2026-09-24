@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { TextInput, Toggle } from '@/components/shared/FormInput'
 import ConfirmDialog from '@/components/shared/ConfirmDialog'
 import { useToastStore } from '@pando/client/stores/toastStore'
 import api from '@pando/client/services/api'
+import { Button, IconButton, Input, SettingsRow, SettingsSection, Switch } from '@/components/ui'
+import { Eye, EyeOff, Trash2 } from '@/components/ui/icons'
 
 interface BasicAuthUser {
   username: string
@@ -14,26 +15,6 @@ interface BasicAuthStatus {
   users: BasicAuthUser[]
   enforced: boolean
   bindHost: string
-}
-
-const sectionTitle: React.CSSProperties = {
-  fontSize: 18,
-  fontWeight: 700,
-  color: 'var(--fg)',
-  marginBottom: '1.25rem',
-}
-
-const dividerStyle: React.CSSProperties = {
-  borderTop: '1px solid var(--border)',
-  margin: '1.5rem 0',
-}
-
-const noticeStyle: React.CSSProperties = {
-  padding: '0.5rem 0.75rem',
-  borderRadius: 'var(--radius-sm)',
-  fontSize: 12,
-  color: 'var(--fg-muted)',
-  marginBottom: '1.25rem',
 }
 
 export default function WebUIAccessSettings() {
@@ -62,7 +43,7 @@ export default function WebUIAccessSettings() {
   }, [load])
 
   if (loading || !status) {
-    return <div style={{ padding: '2rem', color: 'var(--fg-muted)', fontSize: 14 }}>Loading…</div>
+    return <div className="settings-loading">Loading…</div>
   }
 
   async function toggleEnabled(value: boolean) {
@@ -129,128 +110,87 @@ export default function WebUIAccessSettings() {
   }
 
   return (
-    <div style={{ maxWidth: 640 }}>
-      <h2 style={sectionTitle}>{t('settings.webuiAccess.title')}</h2>
+    <div>
+      <header className="settings-page-header">
+        <h2 className="settings-page-title">{t('settings.webuiAccess.title')}</h2>
+      </header>
 
-      <div
-        style={{
-          ...noticeStyle,
-          background: status.enforced ? 'rgba(22, 163, 74, 0.08)' : 'rgba(217, 119, 6, 0.08)',
-          border: status.enforced ? '1px solid rgba(22, 163, 74, 0.2)' : '1px solid rgba(217, 119, 6, 0.2)',
-        }}
-      >
-        {status.enforced
-          ? t('settings.webuiAccess.enforced', { host: status.bindHost })
-          : t('settings.webuiAccess.notEnforced', { host: status.bindHost || 'localhost' })}
+      <div className={`settings-banner ${status.enforced ? 'settings-banner--success' : 'settings-banner--warning'}`}>
+        <span>
+          {status.enforced
+            ? t('settings.webuiAccess.enforced', { host: status.bindHost })
+            : t('settings.webuiAccess.notEnforced', { host: status.bindHost || 'localhost' })}
+        </span>
       </div>
 
-      <Toggle
-        label={t('settings.webuiAccess.enabled')}
-        description={t('settings.webuiAccess.enabledDescription')}
-        checked={status.enabled}
-        onChange={(v) => void toggleEnabled(v)}
-      />
+      <SettingsSection>
+        <SettingsRow label={t('settings.webuiAccess.enabled')} description={t('settings.webuiAccess.enabledDescription')} htmlFor="webui-access-enabled">
+          <Switch id="webui-access-enabled" checked={status.enabled} onCheckedChange={(v) => void toggleEnabled(v)} />
+        </SettingsRow>
+      </SettingsSection>
 
-      <div style={dividerStyle} />
+      <SettingsSection title={t('settings.webuiAccess.users')}>
+        {status.users.length === 0 ? (
+          <div className="settings-empty-row">{t('settings.webuiAccess.noUsers')}</div>
+        ) : (
+          status.users.map((user) => (
+            <div className="ui-settings-row" key={user.username}>
+              <div className="ui-settings-row-text">
+                <span className="ui-settings-row-label">{user.username}</span>
+              </div>
+              <div className="ui-settings-row-control">
+                <span className="settings-code-value">{revealed[user.username] ?? '••••••••'}</span>
+                <IconButton
+                  aria-label={revealed[user.username] ? t('settings.webuiAccess.hide') : t('settings.webuiAccess.reveal')}
+                  tooltip
+                  size="sm"
+                  icon={revealed[user.username] ? <EyeOff size={14} /> : <Eye size={14} />}
+                  onClick={() => void revealPassword(user.username)}
+                />
+                <IconButton
+                  aria-label={t('settings.webuiAccess.delete')}
+                  tooltip
+                  size="sm"
+                  icon={<Trash2 size={14} />}
+                  onClick={() => setPendingDelete(user.username)}
+                />
+              </div>
+            </div>
+          ))
+        )}
 
-      <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--fg)', marginBottom: '0.75rem' }}>
-        {t('settings.webuiAccess.users')}
-      </h3>
-
-      {status.users.length === 0 && (
-        <p style={{ fontSize: 13, color: 'var(--fg-muted)', marginBottom: '1rem' }}>{t('settings.webuiAccess.noUsers')}</p>
-      )}
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1.25rem' }}>
-        {status.users.map((user) => (
-          <div
-            key={user.username}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.75rem',
-              padding: '0.5rem 0.75rem',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-sm)',
-            }}
-          >
-            <span style={{ flex: 1, fontSize: 14, color: 'var(--fg)' }}>{user.username}</span>
-            <span style={{ fontSize: 13, color: 'var(--fg-muted)', fontFamily: 'monospace' }}>
-              {revealed[user.username] ?? '••••••••'}
-            </span>
-            <button
-              onClick={() => void revealPassword(user.username)}
-              style={{
-                padding: '0.25rem 0.625rem',
-                background: 'transparent',
-                color: 'var(--fg-muted)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: 12,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              {revealed[user.username] ? t('settings.webuiAccess.hide') : t('settings.webuiAccess.reveal')}
-            </button>
-            <button
-              onClick={() => setPendingDelete(user.username)}
-              style={{
-                padding: '0.25rem 0.625rem',
-                background: 'transparent',
-                color: 'var(--error)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: 12,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              {t('settings.webuiAccess.delete')}
-            </button>
+        <div className="border-t border-border p-4">
+          <div className="settings-field-grid">
+            <div className="settings-field">
+              <label className="settings-field-label" htmlFor="webui-access-new-username">{t('settings.webuiAccess.username')}</label>
+              <Input
+                id="webui-access-new-username"
+                value={newUsername}
+                onChange={(e) => setNewUsername(e.target.value)}
+                placeholder="admin"
+              />
+            </div>
+            <div className="settings-field">
+              <label className="settings-field-label" htmlFor="webui-access-new-password">{t('settings.webuiAccess.password')}</label>
+              <Input
+                id="webui-access-new-password"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+            </div>
           </div>
-        ))}
-      </div>
-
-      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-end' }}>
-        <div style={{ flex: 1 }}>
-          <TextInput
-            label={t('settings.webuiAccess.username')}
-            value={newUsername}
-            onChange={(e) => setNewUsername(e.target.value)}
-            placeholder="admin"
-          />
+          <Button
+            className="mt-3"
+            variant="primary"
+            disabled={!newUsername.trim() || !newPassword}
+            onClick={() => void addUser()}
+          >
+            {t('settings.webuiAccess.addUser')}
+          </Button>
+          <p className="mt-2 text-xs text-muted">{t('settings.webuiAccess.storageNote')}</p>
         </div>
-        <div style={{ flex: 1 }}>
-          <TextInput
-            label={t('settings.webuiAccess.password')}
-            type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-          />
-        </div>
-        <button
-          onClick={() => void addUser()}
-          disabled={!newUsername.trim() || !newPassword}
-          style={{
-            padding: '0.5rem 1.25rem',
-            background: !newUsername.trim() || !newPassword ? 'var(--border)' : 'var(--primary)',
-            color: !newUsername.trim() || !newPassword ? 'var(--fg-muted)' : 'var(--primary-fg)',
-            border: 'none',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: !newUsername.trim() || !newPassword ? 'not-allowed' : 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
-          {t('settings.webuiAccess.addUser')}
-        </button>
-      </div>
-
-      <p style={{ marginTop: '0.75rem', fontSize: 12, color: 'var(--fg-muted)' }}>
-        {t('settings.webuiAccess.storageNote')}
-      </p>
+      </SettingsSection>
 
       {pendingDelete && (
         <ConfirmDialog

@@ -3,8 +3,10 @@ import { useMCPServersStore } from '@pando/client/stores/mcpServersStore'
 import type { MCPAuthType, MCPServerAuthConfig, MCPServerConfig, MCPToolInfo, MCPType } from '@pando/client/types'
 import KeyValueEditor, { envToKV, kvToEnv, type KVPair } from '@/components/shared/KeyValueEditor'
 import ConfirmDialog from '@/components/shared/ConfirmDialog'
-import { MaskedInput, SelectInput, TextInput, Textarea } from '@/components/shared/FormInput'
+import MaskedInput from '@/components/shared/MaskedInput'
 import { useToast } from '@pando/client/stores/toastStore'
+import { Badge, Button, Dialog, Divider, EmptyState, IconButton, Input, Select, Textarea } from '@/components/ui'
+import { LogIn, LogOut, Pencil, Plug, Plus, RefreshCw, Trash2 } from '@/components/ui/icons'
 
 const MCP_TYPES: { value: MCPType; label: string }[] = [
   { value: 'stdio', label: 'stdio' },
@@ -24,73 +26,28 @@ function emptyAuthForm(): MCPServerAuthConfig {
   return { type: 'none', hasToken: false, hasPassword: false }
 }
 
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="settings-field">
+      <label className="settings-field-label">{label}</label>
+      {children}
+    </div>
+  )
+}
+
 /**
  * AuthStatusBadge renders the OAuth login state for one server (only
  * meaningful when authType === 'oauth'): ok / expired / needs login.
  */
 function AuthStatusBadge({ authType, hasTokens, expired }: { authType: MCPAuthType; hasTokens: boolean; expired: boolean }) {
-  if (authType !== 'oauth') {
-    return <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>—</span>
-  }
-  let label = 'needs login'
-  let bg = 'var(--secondary)'
-  let fg = 'var(--fg)'
-  if (hasTokens && expired) {
-    label = 'expired'
-    bg = 'var(--warning, #b58900)'
-    fg = 'white'
-  } else if (hasTokens) {
-    label = 'ok'
-    bg = 'var(--success)'
-    fg = 'white'
-  }
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        padding: '0.125rem 0.5rem',
-        borderRadius: 9999,
-        fontSize: 11,
-        fontWeight: 600,
-        background: bg,
-        color: fg,
-      }}
-    >
-      {label}
-    </span>
-  )
-}
-
-const sectionTitle: React.CSSProperties = {
-  fontSize: 18,
-  fontWeight: 700,
-  color: 'var(--fg)',
-  marginBottom: '1.25rem',
-}
-
-const dividerStyle: React.CSSProperties = {
-  borderTop: '1px solid var(--border)',
-  margin: '1.5rem 0',
+  if (authType !== 'oauth') return null
+  if (hasTokens && expired) return <Badge tone="warning">OAuth expired</Badge>
+  if (hasTokens) return <Badge tone="success">OAuth ok</Badge>
+  return <Badge tone="neutral">needs login</Badge>
 }
 
 function ServerStatusBadge({ running }: { running: boolean }) {
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        padding: '0.125rem 0.5rem',
-        borderRadius: 9999,
-        fontSize: 11,
-        fontWeight: 600,
-        background: running ? 'var(--success)' : 'var(--secondary)',
-        color: running ? 'white' : 'var(--fg)',
-      }}
-    >
-      {running ? 'Running' : 'Stopped'}
-    </span>
-  )
+  return <Badge tone={running ? 'success' : 'neutral'} dot>{running ? 'Running' : 'Stopped'}</Badge>
 }
 
 interface ModalFormState {
@@ -231,39 +188,32 @@ function formToServer(f: ModalFormState): MCPServerConfig {
   }
 }
 
-function ToolsOverlay({ tools, serverName, onClose }: { tools: MCPToolInfo[]; serverName: string; onClose: () => void }) {
+function ToolsDialog({ tools, serverName, onClose }: { tools: MCPToolInfo[]; serverName: string; onClose: () => void }) {
   return (
-    <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}
-      onClick={onClose}
+    <Dialog
+      open
+      onClose={onClose}
+      title={
+        <>
+          Tools — <span className="font-mono">{serverName}</span>{' '}
+          <span className="text-xs font-normal text-muted">({tools.length})</span>
+        </>
+      }
+      size="md"
     >
-      <div
-        style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '1.5rem', width: 520, maxWidth: '95vw', maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-          <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--fg)', margin: 0 }}>
-            Tools — <span style={{ fontFamily: 'monospace' }}>{serverName}</span>
-            <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: 'var(--fg-muted)' }}>({tools.length})</span>
-          </h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--fg-muted)', fontSize: 18, lineHeight: 1 }}>×</button>
-        </div>
-        <div style={{ overflowY: 'auto', flex: 1 }}>
-          {tools.length === 0 ? (
-            <div style={{ color: 'var(--fg-muted)', fontSize: 13, padding: '0.5rem 0' }}>No tools discovered yet. Try reloading the server.</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-              {tools.map((t) => (
-                <div key={t.name} style={{ padding: '0.625rem 0.75rem', background: 'var(--input-bg)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
-                  <div style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: 'var(--fg)', marginBottom: t.description ? 4 : 0 }}>{t.name}</div>
-                  {t.description && <div style={{ fontSize: 12, color: 'var(--fg-muted)', lineHeight: 1.5 }}>{t.description}</div>}
-                </div>
-              ))}
+      {tools.length === 0 ? (
+        <div className="text-sm text-muted py-2">No tools discovered yet. Try reloading the server.</div>
+      ) : (
+        <div className="flex flex-col gap-2.5">
+          {tools.map((t) => (
+            <div key={t.name} className="p-2.5 bg-input rounded-sm border border-border">
+              <div className={`font-mono text-sm font-semibold text-fg ${t.description ? 'mb-1' : ''}`}>{t.name}</div>
+              {t.description && <div className="text-xs text-muted leading-relaxed">{t.description}</div>}
             </div>
-          )}
+          ))}
         </div>
-      </div>
-    </div>
+      )}
+    </Dialog>
   )
 }
 
@@ -351,338 +301,251 @@ export default function MCPServersSettings() {
   const isRemoteServer = form.type === 'sse' || form.type === 'streamable-http'
 
   return (
-    <div style={{ maxWidth: 800 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
-        <h2 style={{ ...sectionTitle, marginBottom: 0 }}>MCP Servers</h2>
-        <button
-          onClick={openAdd}
-          style={{
-            padding: '0.5rem 1.25rem',
-            background: 'var(--primary)',
-            color: 'var(--primary-fg)',
-            border: 'none',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
-          + Add Server
-        </button>
-      </div>
+    <div>
+      <header className="settings-page-header settings-page-header--row">
+        <div className="settings-page-header-text">
+          <h2 className="settings-page-title">MCP Servers</h2>
+          <p className="settings-page-description">Connect external tool servers over stdio, SSE or streamable HTTP.</p>
+        </div>
+        <div className="settings-page-header-actions">
+          <Button variant="primary" icon={<Plus size={14} />} onClick={openAdd}>
+            Add Server
+          </Button>
+        </div>
+      </header>
 
-      {loading && (
-        <div style={{ color: 'var(--fg-muted)', fontSize: 14 }}>Loading…</div>
-      )}
+      {loading && <div className="settings-loading">Loading…</div>}
 
       {!loading && servers.length === 0 && (
-        <div style={{ color: 'var(--fg-muted)', fontSize: 14, padding: '1rem 0' }}>
-          No MCP servers configured. Add one to get started.
-        </div>
+        <EmptyState
+          icon={<Plug size={20} />}
+          title="No MCP servers configured"
+          description="Add one to get started."
+          action={
+            <Button variant="primary" icon={<Plus size={14} />} onClick={openAdd}>
+              Add Server
+            </Button>
+          }
+        />
       )}
 
       {!loading && servers.length > 0 && (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['Name', 'Type', 'Command / URL', 'Tools', 'Status', 'Auth', 'Actions'].map((h) => (
-                <th
-                  key={h}
-                  style={{
-                    textAlign: 'left',
-                    padding: '0.5rem 0.75rem',
-                    color: 'var(--fg-muted)',
-                    fontWeight: 600,
-                    fontSize: 11,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.04em',
-                  }}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {servers.map((s) => (
-              <tr
-                key={s.name}
-                style={{ borderBottom: '1px solid var(--border)', verticalAlign: 'middle' }}
-              >
-                <td style={{ padding: '0.625rem 0.75rem', fontFamily: 'monospace', color: 'var(--fg)', fontWeight: 600 }}>
-                  {s.name}
-                </td>
-                <td style={{ padding: '0.625rem 0.75rem', color: 'var(--fg-muted)' }}>
-                  {s.type || 'stdio'}
-                </td>
-                <td style={{ padding: '0.625rem 0.75rem', color: 'var(--fg-muted)', fontFamily: 'monospace', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {s.type === 'stdio' ? s.command : s.url}
-                </td>
-                <td style={{ padding: '0.625rem 0.75rem' }}>
-                  <button
-                    onClick={() => setToolsOverlay({ name: s.name, tools: s.tools ?? [] })}
-                    title="Click to view tools"
-                    style={{
-                      background: (s.tools?.length ?? 0) > 0 ? 'var(--primary)' : 'var(--secondary)',
-                      color: (s.tools?.length ?? 0) > 0 ? 'var(--primary-fg)' : 'var(--fg)',
-                      border: 'none',
-                      borderRadius: 9999,
-                      fontSize: 11,
-                      fontWeight: 700,
-                      padding: '0.125rem 0.5rem',
-                      cursor: 'pointer',
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    {s.tools?.length ?? 0}
-                  </button>
-                </td>
-                <td style={{ padding: '0.625rem 0.75rem' }}>
+        <div className="settings-list">
+          {servers.map((s) => (
+            <div key={s.name} className="settings-list-row">
+              <div className="settings-list-main">
+                <div className="settings-list-title">
+                  <span className="settings-list-name">{s.name}</span>
+                  <Badge outline>{s.type || 'stdio'}</Badge>
                   <ServerStatusBadge running={Boolean(s.running)} />
-                </td>
-                <td style={{ padding: '0.625rem 0.75rem' }}>
                   <AuthStatusBadge
                     authType={s.auth?.type ?? 'none'}
                     hasTokens={Boolean(s.authStatus?.hasTokens)}
                     expired={Boolean(s.authStatus?.expired)}
                   />
-                </td>
-                <td style={{ padding: '0.625rem 0.75rem' }}>
-                  <div style={{ display: 'flex', gap: '0.375rem', flexWrap: 'wrap' }}>
-                    <button
-                      onClick={() => openEdit(s)}
-                      style={actionBtn}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleReload(s.name)}
-                      disabled={reloading === s.name}
-                      style={{ ...actionBtn, opacity: reloading === s.name ? 0.6 : 1 }}
-                    >
-                      {reloading === s.name ? '…' : 'Reload'}
-                    </button>
-                    {s.auth?.type === 'oauth' && (
-                      <>
-                        <button
-                          onClick={() => loginServer(s.name)}
-                          disabled={authBusy === s.name}
-                          title="Opens the authorization URL in a new tab"
-                          style={{ ...actionBtn, opacity: authBusy === s.name ? 0.6 : 1 }}
-                        >
-                          {authBusy === s.name ? '…' : s.authStatus?.hasTokens ? 'Re-authorize' : 'Login'}
-                        </button>
-                        {s.authStatus?.hasTokens && (
-                          <button
-                            onClick={() => logoutServer(s.name)}
-                            disabled={authBusy === s.name}
-                            style={{ ...actionBtn, opacity: authBusy === s.name ? 0.6 : 1 }}
-                          >
-                            Logout
-                          </button>
-                        )}
-                      </>
-                    )}
-                    <button
-                      onClick={() => setConfirmDelete(s.name)}
-                      style={{ ...actionBtn, color: 'var(--error)', borderColor: 'var(--error)' }}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {/* Add/Edit Modal */}
-      {modalOpen && (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
-          onClick={() => setModalOpen(false)}
-        >
-          <div
-            style={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '1.5rem', width: 540, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)', marginBottom: '1.25rem' }}>
-              {editName ? `Edit: ${editName}` : 'Add MCP Server'}
-            </h3>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <TextInput
-                label="Name"
-                placeholder="my-server"
-                value={form.name}
-                onChange={(e) => setField('name', e.target.value)}
-                disabled={!!editName}
-              />
-
-              {/* Type selector */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Type
-                </label>
-                <select
-                  value={form.type}
-                  onChange={(e) => setField('type', e.target.value as MCPType)}
-                  style={{ background: 'var(--input-bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--fg)', fontSize: 14, padding: '0.5rem 0.75rem', fontFamily: 'inherit', cursor: 'pointer' }}
-                >
-                  {MCP_TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              {form.type === 'stdio' ? (
-                <TextInput
-                  label="Command"
-                  placeholder="npx @modelcontextprotocol/server-filesystem"
-                  value={form.command}
-                  onChange={(e) => setField('command', e.target.value)}
-                />
-              ) : (
-                <TextInput
-                  label="URL"
-                  placeholder="http://localhost:3000/mcp"
-                  value={form.url}
-                  onChange={(e) => setField('url', e.target.value)}
-                />
-              )}
-
-              {!isRemoteServer && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-                  <Textarea
-                    label="Arguments"
-                    placeholder={'--port 3000 --workspace "/path with spaces"'}
-                    value={form.argsText}
-                    onChange={(e) => setField('argsText', e.target.value)}
-                    rows={3}
-                  />
-                  <div style={{ fontSize: 12, color: 'var(--fg-muted)', lineHeight: 1.5 }}>
-                    Enter arguments as you would in a command line. They will be saved as an array of strings.
-                  </div>
                 </div>
-              )}
-
-              <KeyValueEditor
-                label="Environment Variables"
-                pairs={form.envPairs}
-                onChange={(v) => setField('envPairs', v)}
-                keyPlaceholder="ENV_VAR"
-                valuePlaceholder="value"
-              />
-
-              {isRemoteServer && (
-                <KeyValueEditor
-                  label="Headers"
-                  pairs={form.headerPairs}
-                  onChange={(v) => setField('headerPairs', v)}
-                  keyPlaceholder="Header-Name"
-                  valuePlaceholder="Header value"
+                <div className="settings-list-meta" title={s.type === 'stdio' ? s.command : s.url}>
+                  {s.type === 'stdio' ? s.command : s.url}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setToolsOverlay({ name: s.name, tools: s.tools ?? [] })}
+                title="Click to view tools"
+                className="settings-list-count"
+              >
+                {s.tools?.length ?? 0} tools
+              </button>
+              <div className="settings-list-actions">
+                <IconButton aria-label={`Edit ${s.name}`} tooltip="Edit" size="sm" icon={<Pencil size={14} />} onClick={() => openEdit(s)} />
+                <IconButton
+                  aria-label={`Reload ${s.name}`}
+                  tooltip="Reload"
+                  size="sm"
+                  icon={<RefreshCw size={14} />}
+                  loading={reloading === s.name}
+                  onClick={() => handleReload(s.name)}
                 />
-              )}
-
-              {isRemoteServer && (
-                <>
-                  <div style={dividerStyle} />
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--fg)' }}>Authentication</div>
-
-                  <SelectInput
-                    label="Auth Type"
-                    options={MCP_AUTH_TYPES}
-                    value={form.auth.type}
-                    onChange={(e) => setAuthField('type', e.target.value as MCPAuthType)}
-                  />
-
-                  {(form.auth.type === 'bearer' || form.auth.type === 'header') && (
-                    <MaskedInput
-                      label={form.auth.type === 'header' ? 'Header Value' : 'Bearer Token'}
-                      placeholder={form.auth.hasToken ? 'Leave blank to keep the stored token' : 'Enter a token'}
-                      value={form.auth.token ?? ''}
-                      onChange={(e) => setAuthField('token', e.target.value)}
+                {s.auth?.type === 'oauth' && (
+                  <>
+                    <IconButton
+                      aria-label={s.authStatus?.hasTokens ? `Re-authorize ${s.name}` : `Login ${s.name}`}
+                      tooltip="Opens the authorization URL in a new tab"
+                      size="sm"
+                      icon={<LogIn size={14} />}
+                      loading={authBusy === s.name}
+                      onClick={() => loginServer(s.name)}
                     />
-                  )}
-
-                  {form.auth.type === 'header' && (
-                    <TextInput
-                      label="Header Name"
-                      placeholder="Authorization"
-                      value={form.auth.headerName ?? ''}
-                      onChange={(e) => setAuthField('headerName', e.target.value)}
-                    />
-                  )}
-
-                  {form.auth.type === 'basic' && (
-                    <>
-                      <TextInput
-                        label="Username"
-                        value={form.auth.username ?? ''}
-                        onChange={(e) => setAuthField('username', e.target.value)}
+                    {s.authStatus?.hasTokens && (
+                      <IconButton
+                        aria-label={`Logout ${s.name}`}
+                        tooltip="Logout"
+                        size="sm"
+                        icon={<LogOut size={14} />}
+                        loading={authBusy === s.name}
+                        onClick={() => logoutServer(s.name)}
                       />
-                      <MaskedInput
-                        label="Password"
-                        placeholder={form.auth.hasPassword ? 'Leave blank to keep the stored password' : 'Enter a password'}
-                        value={form.auth.password ?? ''}
-                        onChange={(e) => setAuthField('password', e.target.value)}
-                      />
-                    </>
-                  )}
-
-                  {form.auth.type === 'oauth' && (
-                    <>
-                      <div style={{ fontSize: 12, color: 'var(--fg-muted)', lineHeight: 1.5 }}>
-                        OAuth 2.1 authorization-code flow with PKCE. Leave Client ID empty to rely on dynamic
-                        client registration (RFC 7591) if the server supports it. Save this server first, then
-                        use the Login button in the table to authorize it.
-                      </div>
-                      <TextInput
-                        label="Client ID"
-                        placeholder="(optional — dynamic registration if empty)"
-                        value={form.auth.oauth?.clientID ?? ''}
-                        onChange={(e) => setOAuthField('clientID', e.target.value)}
-                      />
-                      <MaskedInput
-                        label="Client Secret"
-                        placeholder={form.auth.oauth?.hasClientSecret ? 'Leave blank to keep the stored secret' : 'Only for confidential clients'}
-                        value={form.auth.oauth?.clientSecret ?? ''}
-                        onChange={(e) => setOAuthField('clientSecret', e.target.value)}
-                      />
-                      <TextInput
-                        label="Scopes"
-                        placeholder="scope1 scope2"
-                        value={(form.auth.oauth?.scopes ?? []).join(' ')}
-                        onChange={(e) => setOAuthField('scopes', e.target.value.split(/\s+/).filter(Boolean))}
-                      />
-                      <TextInput
-                        label="Callback Port"
-                        type="number"
-                        placeholder="19876"
-                        value={form.auth.oauth?.callbackPort ? String(form.auth.oauth.callbackPort) : ''}
-                        onChange={(e) => setOAuthField('callbackPort', e.target.value ? Number(e.target.value) : undefined)}
-                      />
-                    </>
-                  )}
-                </>
-              )}
+                    )}
+                  </>
+                )}
+                <IconButton aria-label={`Delete ${s.name}`} tooltip="Delete" size="sm" icon={<Trash2 size={14} />} onClick={() => setConfirmDelete(s.name)} />
+              </div>
             </div>
-
-            <div style={dividerStyle} />
-
-            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-              <button onClick={() => setModalOpen(false)} style={cancelBtn}>
-                Cancel
-              </button>
-              <button onClick={handleSave} disabled={saving} style={primaryBtn}>
-                {saving ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-          </div>
+          ))}
         </div>
       )}
+
+      {/* Add/Edit dialog */}
+      <Dialog
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editName ? `Edit: ${editName}` : 'Add MCP Server'}
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={handleSave} disabled={saving} loading={saving}>
+              {saving ? 'Saving…' : 'Save'}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          <Field label="Name">
+            <Input placeholder="my-server" value={form.name} onChange={(e) => setField('name', e.target.value)} disabled={!!editName} />
+          </Field>
+
+          <Field label="Type">
+            <Select options={MCP_TYPES} value={form.type} onChange={(e) => setField('type', e.target.value as MCPType)} />
+          </Field>
+
+          {form.type === 'stdio' ? (
+            <Field label="Command">
+              <Input
+                placeholder="npx @modelcontextprotocol/server-filesystem"
+                value={form.command}
+                onChange={(e) => setField('command', e.target.value)}
+              />
+            </Field>
+          ) : (
+            <Field label="URL">
+              <Input placeholder="http://localhost:3000/mcp" value={form.url} onChange={(e) => setField('url', e.target.value)} />
+            </Field>
+          )}
+
+          {!isRemoteServer && (
+            <Field label="Arguments">
+              <Textarea
+                placeholder={'--port 3000 --workspace "/path with spaces"'}
+                value={form.argsText}
+                onChange={(e) => setField('argsText', e.target.value)}
+                rows={3}
+              />
+              <p className="text-xs text-muted leading-relaxed mt-1">
+                Enter arguments as you would in a command line. They will be saved as an array of strings.
+              </p>
+            </Field>
+          )}
+
+          <KeyValueEditor
+            label="Environment Variables"
+            pairs={form.envPairs}
+            onChange={(v) => setField('envPairs', v)}
+            keyPlaceholder="ENV_VAR"
+            valuePlaceholder="value"
+          />
+
+          {isRemoteServer && (
+            <KeyValueEditor
+              label="Headers"
+              pairs={form.headerPairs}
+              onChange={(v) => setField('headerPairs', v)}
+              keyPlaceholder="Header-Name"
+              valuePlaceholder="Header value"
+            />
+          )}
+
+          {isRemoteServer && (
+            <>
+              <Divider className="my-1" />
+              <div className="text-sm font-semibold text-fg">Authentication</div>
+
+              <Field label="Auth Type">
+                <Select options={MCP_AUTH_TYPES} value={form.auth.type} onChange={(e) => setAuthField('type', e.target.value as MCPAuthType)} />
+              </Field>
+
+              {(form.auth.type === 'bearer' || form.auth.type === 'header') && (
+                <MaskedInput
+                  label={form.auth.type === 'header' ? 'Header Value' : 'Bearer Token'}
+                  placeholder={form.auth.hasToken ? 'Leave blank to keep the stored token' : 'Enter a token'}
+                  value={form.auth.token ?? ''}
+                  onChange={(value) => setAuthField('token', value)}
+                />
+              )}
+
+              {form.auth.type === 'header' && (
+                <Field label="Header Name">
+                  <Input placeholder="Authorization" value={form.auth.headerName ?? ''} onChange={(e) => setAuthField('headerName', e.target.value)} />
+                </Field>
+              )}
+
+              {form.auth.type === 'basic' && (
+                <>
+                  <Field label="Username">
+                    <Input value={form.auth.username ?? ''} onChange={(e) => setAuthField('username', e.target.value)} />
+                  </Field>
+                  <MaskedInput
+                    label="Password"
+                    placeholder={form.auth.hasPassword ? 'Leave blank to keep the stored password' : 'Enter a password'}
+                    value={form.auth.password ?? ''}
+                    onChange={(value) => setAuthField('password', value)}
+                  />
+                </>
+              )}
+
+              {form.auth.type === 'oauth' && (
+                <>
+                  <p className="text-xs text-muted leading-relaxed">
+                    OAuth 2.1 authorization-code flow with PKCE. Leave Client ID empty to rely on dynamic
+                    client registration (RFC 7591) if the server supports it. Save this server first, then
+                    use the Login button in the table to authorize it.
+                  </p>
+                  <Field label="Client ID">
+                    <Input
+                      placeholder="(optional — dynamic registration if empty)"
+                      value={form.auth.oauth?.clientID ?? ''}
+                      onChange={(e) => setOAuthField('clientID', e.target.value)}
+                    />
+                  </Field>
+                  <MaskedInput
+                    label="Client Secret"
+                    placeholder={form.auth.oauth?.hasClientSecret ? 'Leave blank to keep the stored secret' : 'Only for confidential clients'}
+                    value={form.auth.oauth?.clientSecret ?? ''}
+                    onChange={(value) => setOAuthField('clientSecret', value)}
+                  />
+                  <Field label="Scopes">
+                    <Input
+                      placeholder="scope1 scope2"
+                      value={(form.auth.oauth?.scopes ?? []).join(' ')}
+                      onChange={(e) => setOAuthField('scopes', e.target.value.split(/\s+/).filter(Boolean))}
+                    />
+                  </Field>
+                  <Field label="Callback Port">
+                    <Input
+                      type="number"
+                      placeholder="19876"
+                      value={form.auth.oauth?.callbackPort ? String(form.auth.oauth.callbackPort) : ''}
+                      onChange={(e) => setOAuthField('callbackPort', e.target.value ? Number(e.target.value) : undefined)}
+                    />
+                  </Field>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </Dialog>
 
       {/* Delete confirm */}
       {confirmDelete && (
@@ -696,48 +559,10 @@ export default function MCPServersSettings() {
         />
       )}
 
-      {/* Tools overlay */}
+      {/* Tools dialog */}
       {toolsOverlay && (
-        <ToolsOverlay
-          tools={toolsOverlay.tools}
-          serverName={toolsOverlay.name}
-          onClose={() => setToolsOverlay(null)}
-        />
+        <ToolsDialog tools={toolsOverlay.tools} serverName={toolsOverlay.name} onClose={() => setToolsOverlay(null)} />
       )}
     </div>
   )
-}
-
-const actionBtn: React.CSSProperties = {
-  padding: '0.25rem 0.625rem',
-  background: 'transparent',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-sm)',
-  fontSize: 12,
-  cursor: 'pointer',
-  color: 'var(--fg)',
-  fontFamily: 'inherit',
-}
-
-const primaryBtn: React.CSSProperties = {
-  padding: '0.5rem 1.25rem',
-  background: 'var(--primary)',
-  color: 'var(--primary-fg)',
-  border: 'none',
-  borderRadius: 'var(--radius-sm)',
-  fontSize: 14,
-  fontWeight: 600,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-}
-
-const cancelBtn: React.CSSProperties = {
-  padding: '0.5rem 1.25rem',
-  background: 'transparent',
-  color: 'var(--fg)',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-sm)',
-  fontSize: 14,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
 }

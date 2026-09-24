@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 
 export interface SlashCommandItem {
   name: string
@@ -14,6 +15,11 @@ interface SlashCommandMenuProps {
   visible: boolean
 }
 
+/**
+ * Menu-styled list of slash commands floating above the composer. Keyboard
+ * navigation stays in the textarea (ChatInput drives `selectedIndex`), so this
+ * is a listbox that never takes focus rather than a focus-trapping Menu.
+ */
 export default function SlashCommandMenu({
   commands,
   filter,
@@ -21,7 +27,7 @@ export default function SlashCommandMenu({
   onSelect,
   visible,
 }: SlashCommandMenuProps) {
-  const listRef = useRef<HTMLDivElement>(null)
+  const { t } = useTranslation()
   const selectedRef = useRef<HTMLDivElement>(null)
 
   // Scroll selected item into view
@@ -32,50 +38,29 @@ export default function SlashCommandMenu({
   if (!visible || commands.length === 0) return null
 
   const filtered = commands.filter((cmd) =>
-    cmd.name.toLowerCase().startsWith(filter.toLowerCase())
+    cmd.name.toLowerCase().startsWith(filter.toLowerCase()),
   )
 
   if (filtered.length === 0) return null
 
   return (
-    <div
-      ref={listRef}
-      style={{
-        position: 'absolute',
-        bottom: '100%',
-        left: 0,
-        right: 0,
-        maxHeight: 220,
-        overflowY: 'auto',
-        background: 'var(--panel, var(--bg))',
-        border: '1px solid var(--border)',
-        borderBottom: 'none',
-        zIndex: 100,
-        fontFamily: "'JetBrains Mono', 'Fira Mono', monospace",
-        fontSize: 13,
-      }}
-    >
+    <div className="chat-slash" role="listbox" aria-label={t('chat.slashCommands')}>
+      <div className="chat-slash-label">{t('chat.slashCommands')}</div>
       {filtered.map((cmd, idx) => {
         const isSelected = idx === selectedIndex
         return (
           <div
             key={cmd.name}
             ref={isSelected ? selectedRef : undefined}
+            role="option"
+            aria-selected={isSelected}
+            className="chat-slash-item"
+            // Keep focus in the textarea while picking with the mouse.
+            onMouseDown={(e) => e.preventDefault()}
             onClick={() => onSelect(cmd)}
-            style={{
-              padding: '6px 12px',
-              cursor: 'pointer',
-              background: isSelected ? 'var(--primary-bg, rgba(var(--primary-rgb, 100,100,255), 0.15))' : 'transparent',
-              color: isSelected ? 'var(--primary)' : 'var(--fg)',
-              display: 'flex',
-              gap: 8,
-              alignItems: 'baseline',
-            }}
           >
-            <span style={{ fontWeight: 600 }}>/{cmd.name}</span>
-            <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-              {cmd.description}
-            </span>
+            <span className="chat-slash-name">/{cmd.name}</span>
+            <span className="chat-slash-desc">{cmd.description}</span>
           </div>
         )
       })}

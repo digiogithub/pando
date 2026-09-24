@@ -1,4 +1,19 @@
 {
+  "shell": {
+    "switchToLight": "Cambiar a modo claro",
+    "switchToDark": "Cambiar a modo oscuro",
+    "openMenu": "Abrir menú",
+    "closeMenu": "Cerrar menú",
+    "collapseSidebar": "Contraer barra lateral",
+    "expandSidebar": "Expandir barra lateral",
+    "documentation": "Documentación",
+    "sidebar": "Barra lateral",
+    "searchSessions": "Buscar sesiones",
+    "running": "En ejecución",
+    "noMatches": "Ninguna sesión coincide",
+    "autoAcceptOn": "auto-aceptar",
+    "autoAcceptOff": "auto-aceptar desactivado"
+  },
   "common": {
     "save": "Guardar",
     "saving": "Guardando…",
@@ -64,6 +79,7 @@
   "settings": {
     "categories": {
       "general": "General",
+      "appearance": "Apariencia",
       "providers": "Proveedores",
       "agents": "Agentes",
       "mcpServers": "Servidores MCP",
@@ -94,6 +110,9 @@
       "theme": "Tema",
       "themeLight": "Claro",
       "themeDark": "Oscuro",
+      "themeSystem": "Sistema",
+      "accent": "Color de acento",
+      "accentDefault": "Predeterminado",
       "llmCache": "Caché de prompts LLM",
       "llmCacheDescription": "Habilitar caché de prompts para proveedores LLM (principalmente Anthropic)",
       "modelsDev": "Catálogo de modelos (models.dev)",
@@ -227,6 +246,15 @@
       "revealFailed": "No se pudo mostrar la contraseña"
     },
     "backToCategories": "Categorías",
+    "unsaved": {
+      "title": "Cambios sin guardar",
+      "description": "Tienes cambios sin guardar. ¿Quieres guardarlos antes de salir?",
+      "descriptionSections": "Tienes cambios sin guardar en {{sections}}. ¿Quieres guardarlos antes de salir?",
+      "saveAndContinue": "Guardar y continuar",
+      "discard": "Descartar cambios",
+      "cancel": "Cancelar",
+      "saveFailed": "No se pudieron guardar los cambios. Revisa el error en la sección e inténtalo de nuevo, o descártalos."
+    },
     "sandbox": {
       "title": "Sandbox de comandos",
       "loading": "Cargando la configuración del sandbox…",
@@ -275,6 +303,21 @@
       "save": "Guardar",
       "saving": "Guardando…",
       "reset": "Restablecer"
+    },
+    "appearance": {
+      "description": "Elige cómo se ve Pando en este dispositivo. El modo y el tema también los usa la TUI; el color de acento y el tamaño de letra son locales a este navegador.",
+      "mode": "Modo de apariencia",
+      "modeDescription": "Sistema sigue la configuración de tu sistema operativo y cambia en directo.",
+      "fontSize": "Tamaño de letra de la interfaz",
+      "fontSizeDescription": "Ajusta el tamaño de texto base en toda la aplicación.",
+      "fontSizeSmall": "Pequeño",
+      "fontSizeDefault": "Predeterminado",
+      "fontSizeLarge": "Grande",
+      "themeFamily": "Tema",
+      "themeFamilyDescription": "Una familia de colores para superficies y texto. El modo de arriba decide claro u oscuro.",
+      "accent": "Color de acento",
+      "accentDescription": "Se usa para la acción principal, el foco y la selección. Todo lo demás se mantiene neutro.",
+      "accentDefault": "Predeterminado del tema"
     }
   },
   "chat": {
@@ -318,6 +361,128 @@
       "sessionScopePrefix": "\"Permitir en la sesión\" cubre los comandos que empiezan por: {{prefix}}",
       "sessionScopeExact": "\"Permitir en la sesión\" solo cubre este comando exacto.",
       "runOnce": "Ejecutar fuera del sandbox"
+    },
+    "thinking": "Pensando",
+    "thought": "Razonamiento",
+    "persona": "Prompt de persona",
+    "copied": "Copiado",
+    "copyCode": "Copiar código",
+    "copyMessage": "Copiar mensaje",
+    "queued": "En cola",
+    "queuedHint": "En cola — se inyectará en la ejecución en el próximo punto seguro",
+    "scrollToBottom": "Ir al final",
+    "slashCommands": "Comandos",
+    "activity": {
+      "commands_one": "ejecutó {{count}} comando",
+      "commands_other": "ejecutó {{count}} comandos",
+      "read_one": "leyó {{count}} archivo",
+      "read_other": "leyó {{count}} archivos",
+      "edited_one": "editó {{count}} archivo",
+      "edited_other": "editó {{count}} archivos",
+      "searched_one": "buscó {{count}} vez",
+      "searched_other": "buscó {{count}} veces",
+      "fetched_one": "descargó {{count}} página",
+      "fetched_other": "descargó {{count}} páginas",
+      "tools_one": "usó {{count}} herramienta",
+      "tools_other": "usó {{count}} herramientas",
+      "thought_one": "razonó",
+      "thought_other": "razonó {{count}} veces",
+      "failed_one": "{{count}} fallida",
+      "failed_other": "{{count}} fallidas"
+    },
+    "tool": {
+      "command": "Comando",
+      "output": "Salida",
+      "error": "Error",
+      "input": "Entrada",
+      "removed": "Eliminado",
+      "added": "Añadido",
+      "lines": "líneas",
+      "exitCode": "Código de salida: {{code}}"
+    },
+    "composer": {
+      "placeholder": "Pregunta lo que quieras a Pando…",
+      "placeholderRunning": "Guía al agente en ejecución…",
+      "send": "Enviar mensaje",
+      "queue": "Encolar comentario",
+      "stop": "Detener generación",
+      "hintIdle": "Intro para enviar · Mayús+Intro para nueva línea · / para comandos",
+      "hintRunning": "Intro encola el comentario para el próximo punto seguro",
+      "hintGoal": "Escribe / para comandos",
+      "chars": "{{count}} / {{max}} caracteres",
+      "context": "{{pct}}% del contexto",
+      "tokens": "{{formatted}} tokens"
+    },
+    "empty": {
+      "title": "¿En qué trabajamos?",
+      "suggestions": {
+        "explain": "Explica este código",
+        "bug": "Encuentra y corrige un bug",
+        "tests": "Escribe tests",
+        "review": "Revisa mis cambios"
+      },
+      "prompts": {
+        "explain": "Dame una visión general de este código: su estructura, componentes principales y cómo encajan.",
+        "bug": "Ayúdame a encontrar y corregir un bug. Esto es lo que ocurre:",
+        "tests": "Escribe tests para los cambios más recientes de este proyecto.",
+        "review": "Revisa mis cambios sin confirmar y señala bugs o código arriesgado."
+      }
+    },
+    "files": {
+      "changed_one": "{{count}} archivo modificado",
+      "changed_other": "{{count}} archivos modificados",
+      "viewDiff": "Ver diff: {{path}}"
+    },
+    "diff": {
+      "close": "Cerrar visor de diff",
+      "edits_one": "{{count}} edición",
+      "edits_other": "{{count}} ediciones",
+      "escToClose": "para cerrar"
+    },
+    "goal": {
+      "title": "Objetivo",
+      "cancel": "Cancelar",
+      "cancelling": "Cancelando…",
+      "iteration": "Iteración {{current}}/{{max}}",
+      "started": "Iniciado {{time}}",
+      "finished": "Terminado {{time}}",
+      "progress": "Progreso",
+      "nextStep": "Siguiente paso",
+      "loading": "Cargando estado del objetivo…",
+      "status": {
+        "running": "En curso",
+        "completed": "Completado",
+        "blocked": "Bloqueado",
+        "cancelled": "Cancelado",
+        "idle": "Inactivo",
+        "loading": "Cargando"
+      }
+    },
+    "question": {
+      "reviewTitle": "Revisa tus respuestas",
+      "counter": "Pregunta {{current}}/{{total}}",
+      "single": "Pregunta",
+      "otherAnswer": "Otro: {{text}}",
+      "noSelection": "(sin selección)",
+      "otherPlaceholder": "Otra respuesta (texto libre)…",
+      "cancel": "Cancelar",
+      "back": "Atrás",
+      "next": "Siguiente",
+      "review": "Revisar",
+      "confirm": "Confirmar"
+    },
+    "simple": {
+      "toggleSessions": "Mostrar/ocultar sesiones",
+      "advanced": "Cambiar a vista avanzada",
+      "sessions": "Sesiones",
+      "untitled": "Sesión sin título",
+      "sessionFallback": "Sesión {{id}}",
+      "msgs_one": "{{count}} mensaje",
+      "msgs_other": "{{count}} mensajes",
+      "loadMore": "Cargar más ({{loaded}}/{{total}})",
+      "noSessions": "Aún no hay sesiones",
+      "commands": "Comandos",
+      "openCommands": "Abrir lanzador de comandos"
     }
   },
   "terminal": {

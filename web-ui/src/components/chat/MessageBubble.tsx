@@ -1,54 +1,34 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, isValidElement, type ReactNode, type ReactElement } from 'react'
+import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import {
-  faRobot, faUser, faWrench, faChevronDown, faChevronRight,
-  faBrain, faTerminal, faPen, faEye, faFolder, faGlobe,
-  faFileLines, faMagnifyingGlass, faUserSecret,
-} from '@fortawesome/free-solid-svg-icons'
-import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
+import clsx from 'clsx'
 import { format } from 'date-fns'
-import 'highlight.js/styles/github-dark-dimmed.css'
 import type { Message, ContentPart, ToolCallStatus, ToolKind, ToolCallLocation } from '@pando/client/types'
-import type { StreamingState, StreamItem, ActiveToolCall } from '@pando/client/hooks/useChat'
-import LoadingSpinner from '@/components/shared/LoadingSpinner'
+import type { StreamingState, ActiveToolCall } from '@pando/client/hooks/useChat'
 import MarkdownLink from '@/components/shared/MarkdownLink'
-import CopyButton from '@/components/shared/CopyButton'
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-const labelStyle: React.CSSProperties = {
-  fontSize: 10,
-  fontWeight: 700,
-  textTransform: 'uppercase',
-  letterSpacing: '0.06em',
-  color: 'var(--fg-dim)',
-  marginBottom: 3,
-}
-
-const codeBlockStyle: React.CSSProperties = {
-  margin: 0,
-  padding: '0.375rem 0.5rem',
-  background: 'var(--surface)',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--radius-sm)',
-  fontFamily: 'monospace',
-  fontSize: 11,
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-all',
-  lineHeight: 1.5,
-}
+import { IconButton, Spinner } from '@/components/ui'
+import {
+  Brain, Check, ChevronRight, Copy, Eye, FilePen, FilePlus, FileText, Folder, Globe,
+  Pencil, Search, SquareTerminal, Trash2, VenetianMask, Wrench, type LucideIcon,
+} from '@/components/ui/icons'
+import { copyToClipboard } from '@/utils/clipboard'
 
 // ─── Tool metadata detection ──────────────────────────────────────────────────
 
+/** Coarse category used to build the "Ran 3 commands · read 2 files" summary. */
+type ActivityCategory = 'thought' | 'commands' | 'read' | 'edited' | 'searched' | 'fetched' | 'tools'
+
 interface ToolMeta {
-  icon: IconDefinition
+  icon: LucideIcon
   label: string
   summary: string
-  accent: string
+  category: ActivityCategory
 }
+
+const shortPath = (path: string) => path.split('/').slice(-2).join('/')
 
 function getToolMeta(name: string, input?: Record<string, unknown> | null): ToolMeta {
   const n = name.toLowerCase()
@@ -56,70 +36,45 @@ function getToolMeta(name: string, input?: Record<string, unknown> | null): Tool
   // bash / terminal
   if (n === 'bash' || n === 'execute_bash' || n === 'run_command') {
     const cmd = (input?.command as string) ?? (input?.cmd as string) ?? ''
-    return {
-      icon: faTerminal,
-      label: 'bash',
-      summary: cmd.split('\n')[0].trim().slice(0, 80),
-      accent: '#f59e0b',
-    }
+    return { icon: SquareTerminal, label: 'bash', summary: cmd.split('\n')[0].trim().slice(0, 80), category: 'commands' }
   }
 
   // str_replace_editor (Claude-native file tool)
   if (n === 'str_replace_editor') {
     const cmd = (input?.command as string) ?? 'view'
-    const path = (input?.path as string) ?? ''
-    const shortPath = path.split('/').slice(-2).join('/')
-    if (cmd === 'view')        return { icon: faEye,       label: 'view',   summary: shortPath, accent: 'var(--fg-dim)' }
-    if (cmd === 'create')      return { icon: faFileLines, label: 'create', summary: shortPath, accent: 'var(--success)' }
-    if (cmd === 'str_replace') return { icon: faPen,       label: 'edit',   summary: shortPath, accent: '#3b82f6' }
-    if (cmd === 'insert')      return { icon: faPen,       label: 'insert', summary: shortPath, accent: '#3b82f6' }
-    if (cmd === 'delete_file') return { icon: faFileLines, label: 'delete', summary: shortPath, accent: 'var(--error)' }
-    return { icon: faPen, label: cmd, summary: shortPath, accent: '#3b82f6' }
+    const path = shortPath((input?.path as string) ?? '')
+    if (cmd === 'view')        return { icon: Eye,      label: 'view',   summary: path, category: 'read' }
+    if (cmd === 'create')      return { icon: FilePlus, label: 'create', summary: path, category: 'edited' }
+    if (cmd === 'str_replace') return { icon: Pencil,   label: 'edit',   summary: path, category: 'edited' }
+    if (cmd === 'insert')      return { icon: Pencil,   label: 'insert', summary: path, category: 'edited' }
+    if (cmd === 'delete_file') return { icon: Trash2,   label: 'delete', summary: path, category: 'edited' }
+    return { icon: Pencil, label: cmd, summary: path, category: 'edited' }
   }
 
-  // Edit tool
   if (n === 'edit') {
-    const path = ((input?.file_path ?? input?.path) as string) ?? ''
-    return { icon: faPen, label: 'edit', summary: path.split('/').slice(-2).join('/'), accent: '#3b82f6' }
+    return { icon: Pencil, label: 'edit', summary: shortPath(((input?.file_path ?? input?.path) as string) ?? ''), category: 'edited' }
   }
-
-  // Write tool
   if (n === 'write') {
-    const path = ((input?.file_path ?? input?.path) as string) ?? ''
-    return { icon: faFileLines, label: 'write', summary: path.split('/').slice(-2).join('/'), accent: 'var(--success)' }
+    return { icon: FilePen, label: 'write', summary: shortPath(((input?.file_path ?? input?.path) as string) ?? ''), category: 'edited' }
   }
-
-  // Read tool
   if (n === 'read') {
-    const path = ((input?.file_path ?? input?.path) as string) ?? ''
-    return { icon: faEye, label: 'read', summary: path.split('/').slice(-2).join('/'), accent: 'var(--fg-dim)' }
+    return { icon: FileText, label: 'read', summary: shortPath(((input?.file_path ?? input?.path) as string) ?? ''), category: 'read' }
   }
-
-  // Grep
   if (n === 'grep') {
-    const pattern = (input?.pattern as string) ?? ''
-    return { icon: faMagnifyingGlass, label: 'grep', summary: pattern.slice(0, 50), accent: 'var(--fg-dim)' }
+    return { icon: Search, label: 'grep', summary: ((input?.pattern as string) ?? '').slice(0, 50), category: 'searched' }
   }
-
-  // Glob
   if (n === 'glob') {
-    const pattern = (input?.pattern as string) ?? ''
-    return { icon: faFolder, label: 'glob', summary: pattern, accent: 'var(--fg-dim)' }
+    return { icon: Folder, label: 'glob', summary: (input?.pattern as string) ?? '', category: 'searched' }
   }
-
-  // Search (any)
   if (n.includes('search')) {
     const q = ((input?.query ?? input?.q) as string) ?? ''
-    return { icon: faMagnifyingGlass, label: 'search', summary: q.slice(0, 50), accent: 'var(--fg-dim)' }
+    return { icon: Search, label: 'search', summary: q.slice(0, 50), category: 'searched' }
   }
-
-  // Fetch / HTTP
   if (n === 'web_fetch' || n === 'fetch' || n === 'http_request') {
-    const url = (input?.url as string) ?? ''
-    return { icon: faGlobe, label: 'fetch', summary: url.slice(0, 60), accent: 'var(--fg-dim)' }
+    return { icon: Globe, label: 'fetch', summary: ((input?.url as string) ?? '').slice(0, 60), category: 'fetched' }
   }
 
-  return { icon: faWrench, label: name, summary: '', accent: 'var(--border)' }
+  return { icon: Wrench, label: name, summary: '', category: 'tools' }
 }
 
 function kindToLabel(kind: ToolKind): string {
@@ -135,24 +90,88 @@ function kindToLabel(kind: ToolKind): string {
   }
 }
 
+function kindToCategory(kind: ToolKind | undefined, fallback: ActivityCategory): ActivityCategory {
+  switch (kind) {
+    case 'execute': return 'commands'
+    case 'edit': return 'edited'
+    case 'read': return 'read'
+    case 'search': return 'searched'
+    case 'fetch': return 'fetched'
+    default: return fallback
+  }
+}
+
+const truncate = (text: string, max = 2000) => (text.length > max ? text.slice(0, max) + '\n…(truncated)' : text)
+
+// ─── Copy helper ──────────────────────────────────────────────────────────────
+
+function CopyIconButton({ text, label }: { text: string | (() => string); label: string }) {
+  const { t } = useTranslation()
+  const [copied, setCopied] = useState(false)
+  const handleCopy = async () => {
+    const value = typeof text === 'function' ? text() : text
+    if (!value) return
+    if (await copyToClipboard(value)) {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2000)
+    }
+  }
+  return (
+    <IconButton
+      size="sm"
+      aria-label={copied ? t('chat.copied') : label}
+      tooltip
+      icon={copied ? <Check size={14} /> : <Copy size={14} />}
+      onClick={() => void handleCopy()}
+    />
+  )
+}
+
 // ─── Expanded content panels ──────────────────────────────────────────────────
 
-function ThinkingContent({ text }: { text: string }) {
+function ToolBlock({ label, tone, children }: { label?: string; tone?: 'error' | 'removed' | 'added'; children: ReactNode }) {
   return (
-    <pre style={{ ...codeBlockStyle, color: 'var(--fg-muted)', maxHeight: 320, overflowY: 'auto', background: 'var(--bg-secondary)', border: 'none' }}>
-      {text}
-    </pre>
+    <div className="chat-tool-block">
+      {label && <div className={clsx('chat-tool-label', tone && `chat-tool-label--${tone}`)}>{label}</div>}
+      {children}
+    </div>
+  )
+}
+
+/** Old/new strings of an edit, shown as removed / added blocks. */
+function EditDiff({ path, oldStr, newStr, result, isError }: {
+  path?: string; oldStr: string; newStr: string; result?: string; isError?: boolean
+}) {
+  const { t } = useTranslation()
+  const oldLines = oldStr ? oldStr.split('\n').length : 0
+  const newLines = newStr ? newStr.split('\n').length : 0
+  return (
+    <>
+      {path && (
+        <div className="chat-tool-meta">
+          {path}
+          {(oldStr || newStr) && (
+            <> · <span className="chat-del">−{oldLines}</span>{' / '}<span className="chat-add">+{newLines}</span> {t('chat.tool.lines')}</>
+          )}
+        </div>
+      )}
+      {oldStr && (
+        <ToolBlock label={t('chat.tool.removed')} tone="removed">
+          <pre className="chat-tool-pre chat-tool-pre--removed">{oldStr.split('\n').map((l) => `- ${l}`).join('\n')}</pre>
+        </ToolBlock>
+      )}
+      {newStr && (
+        <ToolBlock label={t('chat.tool.added')} tone="added">
+          <pre className="chat-tool-pre chat-tool-pre--added">{newStr.split('\n').map((l) => `+ ${l}`).join('\n')}</pre>
+        </ToolBlock>
+      )}
+      {result && <div className={clsx('chat-tool-meta', isError ? 'chat-tool-meta--error' : 'chat-tool-meta--faint')}>{result}</div>}
+    </>
   )
 }
 
 function ToolContent({
-  name,
-  input,
-  result,
-  isError,
-  diff,
-  terminal,
-  images,
+  name, input, result, isError, diff, terminal, images,
 }: {
   name: string
   input?: Record<string, unknown> | null
@@ -162,242 +181,120 @@ function ToolContent({
   terminal?: { terminal_id: string; exit_code: number }
   images?: string[]
 }) {
+  const { t } = useTranslation()
   const n = name.toLowerCase()
 
-  // ── Image tool results (e.g. screenshots): render thumbnails, never base64 text.
+  // Image tool results (e.g. screenshots): render thumbnails, never base64 text.
   if (images && images.length > 0) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-        {result && <div style={{ fontSize: 11, color: 'var(--fg-dim)', fontFamily: 'monospace' }}>{result}</div>}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-          {images.map((src, i) => (
-            <img
-              key={i}
-              src={src}
-              alt={`tool image ${i + 1}`}
-              style={{ maxWidth: '100%', maxHeight: 320, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}
-            />
-          ))}
+      <>
+        {result && <div className="chat-tool-meta chat-tool-meta--faint">{result}</div>}
+        <div className="chat-tool-images">
+          {images.map((src, i) => <img key={i} src={src} alt={`tool image ${i + 1}`} />)}
         </div>
-      </div>
+      </>
     )
   }
 
-  // ── Bash
+  const output = result && (
+    <ToolBlock label={isError ? t('chat.tool.error') : t('chat.tool.output')} tone={isError ? 'error' : undefined}>
+      <pre className={clsx('chat-tool-pre', isError && 'chat-tool-pre--error')}>{result}</pre>
+    </ToolBlock>
+  )
+
+  // Bash
   if (n === 'bash' || n === 'execute_bash' || n === 'run_command') {
     const cmd = (input?.command ?? input?.cmd) as string | undefined
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      <>
         {cmd && (
-          <div>
-            <div style={labelStyle}>Command</div>
-            <pre style={{ ...codeBlockStyle, background: '#1a1a2e', color: '#cdd6f4', borderColor: '#313244' }}>
-              <span style={{ color: '#a6e3a1', userSelect: 'none' }}>$ </span>{cmd}
-            </pre>
-          </div>
+          <ToolBlock label={t('chat.tool.command')}>
+            <pre className="chat-tool-pre"><span className="chat-tool-prompt">$ </span>{cmd}</pre>
+          </ToolBlock>
         )}
-        {result && (
-          <div>
-            <div style={{ ...labelStyle, color: isError ? 'var(--error)' : 'var(--fg-dim)' }}>
-              {isError ? 'Error' : 'Output'}
-            </div>
-            <pre style={{ ...codeBlockStyle, color: isError ? 'var(--error)' : 'var(--fg)', maxHeight: 320, overflowY: 'auto' }}>
-              {result}
-            </pre>
-          </div>
-        )}
-      </div>
+        {output}
+      </>
     )
   }
 
-  // ── str_replace_editor str_replace
+  // str_replace_editor str_replace
   if (n === 'str_replace_editor' && input?.command === 'str_replace') {
-    const path = input.path as string
-    const oldStr = (input.old_str as string) ?? ''
-    const newStr = (input.new_str as string) ?? ''
-    const oldLines = oldStr ? oldStr.split('\n').length : 0
-    const newLines = newStr ? newStr.split('\n').length : 0
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-        <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--fg-muted)' }}>
-          {path} · <span style={{ color: 'var(--error)' }}>−{oldLines}</span>{' / '}
-          <span style={{ color: 'var(--success)' }}>+{newLines}</span> lines
-        </div>
-        {oldStr && (
-          <div>
-            <div style={{ ...labelStyle, color: 'var(--error)' }}>Removed</div>
-            <pre style={{ ...codeBlockStyle, color: 'var(--error)', background: 'color-mix(in srgb, var(--error) 6%, var(--surface))', borderColor: 'color-mix(in srgb, var(--error) 25%, transparent)', maxHeight: 200, overflowY: 'auto' }}>
-              {oldStr.split('\n').map((l) => `- ${l}`).join('\n')}
-            </pre>
-          </div>
-        )}
-        {newStr && (
-          <div>
-            <div style={{ ...labelStyle, color: 'var(--success)' }}>Added</div>
-            <pre style={{ ...codeBlockStyle, color: 'var(--success)', background: 'color-mix(in srgb, var(--success) 6%, var(--surface))', borderColor: 'color-mix(in srgb, var(--success) 25%, transparent)', maxHeight: 200, overflowY: 'auto' }}>
-              {newStr.split('\n').map((l) => `+ ${l}`).join('\n')}
-            </pre>
-          </div>
-        )}
-        {result && <div style={{ fontSize: 11, color: isError ? 'var(--error)' : 'var(--fg-dim)', fontFamily: 'monospace' }}>{result}</div>}
-      </div>
-    )
+    return <EditDiff path={input.path as string} oldStr={(input.old_str as string) ?? ''} newStr={(input.new_str as string) ?? ''} result={result} isError={isError} />
   }
 
-  // ── Edit tool (Pando native)
+  // Edit tool (Pando native)
   if (n === 'edit') {
-    const path = (input?.file_path ?? input?.path) as string | undefined
-    const oldStr = input?.old_string as string | undefined
-    const newStr = input?.new_string as string | undefined
-    const oldLines = oldStr ? oldStr.split('\n').length : 0
-    const newLines = newStr ? newStr.split('\n').length : 0
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-        {path && (
-          <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--fg-muted)' }}>
-            {path} · <span style={{ color: 'var(--error)' }}>−{oldLines}</span>{' / '}
-            <span style={{ color: 'var(--success)' }}>+{newLines}</span> lines
-          </div>
-        )}
-        {oldStr && (
-          <div>
-            <div style={{ ...labelStyle, color: 'var(--error)' }}>Removed</div>
-            <pre style={{ ...codeBlockStyle, color: 'var(--error)', background: 'color-mix(in srgb, var(--error) 6%, var(--surface))', borderColor: 'color-mix(in srgb, var(--error) 25%, transparent)', maxHeight: 200, overflowY: 'auto' }}>
-              {oldStr.split('\n').map((l) => `- ${l}`).join('\n')}
-            </pre>
-          </div>
-        )}
-        {newStr && (
-          <div>
-            <div style={{ ...labelStyle, color: 'var(--success)' }}>Added</div>
-            <pre style={{ ...codeBlockStyle, color: 'var(--success)', background: 'color-mix(in srgb, var(--success) 6%, var(--surface))', borderColor: 'color-mix(in srgb, var(--success) 25%, transparent)', maxHeight: 200, overflowY: 'auto' }}>
-              {newStr.split('\n').map((l) => `+ ${l}`).join('\n')}
-            </pre>
-          </div>
-        )}
-        {result && <div style={{ fontSize: 11, color: isError ? 'var(--error)' : 'var(--fg-dim)', fontFamily: 'monospace' }}>{result}</div>}
-      </div>
+      <EditDiff
+        path={(input?.file_path ?? input?.path) as string | undefined}
+        oldStr={(input?.old_string as string) ?? ''}
+        newStr={(input?.new_string as string) ?? ''}
+        result={result}
+        isError={isError}
+      />
     )
   }
 
-  // ── str_replace_editor view / read
+  // str_replace_editor view / read
   if ((n === 'str_replace_editor' && input?.command === 'view') || n === 'read') {
     const path = (input?.path ?? input?.file_path) as string | undefined
-    const truncated = result && result.length > 2000 ? result.slice(0, 2000) + '\n…(truncated)' : result
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-        {path && <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--fg-muted)' }}>{path}</div>}
-        {truncated && (
-          <pre style={{ ...codeBlockStyle, color: 'var(--fg-muted)', maxHeight: 320, overflowY: 'auto' }}>
-            {truncated}
-          </pre>
-        )}
-      </div>
+      <>
+        {path && <div className="chat-tool-meta">{path}</div>}
+        {result && <pre className="chat-tool-pre chat-tool-pre--muted">{truncate(result)}</pre>}
+      </>
     )
   }
 
-  // ── str_replace_editor create / insert / write
-  if (
-    (n === 'str_replace_editor' && (input?.command === 'create' || input?.command === 'insert')) ||
-    n === 'write'
-  ) {
+  // str_replace_editor create / insert / write
+  if ((n === 'str_replace_editor' && (input?.command === 'create' || input?.command === 'insert')) || n === 'write') {
     const path = (input?.path ?? input?.file_path) as string | undefined
     const content = (input?.file_text ?? input?.new_str ?? input?.content) as string | undefined
-    const truncated = content && content.length > 2000 ? content.slice(0, 2000) + '\n…(truncated)' : content
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-        {path && <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--fg-muted)' }}>{path}</div>}
-        {truncated && (
-          <pre style={{ ...codeBlockStyle, color: 'var(--success)', background: 'color-mix(in srgb, var(--success) 4%, var(--surface))', maxHeight: 320, overflowY: 'auto' }}>
-            {truncated}
-          </pre>
-        )}
-        {result && <div style={{ fontSize: 11, color: isError ? 'var(--error)' : 'var(--fg-dim)', fontFamily: 'monospace', marginTop: 2 }}>{result}</div>}
-      </div>
+      <>
+        {path && <div className="chat-tool-meta">{path}</div>}
+        {content && <pre className="chat-tool-pre chat-tool-pre--added">{truncate(content)}</pre>}
+        {result && <div className={clsx('chat-tool-meta', isError ? 'chat-tool-meta--error' : 'chat-tool-meta--faint')}>{result}</div>}
+      </>
     )
   }
 
-  // ── Grep
+  // Grep
   if (n === 'grep') {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {typeof input?.pattern === 'string' && <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--fg-muted)' }}>pattern: {input.pattern}</div>}
-          {typeof input?.path === 'string' && <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--fg-muted)' }}>path: {input.path}</div>}
-          {typeof input?.glob === 'string' && <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--fg-muted)' }}>glob: {input.glob}</div>}
-        </div>
-        {result && (
-          <pre style={{ ...codeBlockStyle, maxHeight: 320, overflowY: 'auto', color: 'var(--fg-muted)' }}>
-            {result.length > 2000 ? result.slice(0, 2000) + '\n…(truncated)' : result}
-          </pre>
-        )}
-      </div>
+      <>
+        {typeof input?.pattern === 'string' && <div className="chat-tool-meta">pattern: {input.pattern}</div>}
+        {typeof input?.path === 'string' && <div className="chat-tool-meta">path: {input.path}</div>}
+        {typeof input?.glob === 'string' && <div className="chat-tool-meta">glob: {input.glob}</div>}
+        {result && <pre className="chat-tool-pre chat-tool-pre--muted">{truncate(result)}</pre>}
+      </>
     )
   }
 
-  // ── Backend-provided diff (for edit/write tools when input wasn't parsed client-side)
+  // Backend-provided diff (for edit/write tools when input wasn't parsed client-side)
   if (diff && diff.file_path) {
-    const oldStr = diff.old_string ?? ''
-    const newStr = diff.new_string ?? diff.new_content ?? ''
-    const oldLines = oldStr ? oldStr.split('\n').length : 0
-    const newLines = newStr ? newStr.split('\n').length : 0
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-        <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--fg-muted)' }}>
-          {diff.file_path}
-          {(oldStr || newStr) && (
-            <> · <span style={{ color: 'var(--error)' }}>−{oldLines}</span>{' / '}
-            <span style={{ color: 'var(--success)' }}>+{newLines}</span> lines</>
-          )}
-        </div>
-        {oldStr && (
-          <div>
-            <div style={{ ...labelStyle, color: 'var(--error)' }}>Removed</div>
-            <pre style={{ ...codeBlockStyle, color: 'var(--error)', background: 'color-mix(in srgb, var(--error) 6%, var(--surface))', borderColor: 'color-mix(in srgb, var(--error) 25%, transparent)', maxHeight: 200, overflowY: 'auto' }}>
-              {oldStr.split('\n').map((l) => `- ${l}`).join('\n')}
-            </pre>
-          </div>
-        )}
-        {newStr && (
-          <div>
-            <div style={{ ...labelStyle, color: 'var(--success)' }}>Added</div>
-            <pre style={{ ...codeBlockStyle, color: 'var(--success)', background: 'color-mix(in srgb, var(--success) 6%, var(--surface))', borderColor: 'color-mix(in srgb, var(--success) 25%, transparent)', maxHeight: 200, overflowY: 'auto' }}>
-              {newStr.split('\n').map((l) => `+ ${l}`).join('\n')}
-            </pre>
-          </div>
-        )}
-        {result && <div style={{ fontSize: 11, color: isError ? 'var(--error)' : 'var(--fg-dim)', fontFamily: 'monospace' }}>{result}</div>}
-      </div>
+      <EditDiff
+        path={diff.file_path}
+        oldStr={diff.old_string ?? ''}
+        newStr={diff.new_string ?? diff.new_content ?? ''}
+        result={result}
+        isError={isError}
+      />
     )
   }
 
-  // ── Generic fallback
+  // Generic fallback
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+    <>
       {input && Object.keys(input).length > 0 && (
-        <div>
-          <div style={labelStyle}>Input</div>
-          <pre style={{ ...codeBlockStyle, maxHeight: 200, overflowY: 'auto' }}>
-            {JSON.stringify(input, null, 2)}
-          </pre>
-        </div>
+        <ToolBlock label={t('chat.tool.input')}>
+          <pre className="chat-tool-pre chat-tool-pre--short">{JSON.stringify(input, null, 2)}</pre>
+        </ToolBlock>
       )}
-      {result && (
-        <div>
-          <div style={{ ...labelStyle, color: isError ? 'var(--error)' : 'var(--fg-dim)' }}>
-            {isError ? 'Error' : 'Output'}
-          </div>
-          <pre style={{ ...codeBlockStyle, color: isError ? 'var(--error)' : 'var(--fg)', maxHeight: 320, overflowY: 'auto' }}>
-            {result}
-          </pre>
-        </div>
-      )}
-      {terminal && (
-        <div style={{ fontSize: 10, color: 'var(--fg-dim)', fontFamily: 'monospace', marginTop: 2 }}>
-          exit code: {terminal.exit_code}
-        </div>
-      )}
-    </div>
+      {output}
+      {terminal && <div className="chat-tool-meta chat-tool-meta--faint">{t('chat.tool.exitCode', { code: terminal.exit_code })}</div>}
+    </>
   )
 }
 
@@ -423,115 +320,78 @@ export interface EventRowProps {
   images?: string[]
 }
 
-export function EventRow({
-  kind, thinking, toolName, toolInput, toolResult, isError, isLive,
-  backendTitle, backendKind, toolStatus, locations, diff, terminal, images,
-}: EventRowProps) {
-  const [expanded, setExpanded] = useState(false)
+interface ResolvedEvent {
+  icon: LucideIcon
+  label: string
+  summary: string
+  category: ActivityCategory
+  status: ToolCallStatus
+  failed: boolean
+  live: boolean
+}
 
-  const resolvedStatus = toolStatus ?? (isError ? 'failed' : isLive ? 'in_progress' : toolResult !== undefined ? 'completed' : 'pending')
-  const isDone = resolvedStatus === 'completed' || resolvedStatus === 'failed'
-
-  // Metadata
-  let icon: IconDefinition = faBrain
-  let label = 'Thinking'
-  let summary = ''
-  let accent = 'var(--primary)'
-
-  if (kind === 'tool' && toolName) {
-    const meta = getToolMeta(toolName, toolInput)
-    icon = meta.icon
-    // Use backend-provided title/kind when available, fall back to local detection
-    label = backendKind ? kindToLabel(backendKind) : meta.label
-    summary = backendTitle ?? meta.summary
-    accent = isError ? 'var(--error)' : meta.accent
+function resolveEvent(p: EventRowProps, t: TFunction): ResolvedEvent {
+  const status: ToolCallStatus = p.toolStatus
+    ?? (p.isError ? 'failed' : p.isLive ? 'in_progress' : p.toolResult !== undefined ? 'completed' : 'pending')
+  if (p.kind === 'tool' && p.toolName) {
+    const meta = getToolMeta(p.toolName, p.toolInput)
+    return {
+      icon: meta.icon,
+      // Backend-provided title/kind win over local detection.
+      label: p.backendKind ? kindToLabel(p.backendKind) : meta.label,
+      summary: p.backendTitle ?? meta.summary,
+      category: kindToCategory(p.backendKind, meta.category),
+      status,
+      failed: Boolean(p.isError) || status === 'failed',
+      live: status === 'in_progress' || (Boolean(p.isLive) && status !== 'completed' && status !== 'failed'),
+    }
   }
+  return {
+    icon: Brain,
+    label: p.isLive ? t('chat.thinking') : t('chat.thought'),
+    summary: '',
+    category: 'thought',
+    status,
+    failed: false,
+    live: Boolean(p.isLive),
+  }
+}
 
-  const statusColor = isError ? 'var(--error)' : resolvedStatus === 'in_progress' ? 'var(--fg-dim)' : isDone ? 'var(--success)' : 'var(--fg-dim)'
+function StatusMark({ ev }: { ev: ResolvedEvent }) {
+  if (ev.live) return <Spinner size={12} />
+  if (ev.failed) return <span className="chat-status-dot chat-status-dot--error" />
+  if (ev.status === 'completed') return <span className="chat-status-dot chat-status-dot--done" />
+  return <span className="chat-status-dot" />
+}
+
+export function EventRow(props: EventRowProps) {
+  const { t } = useTranslation()
+  const [expanded, setExpanded] = useState(false)
+  const ev = resolveEvent(props, t)
+  const Icon = ev.icon
+  const { kind, thinking, toolName, toolInput, toolResult, isError, locations, diff, terminal, images } = props
 
   return (
-    <div
-      style={{
-        margin: '1px 1rem',
-        borderLeft: `2px solid ${accent}`,
-        borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
-        overflow: 'hidden',
-        fontSize: 12,
-      }}
-    >
-      {/* Header row — always visible */}
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-          width: '100%',
-          padding: '0.25rem 0.625rem',
-          background: 'var(--surface)',
-          border: 'none',
-          cursor: 'pointer',
-          color: 'var(--fg-muted)',
-          textAlign: 'left',
-          minHeight: 26,
-        }}
-      >
-        <FontAwesomeIcon icon={icon} style={{ fontSize: 10, color: accent, flexShrink: 0 }} />
-        <span style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: 11, color: 'var(--fg)', flexShrink: 0 }}>
-          {label}
-        </span>
-        {summary && (
-          <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--fg-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-            · {summary}
-          </span>
+    <div className={clsx('chat-event', ev.failed && 'chat-event--error')}>
+      <button type="button" className="chat-event-row" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)}>
+        <Icon size={14} className="chat-event-icon" />
+        <span className="chat-event-name">{ev.label}</span>
+        <span className="chat-event-arg">{ev.summary}</span>
+        {(kind === 'tool' || ev.live) && (
+          <span className="chat-event-status" title={ev.status}><StatusMark ev={ev} /></span>
         )}
-        {!summary && <span style={{ flex: 1 }} />}
-
-        {/* Status */}
-        <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
-          {resolvedStatus === 'pending' && <span style={{ color: 'var(--fg-dim)', fontSize: 10 }}>○</span>}
-          {resolvedStatus === 'in_progress' && <LoadingSpinner size={9} />}
-          {resolvedStatus === 'failed' && <span style={{ color: 'var(--error)', fontSize: 10 }}>✗</span>}
-          {resolvedStatus === 'completed' && <span style={{ color: 'var(--success)', fontSize: 10 }}>✓</span>}
-        </span>
-
-        <FontAwesomeIcon
-          icon={expanded ? faChevronDown : faChevronRight}
-          style={{ fontSize: 9, color: statusColor, flexShrink: 0 }}
-        />
+        <ChevronRight size={14} className="chat-chevron" />
       </button>
 
-      {/* Expanded content */}
       {expanded && (
-        <div
-          style={{
-            padding: '0.5rem 0.625rem',
-            background: 'var(--bg-secondary)',
-            borderTop: `1px solid color-mix(in srgb, ${accent} 20%, var(--border))`,
-          }}
-        >
-          {/* File locations */}
+        <div className="chat-event-detail">
           {locations && locations.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.375rem' }}>
-              {locations.map((loc, i) => (
-                <span key={i} style={{
-                  display: 'inline-block',
-                  padding: '1px 6px',
-                  background: 'var(--surface)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius-sm)',
-                  fontFamily: 'monospace',
-                  fontSize: 10,
-                  color: 'var(--fg-muted)',
-                }}>
-                  {loc.path}
-                </span>
-              ))}
+            <div className="chat-locations">
+              {locations.map((loc, i) => <span key={i} className="chat-location">{loc.path}</span>)}
             </div>
           )}
-
           {kind === 'thinking' ? (
-            <ThinkingContent text={thinking ?? ''} />
+            <pre className="chat-tool-pre chat-tool-pre--muted">{thinking ?? ''}</pre>
           ) : (
             <ToolContent
               name={toolName ?? ''}
@@ -549,30 +409,77 @@ export function EventRow({
   )
 }
 
-// ─── Code block copy button ───────────────────────────────────────────────────
-// The button itself lives in components/shared/CopyButton — it is generic
-// (plain text or a lazy getter) so Settings can reuse it for the telemetry
-// debug ID. Here it reads the <pre>'s live DOM text via a getter rather than
-// a plain string, since the code block content can still be streaming when
-// the button is clicked.
+// ─── Activity group: consecutive tool calls / thinking collapsed into one row ──
+
+const CATEGORY_ORDER: ActivityCategory[] = ['commands', 'read', 'edited', 'searched', 'fetched', 'tools', 'thought']
+
+function ActivityGroup({ events }: { events: { key: string; props: EventRowProps }[] }) {
+  const { t } = useTranslation()
+  const [expanded, setExpanded] = useState(false)
+
+  // A lone event needs no summary: its own row says more than "Ran 1 command".
+  if (events.length === 1) {
+    return <div className="chat-activity"><EventRow {...events[0].props} /></div>
+  }
+
+  const resolved = events.map((e) => resolveEvent(e.props, t))
+  const counts = new Map<ActivityCategory, number>()
+  for (const ev of resolved) counts.set(ev.category, (counts.get(ev.category) ?? 0) + 1)
+  const summary = CATEGORY_ORDER
+    .filter((c) => counts.has(c))
+    .map((c) => t(`chat.activity.${c}`, { count: counts.get(c) }))
+    .join(' · ')
+  const live = [...resolved].reverse().find((ev) => ev.live)
+  const failures = resolved.filter((ev) => ev.failed).length
+
+  return (
+    <div className="chat-activity">
+      <button type="button" className="chat-activity-summary" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)}>
+        <ChevronRight size={14} className="chat-chevron" />
+        <span className="chat-activity-text">{summary}</span>
+        {failures > 0 && <span className="chat-activity-error">· {t('chat.activity.failed', { count: failures })}</span>}
+        {live && (
+          <>
+            <Spinner size={12} />
+            <span className="chat-activity-live">{[live.label, live.summary].filter(Boolean).join(' ')}</span>
+          </>
+        )}
+      </button>
+      {expanded && (
+        <div className="chat-activity-list">
+          {events.map((e) => <EventRow key={e.key} {...e.props} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Code block with header (language + copy) ─────────────────────────────────
+// The copy button reads the <pre>'s live DOM text via a getter rather than a
+// plain string, since the code block content can still be streaming.
 
 function PreWithCopy({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) {
+  const { t } = useTranslation()
   const preRef = useRef<HTMLPreElement>(null)
+  let lang = ''
+  if (isValidElement(children)) {
+    const cls = (children as ReactElement<{ className?: string }>).props.className ?? ''
+    lang = /language-([\w+#.-]+)/.exec(cls)?.[1] ?? ''
+  }
   return (
-    <div style={{ position: 'relative' }}>
+    <div className="chat-code">
+      <div className="chat-code-header">
+        <span className="chat-code-lang">{lang || 'text'}</span>
+        <CopyIconButton text={() => preRef.current?.textContent ?? ''} label={t('chat.copyCode')} />
+      </div>
       <pre ref={preRef} {...props}>{children}</pre>
-      <CopyButton
-        text={() => preRef.current?.textContent ?? ''}
-        title="Copy code"
-        style={{ position: 'absolute', top: '0.375rem', right: '0.375rem', zIndex: 1 }}
-      />
     </div>
   )
 }
 
 // ─── Markdown renderer ────────────────────────────────────────────────────────
 
-function MarkdownContent({ text, streaming }: { text: string; streaming?: boolean }) {
+function MarkdownContent({ text }: { text: string }) {
   return (
     <div className="markdown-content">
       <ReactMarkdown
@@ -582,19 +489,25 @@ function MarkdownContent({ text, streaming }: { text: string; streaming?: boolea
       >
         {text}
       </ReactMarkdown>
-      {streaming && (
-        <span
-          style={{
-            display: 'inline-block',
-            width: 2,
-            height: '1em',
-            background: 'var(--primary)',
-            marginLeft: 2,
-            verticalAlign: 'text-bottom',
-            animation: 'blink 1s step-start infinite',
-          }}
-        />
-      )}
+    </div>
+  )
+}
+
+// ─── Streaming indicators ─────────────────────────────────────────────────────
+
+export function ThinkingShimmer() {
+  const { t } = useTranslation()
+  return (
+    <div className="chat-shimmer" role="status">
+      <span className="chat-shimmer-text">{t('chat.thinking')}</span>
+    </div>
+  )
+}
+
+function StreamingDots() {
+  return (
+    <div className="chat-shimmer" aria-hidden>
+      <span className="chat-dots"><span /><span /><span /></span>
     </div>
   )
 }
@@ -602,64 +515,154 @@ function MarkdownContent({ text, streaming }: { text: string; streaming?: boolea
 // ─── Persona / System message (collapsible) ───────────────────────────────────
 
 function PersonaRow({ text, timestamp }: { text: string; timestamp: string }) {
+  const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
   return (
-    <div
-      style={{
-        margin: '1px 1rem',
-        borderLeft: `2px solid var(--fg-dim)`,
-        borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
-        overflow: 'hidden',
-        fontSize: 12,
-      }}
-    >
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-          width: '100%',
-          padding: '0.25rem 0.625rem',
-          background: 'var(--surface)',
-          border: 'none',
-          cursor: 'pointer',
-          color: 'var(--fg-muted)',
-          textAlign: 'left',
-          minHeight: 26,
-        }}
-      >
-        <FontAwesomeIcon icon={faUserSecret} style={{ fontSize: 10, color: 'var(--fg-dim)', flexShrink: 0 }} />
-        <span style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: 11, color: 'var(--fg)', flexShrink: 0 }}>
-          persona
-        </span>
-        <span style={{ flex: 1 }} />
-        <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--fg-dim)', flexShrink: 0 }}>
-          {timestamp}
-        </span>
-        <FontAwesomeIcon
-          icon={expanded ? faChevronDown : faChevronRight}
-          style={{ fontSize: 9, color: 'var(--fg-dim)', flexShrink: 0 }}
-        />
-      </button>
-      {expanded && (
-        <div
-          style={{
-            padding: '0.5rem 0.625rem',
-            background: 'var(--bg-secondary)',
-            borderTop: '1px solid color-mix(in srgb, var(--fg-dim) 20%, var(--border))',
-          }}
-        >
-          <pre style={{ ...codeBlockStyle, color: 'var(--fg-muted)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-            {text}
-          </pre>
-        </div>
-      )}
+    <div className="chat-activity">
+      <div className="chat-event">
+        <button type="button" className="chat-event-row" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)}>
+          <VenetianMask size={14} className="chat-event-icon" />
+          <span className="chat-event-name">{t('chat.persona')}</span>
+          <span className="chat-event-arg">{timestamp}</span>
+          <ChevronRight size={14} className="chat-chevron" />
+        </button>
+        {expanded && (
+          <div className="chat-event-detail">
+            <pre className="chat-tool-pre chat-tool-pre--muted">{text}</pre>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
+
+type Entry =
+  | { type: 'text'; key: string; text: string }
+  | { type: 'event'; key: string; props: EventRowProps }
+
+type Block =
+  | { type: 'text'; key: string; text: string }
+  | { type: 'group'; key: string; events: { key: string; props: EventRowProps }[] }
+
+/** Merge consecutive tool/thinking entries into activity groups. */
+function toBlocks(entries: Entry[]): Block[] {
+  const blocks: Block[] = []
+  for (const e of entries) {
+    if (e.type === 'text') {
+      blocks.push(e)
+      continue
+    }
+    const last = blocks[blocks.length - 1]
+    if (last && last.type === 'group') last.events.push({ key: e.key, props: e.props })
+    else blocks.push({ type: 'group', key: `g-${e.key}`, events: [{ key: e.key, props: e.props }] })
+  }
+  return blocks
+}
+
+function liveToolProps(tc: ActiveToolCall): EventRowProps {
+  return {
+    kind: 'tool',
+    toolName: tc.name,
+    toolInput: (() => { try { return JSON.parse(tc.input) } catch { return null } })(),
+    toolResult: tc.result?.content,
+    isError: tc.is_error,
+    isLive: tc.status === 'pending' || tc.status === 'in_progress',
+    backendTitle: tc.title,
+    backendKind: tc.kind,
+    toolStatus: tc.status,
+    locations: tc.locations,
+    diff: tc.diff,
+    terminal: tc.terminal,
+    images: tc.result?.images,
+  }
+}
+
+/** Renderable entries of one assistant message, keys namespaced by message id. */
+function assistantEntries(message: Message, streamingState?: StreamingState): Entry[] {
+  const entries: Entry[] = []
+  const id = message.id
+  if (streamingState) {
+    streamingState.items.forEach((item, i) => {
+      if (item.type === 'thinking') entries.push({ type: 'event', key: `${id}-thinking-${i}`, props: { kind: 'thinking', thinking: item.text, isLive: true } })
+      else if (item.type === 'text') entries.push({ type: 'text', key: `${id}-text-${i}`, text: item.text })
+      else if (item.type === 'tool') {
+        const tc = streamingState.toolCalls.find((x) => x.id === item.id)
+        if (tc) entries.push({ type: 'event', key: `${id}-tool-${item.id}`, props: liveToolProps(tc) })
+      }
+    })
+    return entries
+  }
+  message.content.forEach((part: ContentPart, i) => {
+    if (part.type === 'reasoning') entries.push({ type: 'event', key: `${id}-r-${i}`, props: { kind: 'thinking', thinking: part.text ?? '' } })
+    else if (part.type === 'tool_call') {
+      entries.push({
+        type: 'event',
+        key: `${id}-t-${i}`,
+        props: { kind: 'tool', toolName: part.tool_name ?? 'tool', toolInput: part.tool_input ?? null, toolResult: part.tool_result, isError: part.is_error },
+      })
+    } else if (part.type === 'text' && part.text) entries.push({ type: 'text', key: `${id}-txt-${i}`, text: part.text })
+  })
+  // Fallback for messages with no typed parts (legacy format)
+  const textContent = messageText(message)
+  if (message.content.every((p) => p.type !== 'text' && p.type !== 'tool_call' && p.type !== 'reasoning') && textContent) {
+    entries.push({ type: 'text', key: `${id}-txt-legacy`, text: textContent })
+  }
+  return entries
+}
+
+const messageText = (message: Message) =>
+  message.content.filter((p) => p.type === 'text').map((p) => p.text ?? '').join('')
+
+interface AssistantTurnProps {
+  /** Consecutive assistant messages rendered as one turn. */
+  messages: Message[]
+  /** True while the LAST message of the turn is streaming. */
+  streaming?: boolean
+  streamingState?: StreamingState
+}
+
+/**
+ * One assistant turn: consecutive assistant messages (an agent loop stores a
+ * message per step) rendered as a single block of prose, with every run of
+ * tool calls / thinking between two texts collapsed into one activity row.
+ */
+export function AssistantTurn({ messages, streaming, streamingState }: AssistantTurnProps) {
+  const { t } = useTranslation()
+  const isStreaming = Boolean(streaming && streamingState)
+  const last = messages[messages.length - 1]
+
+  const entries: Entry[] = []
+  messages.forEach((m, i) => {
+    const live = isStreaming && i === messages.length - 1 ? streamingState : undefined
+    entries.push(...assistantEntries(m, live))
+  })
+
+  const blocks = toBlocks(entries)
+  const lastBlock = blocks[blocks.length - 1]
+  const turnText = entries.filter((e) => e.type === 'text').map((e) => (e as { text: string }).text).join('\n\n')
+
+  if (!isStreaming && blocks.length === 0) return null
+
+  return (
+    <div className="chat-msg chat-msg--assistant">
+      {isStreaming && blocks.length === 0 && <ThinkingShimmer />}
+      {blocks.map((b) =>
+        b.type === 'text'
+          ? <div key={b.key} className="chat-prose"><MarkdownContent text={b.text} /></div>
+          : <ActivityGroup key={b.key} events={b.events} />,
+      )}
+      {isStreaming && lastBlock?.type === 'text' && <StreamingDots />}
+      {!isStreaming && turnText && (
+        <div className="chat-msg-actions">
+          <CopyIconButton text={turnText} label={t('chat.copyMessage')} />
+          <time dateTime={last.created_at}>{format(new Date(last.created_at), 'HH:mm')}</time>
+        </div>
+      )}
+    </div>
+  )
+}
 
 interface MessageBubbleProps {
   message: Message
@@ -668,203 +671,42 @@ interface MessageBubbleProps {
 }
 
 export default function MessageBubble({ message, streaming, streamingState }: MessageBubbleProps) {
-  const isUser = message.role === 'user'
-  const isSystem = message.role === 'system'
+  const { t } = useTranslation()
   const timestamp = format(new Date(message.created_at), 'HH:mm')
+  const textContent = messageText(message)
 
-  const textContent = message.content
-    .filter((p) => p.type === 'text')
-    .map((p) => p.text ?? '')
-    .join('')
-
-  // ── System / Persona message: collapsible, hidden by default
-  if (isSystem) {
+  // System / Persona message: collapsible, hidden by default
+  if (message.role === 'system') {
     return <PersonaRow text={textContent} timestamp={timestamp} />
   }
 
-  // ── User message: border-only style with light background
-  if (isUser) {
-    return (
-      <div className="msg-user-wrapper" style={{
-        display: 'flex',
-        flexDirection: 'row-reverse',
-        alignItems: 'flex-start',
-        gap: '0.625rem',
-        padding: '0.5rem 1rem',
-      }}>
-        <div
-          className="msg-user-avatar"
-          style={{
-            width: 32, height: 32, borderRadius: '50%',
-            background: 'color-mix(in srgb, var(--primary) 15%, var(--bg))',
-            border: '2px solid var(--primary)',
-            flexShrink: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: 'var(--accent)',
-          }}
-        >
-          <FontAwesomeIcon icon={faUser} style={{ fontSize: 13 }} />
-        </div>
-        <div
-          className="msg-user-bubble"
-          style={{
-            maxWidth: 'min(680px, 80%)',
-            background: 'color-mix(in srgb, var(--primary) 8%, var(--bg))',
-            color: 'var(--fg)',
-            border: '2px solid var(--primary)',
-            borderRadius: 'var(--radius-md) var(--radius-sm) var(--radius-md) var(--radius-md)',
-            padding: '0.625rem 0.875rem',
-            fontSize: 14,
-            lineHeight: 1.55,
-            wordBreak: 'break-word',
-          }}
-        >
-          <MarkdownContent text={textContent} />
-          <div style={{ fontSize: 10, marginTop: '0.375rem', color: 'var(--fg-dim)', textAlign: 'left' }}>
-            {timestamp}
-          </div>
-        </div>
-      </div>
-    )
+  if (message.role !== 'user') {
+    return <AssistantTurn messages={[message]} streaming={streaming} streamingState={streamingState} />
   }
 
-  // ── Assistant message: render content in arrival order
-
-  // Helper: render a text segment as a bubble
-  const renderTextBubble = (text: string, isStreaming: boolean, showTimestamp: boolean, key: string | number) => (
-    <div
-      key={key}
-      className="msg-assistant-wrapper"
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: '0.625rem',
-        padding: '0.25rem 1rem',
-      }}
-    >
-      <div
-        className="msg-assistant-avatar"
-        style={{
-          width: 28, height: 28, borderRadius: '50%',
-          background: 'var(--card-bg)', border: '1px solid var(--border)',
-          flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: 'var(--fg-muted)', marginTop: 2,
-        }}
-      >
-        <FontAwesomeIcon icon={faRobot} style={{ fontSize: 12 }} />
-      </div>
-      <div
-        className="msg-assistant-bubble"
-        style={{
-          flex: 1,
-          minWidth: 0,
-          background: 'var(--card-bg)',
-          color: 'var(--fg)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-sm) var(--radius-md) var(--radius-md) var(--radius-md)',
-          padding: '0.625rem 0.875rem',
-          fontSize: 14,
-          lineHeight: 1.55,
-          wordBreak: 'break-word',
-        }}
-      >
-        <MarkdownContent text={text} streaming={isStreaming} />
-        {showTimestamp && (
-          <div style={{ fontSize: 10, marginTop: '0.375rem', color: 'var(--fg-dim)', textAlign: 'right' }}>
-            {timestamp}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-
-  // Helper: render a tool call EventRow from an ActiveToolCall
-  const renderLiveToolCall = (tc: ActiveToolCall, key: string | number) => (
-    <EventRow
-      key={key}
-      kind="tool"
-      toolName={tc.name}
-      toolInput={(() => { try { return JSON.parse(tc.input) } catch { return null } })()}
-      toolResult={tc.result?.content}
-      isError={tc.is_error}
-      isLive={tc.status === 'pending' || tc.status === 'in_progress'}
-      backendTitle={tc.title}
-      backendKind={tc.kind}
-      toolStatus={tc.status}
-      locations={tc.locations}
-      diff={tc.diff}
-      terminal={tc.terminal}
-    />
-  )
-
-  if (streaming && streamingState) {
-    const items: StreamItem[] = streamingState.items
-    const lastIdx = items.length - 1
-
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', padding: '0.375rem 0' }}>
-        {items.length === 0 ? (
-          // Nothing received yet: show spinner
-          <div className="msg-assistant-wrapper" style={{ display: 'flex', alignItems: 'flex-start', gap: '0.625rem', padding: '0.25rem 1rem' }}>
-            <div className="msg-assistant-avatar" style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--card-bg)', border: '1px solid var(--border)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fg-muted)', marginTop: 2 }}>
-              <FontAwesomeIcon icon={faRobot} style={{ fontSize: 12 }} />
-            </div>
-            <div className="msg-assistant-bubble" style={{ flex: 1, minWidth: 0, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm) var(--radius-md) var(--radius-md) var(--radius-md)', padding: '0.625rem 0.875rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <LoadingSpinner size={14} />
-                <span style={{ fontSize: 13, color: 'var(--fg-muted)' }}>Thinking…</span>
-              </div>
-            </div>
-          </div>
-        ) : (
-          items.map((item, i) => {
-            if (item.type === 'thinking') {
-              return <EventRow key={`thinking-${i}`} kind="thinking" thinking={item.text} isLive />
-            }
-            if (item.type === 'text') {
-              return renderTextBubble(item.text, i === lastIdx, i === lastIdx, `text-${i}`)
-            }
-            if (item.type === 'tool') {
-              const tc = streamingState.toolCalls.find((t) => t.id === item.id)
-              if (!tc) return null
-              return renderLiveToolCall(tc, `tool-${item.id}`)
-            }
-            return null
-          })
-        )}
-      </div>
-    )
-  }
-
-  // ── Non-streaming: render completed message.content in order
+  // User message: right-aligned bubble, attachments above it
+  const images = message.content.filter((p) => p.type === 'image' && p.image_url).map((p) => p.image_url as string)
+  if (!textContent && images.length === 0) return null
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', padding: '0.375rem 0' }}>
-      {message.content.map((part: ContentPart, i) => {
-        if (part.type === 'reasoning') {
-          return <EventRow key={`r-${i}`} kind="thinking" thinking={part.text ?? ''} />
-        }
-        if (part.type === 'tool_call') {
-          return (
-            <EventRow
-              key={`t-${i}`}
-              kind="tool"
-              toolName={part.tool_name ?? 'tool'}
-              toolInput={part.tool_input ?? null}
-              toolResult={part.tool_result}
-              isError={part.is_error}
-            />
-          )
-        }
-        if (part.type === 'text' && part.text) {
-          const isLast = i === message.content.length - 1
-          return renderTextBubble(part.text, false, isLast, `txt-${i}`)
-        }
-        return null
-      })}
-      {/* Fallback for messages with no typed parts (legacy format) */}
-      {message.content.every((p) => p.type !== 'text' && p.type !== 'tool_call' && p.type !== 'reasoning') && textContent && (
-        renderTextBubble(textContent, false, true, 'txt-legacy')
+    <div className="chat-msg chat-msg--user">
+      {images.length > 0 && (
+        <div className="chat-attachments">
+          {images.map((src, i) => (
+            <a key={i} href={src} target="_blank" rel="noreferrer">
+              <img className="chat-attachment" src={src} alt={`attachment ${i + 1}`} />
+            </a>
+          ))}
+        </div>
       )}
+      {textContent && (
+        <div className="chat-user-bubble">
+          <MarkdownContent text={textContent} />
+        </div>
+      )}
+      <div className="chat-msg-actions">
+        <time dateTime={message.created_at}>{timestamp}</time>
+        {textContent && <CopyIconButton text={textContent} label={t('chat.copyMessage')} />}
+      </div>
     </div>
   )
 }

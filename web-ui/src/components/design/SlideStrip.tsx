@@ -1,3 +1,4 @@
+import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
 import { useDesignStore } from '@pando/client/stores/designStore'
 
@@ -21,35 +22,14 @@ export default function SlideStrip({ slides }: SlideStripProps) {
   if (slides <= 0) return null
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.3rem',
-        padding: '0.35rem 0.5rem',
-        borderTop: '1px solid var(--border)',
-        overflowX: 'auto',
-        flexShrink: 0,
-      }}
-    >
-      <span style={{ fontSize: 10, color: 'var(--fg-muted)', flexShrink: 0, marginRight: '0.25rem' }}>
-        {t('design.deck.slides')}
-      </span>
+    <div className="design-slide-strip">
+      <span className="design-slide-strip-label">{t('design.deck.slides')}</span>
       {Array.from({ length: slides }, (_, index) => index + 1).map((number) => (
         <button
           key={number}
+          type="button"
           onClick={() => setSlide(number)}
-          style={{
-            flexShrink: 0,
-            minWidth: 28,
-            padding: '0.2rem 0.4rem',
-            fontSize: 11,
-            background: slide === number ? 'var(--primary)' : 'var(--surface)',
-            color: slide === number ? 'white' : 'var(--fg-muted)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            cursor: 'pointer',
-          }}
+          className={clsx('design-slide-btn', slide === number && 'design-slide-btn--active')}
         >
           {number}
         </button>

@@ -1,12 +1,8 @@
 import { useEffect } from 'react'
 import { useExtensionsStore } from '@pando/client/stores/extensionsStore'
-import { Toggle, TextInput } from '@/components/shared/FormInput'
-import Tooltip from '@/components/shared/Tooltip'
-
-const dividerStyle: React.CSSProperties = {
-  borderTop: '1px solid var(--border)',
-  margin: '1.5rem 0',
-}
+import { useUnsavedChangesGuard } from './unsavedChanges'
+import { Button, Input, SettingsRow, SettingsSection, Switch, Tooltip } from '@/components/ui'
+import { Info } from '@/components/ui/icons'
 
 // Parse a duration string like "30s" → 30, "5m" → 300, "1h" → 3600.
 // Returns the raw seconds value, or NaN if unparseable.
@@ -38,6 +34,15 @@ export default function LuaSettings() {
     saveExtensions,
     resetExtensions,
   } = useExtensionsStore()
+  useUnsavedChangesGuard({
+    id: 'lua',
+    dirty: extensionsDirty,
+    save: async () => {
+      await saveExtensions()
+      return !useExtensionsStore.getState().extensionsError
+    },
+    discard: resetExtensions,
+  })
 
   useEffect(() => {
     fetchExtensions()
@@ -52,179 +57,79 @@ export default function LuaSettings() {
   const timeoutSecs = parseDurationSecs(lua.timeout)
 
   if (extensionsLoading) {
-    return (
-      <div style={{ padding: '2rem', color: 'var(--fg-muted)', fontSize: 14 }}>
-        Loading Lua settings…
-      </div>
-    )
+    return <div className="settings-loading">Loading Lua settings…</div>
   }
 
   return (
-    <div style={{ maxWidth: 640 }}>
-      <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--fg)', marginBottom: '1.25rem' }}>
-        Lua Engine
-      </h2>
+    <div>
+      <header className="settings-page-header">
+        <h2 className="settings-page-title">Lua Engine</h2>
+      </header>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-        <Toggle
+      <SettingsSection>
+        <SettingsRow
           label="Enabled"
           description="Activate the Lua scripting engine for custom hooks and filters"
-          checked={lua.enabled}
-          onChange={(v) => update({ enabled: v })}
-        />
-
-        <TextInput
-          label="Script Path"
-          placeholder="/path/to/hooks.lua"
-          value={lua.script_path}
-          onChange={(e) => update({ script_path: e.target.value })}
-        />
-
-        {/* Timeout */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-          <label
-            style={{
-              fontSize: 12,
-              fontWeight: 600,
-              color: 'var(--fg-muted)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.04em',
-            }}
-          >
-            Timeout (seconds)
-          </label>
-          <input
+          htmlFor="lua-enabled"
+        >
+          <Switch id="lua-enabled" checked={lua.enabled} onCheckedChange={(v) => update({ enabled: v })} />
+        </SettingsRow>
+        <SettingsRow label="Script path" htmlFor="lua-script-path">
+          <Input
+            id="lua-script-path"
+            placeholder="/path/to/hooks.lua"
+            value={lua.script_path}
+            onChange={(e) => update({ script_path: e.target.value })}
+          />
+        </SettingsRow>
+        <SettingsRow label="Timeout (seconds)" htmlFor="lua-timeout">
+          <Input
+            id="lua-timeout"
             type="number"
             min={1}
             max={3600}
             value={Number.isFinite(timeoutSecs) ? timeoutSecs : 30}
             onChange={(e) => update({ timeout: formatDurationSecs(parseInt(e.target.value, 10)) })}
-            style={{
-              background: 'var(--input-bg)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-sm)',
-              color: 'var(--fg)',
-              fontSize: 14,
-              padding: '0.5rem 0.75rem',
-              outline: 'none',
-              width: '100%',
-              fontFamily: 'inherit',
-              boxSizing: 'border-box',
-            }}
-            onFocus={(e) => {
-              e.target.style.borderColor = 'var(--border-focus)'
-            }}
-            onBlur={(e) => {
-              e.target.style.borderColor = 'var(--border)'
-            }}
           />
-        </div>
+        </SettingsRow>
+      </SettingsSection>
 
-        <div style={dividerStyle} />
-
-        <Toggle
-          label="Strict Mode"
-          description="Treat Lua errors as fatal and halt execution"
-          checked={lua.strict_mode}
-          onChange={(v) => update({ strict_mode: v })}
-        />
-
-        {/* Hot Reload with tooltip */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <div style={{ flex: 1 }}>
-            <Toggle
-              label="Hot Reload"
-              description="Automatically reload Lua scripts when the file changes"
-              checked={lua.hot_reload}
-              onChange={(v) => update({ hot_reload: v })}
-            />
-          </div>
-          <Tooltip
-            content="When enabled, Pando watches the script file and reloads it without restarting. Integrates with the config hot-reload system."
-            position="left"
-          >
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 18,
-                height: 18,
-                borderRadius: '50%',
-                background: 'var(--border)',
-                color: 'var(--fg-muted)',
-                fontSize: 11,
-                fontWeight: 700,
-                cursor: 'help',
-                flexShrink: 0,
-                userSelect: 'none',
-              }}
-            >
-              ?
+      <SettingsSection>
+        <SettingsRow label="Strict mode" description="Treat Lua errors as fatal and halt execution" htmlFor="lua-strict">
+          <Switch id="lua-strict" checked={lua.strict_mode} onCheckedChange={(v) => update({ strict_mode: v })} />
+        </SettingsRow>
+        <SettingsRow
+          label={
+            <span className="inline-flex items-center gap-1.5">
+              Hot reload
+              <Tooltip content="When enabled, Pando watches the script file and reloads it without restarting. Integrates with the config hot-reload system.">
+                <Info size={13} className="text-faint" aria-hidden />
+              </Tooltip>
             </span>
-          </Tooltip>
-        </div>
-
-        <Toggle
-          label="Log Filtered Data"
+          }
+          description="Automatically reload Lua scripts when the file changes"
+          htmlFor="lua-hot-reload"
+        >
+          <Switch id="lua-hot-reload" checked={lua.hot_reload} onCheckedChange={(v) => update({ hot_reload: v })} />
+        </SettingsRow>
+        <SettingsRow
+          label="Log filtered data"
           description="Log data that was filtered or blocked by Lua scripts"
-          checked={lua.log_filtered_data}
-          onChange={(v) => update({ log_filtered_data: v })}
-        />
-      </div>
-
-      <div style={dividerStyle} />
-
-      {extensionsError && (
-        <div
-          style={{
-            marginBottom: '1rem',
-            padding: '0.625rem 0.875rem',
-            background: 'var(--error)',
-            color: 'var(--primary-fg)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 13,
-          }}
+          htmlFor="lua-log-filtered"
         >
-          {extensionsError}
-        </div>
-      )}
+          <Switch id="lua-log-filtered" checked={lua.log_filtered_data} onCheckedChange={(v) => update({ log_filtered_data: v })} />
+        </SettingsRow>
+      </SettingsSection>
 
-      <div style={{ display: 'flex', gap: '0.75rem' }}>
-        <button
-          onClick={saveExtensions}
-          disabled={!extensionsDirty || extensionsSaving}
-          style={{
-            padding: '0.5rem 1.5rem',
-            background: !extensionsDirty || extensionsSaving ? 'var(--border)' : 'var(--primary)',
-            color: !extensionsDirty || extensionsSaving ? 'var(--fg-muted)' : 'var(--primary-fg)',
-            border: 'none',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: !extensionsDirty || extensionsSaving ? 'not-allowed' : 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
+      {extensionsError && <div className="settings-banner settings-banner--danger" role="alert">{extensionsError}</div>}
+
+      <div className="settings-actions">
+        <Button variant="primary" onClick={saveExtensions} disabled={!extensionsDirty || extensionsSaving} loading={extensionsSaving}>
           {extensionsSaving ? 'Saving…' : 'Save'}
-        </button>
-        <button
-          onClick={resetExtensions}
-          disabled={!extensionsDirty}
-          style={{
-            padding: '0.5rem 1.5rem',
-            background: 'transparent',
-            color: !extensionsDirty ? 'var(--fg-dim)' : 'var(--fg-muted)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: !extensionsDirty ? 'not-allowed' : 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
+        </Button>
+        <Button variant="secondary" onClick={resetExtensions} disabled={!extensionsDirty}>
           Reset
-        </button>
+        </Button>
       </div>
     </div>
   )

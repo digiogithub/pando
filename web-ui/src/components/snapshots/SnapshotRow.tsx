@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faUndo, faTrash } from '@fortawesome/free-solid-svg-icons'
+import { Undo2, Trash2 } from '@/components/ui/icons'
+import { IconButton } from '@/components/ui'
 import type { Snapshot } from '@pando/client/types'
 import StatusBadge from '@/components/shared/StatusBadge'
 import ConfirmDialog from '@/components/shared/ConfirmDialog'
@@ -25,7 +25,6 @@ interface SnapshotRowProps {
 }
 
 export default function SnapshotRow({ snapshot }: SnapshotRowProps) {
-  const [hovered, setHovered] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const { revertSnapshot, deleteSnapshot } = useSnapshotsStore()
 
@@ -38,85 +37,31 @@ export default function SnapshotRow({ snapshot }: SnapshotRowProps) {
     setConfirmDelete(false)
   }
 
-  const cellStyle: React.CSSProperties = {
-    padding: '0.625rem 0.75rem',
-    fontSize: 13,
-    color: 'var(--fg)',
-    borderBottom: '1px solid var(--border)',
-    verticalAlign: 'middle',
-  }
-
   return (
     <>
-      <tr
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        style={{
-          background: hovered ? 'var(--surface)' : 'transparent',
-          transition: 'background 0.15s',
-        }}
-      >
-        <td style={{ ...cellStyle, fontWeight: 500, maxWidth: 160 }}>
-          <span
-            style={{
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              display: 'block',
-            }}
-            title={snapshot.name}
-          >
+      <tr>
+        <td className="font-medium" style={{ maxWidth: 160 }}>
+          <span className="is-ellipsis block" title={snapshot.name}>
             {snapshot.name}
           </span>
         </td>
-        <td style={{ ...cellStyle, fontFamily: 'monospace', color: 'var(--fg-muted)', fontSize: 12 }}>
-          {snapshot.session_id.slice(0, 6)}
-        </td>
-        <td style={cellStyle}>
+        <td className="is-mono">{snapshot.session_id.slice(0, 6)}</td>
+        <td>
           <StatusBadge status={snapshot.status} />
         </td>
-        <td style={{ ...cellStyle, color: 'var(--fg-muted)' }}>
-          {formatDate(snapshot.created_at)}
-        </td>
-        <td style={{ ...cellStyle, color: 'var(--fg-muted)' }}>
-          {formatSize(snapshot.size)}
-        </td>
-        <td style={{ ...cellStyle, textAlign: 'right' }}>
-          <div style={{ display: 'flex', gap: '0.375rem', justifyContent: 'flex-end' }}>
-            <button
-              onClick={handleRevert}
-              title="Revert to this snapshot"
-              style={{
-                padding: '0.25rem 0.5rem',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--border)',
-                background: 'transparent',
-                color: 'var(--fg-muted)',
-                cursor: 'pointer',
-                fontSize: 12,
-                lineHeight: 1,
-                fontFamily: 'inherit',
-              }}
-            >
-              <FontAwesomeIcon icon={faUndo} />
-            </button>
-            <button
+        <td className="is-muted">{formatDate(snapshot.created_at)}</td>
+        <td className="is-muted">{formatSize(snapshot.size)}</td>
+        <td className="is-numeric">
+          <div className="flex justify-end gap-1.5">
+            <IconButton aria-label="Revert to this snapshot" tooltip icon={<Undo2 size={13} />} size="sm" onClick={() => void handleRevert()} />
+            <IconButton
+              aria-label="Delete snapshot"
+              tooltip
+              icon={<Trash2 size={13} />}
+              size="sm"
+              variant="danger"
               onClick={() => setConfirmDelete(true)}
-              title="Delete snapshot"
-              style={{
-                padding: '0.25rem 0.5rem',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--border)',
-                background: 'transparent',
-                color: 'var(--error)',
-                cursor: 'pointer',
-                fontSize: 12,
-                lineHeight: 1,
-                fontFamily: 'inherit',
-              }}
-            >
-              <FontAwesomeIcon icon={faTrash} />
-            </button>
+            />
           </div>
         </td>
       </tr>
@@ -127,7 +72,7 @@ export default function SnapshotRow({ snapshot }: SnapshotRowProps) {
           message={`Are you sure you want to delete "${snapshot.name}"? This action cannot be undone.`}
           confirmLabel="Delete"
           dangerous
-          onConfirm={handleDelete}
+          onConfirm={() => void handleDelete()}
           onCancel={() => setConfirmDelete(false)}
         />
       )}

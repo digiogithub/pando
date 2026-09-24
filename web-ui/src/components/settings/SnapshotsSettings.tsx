@@ -1,24 +1,22 @@
 import { useEffect, useState } from 'react'
 import { useServicesSettingsStore } from '@pando/client/stores/servicesSettingsStore'
-import { TextInput, Toggle } from '@/components/shared/FormInput'
+import { useUnsavedChangesGuard } from './unsavedChanges'
 import TagListEditor from '@/components/shared/TagListEditor'
 import api from '@pando/client/services/api'
-
-const dividerStyle: React.CSSProperties = {
-  borderTop: '1px solid var(--border)',
-  margin: '1.5rem 0',
-}
-
-const sectionTitle: React.CSSProperties = {
-  fontSize: 18,
-  fontWeight: 700,
-  color: 'var(--fg)',
-  marginBottom: '1.25rem',
-}
+import { Button, Input, SettingsRow, SettingsSection, Switch } from '@/components/ui'
 
 export default function SnapshotsSettings() {
   const { config, dirty, loading, saving, error, fetchServices, updateSnapshots, saveServices, resetServices } =
     useServicesSettingsStore()
+  useUnsavedChangesGuard({
+    id: 'snapshots',
+    dirty,
+    save: async () => {
+      await saveServices()
+      return !useServicesSettingsStore.getState().error
+    },
+    discard: resetServices,
+  })
 
   const [snapshotCount, setSnapshotCount] = useState<number | null>(null)
 
@@ -31,182 +29,88 @@ export default function SnapshotsSettings() {
   }, [fetchServices])
 
   if (loading) {
-    return <div style={{ padding: '2rem', color: 'var(--fg-muted)', fontSize: 14 }}>Loading…</div>
+    return <div className="settings-loading">Loading…</div>
   }
 
   const snaps = config.snapshots
 
   return (
-    <div style={{ maxWidth: 640 }}>
-      <h2 style={sectionTitle}>Snapshots</h2>
+    <div>
+      <header className="settings-page-header">
+        <h2 className="settings-page-title">Snapshots</h2>
+      </header>
 
-      {/* Info bar */}
       {snapshotCount !== null && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            padding: '0.625rem 0.875rem',
-            background: 'var(--selected)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 13,
-            color: 'var(--fg)',
-            marginBottom: '1.25rem',
-          }}
-        >
-          <span style={{ fontWeight: 600 }}>Current snapshots:</span>
-          <span style={{ color: 'var(--primary)', fontWeight: 700 }}>{snapshotCount}</span>
+        <div className="settings-banner">
+          <span>
+            Current snapshots: <strong className="text-fg">{snapshotCount}</strong>
+          </span>
         </div>
       )}
 
-      <Toggle
-        label="Enabled"
-        description="Enable session snapshot system"
-        checked={snaps.enabled}
-        onChange={(v) => updateSnapshots('enabled', v)}
-      />
-
-      <div style={dividerStyle} />
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <TextInput
-          label="Max Snapshots"
-          type="number"
-          value={String(snaps.maxSnapshots)}
-          onChange={(e) => updateSnapshots('maxSnapshots', Number(e.target.value))}
-          placeholder="50"
-        />
-
-        {/* Max File Size with MB label */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            Max File Size
-          </label>
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            <input
-              value={snaps.maxFileSize}
-              onChange={(e) => updateSnapshots('maxFileSize', e.target.value)}
-              placeholder="10MB"
-              style={{
-                flex: 1,
-                background: 'var(--input-bg)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-sm)',
-                color: 'var(--fg)',
-                fontSize: 14,
-                padding: '0.5rem 0.75rem',
-                outline: 'none',
-                fontFamily: 'inherit',
-                boxSizing: 'border-box',
-              }}
-              onFocus={(e) => (e.target.style.borderColor = 'var(--border-focus)')}
-              onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
-            />
-            <span style={{ fontSize: 13, color: 'var(--fg-muted)', whiteSpace: 'nowrap' }}>
-              e.g. 10MB, 500KB
-            </span>
-          </div>
-        </div>
-
-        {/* Auto Cleanup Days */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            Auto Cleanup (days)
-          </label>
-          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-            <Toggle
-              label="Auto Cleanup"
-              description="Automatically delete old snapshots"
-              checked={snaps.autoCleanupDays > 0}
-              onChange={(v) => updateSnapshots('autoCleanupDays', v ? 30 : 0)}
-            />
-            {snaps.autoCleanupDays > 0 && (
-              <input
-                type="number"
-                value={snaps.autoCleanupDays}
-                min={1}
-                onChange={(e) => updateSnapshots('autoCleanupDays', Number(e.target.value))}
-                style={{
-                  width: 80,
-                  background: 'var(--input-bg)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--fg)',
-                  fontSize: 14,
-                  padding: '0.375rem 0.5rem',
-                  outline: 'none',
-                  fontFamily: 'inherit',
-                  textAlign: 'center',
-                }}
-                onFocus={(e) => (e.target.style.borderColor = 'var(--border-focus)')}
-                onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
-              />
-            )}
-          </div>
-        </div>
-
-        <TagListEditor
-          label="Exclude Patterns"
-          items={snaps.excludePatterns ?? []}
-          onChange={(items) => updateSnapshots('excludePatterns', items)}
-          placeholder="e.g. *.log, node_modules/"
-        />
-      </div>
-
-      <div style={dividerStyle} />
-
-      {error && (
-        <div
-          style={{
-            marginBottom: '1rem',
-            padding: '0.625rem 0.875rem',
-            background: 'var(--error)',
-            color: 'var(--primary-fg)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 13,
-          }}
+      <SettingsSection>
+        <SettingsRow label="Enabled" description="Enable session snapshot system" htmlFor="snapshots-enabled">
+          <Switch id="snapshots-enabled" checked={snaps.enabled} onCheckedChange={(v) => updateSnapshots('enabled', v)} />
+        </SettingsRow>
+        <SettingsRow label="Max snapshots" htmlFor="snapshots-max">
+          <Input
+            id="snapshots-max"
+            type="number"
+            value={String(snaps.maxSnapshots)}
+            onChange={(e) => updateSnapshots('maxSnapshots', Number(e.target.value))}
+            placeholder="50"
+          />
+        </SettingsRow>
+        <SettingsRow label="Max file size" description="e.g. 10MB, 500KB" htmlFor="snapshots-max-size">
+          <Input
+            id="snapshots-max-size"
+            value={snaps.maxFileSize}
+            onChange={(e) => updateSnapshots('maxFileSize', e.target.value)}
+            placeholder="10MB"
+          />
+        </SettingsRow>
+        <SettingsRow
+          label="Auto cleanup"
+          description="Automatically delete old snapshots after this many days"
+          htmlFor="snapshots-auto-cleanup"
         >
-          {error}
-        </div>
-      )}
+          <Switch
+            id="snapshots-auto-cleanup"
+            checked={snaps.autoCleanupDays > 0}
+            onCheckedChange={(v) => updateSnapshots('autoCleanupDays', v ? 30 : 0)}
+          />
+          {snaps.autoCleanupDays > 0 && (
+            <Input
+              type="number"
+              min={1}
+              value={snaps.autoCleanupDays}
+              onChange={(e) => updateSnapshots('autoCleanupDays', Number(e.target.value))}
+              className="w-20"
+              aria-label="Auto cleanup days"
+            />
+          )}
+        </SettingsRow>
+      </SettingsSection>
 
-      <div style={{ display: 'flex', gap: '0.75rem' }}>
-        <button
-          onClick={saveServices}
-          disabled={!dirty || saving}
-          style={{
-            padding: '0.5rem 1.5rem',
-            background: !dirty || saving ? 'var(--border)' : 'var(--primary)',
-            color: !dirty || saving ? 'var(--fg-muted)' : 'var(--primary-fg)',
-            border: 'none',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: !dirty || saving ? 'not-allowed' : 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
+      <SettingsSection title="Exclude patterns" description="Files matching these patterns are never included in a snapshot.">
+        <div className="p-4">
+          <TagListEditor
+            items={snaps.excludePatterns ?? []}
+            onChange={(items) => updateSnapshots('excludePatterns', items)}
+            placeholder="e.g. *.log, node_modules/"
+          />
+        </div>
+      </SettingsSection>
+
+      {error && <div className="settings-banner settings-banner--danger" role="alert">{error}</div>}
+
+      <div className="settings-actions">
+        <Button variant="primary" onClick={saveServices} disabled={!dirty || saving} loading={saving}>
           {saving ? 'Saving…' : 'Save'}
-        </button>
-        <button
-          onClick={resetServices}
-          disabled={!dirty}
-          style={{
-            padding: '0.5rem 1.5rem',
-            background: 'transparent',
-            color: !dirty ? 'var(--fg-dim)' : 'var(--fg-muted)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: !dirty ? 'not-allowed' : 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
+        </Button>
+        <Button variant="secondary" onClick={resetServices} disabled={!dirty}>
           Reset
-        </button>
+        </Button>
       </div>
     </div>
   )

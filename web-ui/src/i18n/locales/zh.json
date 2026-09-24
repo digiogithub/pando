@@ -1,4 +1,19 @@
 {
+  "shell": {
+    "switchToLight": "切换到浅色模式",
+    "switchToDark": "切换到深色模式",
+    "openMenu": "打开菜单",
+    "closeMenu": "关闭菜单",
+    "collapseSidebar": "收起侧边栏",
+    "expandSidebar": "展开侧边栏",
+    "documentation": "文档",
+    "sidebar": "侧边栏",
+    "searchSessions": "搜索会话",
+    "running": "运行中",
+    "noMatches": "没有匹配的会话",
+    "autoAcceptOn": "自动接受",
+    "autoAcceptOff": "自动接受已关闭"
+  },
   "common": {
     "save": "保存",
     "saving": "保存中…",
@@ -64,6 +79,7 @@
   "settings": {
     "categories": {
       "general": "常规",
+      "appearance": "外观",
       "providers": "提供商",
       "agents": "代理",
       "mcpServers": "MCP 服务器",
@@ -94,6 +110,9 @@
       "theme": "主题",
       "themeLight": "浅色",
       "themeDark": "深色",
+      "themeSystem": "跟随系统",
+      "accent": "强调色",
+      "accentDefault": "默认",
       "llmCache": "LLM提示缓存",
       "llmCacheDescription": "启用LLM提供商的提示缓存（主要影响Anthropic）",
       "modelsDev": "模型目录 (models.dev)",
@@ -227,6 +246,15 @@
       "revealFailed": "显示密码失败"
     },
     "backToCategories": "分类",
+    "unsaved": {
+      "title": "未保存的更改",
+      "description": "您有未保存的更改。离开前要保存吗？",
+      "descriptionSections": "{{sections}} 中有未保存的更改。离开前要保存吗？",
+      "saveAndContinue": "保存并继续",
+      "discard": "放弃更改",
+      "cancel": "取消",
+      "saveFailed": "无法保存更改。请检查该部分中的错误后重试，或放弃更改。"
+    },
     "sandbox": {
       "title": "命令沙箱",
       "loading": "正在加载沙箱配置…",
@@ -275,6 +303,21 @@
       "save": "保存",
       "saving": "正在保存…",
       "reset": "重置"
+    },
+    "appearance": {
+      "description": "选择 Pando 在此设备上的外观。模式和主题也会被 TUI 使用；强调色和字号仅在此浏览器中生效。",
+      "mode": "外观模式",
+      "modeDescription": "“系统”会跟随操作系统设置并实时切换。",
+      "fontSize": "界面字号",
+      "fontSizeDescription": "调整整个应用的基础文字大小。",
+      "fontSizeSmall": "小",
+      "fontSizeDefault": "默认",
+      "fontSizeLarge": "大",
+      "themeFamily": "主题",
+      "themeFamilyDescription": "用于界面背景和文字的配色系列。浅色或深色由上方的模式决定。",
+      "accent": "强调色",
+      "accentDescription": "用于主要操作、焦点和选中状态。其他部分保持中性。",
+      "accentDefault": "主题默认"
     }
   },
   "chat": {
@@ -318,6 +361,128 @@
       "sessionScopePrefix": "“本会话允许”适用于以下开头的命令：{{prefix}}",
       "sessionScopeExact": "“本会话允许”仅适用于这条命令。",
       "runOnce": "在沙箱外运行"
+    },
+    "thinking": "思考中",
+    "thought": "思考",
+    "persona": "人设提示词",
+    "copied": "已复制",
+    "copyCode": "复制代码",
+    "copyMessage": "复制消息",
+    "queued": "排队中",
+    "queuedHint": "排队中 — 将在下一个安全点注入到运行中",
+    "scrollToBottom": "滚动到底部",
+    "slashCommands": "命令",
+    "activity": {
+      "commands_one": "运行了 {{count}} 条命令",
+      "commands_other": "运行了 {{count}} 条命令",
+      "read_one": "读取了 {{count}} 个文件",
+      "read_other": "读取了 {{count}} 个文件",
+      "edited_one": "编辑了 {{count}} 个文件",
+      "edited_other": "编辑了 {{count}} 个文件",
+      "searched_one": "搜索了 {{count}} 次",
+      "searched_other": "搜索了 {{count}} 次",
+      "fetched_one": "获取了 {{count}} 个页面",
+      "fetched_other": "获取了 {{count}} 个页面",
+      "tools_one": "调用了 {{count}} 个工具",
+      "tools_other": "调用了 {{count}} 个工具",
+      "thought_one": "思考",
+      "thought_other": "思考了 {{count}} 次",
+      "failed_one": "{{count}} 个失败",
+      "failed_other": "{{count}} 个失败"
+    },
+    "tool": {
+      "command": "命令",
+      "output": "输出",
+      "error": "错误",
+      "input": "输入",
+      "removed": "删除",
+      "added": "新增",
+      "lines": "行",
+      "exitCode": "退出码：{{code}}"
+    },
+    "composer": {
+      "placeholder": "向 Pando 提问任何问题…",
+      "placeholderRunning": "引导正在运行的智能体…",
+      "send": "发送消息",
+      "queue": "排队反馈",
+      "stop": "停止生成",
+      "hintIdle": "Enter 发送 · Shift+Enter 换行 · / 调出命令",
+      "hintRunning": "Enter 会将反馈排队到下一个安全点",
+      "hintGoal": "输入 / 调出命令",
+      "chars": "{{count}} / {{max}} 字符",
+      "context": "上下文 {{pct}}%",
+      "tokens": "{{formatted}} tokens"
+    },
+    "empty": {
+      "title": "我们要做什么？",
+      "suggestions": {
+        "explain": "解释这个代码库",
+        "bug": "查找并修复 bug",
+        "tests": "编写测试",
+        "review": "审查我的更改"
+      },
+      "prompts": {
+        "explain": "请概述这个代码库：它的结构、主要组件以及它们如何协作。",
+        "bug": "帮我查找并修复一个 bug。现象如下：",
+        "tests": "为这个项目最近的更改编写测试。",
+        "review": "审查我未提交的更改，指出 bug 或有风险的代码。"
+      }
+    },
+    "files": {
+      "changed_one": "{{count}} 个文件已更改",
+      "changed_other": "{{count}} 个文件已更改",
+      "viewDiff": "查看差异：{{path}}"
+    },
+    "diff": {
+      "close": "关闭差异查看器",
+      "edits_one": "{{count}} 处编辑",
+      "edits_other": "{{count}} 处编辑",
+      "escToClose": "关闭"
+    },
+    "goal": {
+      "title": "目标",
+      "cancel": "取消",
+      "cancelling": "正在取消…",
+      "iteration": "迭代 {{current}}/{{max}}",
+      "started": "开始于 {{time}}",
+      "finished": "完成于 {{time}}",
+      "progress": "进度",
+      "nextStep": "下一步",
+      "loading": "正在加载目标状态…",
+      "status": {
+        "running": "运行中",
+        "completed": "已完成",
+        "blocked": "已阻塞",
+        "cancelled": "已取消",
+        "idle": "空闲",
+        "loading": "加载中"
+      }
+    },
+    "question": {
+      "reviewTitle": "检查你的回答",
+      "counter": "问题 {{current}}/{{total}}",
+      "single": "问题",
+      "otherAnswer": "其他：{{text}}",
+      "noSelection": "（未选择）",
+      "otherPlaceholder": "其他回答（自由文本）…",
+      "cancel": "取消",
+      "back": "返回",
+      "next": "下一步",
+      "review": "检查",
+      "confirm": "确认"
+    },
+    "simple": {
+      "toggleSessions": "切换会话面板",
+      "advanced": "切换到高级视图",
+      "sessions": "会话",
+      "untitled": "未命名会话",
+      "sessionFallback": "会话 {{id}}",
+      "msgs_one": "{{count}} 条消息",
+      "msgs_other": "{{count}} 条消息",
+      "loadMore": "加载更多 ({{loaded}}/{{total}})",
+      "noSessions": "暂无会话",
+      "commands": "命令",
+      "openCommands": "打开命令启动器"
     }
   },
   "pwa": {

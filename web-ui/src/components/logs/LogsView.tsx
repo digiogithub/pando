@@ -18,18 +18,10 @@ export default function LogsView() {
   }, [fetchLogs])
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        overflow: 'hidden',
-        background: 'var(--bg)',
-      }}
-    >
+    <div className="view">
       <LogFilters />
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <LogTable />
       </div>
 

@@ -1,17 +1,15 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import {
-  faArrowLeft, faFileMedical, faFileCode,
-  faFloppyDisk, faFolderTree,
-} from '@fortawesome/free-solid-svg-icons'
-import type { FileNode } from '@pando/client/types'
 import { useEditorStore } from '@pando/client/stores/editorStore'
 import api from '@pando/client/services/api'
+import { Button, IconButton } from '@/components/ui'
+import { ArrowLeft, FileCode, FolderTree, Plus, Save } from '@/components/ui/icons'
 import FileExplorer from './FileExplorer'
 import EditorTabs from './EditorTabs'
 import CodeEditor from './CodeEditor'
 import EditorStatusBar from './EditorStatusBar'
+import '@/styles/editor.css'
+import type { FileNode } from '@pando/client/types'
 
 interface FilesResponse {
   path: string
@@ -137,144 +135,52 @@ export default function CodeEditorView() {
   }, [activeFile, markFileSaved])
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100vh',
-        background: 'var(--bg)',
-        overflow: 'hidden',
-      }}
-    >
+    <div className="editor-shell">
       {/* Header bar */}
-      <div
-        style={{
-          height: 40,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '0 16px',
-          borderBottom: '1px solid var(--border)',
-          background: 'var(--sidebar-bg)',
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {/* Back button */}
-          <button
-            onClick={() => navigate('/chat')}
-            title="Back to Chat"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              color: 'var(--fg-muted, #a0a0b0)',
-              fontSize: 13,
-              padding: '4px 8px',
-              borderRadius: 'var(--radius-sm)',
-              fontFamily: 'inherit',
-            }}
-            onMouseEnter={(e) => {
-              ;(e.currentTarget as HTMLButtonElement).style.background = 'var(--hover-bg)'
-              ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--fg)'
-            }}
-            onMouseLeave={(e) => {
-              ;(e.currentTarget as HTMLButtonElement).style.background = 'transparent'
-              ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--fg-muted, #a0a0b0)'
-            }}
-          >
-            <FontAwesomeIcon icon={faArrowLeft} style={{ fontSize: 12 }} />
+      <div className="editor-header">
+        <div className="editor-header-group">
+          <Button size="sm" variant="ghost" icon={<ArrowLeft size={14} />} onClick={() => navigate('/chat')} title="Back to Chat">
             <span className="editor-back-label">Back</span>
-          </button>
+          </Button>
 
-          {/* Explorer toggle */}
-          <button
+          <IconButton
+            aria-label={explorerOpen ? 'Hide file explorer' : 'Show file explorer'}
+            tooltip
+            icon={<FolderTree size={15} />}
+            variant={explorerOpen ? 'secondary' : 'ghost'}
+            active={explorerOpen}
             onClick={() => setExplorerOpen((v) => !v)}
-            title={explorerOpen ? 'Hide file explorer' : 'Show file explorer'}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              background: explorerOpen ? 'var(--selected)' : 'transparent',
-              border: '1px solid var(--border)',
-              cursor: 'pointer',
-              color: explorerOpen ? 'var(--primary)' : 'var(--fg-muted, #a0a0b0)',
-              fontSize: 13,
-              padding: '4px 8px',
-              borderRadius: 'var(--radius-sm)',
-              fontFamily: 'inherit',
-            }}
-          >
-            <FontAwesomeIcon icon={faFolderTree} style={{ fontSize: 12 }} />
-          </button>
+          />
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <FontAwesomeIcon icon={faFileCode} style={{ fontSize: 14, color: 'var(--primary)' }} />
-            <span className="editor-title-label" style={{ fontSize: 14, fontWeight: 600, color: 'var(--fg)' }}>
-              Code Editor
-            </span>
+          <div className="editor-header-title">
+            <FileCode size={15} />
+            <span className="editor-title-label">Code Editor</span>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {/* Save button */}
+        <div className="editor-header-group">
           {activeFile && (
-            <button
+            <Button
+              size="sm"
+              variant={activeFile.isDirty ? 'primary' : 'secondary'}
+              icon={<Save size={13} />}
               onClick={handleSave}
               disabled={saving || !activeFile.isDirty}
+              loading={saving}
               title={activeFile.isDirty ? 'Save file (Ctrl+S)' : 'No unsaved changes'}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '5px 12px',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--border)',
-                background: activeFile.isDirty ? 'var(--primary)' : 'var(--bg)',
-                color: activeFile.isDirty ? 'white' : 'var(--fg-muted)',
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: activeFile.isDirty ? 'pointer' : 'default',
-                fontFamily: 'inherit',
-                opacity: saving ? 0.6 : 1,
-                transition: 'background 0.15s, color 0.15s',
-              }}
             >
-              <FontAwesomeIcon icon={faFloppyDisk} style={{ fontSize: 11 }} />
               <span className="editor-save-label">{saving ? 'Saving…' : 'Save'}</span>
-            </button>
+            </Button>
           )}
 
-          {/* New file button */}
-          <button
-            onClick={handleNewFile}
-            title="New file"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '5px 12px',
-              borderRadius: 'var(--radius-sm)',
-              border: 'none',
-              background: 'var(--primary)',
-              color: 'white',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
-          >
-            <FontAwesomeIcon icon={faFileMedical} style={{ fontSize: 11 }} />
+          <Button size="sm" variant="ghost" icon={<Plus size={13} />} onClick={handleNewFile} title="New file">
             <span className="editor-new-label">New File</span>
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Main content: file explorer + editor */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0, position: 'relative' }}>
+      <div style={{ display: 'flex', flex: 1, overflow: 'clip', minHeight: 0, position: 'relative' }}>
         {/* File explorer — hidden on mobile by default, overlay when open */}
         {explorerOpen && (
           <>
@@ -291,15 +197,7 @@ export default function CodeEditorView() {
         )}
 
         {/* Editor area */}
-        <div
-          style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            minWidth: 0,
-          }}
-        >
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
           {/* Tabs */}
           <EditorTabs />
 
@@ -324,58 +222,16 @@ export default function CodeEditorView() {
 
       {/* Status bar */}
       <EditorStatusBar gitBranch={gitBranch} />
-
-      <style>{`
-        .editor-explorer-backdrop { display: none; }
-        .editor-explorer-panel { display: contents; }
-        @media (max-width: 768px) {
-          .editor-explorer-backdrop {
-            display: block;
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.45);
-            z-index: 49;
-          }
-          .editor-explorer-panel {
-            display: block;
-            position: fixed;
-            top: 40px;
-            left: 0;
-            bottom: 0;
-            z-index: 50;
-            width: 260px;
-          }
-          .editor-explorer-panel > * { height: 100%; }
-          .editor-back-label { display: none; }
-          .editor-title-label { display: none; }
-          .editor-save-label { display: none; }
-          .editor-new-label { display: none; }
-        }
-      `}</style>
     </div>
   )
 }
 
 function EmptyEditorState() {
   return (
-    <div
-      style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: '#1e1e2e',
-        color: '#6c7086',
-      }}
-    >
-      <FontAwesomeIcon icon={faFileCode} style={{ fontSize: 48, marginBottom: 16, opacity: 0.3 }} />
-      <p style={{ fontSize: 16, fontWeight: 500, marginBottom: 8, color: '#585b70' }}>
-        Open a file from the tree
-      </p>
-      <p style={{ fontSize: 13, color: '#45475a' }}>
-        Select a file in the explorer to start editing
-      </p>
+    <div className="editor-empty">
+      <FileCode size={44} strokeWidth={1.5} />
+      <div className="editor-empty-title">Open a file from the tree</div>
+      <div className="editor-empty-desc">Select a file in the explorer to start editing</div>
     </div>
   )
 }
@@ -384,34 +240,18 @@ function ImageViewer({ path }: { path: string }) {
   const token = api.getToken()
   const src = `/api/v1/files/raw/${path}${token ? `?token=${encodeURIComponent(token)}` : ''}`
   return (
-    <div
-      style={{
-        flex: 1,
-        overflow: 'auto',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: '#1e1e2e',
-        padding: 24,
-        gap: 12,
-      }}
-    >
+    <div className="editor-viewer">
       <img
         src={src}
         alt={path.split('/').pop()}
-        style={{
-          maxWidth: '100%',
-          maxHeight: 'calc(100% - 40px)',
-          objectFit: 'contain',
-          borderRadius: 4,
-          boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
-          // Checkerboard for transparent images
-          background:
-            'repeating-conic-gradient(#3a3a4a 0% 25%, #2a2a3a 0% 50%) 0 0 / 16px 16px',
+        className="editor-viewer-img"
+        // A machine with no headless browser answers 503 here; the card must
+        // still be usable, so the broken image simply disappears.
+        onError={(e) => {
+          e.currentTarget.style.display = 'none'
         }}
       />
-      <span style={{ fontSize: 12, color: '#45475a' }}>{path}</span>
+      <span className="editor-viewer-path">{path}</span>
     </div>
   )
 }
@@ -421,16 +261,7 @@ function PdfViewer({ path }: { path: string }) {
   const src = `/api/v1/files/raw/${path}${token ? `?token=${encodeURIComponent(token)}` : ''}`
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <iframe
-        src={src}
-        title={path.split('/').pop()}
-        style={{
-          flex: 1,
-          width: '100%',
-          border: 'none',
-          background: '#fff',
-        }}
-      />
+      <iframe src={src} title={path.split('/').pop()} className="editor-viewer-frame" />
     </div>
   )
 }

@@ -1,3 +1,4 @@
+import { Badge } from '@/components/ui'
 import type { Skill } from '@pando/client/types'
 import ProgressBar from '@/components/shared/ProgressBar'
 
@@ -7,62 +8,18 @@ interface SkillCardProps {
 
 export default function SkillCard({ skill }: SkillCardProps) {
   return (
-    <div
-      style={{
-        padding: '0.75rem 1rem',
-        borderBottom: '1px solid var(--border)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.375rem',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-        <span
-          style={{
-            fontFamily: 'monospace',
-            fontSize: 12,
-            fontWeight: 600,
-            color: 'var(--fg)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-          title={skill.name}
-        >
+    <div className="flex flex-col gap-1.5 border-b border-border px-4 py-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="is-ellipsis overflow-hidden whitespace-nowrap font-mono text-xs font-semibold text-fg" title={skill.name}>
           {skill.name}
         </span>
-        <span
-          style={{
-            flexShrink: 0,
-            fontSize: 11,
-            fontWeight: 600,
-            padding: '0.1rem 0.4rem',
-            borderRadius: 9999,
-            background: 'var(--surface)',
-            border: '1px solid var(--border)',
-            color: 'var(--fg-muted)',
-          }}
-        >
-          {skill.uses} uses
-        </span>
+        <Badge className="flex-shrink-0">{skill.uses} uses</Badge>
       </div>
 
       <ProgressBar value={skill.confidence} max={1} />
 
       {skill.description && (
-        <p
-          style={{
-            fontSize: 12,
-            color: 'var(--fg-muted)',
-            lineHeight: 1.4,
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-          }}
-        >
-          {skill.description}
-        </p>
+        <p className="line-clamp-2 text-xs leading-snug text-muted">{skill.description}</p>
       )}
     </div>
   )

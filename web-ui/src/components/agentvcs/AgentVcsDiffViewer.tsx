@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { DiffEditor, type BeforeMount } from '@monaco-editor/react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faTimes, faFileCode, faSpinner } from '@fortawesome/free-solid-svg-icons'
+import type * as monacoTypes from 'monaco-editor'
 import { useAgentVcsStore, type DiffEntry } from '@pando/client/stores/agentVcsStore'
+import { IconButton, Kbd, Spinner } from '@/components/ui'
+import { FileCode, X } from '@/components/ui/icons'
+import { definePandoMonacoTheme, watchMonacoTheme, PANDO_MONACO_THEME } from '@/components/editor/monacoTheme'
+import '@/styles/agentvcs.css'
 
 interface AgentVcsDiffViewerProps {
   entry: DiffEntry
@@ -21,41 +24,11 @@ function detectLanguage(path: string): string {
   return map[ext] ?? 'plaintext'
 }
 
-const defineTheme: BeforeMount = (monacoInstance) => {
-  monacoInstance.editor.defineTheme('pando-dark', {
-    base: 'vs-dark',
-    inherit: true,
-    rules: [
-      { token: 'comment', foreground: '6c7086', fontStyle: 'italic' },
-      { token: 'keyword', foreground: 'cba6f7', fontStyle: 'bold' },
-      { token: 'string', foreground: 'a6e3a1' },
-      { token: 'number', foreground: 'fab387' },
-      { token: 'type', foreground: 'f9e2af' },
-      { token: 'variable', foreground: 'cdd6f4' },
-      { token: 'function', foreground: '89b4fa' },
-      { token: 'operator', foreground: '89dceb' },
-    ],
-    colors: {
-      'editor.background': '#1e1e2e',
-      'editor.foreground': '#cdd6f4',
-      'editor.lineHighlightBackground': '#2a2a3d',
-      'editor.selectionBackground': '#3d5985',
-      'editorCursor.foreground': '#f5c2e7',
-      'editorLineNumber.foreground': '#45475a',
-      'editorLineNumber.activeForeground': '#cdd6f4',
-      'diffEditor.insertedTextBackground': '#a6e3a120',
-      'diffEditor.removedTextBackground': '#f38ba820',
-      'diffEditor.insertedLineBackground': '#a6e3a110',
-      'diffEditor.removedLineBackground': '#f38ba810',
-    },
-  })
-}
-
-function diffTypeLabel(type: string): { text: string; color: string } {
+function diffTypeLabel(type: string): string {
   switch (type) {
-    case 'added': return { text: 'ADDED', color: '#a6e3a1' }
-    case 'deleted': return { text: 'DELETED', color: '#f38ba8' }
-    default: return { text: 'MODIFIED', color: '#fab387' }
+    case 'added': return 'ADDED'
+    case 'deleted': return 'DELETED'
+    default: return 'MODIFIED'
   }
 }
 
@@ -66,6 +39,7 @@ export default function AgentVcsDiffViewer({ entry, commitId, onClose }: AgentVc
   const [modified, setModified] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [monacoInstance, setMonacoInstance] = useState<typeof monacoTypes | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -94,8 +68,18 @@ export default function AgentVcsDiffViewer({ entry, commitId, onClose }: AgentVc
   }, [entry.old_hash, entry.new_hash, fetchBlobContent])
 
   const handleBeforeMount: BeforeMount = useCallback((monaco) => {
-    defineTheme(monaco)
+    definePandoMonacoTheme(monaco, document.documentElement.getAttribute('data-theme') === 'dark')
+    setMonacoInstance(monaco)
   }, [])
+
+  // Keep the Monaco theme in sync with the app theme (family / mode / accent).
+  useEffect(() => {
+    if (!monacoInstance) return
+    return watchMonacoTheme(monacoInstance, (m, dark) => {
+      definePandoMonacoTheme(m, dark)
+      m.editor.setTheme(PANDO_MONACO_THEME)
+    })
+  }, [monacoInstance])
 
   // Esc key handler
   useEffect(() => {
@@ -106,124 +90,37 @@ export default function AgentVcsDiffViewer({ entry, commitId, onClose }: AgentVc
     return () => window.removeEventListener('keydown', handler)
   }, [onClose])
 
-  const badge = diffTypeLabel(entry.type)
+  const badgeLabel = diffTypeLabel(entry.type)
+  const badgeTone = entry.type === 'added' ? 'success' : entry.type === 'deleted' ? 'danger' : 'warning'
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1000,
-        display: 'flex',
-        flexDirection: 'column',
-        background: 'var(--bg, #1e1e2e)',
-      }}
-    >
+    <div className="agentvcs-diffviewer">
       {/* Header */}
-      <div
-        style={{
-          height: 44,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '0 16px',
-          borderBottom: '1px solid var(--border)',
-          background: 'var(--sidebar-bg, #181825)',
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <FontAwesomeIcon icon={faFileCode} style={{ fontSize: 14, color: 'var(--primary)' }} />
-          <span
-            style={{
-              fontSize: 13,
-              fontWeight: 600,
-              color: 'var(--fg)',
-              fontFamily: "'JetBrains Mono', monospace",
-            }}
-          >
-            {entry.path}
-          </span>
-          <span
-            style={{
-              fontSize: 10,
-              padding: '2px 6px',
-              borderRadius: 3,
-              background: `${badge.color}15`,
-              color: badge.color,
-              fontWeight: 700,
-            }}
-          >
-            {badge.text}
-          </span>
-          <span style={{ fontSize: 11, color: 'var(--fg-dim)', fontFamily: "'JetBrains Mono', monospace" }}>
-            commit {commitId.slice(0, 12)}
-          </span>
+      <div className="agentvcs-diffviewer-header">
+        <div className="agentvcs-diffviewer-title">
+          <FileCode size={15} />
+          <span className="agentvcs-diffviewer-path">{entry.path}</span>
+          <span className={`ui-badge ui-badge--${badgeTone}`}>{badgeLabel}</span>
+          <span className="agentvcs-diffviewer-commit">commit {commitId.slice(0, 12)}</span>
         </div>
-        <button
-          onClick={onClose}
-          title="Close diff viewer"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 32,
-            height: 32,
-            borderRadius: 'var(--radius-sm, 4px)',
-            border: '1px solid var(--border)',
-            background: 'transparent',
-            color: 'var(--fg-muted)',
-            cursor: 'pointer',
-            fontSize: 14,
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'var(--error, #f38ba8)'
-            e.currentTarget.style.color = '#fff'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent'
-            e.currentTarget.style.color = 'var(--fg-muted)'
-          }}
-        >
-          <FontAwesomeIcon icon={faTimes} />
-        </button>
+        <IconButton aria-label="Close diff viewer" tooltip icon={<X size={16} />} onClick={onClose} />
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflow: 'hidden' }}>
+      <div className="agentvcs-diffviewer-body">
         {loading ? (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '100%',
-              gap: 12,
-              color: 'var(--fg-muted)',
-              fontSize: 13,
-            }}
-          >
-            <FontAwesomeIcon icon={faSpinner} spin style={{ fontSize: 24, color: 'var(--primary)' }} />
+          <div className="agentvcs-diffviewer-status">
+            <Spinner size={22} />
             Loading file content...
           </div>
         ) : error ? (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '100%',
-              color: 'var(--error, #f38ba8)',
-              fontSize: 13,
-            }}
-          >
+          <div className="agentvcs-diffviewer-status" style={{ color: 'var(--danger)' }}>
             {error}
           </div>
         ) : (
           <DiffEditor
             height="100%"
-            theme="pando-dark"
+            theme={PANDO_MONACO_THEME}
             language={language}
             original={original}
             modified={modified}
@@ -231,7 +128,7 @@ export default function AgentVcsDiffViewer({ entry, commitId, onClose }: AgentVc
             options={{
               readOnly: true,
               fontSize: 13,
-              fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+              fontFamily: "'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, monospace",
               fontLigatures: true,
               renderSideBySide: window.innerWidth >= 768,
               minimap: { enabled: false },
@@ -247,31 +144,8 @@ export default function AgentVcsDiffViewer({ entry, commitId, onClose }: AgentVc
       </div>
 
       {/* Footer hint */}
-      <div
-        style={{
-          height: 28,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderTop: '1px solid var(--border)',
-          background: 'var(--sidebar-bg, #181825)',
-          fontSize: 11,
-          color: 'var(--fg-dim)',
-        }}
-      >
-        Press{' '}
-        <kbd
-          style={{
-            margin: '0 4px',
-            padding: '1px 5px',
-            border: '1px solid var(--border)',
-            borderRadius: 3,
-            fontSize: 10,
-          }}
-        >
-          Esc
-        </kbd>{' '}
-        or click X to close
+      <div className="agentvcs-diffviewer-footer">
+        Press <Kbd>Esc</Kbd> or click X to close
       </div>
     </div>
   )

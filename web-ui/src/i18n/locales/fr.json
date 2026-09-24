@@ -1,4 +1,19 @@
 {
+  "shell": {
+    "switchToLight": "Passer en mode clair",
+    "switchToDark": "Passer en mode sombre",
+    "openMenu": "Ouvrir le menu",
+    "closeMenu": "Fermer le menu",
+    "collapseSidebar": "Réduire la barre latérale",
+    "expandSidebar": "Développer la barre latérale",
+    "documentation": "Documentation",
+    "sidebar": "Barre latérale",
+    "searchSessions": "Rechercher des sessions",
+    "running": "En cours",
+    "noMatches": "Aucune session correspondante",
+    "autoAcceptOn": "acceptation auto",
+    "autoAcceptOff": "acceptation auto désactivée"
+  },
   "common": {
     "save": "Enregistrer",
     "saving": "Enregistrement…",
@@ -64,6 +79,7 @@
   "settings": {
     "categories": {
       "general": "Général",
+      "appearance": "Apparence",
       "providers": "Fournisseurs",
       "agents": "Agents",
       "mcpServers": "Serveurs MCP",
@@ -94,6 +110,9 @@
       "theme": "Thème",
       "themeLight": "Clair",
       "themeDark": "Sombre",
+      "themeSystem": "Système",
+      "accent": "Couleur d'accent",
+      "accentDefault": "Par défaut",
       "llmCache": "Cache de prompts LLM",
       "llmCacheDescription": "Activer le cache de prompts pour les fournisseurs LLM (principalement Anthropic)",
       "modelsDev": "Catalogue de modèles (models.dev)",
@@ -227,6 +246,15 @@
       "revealFailed": "Échec de l'affichage du mot de passe"
     },
     "backToCategories": "Catégories",
+    "unsaved": {
+      "title": "Modifications non enregistrées",
+      "description": "Vous avez des modifications non enregistrées. Voulez-vous les enregistrer avant de quitter ?",
+      "descriptionSections": "Vous avez des modifications non enregistrées dans {{sections}}. Voulez-vous les enregistrer avant de quitter ?",
+      "saveAndContinue": "Enregistrer et continuer",
+      "discard": "Ignorer les modifications",
+      "cancel": "Annuler",
+      "saveFailed": "Impossible d'enregistrer les modifications. Vérifiez l'erreur dans la section et réessayez, ou ignorez-les."
+    },
     "sandbox": {
       "title": "Sandbox des commandes",
       "loading": "Chargement de la configuration du sandbox…",
@@ -275,6 +303,21 @@
       "save": "Enregistrer",
       "saving": "Enregistrement…",
       "reset": "Réinitialiser"
+    },
+    "appearance": {
+      "description": "Choisissez l'apparence de Pando sur cet appareil. Le mode et le thème sont aussi utilisés par la TUI ; l'accent et la taille du texte sont propres à ce navigateur.",
+      "mode": "Mode d'apparence",
+      "modeDescription": "Système suit le réglage de votre OS et change en direct.",
+      "fontSize": "Taille du texte de l'interface",
+      "fontSizeDescription": "Ajuste la taille de texte de base dans toute l'application.",
+      "fontSizeSmall": "Petite",
+      "fontSizeDefault": "Par défaut",
+      "fontSizeLarge": "Grande",
+      "themeFamily": "Thème",
+      "themeFamilyDescription": "Une famille de couleurs pour les surfaces et le texte. Le mode ci-dessus choisit clair ou sombre.",
+      "accent": "Couleur d'accent",
+      "accentDescription": "Utilisée pour l'action principale, le focus et la sélection. Tout le reste reste neutre.",
+      "accentDefault": "Par défaut du thème"
     }
   },
   "chat": {
@@ -318,6 +361,128 @@
       "sessionScopePrefix": "« Autoriser pour la session » couvre les commandes commençant par : {{prefix}}",
       "sessionScopeExact": "« Autoriser pour la session » ne couvre que cette commande exacte.",
       "runOnce": "Exécuter hors du sandbox"
+    },
+    "thinking": "Réflexion",
+    "thought": "Raisonnement",
+    "persona": "Prompt de persona",
+    "copied": "Copié",
+    "copyCode": "Copier le code",
+    "copyMessage": "Copier le message",
+    "queued": "En attente",
+    "queuedHint": "En attente — sera injecté dans l'exécution au prochain point sûr",
+    "scrollToBottom": "Aller en bas",
+    "slashCommands": "Commandes",
+    "activity": {
+      "commands_one": "a exécuté {{count}} commande",
+      "commands_other": "a exécuté {{count}} commandes",
+      "read_one": "a lu {{count}} fichier",
+      "read_other": "a lu {{count}} fichiers",
+      "edited_one": "a modifié {{count}} fichier",
+      "edited_other": "a modifié {{count}} fichiers",
+      "searched_one": "a cherché {{count}} fois",
+      "searched_other": "a cherché {{count}} fois",
+      "fetched_one": "a récupéré {{count}} page",
+      "fetched_other": "a récupéré {{count}} pages",
+      "tools_one": "a appelé {{count}} outil",
+      "tools_other": "a appelé {{count}} outils",
+      "thought_one": "a réfléchi",
+      "thought_other": "a réfléchi {{count}} fois",
+      "failed_one": "{{count}} en échec",
+      "failed_other": "{{count}} en échec"
+    },
+    "tool": {
+      "command": "Commande",
+      "output": "Sortie",
+      "error": "Erreur",
+      "input": "Entrée",
+      "removed": "Supprimé",
+      "added": "Ajouté",
+      "lines": "lignes",
+      "exitCode": "Code de sortie : {{code}}"
+    },
+    "composer": {
+      "placeholder": "Demandez n'importe quoi à Pando…",
+      "placeholderRunning": "Orientez l'agent en cours…",
+      "send": "Envoyer le message",
+      "queue": "Mettre le retour en attente",
+      "stop": "Arrêter la génération",
+      "hintIdle": "Entrée pour envoyer · Maj+Entrée pour une nouvelle ligne · / pour les commandes",
+      "hintRunning": "Entrée met le retour en attente jusqu'au prochain point sûr",
+      "hintGoal": "Tapez / pour les commandes",
+      "chars": "{{count}} / {{max}} caractères",
+      "context": "{{pct}} % du contexte",
+      "tokens": "{{formatted}} tokens"
+    },
+    "empty": {
+      "title": "Sur quoi travaillons-nous ?",
+      "suggestions": {
+        "explain": "Expliquer ce code",
+        "bug": "Trouver et corriger un bug",
+        "tests": "Écrire des tests",
+        "review": "Relire mes changements"
+      },
+      "prompts": {
+        "explain": "Donne-moi une vue d'ensemble de ce code : sa structure, ses composants principaux et leurs liens.",
+        "bug": "Aide-moi à trouver et corriger un bug. Voici ce qui se passe :",
+        "tests": "Écris des tests pour les changements les plus récents de ce projet.",
+        "review": "Relis mes changements non commités et signale les bugs ou le code risqué."
+      }
+    },
+    "files": {
+      "changed_one": "{{count}} fichier modifié",
+      "changed_other": "{{count}} fichiers modifiés",
+      "viewDiff": "Voir le diff : {{path}}"
+    },
+    "diff": {
+      "close": "Fermer le visualiseur de diff",
+      "edits_one": "{{count}} modification",
+      "edits_other": "{{count}} modifications",
+      "escToClose": "pour fermer"
+    },
+    "goal": {
+      "title": "Objectif",
+      "cancel": "Annuler",
+      "cancelling": "Annulation…",
+      "iteration": "Itération {{current}}/{{max}}",
+      "started": "Démarré {{time}}",
+      "finished": "Terminé {{time}}",
+      "progress": "Progression",
+      "nextStep": "Étape suivante",
+      "loading": "Chargement de l'objectif…",
+      "status": {
+        "running": "En cours",
+        "completed": "Terminé",
+        "blocked": "Bloqué",
+        "cancelled": "Annulé",
+        "idle": "Inactif",
+        "loading": "Chargement"
+      }
+    },
+    "question": {
+      "reviewTitle": "Vérifiez vos réponses",
+      "counter": "Question {{current}}/{{total}}",
+      "single": "Question",
+      "otherAnswer": "Autre : {{text}}",
+      "noSelection": "(aucune sélection)",
+      "otherPlaceholder": "Autre réponse (texte libre)…",
+      "cancel": "Annuler",
+      "back": "Retour",
+      "next": "Suivant",
+      "review": "Vérifier",
+      "confirm": "Confirmer"
+    },
+    "simple": {
+      "toggleSessions": "Afficher/masquer les sessions",
+      "advanced": "Passer à la vue avancée",
+      "sessions": "Sessions",
+      "untitled": "Session sans titre",
+      "sessionFallback": "Session {{id}}",
+      "msgs_one": "{{count}} message",
+      "msgs_other": "{{count}} messages",
+      "loadMore": "Charger plus ({{loaded}}/{{total}})",
+      "noSessions": "Aucune session",
+      "commands": "Commandes",
+      "openCommands": "Ouvrir le lanceur de commandes"
     }
   },
   "pwa": {

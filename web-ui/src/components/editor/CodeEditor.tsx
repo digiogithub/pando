@@ -1,8 +1,9 @@
-import { useRef, useCallback } from 'react'
+import { useRef, useCallback, useEffect } from 'react'
 import MonacoEditor, { OnMount, BeforeMount } from '@monaco-editor/react'
 import type * as monacoTypes from 'monaco-editor'
 import { useEditorStore } from '@pando/client/stores/editorStore'
 import api from '@pando/client/services/api'
+import { definePandoMonacoTheme, watchMonacoTheme, PANDO_MONACO_THEME } from './monacoTheme'
 
 interface CodeEditorProps {
   filePath: string
@@ -10,51 +11,13 @@ interface CodeEditorProps {
   language: string
 }
 
-const PANDO_DARK_THEME: BeforeMount = (monacoInstance) => {
-  monacoInstance.editor.defineTheme('pando-dark', {
-    base: 'vs-dark',
-    inherit: true,
-    rules: [
-      { token: 'comment', foreground: '6c7086', fontStyle: 'italic' },
-      { token: 'keyword', foreground: 'cba6f7', fontStyle: 'bold' },
-      { token: 'string', foreground: 'a6e3a1' },
-      { token: 'number', foreground: 'fab387' },
-      { token: 'type', foreground: 'f9e2af' },
-      { token: 'variable', foreground: 'cdd6f4' },
-      { token: 'function', foreground: '89b4fa' },
-      { token: 'operator', foreground: '89dceb' },
-      { token: 'delimiter', foreground: 'cdd6f4' },
-    ],
-    colors: {
-      'editor.background': '#1e1e2e',
-      'editor.foreground': '#cdd6f4',
-      'editor.lineHighlightBackground': '#2a2a3d',
-      'editor.selectionBackground': '#3d5985',
-      'editor.inactiveSelectionBackground': '#2d3f5a',
-      'editorCursor.foreground': '#f5c2e7',
-      'editorLineNumber.foreground': '#45475a',
-      'editorLineNumber.activeForeground': '#cdd6f4',
-      'editorIndentGuide.background': '#313244',
-      'editorIndentGuide.activeBackground': '#585b70',
-      'editor.selectionHighlightBackground': '#2d3f5a80',
-      'editorWidget.background': '#1e1e2e',
-      'editorWidget.border': '#313244',
-      'editorSuggestWidget.background': '#1e1e2e',
-      'editorSuggestWidget.border': '#313244',
-      'editorSuggestWidget.selectedBackground': '#313244',
-      'scrollbarSlider.background': '#45475a60',
-      'scrollbarSlider.hoverBackground': '#585b7080',
-      'scrollbarSlider.activeBackground': '#585b70',
-    },
-  })
-}
-
 export default function CodeEditor({ filePath, content, language }: CodeEditorProps) {
   const editorRef = useRef<monacoTypes.editor.IStandaloneCodeEditor | null>(null)
+  const unsubThemeRef = useRef<(() => void) | null>(null)
   const { updateFileContent, updateCursor, markFileSaved } = useEditorStore()
 
   const handleBeforeMount: BeforeMount = useCallback((monacoInstance) => {
-    PANDO_DARK_THEME(monacoInstance)
+    definePandoMonacoTheme(monacoInstance, document.documentElement.getAttribute('data-theme') === 'dark')
   }, [])
 
   const handleMount: OnMount = useCallback(
@@ -79,9 +42,19 @@ export default function CodeEditor({ filePath, content, language }: CodeEditorPr
       editor.onDidChangeCursorPosition((e) => {
         updateCursor(filePath, e.position.lineNumber, e.position.column)
       })
+
+      // Keep the Monaco theme in sync with the app theme (family / mode / accent).
+      unsubThemeRef.current = watchMonacoTheme(monacoInstance, (m, dark) => {
+        definePandoMonacoTheme(m, dark)
+        m.editor.setTheme(PANDO_MONACO_THEME)
+      })
     },
     [filePath, markFileSaved, updateCursor]
   )
+
+  useEffect(() => {
+    return () => unsubThemeRef.current?.()
+  }, [])
 
   const handleChange = useCallback(
     (value: string | undefined) => {
@@ -97,15 +70,15 @@ export default function CodeEditor({ filePath, content, language }: CodeEditorPr
       <MonacoEditor
         height="100%"
         width="100%"
-        theme="pando-dark"
+        theme={PANDO_MONACO_THEME}
         language={language}
         value={content}
         beforeMount={handleBeforeMount}
         onMount={handleMount}
         onChange={handleChange}
         options={{
-          fontSize: 14,
-          fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+          fontSize: 13,
+          fontFamily: "'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, monospace",
           fontLigatures: true,
           lineNumbers: 'on',
           minimap: { enabled: true, scale: 1 },

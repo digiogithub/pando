@@ -1,4 +1,12 @@
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import {
+  createBrowserRouter,
+  createRoutesFromElements,
+  Navigate,
+  Outlet,
+  Route,
+  RouterProvider,
+  useNavigate,
+} from 'react-router-dom'
 import { Suspense, useState, useEffect, useCallback } from 'react'
 import MainLayout from '@/components/layout/MainLayout'
 import LoadingSpinner from '@/components/shared/LoadingSpinner'
@@ -30,6 +38,25 @@ import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useExtensionPanelsStore } from '@pando/client/stores/extensionPanelsStore'
 import ExtensionPanelPage from '@/components/extensions/ExtensionPanelPage'
 import { installPandoUI } from '@/lib/pandoUI'
+import { useThemeStore } from '@/hooks/useTheme'
+
+/**
+ * Global Ctrl/Cmd+Shift+L flips light/dark from any route (including the
+ * standalone ones outside MainLayout). From 'system' it switches explicitly
+ * to the opposite of the resolved mode.
+ */
+function useThemeToggleShortcut() {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.code === 'KeyL') {
+        e.preventDefault()
+        useThemeStore.getState().toggleMode()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+}
 
 function InitialModeRedirect() {
   const navigate = useNavigate()
@@ -42,8 +69,70 @@ function InitialModeRedirect() {
   return <ChatView />
 }
 
+/**
+ * Root route element: everything that used to wrap <Routes> inside the
+ * <BrowserRouter>. It renders inside the router, so hooks such as useNavigate
+ * and useLocation keep working for every descendant.
+ */
+function RootLayout() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-screen items-center justify-center bg-bg">
+          <LoadingSpinner size={32} />
+        </div>
+      }
+    >
+      <ErrorBoundary>
+        <DesignRouteEffects />
+        <Outlet />
+      </ErrorBoundary>
+    </Suspense>
+  )
+}
+
+/**
+ * A data router (instead of <BrowserRouter>) so views can use `useBlocker`,
+ * e.g. Settings guarding unsaved changes on in-app navigation. It is created
+ * once at module load; it is only rendered once the splash/login gate passes.
+ */
+const router = createBrowserRouter(
+  createRoutesFromElements(
+    <Route element={<RootLayout />}>
+      {/* Standalone — no layout */}
+      <Route path="/chat/simple" element={<SimpleChatView />} />
+      <Route path="/editor" element={<CodeEditorView />} />
+
+      {/* Main layout */}
+      <Route path="/" element={<MainLayout />}>
+        <Route index element={<InitialModeRedirect />} />
+        <Route path="chat" element={<ChatView />} />
+        <Route path="orchestrator" element={<OrchestratorView />} />
+        <Route path="logs" element={<LogsView />} />
+        <Route path="snapshots" element={<AgentVcsView />} />
+        <Route path="evaluator" element={<SelfImprovementView />} />
+        <Route path="editor" element={<Navigate to="/editor" replace />} />
+        <Route path="terminal" element={<TerminalView />} />
+        <Route path="settings" element={<SettingsView />} />
+        <Route path="projects" element={<ProjectsView />} />
+        {/* Both routes render the same view: the gallery without an id,
+            the Studio with one, so a Studio URL survives a reload. */}
+        <Route path="design" element={<DesignView />} />
+        <Route path="design/:id" element={<DesignView />} />
+        <Route path="instances" element={<InstancesPanel />} />
+        <Route path="ext/:panelId" element={<ExtensionPanelPage />} />
+        <Route path="*" element={<NotFound />} />
+      </Route>
+
+      {/* Top-level 404 */}
+      <Route path="*" element={<NotFound />} />
+    </Route>,
+  ),
+)
+
 function App() {
   useLanguageSync()
+  useThemeToggleShortcut()
   const [splashStatus, setSplashStatus] = useState<SplashStatus>('connecting')
   const [showSplash, setShowSplash] = useState(true)
   const [needsLogin, setNeedsLogin] = useState(false)
@@ -117,48 +206,7 @@ function App() {
         />
       )}
 
-      {!showSplash && !needsLogin && <BrowserRouter>
-        <Suspense
-          fallback={
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-              <LoadingSpinner size={32} />
-            </div>
-          }
-        >
-          <ErrorBoundary>
-            <DesignRouteEffects />
-            <Routes>
-              {/* Standalone — no layout */}
-              <Route path="/chat/simple" element={<SimpleChatView />} />
-              <Route path="/editor" element={<CodeEditorView />} />
-
-              {/* Main layout */}
-              <Route path="/" element={<MainLayout />}>
-                <Route index element={<InitialModeRedirect />} />
-                <Route path="chat" element={<ChatView />} />
-                <Route path="orchestrator" element={<OrchestratorView />} />
-                <Route path="logs" element={<LogsView />} />
-                <Route path="snapshots" element={<AgentVcsView />} />
-                <Route path="evaluator" element={<SelfImprovementView />} />
-                <Route path="editor" element={<Navigate to="/editor" replace />} />
-                <Route path="terminal" element={<TerminalView />} />
-                <Route path="settings" element={<SettingsView />} />
-                <Route path="projects" element={<ProjectsView />} />
-                {/* Both routes render the same view: the gallery without an id,
-                    the Studio with one, so a Studio URL survives a reload. */}
-                <Route path="design" element={<DesignView />} />
-                <Route path="design/:id" element={<DesignView />} />
-                <Route path="instances" element={<InstancesPanel />} />
-                <Route path="ext/:panelId" element={<ExtensionPanelPage />} />
-                <Route path="*" element={<NotFound />} />
-              </Route>
-
-              {/* Top-level 404 */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </ErrorBoundary>
-        </Suspense>
-      </BrowserRouter>}
+      {!showSplash && !needsLogin && <RouterProvider router={router} />}
 
       <ToastContainer />
       <PWAInstallPrompt />

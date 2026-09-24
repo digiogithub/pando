@@ -1,8 +1,7 @@
 import { useEffect, useRef } from 'react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlus } from '@fortawesome/free-solid-svg-icons'
+import { Plus } from '@/components/ui/icons'
+import { Button, Spinner } from '@/components/ui'
 import { useSnapshotsStore } from '@pando/client/stores/snapshotsStore'
-import LoadingSpinner from '@/components/shared/LoadingSpinner'
 import SnapshotTable from './SnapshotTable'
 import CreateSnapshotDialog from './CreateSnapshotDialog'
 
@@ -20,73 +19,29 @@ export default function SnapshotsView() {
   }, [fetchSnapshots])
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        background: 'var(--bg)',
-      }}
-    >
+    <div className="view">
       {/* Header bar */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '1rem 1.5rem',
-          borderBottom: '1px solid var(--border)',
-          flexShrink: 0,
-        }}
-      >
-        <div>
-          <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--fg)' }}>
-            Snapshots{' '}
-            <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--fg-muted)' }}>
-              ({snapshots.length} total)
-            </span>
-          </h2>
+      <div className="view-header">
+        <div className="view-header-text">
+          <div className="view-title">
+            Snapshots <span className="view-title-count">({snapshots.length} total)</span>
+          </div>
         </div>
-        <button
-          onClick={() => setCreateDialogOpen(true)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.375rem',
-            padding: '0.5rem 1rem',
-            borderRadius: 'var(--radius-sm)',
-            border: 'none',
-            background: 'var(--primary)',
-            color: 'white',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
-          <FontAwesomeIcon icon={faPlus} style={{ fontSize: 11 }} />
-          Create Snapshot
-        </button>
+        <div className="view-header-actions">
+          <Button variant="primary" icon={<Plus size={13} />} onClick={() => setCreateDialogOpen(true)}>
+            Create Snapshot
+          </Button>
+        </div>
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      <div className="view-body">
         {loading && snapshots.length === 0 ? (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '100%',
-            }}
-          >
-            <LoadingSpinner size={28} />
+          <div className="flex h-full items-center justify-center">
+            <Spinner size={26} />
           </div>
         ) : (
-          <SnapshotTable
-            snapshots={snapshots}
-            onCreateClick={() => setCreateDialogOpen(true)}
-          />
+          <SnapshotTable snapshots={snapshots} onCreateClick={() => setCreateDialogOpen(true)} />
         )}
       </div>
 

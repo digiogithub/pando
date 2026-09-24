@@ -1,49 +1,46 @@
-import { useEffect, useRef, useState } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import {
-  faComments, faFileLines, faNetworkWired,
-  faCodeBranch, faStar, faCog, faMoon, faSun,
-  faChevronLeft, faChevronRight, faCode, faTerminal, faComment, faFolderOpen, faCircleQuestion,
-  faBars, faTimes,
-} from '@fortawesome/free-solid-svg-icons'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
+import { useSessionStore } from '@pando/client/stores/sessionStore'
+import { useExtensionPanelsStore } from '@pando/client/stores/extensionPanelsStore'
 import { useTheme } from '@/hooks/useTheme'
 import { useAnimatedLogo } from '@/hooks/useAnimatedLogo'
 import PersonaSelector from '@/components/shared/PersonaSelector'
+import { IconButton, Tooltip } from '@/components/ui'
+import {
+  CircleQuestionMark, MessageSquare, Moon, PanelLeft, PanelLeftClose, Settings, Sun,
+} from '@/components/ui/icons'
+import { isMacPlatform } from './shellHooks'
 
-export default function Header() {
+const DOCS_URL = 'https://madeindigio.github.io/pando-docs/'
+
+/** i18n key of the section shown in the title bar, by first path segment. */
+const SECTION_KEYS: Record<string, string> = {
+  '': 'nav.chat',
+  chat: 'nav.chat',
+  projects: 'nav.projects',
+  orchestrator: 'nav.orchestrator',
+  evaluator: 'nav.selfImprovement',
+  snapshots: 'nav.agentVcs',
+  logs: 'nav.logs',
+  editor: 'nav.codeEditor',
+  terminal: 'nav.terminal',
+  settings: 'nav.settings',
+  design: 'nav.design',
+  instances: 'nav.instances',
+}
+
+export default function Header({ isMobile = false }: { isMobile?: boolean }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const location = useLocation()
   const { toggleSidebar, sidebarOpen, setChatMode } = useLayoutStore()
-  const { themeMode: theme, toggleMode: toggleTheme } = useTheme()
+  const { resolvedMode, toggleMode } = useTheme()
   const [version, setVersion] = useState<string>('')
   const logoGlyph = useAnimatedLogo()
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const mobileMenuRef = useRef<HTMLElement>(null)
-
-  // Close mobile menu when clicking outside
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (mobileMenuRef.current && !mobileMenuRef.current.contains(e.target as Node)) {
-        setMobileMenuOpen(false)
-      }
-    }
-    if (mobileMenuOpen) document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [mobileMenuOpen])
-
-  const TABS = [
-    { path: '/', label: t('nav.chat'), icon: faComments, end: true },
-    { path: '/projects', label: t('nav.projects'), icon: faFolderOpen },
-    { path: '/orchestrator', label: t('nav.orchestrator'), icon: faNetworkWired },
-    { path: '/evaluator', label: t('nav.selfImprovement'), icon: faStar },
-    { path: '/snapshots', label: t('nav.agentVcs'), icon: faCodeBranch },
-    { path: '/logs', label: t('nav.logs'), icon: faFileLines },
-    { path: '/editor', label: t('nav.codeEditor'), icon: faCode },
-    { path: '/terminal', label: t('nav.terminal'), icon: faTerminal },
-  ]
+  const activeSession = useSessionStore((s) => s.sessions.find((x) => x.id === s.activeSessionId))
+  const extensionPanels = useExtensionPanelsStore((s) => s.panels)
 
   useEffect(() => {
     fetch('/health')
@@ -57,275 +54,93 @@ export default function Header() {
       .catch(() => {})
   }, [])
 
-  return (
-    <header
-      ref={mobileMenuRef}
-      style={{
-        display: 'flex',
-        alignItems: 'stretch',
-        height: 48,
-        borderBottom: '1px solid var(--border)',
-        background: 'var(--sidebar-bg)',
-        paddingRight: '0.75rem',
-        flexShrink: 0,
-        zIndex: 200,
-        position: 'relative',
-      }}
-    >
-      {/* Toggle sidebar */}
-      <button
-        onClick={toggleSidebar}
-        title={t('header.toggleSidebar')}
-        style={{
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer',
-          color: 'var(--fg-muted)',
-          padding: '0 0.625rem',
-          display: 'flex',
-          alignItems: 'center',
-          flexShrink: 0,
-        }}
-      >
-        <FontAwesomeIcon
-          icon={sidebarOpen ? faChevronLeft : faChevronRight}
-          style={{ fontSize: 12 }}
-        />
-      </button>
+  // Title: section name, plus the active session on chat routes.
+  const segments = location.pathname.split('/').filter(Boolean)
+  const first = segments[0] ?? ''
+  let section = SECTION_KEYS[first] ? t(SECTION_KEYS[first]) : ''
+  if (first === 'ext' && segments[1]) {
+    const panel = extensionPanels.find((p) => p.id === segments[1])
+    section = panel?.title || segments[1]
+  }
+  const isChatRoute = first === '' || first === 'chat'
+  const sessionTitle = isChatRoute && activeSession
+    ? activeSession.title || t('nav.untitledSession')
+    : ''
 
-      {/* Logo group: favicon + PANDO + version */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '0 20px 0 8px',
-          flexShrink: 0,
-          borderRight: '1px solid var(--border)',
-        }}
-      >
-        <span
-          aria-label="Pando"
-          style={{
-            fontSize: 22,
-            lineHeight: 1,
-            color: 'var(--primary)',
-            fontFamily: 'serif',
-            flexShrink: 0,
-            userSelect: 'none',
-            transition: 'opacity 200ms ease-in-out',
-          }}
-        >
-          {logoGlyph}
-        </span>
-        <span
-          className="header-logo-text"
-          style={{
-            fontWeight: 800,
-            fontSize: 18,
-            color: 'var(--primary)',
-            letterSpacing: '0.3em',
-            lineHeight: 1,
-          }}
-        >
-          PANDO
-        </span>
-        {version && (
-          <span
-            className="header-version"
-            style={{
-              fontSize: 11,
-              fontWeight: 400,
-              color: 'var(--fg-dim)',
-              fontFamily: 'Inter, sans-serif',
-              marginTop: 1,
-            }}
-          >
-            <span className="header-version-full">{version}</span>
-            <span className="header-version-short">{version.substring(0, 5)}</span>
-          </span>
+  const shortcutMod = isMacPlatform ? '⌘' : 'Ctrl'
+  const themeLabel = resolvedMode === 'dark'
+    ? t('shell.switchToLight', 'Switch to light mode')
+    : t('shell.switchToDark', 'Switch to dark mode')
+  const themeTooltip = `${themeLabel} (${shortcutMod}+Shift+L)`
+
+  const sidebarLabel = isMobile
+    ? t('shell.openMenu', 'Open menu')
+    : sidebarOpen
+      ? t('shell.collapseSidebar', 'Collapse sidebar')
+      : t('shell.expandSidebar', 'Expand sidebar')
+
+  return (
+    <header className="shell-titlebar">
+      <div className="shell-titlebar-group">
+        <IconButton
+          aria-label={sidebarLabel}
+          tooltip={`${sidebarLabel} (Ctrl+B)`}
+          icon={!isMobile && sidebarOpen ? <PanelLeftClose /> : <PanelLeft />}
+          onClick={toggleSidebar}
+        />
+        {/* Version lives in the tooltip only: the title bar stays quiet. */}
+        <div className="shell-brand" aria-label="Pando" title={version ? `Pando ${version}` : 'Pando'}>
+          <span className="shell-brand-glyph" aria-hidden="true">{logoGlyph}</span>
+          <span className="shell-brand-name">Pando</span>
+        </div>
+      </div>
+
+      <div className="shell-title" aria-live="polite">
+        {sessionTitle ? (
+          <>
+            <span className="shell-title-section">{section}</span>
+            <span className="shell-title-sep" aria-hidden="true">/</span>
+            <span className="shell-title-text shell-title-strong">{sessionTitle}</span>
+          </>
+        ) : (
+          section && <span className="shell-title-text">{section}</span>
         )}
       </div>
 
-      {/* Nav tabs — underline style (desktop) */}
-      <nav
-        style={{ display: 'flex', alignItems: 'stretch', flex: 1, gap: 0 }}
-        className="header-nav"
-      >
-        {TABS.map((tab) => (
-          <NavLink
-            key={tab.path}
-            to={tab.path}
-            end={tab.end}
-            title={tab.label}
-            style={({ isActive }) => ({
-              display: 'flex',
-              alignItems: 'center',
-              gap: 0,
-              padding: '0 0.75rem',
-              textDecoration: 'none',
-              fontSize: 13,
-              fontWeight: isActive ? 600 : 500,
-              color: isActive ? 'var(--primary)' : 'var(--fg-dim)',
-              background: isActive ? 'var(--bg-secondary, var(--selected))' : 'transparent',
-              borderBottom: isActive ? '2px solid var(--primary)' : '2px solid transparent',
-              transition: 'color 0.15s, border-color 0.15s, background 0.15s',
-            })}
-          >
-            <FontAwesomeIcon icon={tab.icon} style={{ fontSize: 13 }} />
-          </NavLink>
-        ))}
-      </nav>
-
-      {/* Mobile hamburger button */}
-      <button
-        className="mobile-menu-btn"
-        onClick={() => setMobileMenuOpen((v) => !v)}
-        title="Menu"
-        style={{
-          display: 'none',
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer',
-          color: mobileMenuOpen ? 'var(--primary)' : 'var(--fg-muted)',
-          padding: '0 0.75rem',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}
-      >
-        <FontAwesomeIcon icon={mobileMenuOpen ? faTimes : faBars} style={{ fontSize: 16 }} />
-      </button>
-
-      {/* Mobile dropdown nav */}
-      {mobileMenuOpen && (
-        <div
-          className="mobile-nav-dropdown"
-          style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            right: 0,
-            background: 'var(--sidebar-bg)',
-            borderBottom: '1px solid var(--border)',
-            boxShadow: '0 6px 20px rgba(0,0,0,0.18)',
-            zIndex: 201,
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          {TABS.map((tab) => (
-            <NavLink
-              key={tab.path}
-              to={tab.path}
-              end={tab.end}
-              onClick={() => setMobileMenuOpen(false)}
-              style={({ isActive }) => ({
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.75rem',
-                padding: '0.75rem 1.25rem',
-                textDecoration: 'none',
-                fontSize: 14,
-                fontWeight: isActive ? 600 : 400,
-                color: isActive ? 'var(--primary)' : 'var(--fg)',
-                background: isActive ? 'var(--selected)' : 'transparent',
-                borderLeft: isActive ? '3px solid var(--primary)' : '3px solid transparent',
-                transition: 'background 0.12s, color 0.12s',
-              })}
-            >
-              <FontAwesomeIcon icon={tab.icon} style={{ fontSize: 14, width: 18 }} />
-              {tab.label}
-            </NavLink>
-          ))}
-        </div>
-      )}
-
-      <style>{`
-        .header-nav a:hover:not([style*="var(--primary)"]) { color: var(--fg) !important; }
-        .header-version-short { display: none; }
-        @media (max-width: 768px) {
-          .header-nav { display: none !important; }
-          .mobile-menu-btn { display: flex !important; }
-          .header-logo-text { display: none; }
-          .header-version-full { display: none; }
-          .header-version-short { display: inline; }
-        }
-      `}</style>
-
-      {/* Right actions */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-        {/* Theme toggle */}
-        <button
-          onClick={toggleTheme}
-          title={t('header.toggleTheme')}
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            color: 'var(--fg-muted)',
-            padding: '0.25rem 0.375rem',
-            borderRadius: 'var(--radius-sm)',
-            display: 'flex',
-            alignItems: 'center',
-          }}
-        >
-          <FontAwesomeIcon icon={theme === 'light' ? faMoon : faSun} style={{ fontSize: 13 }} />
-        </button>
-
-        {/* Persona selector */}
-        <PersonaSelector />
-
-        {/* Simple Chat */}
-        <button
+      <div className="shell-titlebar-actions">
+        <span className="shell-hide-mobile">
+          <PersonaSelector />
+        </span>
+        <span className="shell-titlebar-divider shell-hide-mobile" aria-hidden="true" />
+        <IconButton
+          className="shell-hide-mobile"
+          aria-label={t('header.simpleChat', 'Simple Chat')}
+          tooltip
+          icon={<MessageSquare />}
           onClick={() => { setChatMode('simple'); navigate('/chat/simple') }}
-          title={t('header.simpleChat', 'Simple Chat')}
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            color: 'var(--fg-muted)',
-            padding: '0.25rem 0.375rem',
-            borderRadius: 'var(--radius-sm)',
-            display: 'flex',
-            alignItems: 'center',
-          }}
-        >
-          <FontAwesomeIcon icon={faComment} style={{ fontSize: 13 }} />
-        </button>
-
-        {/* Help */}
-        <a
-          href="https://madeindigio.github.io/pando-docs/"
-          target="_blank"
-          rel="noopener noreferrer"
-          title="Documentation"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            color: 'var(--fg-muted)',
-            padding: '0.25rem 0.375rem',
-            borderRadius: 'var(--radius-sm)',
-          }}
-        >
-          <FontAwesomeIcon icon={faCircleQuestion} style={{ fontSize: 13 }} />
-        </a>
-
-        {/* Settings */}
-        <NavLink
-          to="/settings"
-          title={t('nav.settings')}
-          style={({ isActive }) => ({
-            display: 'flex',
-            alignItems: 'center',
-            color: isActive ? 'var(--primary)' : 'var(--fg-muted)',
-            padding: '0.25rem 0.375rem',
-            borderRadius: 'var(--radius-sm)',
-            background: isActive ? 'var(--selected)' : 'transparent',
-          })}
-        >
-          <FontAwesomeIcon icon={faCog} style={{ fontSize: 13 }} />
-        </NavLink>
+        />
+        <Tooltip content={t('shell.documentation', 'Documentation')}>
+          <a
+            className="ui-btn ui-btn--ghost ui-btn--icon shell-hide-mobile"
+            href={DOCS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={t('shell.documentation', 'Documentation')}
+          >
+            <CircleQuestionMark />
+          </a>
+        </Tooltip>
+        <IconButton
+          aria-label={themeLabel}
+          tooltip={themeTooltip}
+          icon={resolvedMode === 'dark' ? <Sun /> : <Moon />}
+          onClick={toggleMode}
+        />
+        <Tooltip content={t('nav.settings')}>
+          <NavLink to="/settings" className="shell-icon-link" aria-label={t('nav.settings')}>
+            <Settings />
+          </NavLink>
+        </Tooltip>
       </div>
     </header>
   )

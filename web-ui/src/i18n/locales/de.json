@@ -1,4 +1,19 @@
 {
+  "shell": {
+    "switchToLight": "Zum hellen Modus wechseln",
+    "switchToDark": "Zum dunklen Modus wechseln",
+    "openMenu": "Menü öffnen",
+    "closeMenu": "Menü schließen",
+    "collapseSidebar": "Seitenleiste einklappen",
+    "expandSidebar": "Seitenleiste ausklappen",
+    "documentation": "Dokumentation",
+    "sidebar": "Seitenleiste",
+    "searchSessions": "Sitzungen suchen",
+    "running": "Läuft",
+    "noMatches": "Keine passenden Sitzungen",
+    "autoAcceptOn": "Auto-Akzeptieren",
+    "autoAcceptOff": "Auto-Akzeptieren aus"
+  },
   "common": {
     "save": "Speichern",
     "saving": "Wird gespeichert…",
@@ -64,6 +79,7 @@
   "settings": {
     "categories": {
       "general": "Allgemein",
+      "appearance": "Erscheinungsbild",
       "providers": "Anbieter",
       "agents": "Agents",
       "mcpServers": "MCP-Server",
@@ -94,6 +110,9 @@
       "theme": "Design",
       "themeLight": "Hell",
       "themeDark": "Dunkel",
+      "themeSystem": "System",
+      "accent": "Akzentfarbe",
+      "accentDefault": "Standard",
       "llmCache": "LLM-Prompt-Cache",
       "llmCacheDescription": "Prompt-Caching für LLM-Anbieter aktivieren (hauptsächlich Anthropic)",
       "modelsDev": "Modellkatalog (models.dev)",
@@ -227,6 +246,15 @@
       "revealFailed": "Passwort konnte nicht angezeigt werden"
     },
     "backToCategories": "Kategorien",
+    "unsaved": {
+      "title": "Ungespeicherte Änderungen",
+      "description": "Sie haben ungespeicherte Änderungen. Möchten Sie sie vor dem Verlassen speichern?",
+      "descriptionSections": "Sie haben ungespeicherte Änderungen in {{sections}}. Möchten Sie sie vor dem Verlassen speichern?",
+      "saveAndContinue": "Speichern und fortfahren",
+      "discard": "Änderungen verwerfen",
+      "cancel": "Abbrechen",
+      "saveFailed": "Die Änderungen konnten nicht gespeichert werden. Prüfen Sie den Fehler im Abschnitt und versuchen Sie es erneut, oder verwerfen Sie sie."
+    },
     "sandbox": {
       "title": "Befehls-Sandbox",
       "loading": "Sandbox-Konfiguration wird geladen…",
@@ -275,6 +303,21 @@
       "save": "Speichern",
       "saving": "Speichern…",
       "reset": "Zurücksetzen"
+    },
+    "appearance": {
+      "description": "Lege fest, wie Pando auf diesem Gerät aussieht. Modus und Theme werden auch von der TUI verwendet; Akzentfarbe und Schriftgröße gelten nur für diesen Browser.",
+      "mode": "Darstellungsmodus",
+      "modeDescription": "System folgt der Einstellung deines Betriebssystems und wechselt live.",
+      "fontSize": "Schriftgröße der Oberfläche",
+      "fontSizeDescription": "Passt die Basisschriftgröße in der gesamten App an.",
+      "fontSizeSmall": "Klein",
+      "fontSizeDefault": "Standard",
+      "fontSizeLarge": "Groß",
+      "themeFamily": "Theme",
+      "themeFamilyDescription": "Eine Farbfamilie für Flächen und Text. Der Modus oben entscheidet über hell oder dunkel.",
+      "accent": "Akzentfarbe",
+      "accentDescription": "Für die Hauptaktion, den Fokus und die Auswahl. Alles andere bleibt neutral.",
+      "accentDefault": "Theme-Standard"
     }
   },
   "chat": {
@@ -318,6 +361,128 @@
       "sessionScopePrefix": "„Für die Sitzung erlauben“ gilt für Befehle, die beginnen mit: {{prefix}}",
       "sessionScopeExact": "„Für die Sitzung erlauben“ gilt nur für genau diesen Befehl.",
       "runOnce": "Außerhalb der Sandbox ausführen"
+    },
+    "thinking": "Denkt nach",
+    "thought": "Überlegung",
+    "persona": "Persona-Prompt",
+    "copied": "Kopiert",
+    "copyCode": "Code kopieren",
+    "copyMessage": "Nachricht kopieren",
+    "queued": "Wartend",
+    "queuedHint": "Wartend — wird beim nächsten sicheren Punkt in den Lauf eingefügt",
+    "scrollToBottom": "Nach unten",
+    "slashCommands": "Befehle",
+    "activity": {
+      "commands_one": "{{count}} Befehl ausgeführt",
+      "commands_other": "{{count}} Befehle ausgeführt",
+      "read_one": "{{count}} Datei gelesen",
+      "read_other": "{{count}} Dateien gelesen",
+      "edited_one": "{{count}} Datei bearbeitet",
+      "edited_other": "{{count}} Dateien bearbeitet",
+      "searched_one": "{{count}}-mal gesucht",
+      "searched_other": "{{count}}-mal gesucht",
+      "fetched_one": "{{count}} Seite abgerufen",
+      "fetched_other": "{{count}} Seiten abgerufen",
+      "tools_one": "{{count}} Tool aufgerufen",
+      "tools_other": "{{count}} Tools aufgerufen",
+      "thought_one": "nachgedacht",
+      "thought_other": "{{count}}-mal nachgedacht",
+      "failed_one": "{{count}} fehlgeschlagen",
+      "failed_other": "{{count}} fehlgeschlagen"
+    },
+    "tool": {
+      "command": "Befehl",
+      "output": "Ausgabe",
+      "error": "Fehler",
+      "input": "Eingabe",
+      "removed": "Entfernt",
+      "added": "Hinzugefügt",
+      "lines": "Zeilen",
+      "exitCode": "Exit-Code: {{code}}"
+    },
+    "composer": {
+      "placeholder": "Frag Pando irgendetwas…",
+      "placeholderRunning": "Laufenden Agenten steuern…",
+      "send": "Nachricht senden",
+      "queue": "Feedback einreihen",
+      "stop": "Generierung stoppen",
+      "hintIdle": "Enter zum Senden · Umschalt+Enter für neue Zeile · / für Befehle",
+      "hintRunning": "Enter reiht Feedback für den nächsten sicheren Punkt ein",
+      "hintGoal": "/ für Befehle eingeben",
+      "chars": "{{count}} / {{max}} Zeichen",
+      "context": "{{pct}} % Kontext",
+      "tokens": "{{formatted}} Tokens"
+    },
+    "empty": {
+      "title": "Woran arbeiten wir?",
+      "suggestions": {
+        "explain": "Diese Codebasis erklären",
+        "bug": "Einen Bug finden und beheben",
+        "tests": "Tests schreiben",
+        "review": "Meine Änderungen prüfen"
+      },
+      "prompts": {
+        "explain": "Gib mir einen Überblick über diese Codebasis: Struktur, Hauptkomponenten und wie sie zusammenspielen.",
+        "bug": "Hilf mir, einen Bug zu finden und zu beheben. Folgendes passiert:",
+        "tests": "Schreibe Tests für die neuesten Änderungen in diesem Projekt.",
+        "review": "Prüfe meine nicht committeten Änderungen und weise auf Bugs oder riskanten Code hin."
+      }
+    },
+    "files": {
+      "changed_one": "{{count}} Datei geändert",
+      "changed_other": "{{count}} Dateien geändert",
+      "viewDiff": "Diff anzeigen: {{path}}"
+    },
+    "diff": {
+      "close": "Diff-Ansicht schließen",
+      "edits_one": "{{count}} Änderung",
+      "edits_other": "{{count}} Änderungen",
+      "escToClose": "zum Schließen"
+    },
+    "goal": {
+      "title": "Ziel",
+      "cancel": "Abbrechen",
+      "cancelling": "Wird abgebrochen…",
+      "iteration": "Iteration {{current}}/{{max}}",
+      "started": "Gestartet {{time}}",
+      "finished": "Beendet {{time}}",
+      "progress": "Fortschritt",
+      "nextStep": "Nächster Schritt",
+      "loading": "Zielstatus wird geladen…",
+      "status": {
+        "running": "Läuft",
+        "completed": "Abgeschlossen",
+        "blocked": "Blockiert",
+        "cancelled": "Abgebrochen",
+        "idle": "Inaktiv",
+        "loading": "Lädt"
+      }
+    },
+    "question": {
+      "reviewTitle": "Antworten prüfen",
+      "counter": "Frage {{current}}/{{total}}",
+      "single": "Frage",
+      "otherAnswer": "Andere: {{text}}",
+      "noSelection": "(keine Auswahl)",
+      "otherPlaceholder": "Andere Antwort (Freitext)…",
+      "cancel": "Abbrechen",
+      "back": "Zurück",
+      "next": "Weiter",
+      "review": "Prüfen",
+      "confirm": "Bestätigen"
+    },
+    "simple": {
+      "toggleSessions": "Sitzungsleiste umschalten",
+      "advanced": "Zur erweiterten Ansicht wechseln",
+      "sessions": "Sitzungen",
+      "untitled": "Unbenannte Sitzung",
+      "sessionFallback": "Sitzung {{id}}",
+      "msgs_one": "{{count}} Nachricht",
+      "msgs_other": "{{count}} Nachrichten",
+      "loadMore": "Mehr laden ({{loaded}}/{{total}})",
+      "noSessions": "Noch keine Sitzungen",
+      "commands": "Befehle",
+      "openCommands": "Befehlsstarter öffnen"
     }
   },
   "terminal": {

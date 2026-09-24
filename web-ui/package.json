@@ -9,14 +9,13 @@
     "build:desktop": "tsc -b && bunx --bun vite build --mode desktop",
     "build:embedded": "tsc -b && bunx --bun vite build && bun run ./scripts/compress-dist.mjs",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
-    "lint": "bunx --bun eslint ."
+    "typecheck": "tsc -p tsconfig.app.json --noEmit",
+    "lint": "bunx --bun eslint .",
+    "check:contrast": "bun ./scripts/check-contrast.mjs"
   },
   "dependencies": {
-    "@fortawesome/fontawesome-svg-core": "^6.7.2",
-    "@fortawesome/free-regular-svg-icons": "^6.7.2",
-    "@fortawesome/free-solid-svg-icons": "^6.7.2",
-    "@fortawesome/react-fontawesome": "^0.2.2",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@monaco-editor/react": "^4.7.0",
     "@pando/client": "workspace:*",
     "@xterm/addon-fit": "^0.10.0",
@@ -25,6 +24,7 @@
     "date-fns": "^4.1.0",
     "highlight.js": "^11.11.1",
     "i18next": "^25.10.10",
+    "lucide-react": "^1.48.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-i18next": "^17.0.0",

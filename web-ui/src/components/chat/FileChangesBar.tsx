@@ -1,10 +1,11 @@
 import { useState, useMemo } from 'react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faFileCode, faChevronDown, faChevronRight } from '@fortawesome/free-solid-svg-icons'
+import { useTranslation } from 'react-i18next'
 import { useFileChangesStore, type FileChange } from '@pando/client/stores/fileChangesStore'
+import { ChevronRight, FileCode } from '@/components/ui/icons'
 import DiffViewer from './DiffViewer'
 
 export default function FileChangesBar() {
+  const { t } = useTranslation()
   const changes = useFileChangesStore((s) => s.changes)
   const [collapsed, setCollapsed] = useState(false)
   const [viewingDiff, setViewingDiff] = useState<FileChange | null>(null)
@@ -20,61 +21,19 @@ export default function FileChangesBar() {
 
   return (
     <>
-      <div
-        style={{
-          flexShrink: 0,
-          borderTop: '1px solid var(--border)',
-          background: 'var(--surface, var(--bg))',
-          fontSize: 12,
-        }}
-      >
-        {/* Header */}
-        <button
-          onClick={() => setCollapsed((v) => !v)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            width: '100%',
-            padding: '6px 12px',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            color: 'var(--fg-muted)',
-            fontSize: 11,
-            fontFamily: "'JetBrains Mono', 'Fira Mono', monospace",
-          }}
-        >
-          <FontAwesomeIcon
-            icon={collapsed ? faChevronRight : faChevronDown}
-            style={{ fontSize: 9, width: 10 }}
-          />
-          <FontAwesomeIcon icon={faFileCode} style={{ fontSize: 11, color: 'var(--primary)' }} />
-          <span style={{ color: 'var(--fg)' }}>
-            {fileList.length} file{fileList.length !== 1 ? 's' : ''} changed
-          </span>
-          <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-            {totalAdditions > 0 && (
-              <span style={{ color: '#a6e3a1' }}>+{totalAdditions}</span>
-            )}
-            {totalRemovals > 0 && (
-              <span style={{ color: '#f38ba8' }}>-{totalRemovals}</span>
-            )}
+      <div className="chat-files">
+        <button type="button" className="chat-files-head" aria-expanded={!collapsed} onClick={() => setCollapsed((v) => !v)}>
+          <ChevronRight size={14} className="chat-chevron" />
+          <FileCode size={14} />
+          <span>{t('chat.files.changed', { count: fileList.length })}</span>
+          <span className="chat-files-stats">
+            {totalAdditions > 0 && <span className="chat-add">+{totalAdditions}</span>}
+            {totalRemovals > 0 && <span className="chat-del">-{totalRemovals}</span>}
           </span>
         </button>
 
-        {/* File list */}
         {!collapsed && (
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 4,
-              padding: '0 12px 8px',
-              maxHeight: 80,
-              overflowY: 'auto',
-            }}
-          >
+          <div className="chat-files-list">
             {fileList.map((fc) => (
               <FileChip key={fc.filePath} file={fc} onView={() => setViewingDiff(fc)} />
             ))}
@@ -82,50 +41,19 @@ export default function FileChangesBar() {
         )}
       </div>
 
-      {/* Diff viewer overlay */}
-      {viewingDiff && (
-        <DiffViewer file={viewingDiff} onClose={() => setViewingDiff(null)} />
-      )}
+      {viewingDiff && <DiffViewer file={viewingDiff} onClose={() => setViewingDiff(null)} />}
     </>
   )
 }
 
 function FileChip({ file, onView }: { file: FileChange; onView: () => void }) {
+  const { t } = useTranslation()
   return (
-    <button
-      onClick={onView}
-      title={`View diff: ${file.filePath}`}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '3px 8px',
-        borderRadius: 'var(--radius-sm, 4px)',
-        border: '1px solid var(--border)',
-        background: 'var(--panel, var(--bg))',
-        cursor: 'pointer',
-        color: 'var(--fg)',
-        fontSize: 11,
-        fontFamily: "'JetBrains Mono', 'Fira Mono', monospace",
-        lineHeight: 1.4,
-        transition: 'border-color 0.15s, background 0.15s',
-        whiteSpace: 'nowrap',
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = 'var(--primary)'
-        e.currentTarget.style.background = 'var(--hover-bg, var(--surface))'
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = 'var(--border)'
-        e.currentTarget.style.background = 'var(--panel, var(--bg))'
-      }}
-    >
-      <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-        {file.fileName}
-      </span>
-      <span style={{ display: 'flex', gap: 4, fontSize: 10 }}>
-        {file.additions > 0 && <span style={{ color: '#a6e3a1' }}>+{file.additions}</span>}
-        {file.removals > 0 && <span style={{ color: '#f38ba8' }}>-{file.removals}</span>}
+    <button type="button" className="chat-file-chip" onClick={onView} title={t('chat.files.viewDiff', { path: file.filePath })}>
+      <span className="chat-file-name">{file.fileName}</span>
+      <span className="chat-file-stats">
+        {file.additions > 0 && <span className="chat-add">+{file.additions}</span>}
+        {file.removals > 0 && <span className="chat-del">-{file.removals}</span>}
       </span>
     </button>
   )

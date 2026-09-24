@@ -1,46 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useTokenOptimizationStore } from '@pando/client/stores/settingsStore'
-import { SelectInput, Toggle } from '@/components/shared/FormInput'
+import { useUnsavedChangesGuard } from './unsavedChanges'
 import TagListEditor from '@/components/shared/TagListEditor'
 import api from '@pando/client/services/api'
 import type { SavingsReport } from '@pando/client/types'
-
-const sectionTitle: React.CSSProperties = {
-  fontSize: 18,
-  fontWeight: 700,
-  color: 'var(--fg)',
-  marginBottom: '0.5rem',
-}
-
-const subSectionTitle: React.CSSProperties = {
-  fontSize: 14,
-  fontWeight: 700,
-  color: 'var(--fg)',
-  textTransform: 'uppercase' as const,
-  letterSpacing: '0.04em',
-  marginBottom: '0.875rem',
-}
-
-const helpText: React.CSSProperties = {
-  fontSize: 13,
-  color: 'var(--fg-muted)',
-  marginTop: 0,
-  marginBottom: '1.25rem',
-  lineHeight: 1.6,
-}
-
-const dividerStyle: React.CSSProperties = {
-  borderTop: '1px solid var(--border)',
-  margin: '1.5rem 0',
-}
-
-const togglesWrap: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: '1rem',
-  marginBottom: '0.5rem',
-}
+import { Button, Select, SettingsRow, SettingsSection, Switch } from '@/components/ui'
 
 export default function TokenOptimizationSettings() {
   const { t } = useTranslation()
@@ -55,17 +20,22 @@ export default function TokenOptimizationSettings() {
     saveTokenOptimization,
     resetTokenOptimization,
   } = useTokenOptimizationStore()
+  useUnsavedChangesGuard({
+    id: 'token-optimization',
+    dirty,
+    save: async () => {
+      await saveTokenOptimization()
+      return !useTokenOptimizationStore.getState().error
+    },
+    discard: resetTokenOptimization,
+  })
 
   useEffect(() => {
     fetchTokenOptimization()
   }, [fetchTokenOptimization])
 
   if (loading) {
-    return (
-      <div style={{ padding: '2rem', color: 'var(--fg-muted)', fontSize: 14 }}>
-        {t('settings.tokenOptimization.loading')}
-      </div>
-    )
+    return <div className="settings-loading">{t('settings.tokenOptimization.loading')}</div>
   }
 
   const readModeOptions = [
@@ -76,152 +46,97 @@ export default function TokenOptimizationSettings() {
   ]
 
   return (
-    <div style={{ maxWidth: 640 }}>
-      <h2 style={sectionTitle}>{t('settings.tokenOptimization.title')}</h2>
-      <p style={helpText}>{t('settings.tokenOptimization.description')}</p>
+    <div>
+      <header className="settings-page-header">
+        <h2 className="settings-page-title">{t('settings.tokenOptimization.title')}</h2>
+        <p className="settings-page-description">{t('settings.tokenOptimization.description')}</p>
+      </header>
 
-      {/* File reads */}
-      <p style={subSectionTitle}>{t('settings.tokenOptimization.fileReadsSection')}</p>
-      <div style={{ marginBottom: '1rem' }}>
-        <SelectInput
+      <SettingsSection title={t('settings.tokenOptimization.fileReadsSection')}>
+        <SettingsRow
           label={t('settings.tokenOptimization.readModeDefault')}
-          options={readModeOptions}
-          value={config.readModeDefault}
-          onChange={(e) => updateField('readModeDefault', e.target.value)}
-        />
-        <p style={{ ...helpText, marginTop: '0.375rem' }}>
-          {t('settings.tokenOptimization.readModeDefaultDescription')}
-        </p>
-      </div>
-      <div style={togglesWrap}>
-        <Toggle
+          description={t('settings.tokenOptimization.readModeDefaultDescription')}
+          htmlFor="tok-opt-read-mode"
+        >
+          <Select
+            id="tok-opt-read-mode"
+            options={readModeOptions}
+            value={config.readModeDefault}
+            onChange={(e) => updateField('readModeDefault', e.target.value)}
+          />
+        </SettingsRow>
+        <SettingsRow
           label={t('settings.tokenOptimization.readDedup')}
           description={t('settings.tokenOptimization.readDedupDescription')}
-          checked={!config.readDedupDisabled}
-          onChange={(v) => updateField('readDedupDisabled', !v)}
-        />
-        <Toggle
+          htmlFor="tok-opt-read-dedup"
+        >
+          <Switch id="tok-opt-read-dedup" checked={!config.readDedupDisabled} onCheckedChange={(v) => updateField('readDedupDisabled', !v)} />
+        </SettingsRow>
+        <SettingsRow
           label={t('settings.tokenOptimization.readModeLearning')}
           description={t('settings.tokenOptimization.readModeLearningDescription')}
-          checked={config.readModeLearning}
-          onChange={(v) => updateField('readModeLearning', v)}
-        />
-      </div>
+          htmlFor="tok-opt-read-learning"
+        >
+          <Switch id="tok-opt-read-learning" checked={config.readModeLearning} onCheckedChange={(v) => updateField('readModeLearning', v)} />
+        </SettingsRow>
+      </SettingsSection>
 
-      <div style={dividerStyle} />
-
-      {/* Shell output (RTK) */}
-      <p style={subSectionTitle}>{t('settings.tokenOptimization.shellOutputSection')}</p>
-      <div style={togglesWrap}>
-        <Toggle
+      <SettingsSection title={t('settings.tokenOptimization.shellOutputSection')}>
+        <SettingsRow
           label={t('settings.tokenOptimization.outputFilter')}
           description={t('settings.tokenOptimization.outputFilterDescription')}
-          checked={config.outputFilterEnabled}
-          onChange={(v) => updateField('outputFilterEnabled', v)}
-        />
-      </div>
-      <div style={{ marginBottom: '0.5rem' }}>
-        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg)', marginBottom: '0.375rem' }}>
-          {t('settings.tokenOptimization.outputFilterPaths')}
-        </p>
-        <p style={{ ...helpText, marginBottom: '0.5rem' }}>
-          {t('settings.tokenOptimization.outputFilterPathsDescription')}
-        </p>
-        <TagListEditor
-          label={t('settings.tokenOptimization.outputFilterPaths')}
-          items={config.outputFilterPaths ?? []}
-          onChange={(items) => updateField('outputFilterPaths', items)}
-          placeholder={t('settings.tokenOptimization.outputFilterPathsPlaceholder')}
-        />
-      </div>
+          htmlFor="tok-opt-output-filter"
+        >
+          <Switch id="tok-opt-output-filter" checked={config.outputFilterEnabled} onCheckedChange={(v) => updateField('outputFilterEnabled', v)} />
+        </SettingsRow>
+        <SettingsRow label={t('settings.tokenOptimization.outputFilterPaths')} description={t('settings.tokenOptimization.outputFilterPathsDescription')} stacked>
+          <TagListEditor
+            items={config.outputFilterPaths ?? []}
+            onChange={(items) => updateField('outputFilterPaths', items)}
+            placeholder={t('settings.tokenOptimization.outputFilterPathsPlaceholder')}
+          />
+        </SettingsRow>
+      </SettingsSection>
 
-      <div style={dividerStyle} />
-
-      {/* Code graph */}
-      <p style={subSectionTitle}>{t('settings.tokenOptimization.codeGraphSection')}</p>
-      <div style={togglesWrap}>
-        <Toggle
+      <SettingsSection title={t('settings.tokenOptimization.codeGraphSection')}>
+        <SettingsRow
           label={t('settings.tokenOptimization.buildCodeGraph')}
           description={t('settings.tokenOptimization.buildCodeGraphDescription')}
-          checked={config.buildCodeGraph}
-          onChange={(v) => updateField('buildCodeGraph', v)}
-        />
-        <Toggle
+          htmlFor="tok-opt-code-graph"
+        >
+          <Switch id="tok-opt-code-graph" checked={config.buildCodeGraph} onCheckedChange={(v) => updateField('buildCodeGraph', v)} />
+        </SettingsRow>
+        <SettingsRow
           label={t('settings.tokenOptimization.relatedFilesHint')}
           description={t('settings.tokenOptimization.relatedFilesHintDescription')}
-          checked={config.relatedFilesHint}
-          onChange={(v) => updateField('relatedFilesHint', v)}
-        />
-      </div>
+          htmlFor="tok-opt-related-files"
+        >
+          <Switch id="tok-opt-related-files" checked={config.relatedFilesHint} onCheckedChange={(v) => updateField('relatedFilesHint', v)} />
+        </SettingsRow>
+      </SettingsSection>
 
-      <div style={dividerStyle} />
-
-      {/* Savings */}
-      <p style={subSectionTitle}>{t('settings.tokenOptimization.savingsSection')}</p>
-      <div style={togglesWrap}>
-        <Toggle
+      <SettingsSection title={t('settings.tokenOptimization.savingsSection')}>
+        <SettingsRow
           label={t('settings.tokenOptimization.savingsLedger')}
           description={t('settings.tokenOptimization.savingsLedgerDescription')}
-          checked={!config.savingsLedgerDisabled}
-          onChange={(v) => updateField('savingsLedgerDisabled', !v)}
-        />
-      </div>
-      <SavingsWidget />
-
-      <div style={dividerStyle} />
-
-      {error && (
-        <div
-          style={{
-            marginBottom: '1rem',
-            padding: '0.625rem 0.875rem',
-            background: 'var(--error)',
-            color: 'var(--primary-fg)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 13,
-          }}
+          htmlFor="tok-opt-savings-ledger"
         >
-          {error}
+          <Switch id="tok-opt-savings-ledger" checked={!config.savingsLedgerDisabled} onCheckedChange={(v) => updateField('savingsLedgerDisabled', !v)} />
+        </SettingsRow>
+        <div className="border-t border-border p-4">
+          <SavingsWidget />
         </div>
-      )}
+      </SettingsSection>
 
-      <div style={{ display: 'flex', gap: '0.75rem' }}>
-        <button
-          onClick={saveTokenOptimization}
-          disabled={!dirty || saving}
-          style={{
-            padding: '0.5rem 1.5rem',
-            background: !dirty || saving ? 'var(--border)' : 'var(--primary)',
-            color: !dirty || saving ? 'var(--fg-muted)' : 'var(--primary-fg)',
-            border: 'none',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: !dirty || saving ? 'not-allowed' : 'pointer',
-            transition: 'background 0.15s',
-            fontFamily: 'inherit',
-          }}
-        >
+      {error && <div className="settings-banner settings-banner--danger" role="alert">{error}</div>}
+
+      <div className="settings-actions">
+        <Button variant="primary" onClick={saveTokenOptimization} disabled={!dirty || saving} loading={saving}>
           {saving ? t('common.saving') : t('common.save')}
-        </button>
-        <button
-          onClick={resetTokenOptimization}
-          disabled={!dirty}
-          style={{
-            padding: '0.5rem 1.5rem',
-            background: 'transparent',
-            color: !dirty ? 'var(--fg-dim)' : 'var(--fg-muted)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: !dirty ? 'not-allowed' : 'pointer',
-            transition: 'color 0.15s',
-            fontFamily: 'inherit',
-          }}
-        >
+        </Button>
+        <Button variant="secondary" onClick={resetTokenOptimization} disabled={!dirty}>
           {t('common.reset')}
-        </button>
+        </Button>
       </div>
     </div>
   )
@@ -250,63 +165,34 @@ function SavingsWidget() {
   const numberFmt = (n: number) => n.toLocaleString()
 
   return (
-    <div
-      style={{
-        marginTop: '0.75rem',
-        padding: '0.875rem 1rem',
-        background: 'var(--sidebar-bg)',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius-sm)',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--fg)' }}>
-          {t('settings.tokenOptimization.savingsWidgetTitle')}
-        </span>
-        <button
-          onClick={load}
-          disabled={loading}
-          style={{
-            padding: '0.25rem 0.75rem',
-            background: 'transparent',
-            color: 'var(--fg-muted)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 12,
-            cursor: loading ? 'not-allowed' : 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm font-semibold text-fg">{t('settings.tokenOptimization.savingsWidgetTitle')}</span>
+        <Button variant="secondary" size="sm" onClick={load} disabled={loading}>
           {t('common.refresh')}
-        </button>
+        </Button>
       </div>
 
-      {loading && (
-        <p style={{ fontSize: 13, color: 'var(--fg-muted)', margin: 0 }}>
-          {t('settings.tokenOptimization.loading')}
-        </p>
-      )}
+      {loading && <p className="text-sm text-muted m-0">{t('settings.tokenOptimization.loading')}</p>}
 
       {!loading && (!report || report.events === 0) && (
-        <p style={{ fontSize: 13, color: 'var(--fg-muted)', margin: 0 }}>
-          {t('settings.tokenOptimization.savingsWidgetEmpty')}
-        </p>
+        <p className="text-sm text-muted m-0">{t('settings.tokenOptimization.savingsWidgetEmpty')}</p>
       )}
 
       {!loading && report && report.events > 0 && (
         <div>
-          <p style={{ fontSize: 13, color: 'var(--fg)', margin: '0 0 0.5rem' }}>
+          <p className="text-sm text-fg mb-2">
             <strong>{numberFmt(report.saved_tokens)}</strong>{' '}
             {t('settings.tokenOptimization.savingsWidgetSaved', {
               pct: report.reduction_pct.toFixed(1),
             })}
           </p>
-          <table style={{ width: '100%', fontSize: 12, color: 'var(--fg-muted)', borderCollapse: 'collapse' }}>
+          <table className="w-full text-xs text-muted border-collapse">
             <tbody>
               {(report.by_source ?? []).map((s) => (
                 <tr key={s.source}>
-                  <td style={{ padding: '0.15rem 0', textTransform: 'capitalize' }}>{s.source}</td>
-                  <td style={{ padding: '0.15rem 0', textAlign: 'right' }}>
+                  <td className="py-0.5 capitalize">{s.source}</td>
+                  <td className="py-0.5 text-right">
                     {numberFmt(s.saved_tokens)} ({s.events})
                   </td>
                 </tr>

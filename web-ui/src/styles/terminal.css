@@ -1,0 +1,155 @@
+/* ============================================================
+   Terminal — chrome + ANSI palette tokens
+   The ANSI 16-colour palette is read at runtime (getComputedStyle) to build
+   the xterm.js theme object — see components/terminal/xtermTheme.ts.
+   These are the one place in the app allowed to hardcode hex literals
+   (brief: "ANSI palette definitions inside terminal.css").
+   ============================================================ */
+
+:root {
+  --term-black: #1c1c1f;
+  --term-red: #c53030;
+  --term-green: #1f8a55;
+  --term-yellow: #a16207;
+  --term-blue: #2563eb;
+  --term-magenta: #9333ea;
+  --term-cyan: #0e7490;
+  --term-white: #d4d4d8;
+  --term-bright-black: #6e6e76;
+  --term-bright-red: #e35d61;
+  --term-bright-green: #34a866;
+  --term-bright-yellow: #ca8a04;
+  --term-bright-blue: #3b82f6;
+  --term-bright-magenta: #a855f7;
+  --term-bright-cyan: #06b6d4;
+  --term-bright-white: #f4f4f5;
+}
+
+:root[data-theme="dark"] {
+  --term-black: #1c1c1f;
+  --term-red: #f16d71;
+  --term-green: #3ecf8e;
+  --term-yellow: #eab308;
+  --term-blue: #6ea8fe;
+  --term-magenta: #c084fc;
+  --term-cyan: #22d3ee;
+  --term-white: #d4d4d8;
+  --term-bright-black: #85858c;
+  --term-bright-red: #f89a9c;
+  --term-bright-green: #6ee7b0;
+  --term-bright-yellow: #fde047;
+  --term-bright-blue: #93c5fd;
+  --term-bright-magenta: #d8b4fe;
+  --term-bright-cyan: #67e8f9;
+  --term-bright-white: #f4f4f5;
+}
+
+/* ── Chrome ─────────────────────────────────────────────────────────────── */
+.terminal-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--bg-card); }
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 14px;
+  background: var(--bg-shell);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.terminal-header-left { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1; }
+.terminal-header-title { display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
+.terminal-header-title svg { color: var(--fg-muted); }
+.terminal-header-title-text { font-size: var(--text-sm); font-weight: 600; color: var(--fg); }
+.terminal-running { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--fg-muted); }
+
+.terminal-tabs { display: flex; align-items: center; gap: 6px; overflow-x: auto; min-width: 0; }
+.terminal-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--fg-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  font: inherit;
+  font-size: 12px;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.terminal-tab:hover { background: var(--bg-raised); }
+.terminal-tab--active { border-color: var(--border-strong); background: var(--bg-raised); color: var(--fg); }
+.terminal-tab-icon--active { color: var(--fg); }
+.terminal-tab-close { display: inline-flex; align-items: center; color: var(--fg-faint); }
+.terminal-tab-close:hover { color: var(--fg); }
+.terminal-new-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  flex-shrink: 0;
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.terminal-new-btn:hover { background: var(--bg-raised); color: var(--fg); }
+
+.terminal-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.terminal-fallback-banner {
+  padding: 6px 12px;
+  background: var(--warning-soft);
+  border-bottom: 1px solid var(--warning);
+  color: var(--warning);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.terminal-pane { flex: 1; min-height: 0; overflow: hidden; padding: 8px 12px; display: flex; }
+.terminal-xterm-host { flex: 1; min-height: 0; overflow: hidden; }
+
+.terminal-input-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-shell);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.terminal-input-prompt { color: var(--success); font-family: var(--font-mono); font-size: var(--text-md); font-weight: 700; flex-shrink: 0; }
+.terminal-input-field {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  caret-color: var(--accent);
+}
+.terminal-input-field::placeholder { color: var(--fg-faint); }
+.terminal-run-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  border: none;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+}
+.terminal-run-btn:hover:not(:disabled) { background: var(--accent-hover); }
+.terminal-run-btn:disabled { background: var(--bg-raised); color: var(--fg-faint); cursor: not-allowed; }

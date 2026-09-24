@@ -1,7 +1,6 @@
 import { useEffect } from 'react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faCloudArrowUp, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons'
 import { useTranslation } from 'react-i18next'
+import { CloudUpload, TriangleAlert } from '@/components/ui/icons'
 import { useExtensionMemoryStore } from '@pando/client/stores/extensionMemoryStore'
 
 /**
@@ -64,29 +63,13 @@ export default function MemorySyncIndicator() {
     }) : '',
   ].filter(Boolean).join('\n')
 
-  const color = failing
-    ? 'var(--error)'
-    : status.dryRun
-      ? 'var(--fg-muted)'
-      : 'var(--warning, #d97706)'
+  const colorClass = failing ? 'text-danger' : status.dryRun ? 'text-muted' : 'text-warning'
 
   return (
-    <span
-      title={title}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.375rem',
-        color,
-        fontWeight: status.dryRun ? 400 : 600,
-      }}
-    >
-      <FontAwesomeIcon
-        icon={failing ? faTriangleExclamation : faCloudArrowUp}
-        style={{ fontSize: 10 }}
-      />
+    <span title={title} className={`flex items-center gap-1.5 text-xs ${colorClass} ${status.dryRun ? 'font-normal' : 'font-semibold'}`}>
+      {failing ? <TriangleAlert size={11} /> : <CloudUpload size={11} />}
       <span>{label}</span>
-      {pending > 0 && <span style={{ opacity: 0.8 }}>({pending})</span>}
+      {pending > 0 && <span className="opacity-80">({pending})</span>}
     </span>
   )
 }

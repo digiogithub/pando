@@ -4,13 +4,62 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/pando-icon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0a0a0f" />
+    <meta name="theme-color" content="#111113" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Pando" />
     <link rel="apple-touch-icon" href="/pwa-icon-192.png" />
     <meta name="description" content="AI assistant designed to improve the workflow of software developers" />
     <title>Pando</title>
+    <script>
+      // Apply the persisted theme before first paint (no flash). Mirrors the
+      // parsing in src/hooks/useTheme.ts; keep both in sync.
+      (function () {
+        var bgs = {
+          pando: ['#ffffff', '#111113'],
+          paper: ['#faf9f5', '#262624'],
+          slate: ['#fbfcfd', '#0f141b'],
+          forest: ['#fbfbf9', '#121513']
+        };
+        var legacy = { claude: 'paper', clay: 'paper', starbucks: 'forest' };
+        var accents = ['gold', 'terracotta', 'violet', 'blue', 'green', 'rose', 'graphite'];
+        var id = null, accent = null;
+        try {
+          id = localStorage.getItem('pando_theme');
+          accent = localStorage.getItem('pando_accent');
+        } catch (e) {}
+        var family = 'pando', mode = 'system';
+        if (id) {
+          var parts = id.split('-');
+          var last = parts[parts.length - 1];
+          if (last === 'light' || last === 'dark' || last === 'system') {
+            mode = last;
+            parts.pop();
+          }
+          var raw = parts.join('-');
+          var own = Object.prototype.hasOwnProperty;
+          family = own.call(bgs, raw) ? raw : own.call(legacy, raw) ? legacy[raw] : 'pando';
+        }
+        if (mode === 'system') {
+          mode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        var root = document.documentElement;
+        root.setAttribute('data-theme-name', family);
+        root.setAttribute('data-theme', mode);
+        if (accent && accents.indexOf(accent) >= 0) root.setAttribute('data-accent', accent);
+        var bg = bgs[family][mode === 'dark' ? 1 : 0];
+        root.style.backgroundColor = bg;
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', bg);
+
+        // Interface font size ("UI scale"), same no-flash treatment. Mirrors
+        // src/components/settings/uiScale.ts; keep both in sync.
+        try {
+          var uiSize = localStorage.getItem('pando_ui_size');
+          if (uiSize === 'small' || uiSize === 'large') root.setAttribute('data-ui-size', uiSize);
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

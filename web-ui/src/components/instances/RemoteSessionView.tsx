@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faComments, faStop, faPaperPlane, faSpinner, faCircle } from '@fortawesome/free-solid-svg-icons'
+import { MessageSquare, CircleStop, SendHorizontal } from '@/components/ui/icons'
+import { Button, Spinner } from '@/components/ui'
 import { format } from 'date-fns'
 import { useInstancesStore, type RemoteSession, type RemoteMessage, type InstanceInfo } from '@pando/client/stores/instancesStore'
 import api from '@pando/client/services/api'
@@ -171,34 +171,15 @@ export default function RemoteSessionView({ instance }: RemoteSessionViewProps) 
   const selectedSession = remoteSessions.find((s) => s.id === selectedSessionId)
 
   return (
-    <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+    <div className="flex h-full overflow-hidden">
       {/* Sessions list */}
-      <div
-        style={{
-          width: 220,
-          flexShrink: 0,
-          borderRight: '1px solid var(--border)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}
-      >
-        <div
-          style={{
-            padding: '0.625rem 1rem',
-            borderBottom: '1px solid var(--border)',
-            fontSize: 11,
-            fontWeight: 600,
-            color: 'var(--fg-dim)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-          }}
-        >
+      <div className="split-pane-side" style={{ width: 220 }}>
+        <div className="entity-row-group-header">
           Sessions ({remoteSessions.length}
           {remoteSessionsTotal > remoteSessions.length ? `/${remoteSessionsTotal}` : ''})
         </div>
         <div
-          style={{ flex: 1, overflow: 'auto' }}
+          className="flex-1 overflow-auto"
           onScroll={(e) => {
             // Lazy-load the next page when scrolled near the end of the list.
             const el = e.currentTarget
@@ -208,16 +189,7 @@ export default function RemoteSessionView({ instance }: RemoteSessionViewProps) 
           }}
         >
           {remoteSessions.length === 0 ? (
-            <div
-              style={{
-                padding: '1.5rem 1rem',
-                fontSize: 13,
-                color: 'var(--fg-muted)',
-                textAlign: 'center',
-              }}
-            >
-              No sessions found
-            </div>
+            <div className="p-6 text-center text-sm text-muted">No sessions found</div>
           ) : (
             remoteSessions.map((session) => {
               const isSelected = session.id === selectedSessionId
@@ -225,33 +197,13 @@ export default function RemoteSessionView({ instance }: RemoteSessionViewProps) 
                 <button
                   key={session.id}
                   onClick={() => handleSelectSession(session)}
-                  style={{
-                    width: '100%',
-                    background: isSelected ? 'var(--selected)' : 'transparent',
-                    border: 'none',
-                    borderBottom: '1px solid var(--border)',
-                    padding: '0.625rem 1rem',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '0.2rem',
-                    borderLeft: isSelected ? '3px solid var(--primary)' : '3px solid transparent',
-                  }}
+                  data-selected={isSelected || undefined}
+                  className="entity-row w-full text-left"
                 >
-                  <div
-                    style={{
-                      fontSize: 12,
-                      fontWeight: isSelected ? 600 : 400,
-                      color: 'var(--fg)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
+                  <div className={`is-ellipsis overflow-hidden whitespace-nowrap text-xs text-fg ${isSelected ? 'font-semibold' : ''}`}>
                     {session.title || 'Untitled'}
                   </div>
-                  <div style={{ fontSize: 10, color: 'var(--fg-muted)' }}>
+                  <div className="text-[10px] text-muted">
                     {session.message_count} msgs · {format(new Date(session.updated_at), 'MMM d HH:mm')}
                   </div>
                 </button>
@@ -259,150 +211,52 @@ export default function RemoteSessionView({ instance }: RemoteSessionViewProps) 
             })
           )}
           {remoteSessionsHasMore && (
-            <button
-              onClick={() => void loadMoreRemoteSessions()}
-              disabled={remoteSessionsLoadingMore}
-              style={{
-                width: 'calc(100% - 1rem)',
-                margin: '0.35rem 0.5rem',
-                padding: '0.375rem 0.5rem',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--border)',
-                background: 'transparent',
-                color: 'var(--fg-muted)',
-                fontSize: 11,
-                cursor: remoteSessionsLoadingMore ? 'not-allowed' : 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              {remoteSessionsLoadingMore
-                ? 'Loading…'
-                : `Load more (${remoteSessions.length}/${remoteSessionsTotal})`}
-            </button>
+            <div className="p-2">
+              <Button variant="secondary" size="sm" block loading={remoteSessionsLoadingMore} onClick={() => void loadMoreRemoteSessions()}>
+                {remoteSessionsLoadingMore ? 'Loading…' : `Load more (${remoteSessions.length}/${remoteSessionsTotal})`}
+              </Button>
+            </div>
           )}
         </div>
       </div>
 
       {/* Stream panel */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div className="flex flex-1 flex-col overflow-hidden">
         {!selectedSessionId ? (
-          <div
-            style={{
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--fg-muted)',
-              gap: '0.75rem',
-            }}
-          >
-            <FontAwesomeIcon icon={faComments} style={{ fontSize: 32, opacity: 0.3 }} />
-            <p style={{ margin: 0, fontSize: 13 }}>Select a session to view its live stream</p>
+          <div className="centered-fill">
+            <MessageSquare size={30} className="text-faint opacity-70" />
+            <p className="text-sm">Select a session to view its live stream</p>
           </div>
         ) : (
           <>
             {/* Session header */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '0.625rem 1rem',
-                borderBottom: '1px solid var(--border)',
-                flexShrink: 0,
-                gap: '0.5rem',
-                flexWrap: 'wrap',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
-                <FontAwesomeIcon
-                  icon={faCircle}
-                  style={{
-                    fontSize: 7,
-                    color: streamConnected ? '#4ade80' : 'var(--fg-dim)',
-                    flexShrink: 0,
-                  }}
-                />
-                <span
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: 'var(--fg)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
+            <div className="flex flex-shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2.5">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className={`status-dot ${streamConnected ? 'status-dot--success status-dot--pulse' : ''}`} />
+                <span className="is-ellipsis overflow-hidden whitespace-nowrap text-sm font-semibold text-fg">
                   {selectedSession?.title || 'Untitled session'}
                 </span>
-                <span style={{ fontSize: 11, color: 'var(--fg-dim)', flexShrink: 0 }}>
-                  {streamConnected ? 'live' : 'connecting…'}
-                </span>
+                <span className="flex-shrink-0 text-xs text-faint">{streamConnected ? 'live' : 'connecting…'}</span>
               </div>
-              <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
-                <button
-                  onClick={() => setShowMessageInput(!showMessageInput)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.375rem',
-                    padding: '0.375rem 0.75rem',
-                    borderRadius: 'var(--radius-sm)',
-                    border: 'none',
-                    background: 'var(--primary)',
-                    color: 'white',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  <FontAwesomeIcon icon={faPaperPlane} style={{ fontSize: 10 }} />
+              <div className="flex flex-shrink-0 gap-2">
+                <Button variant="primary" size="sm" icon={<SendHorizontal size={12} />} onClick={() => setShowMessageInput(!showMessageInput)}>
                   Send Message
-                </button>
-                <button
-                  onClick={() => void handleCancel()}
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  icon={cancelling ? <Spinner size={12} /> : <CircleStop size={12} />}
                   disabled={cancelling}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.375rem',
-                    padding: '0.375rem 0.75rem',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid #e55',
-                    background: 'transparent',
-                    color: '#e55',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: cancelling ? 'not-allowed' : 'pointer',
-                    opacity: cancelling ? 0.6 : 1,
-                    fontFamily: 'inherit',
-                  }}
+                  onClick={() => void handleCancel()}
                 >
-                  {cancelling ? (
-                    <FontAwesomeIcon icon={faSpinner} spin style={{ fontSize: 10 }} />
-                  ) : (
-                    <FontAwesomeIcon icon={faStop} style={{ fontSize: 10 }} />
-                  )}
                   Cancel
-                </button>
+                </Button>
               </div>
             </div>
 
             {/* Send message input */}
             {showMessageInput && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'flex-end',
-                  gap: '0.5rem',
-                  padding: '0.625rem 1rem',
-                  borderBottom: '1px solid var(--border)',
-                  background: 'var(--sidebar-bg)',
-                  flexShrink: 0,
-                }}
-              >
+              <div className="flex flex-shrink-0 items-end gap-2 border-b border-border bg-shell px-4 py-2.5">
                 <textarea
                   value={messageText}
                   onChange={(e) => setMessageText(e.target.value)}
@@ -414,118 +268,44 @@ export default function RemoteSessionView({ instance }: RemoteSessionViewProps) 
                   }}
                   placeholder="Type a message… (Enter to send, Shift+Enter for newline)"
                   rows={3}
-                  style={{
-                    flex: 1,
-                    padding: '0.5rem 0.75rem',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--border)',
-                    background: 'var(--bg)',
-                    color: 'var(--fg)',
-                    fontSize: 13,
-                    fontFamily: 'inherit',
-                    resize: 'vertical',
-                    minHeight: 60,
-                  }}
+                  className="ui-textarea min-h-[60px] flex-1"
                   autoFocus
                 />
-                <button
-                  onClick={() => void handleSendMessage()}
-                  disabled={sendingMessage || !messageText.trim()}
-                  style={{
-                    padding: '0.5rem 1rem',
-                    borderRadius: 'var(--radius-sm)',
-                    border: 'none',
-                    background: 'var(--primary)',
-                    color: 'white',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    cursor: sendingMessage || !messageText.trim() ? 'not-allowed' : 'pointer',
-                    opacity: sendingMessage || !messageText.trim() ? 0.6 : 1,
-                    fontFamily: 'inherit',
-                    flexShrink: 0,
-                  }}
-                >
-                  {sendingMessage ? <FontAwesomeIcon icon={faSpinner} spin /> : 'Send'}
-                </button>
+                <Button variant="primary" loading={sendingMessage} disabled={!messageText.trim()} onClick={() => void handleSendMessage()} className="flex-shrink-0">
+                  Send
+                </Button>
               </div>
             )}
 
             {/* Conversation history + live stream events */}
-            <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex' }}>
-            <div
-              ref={scrollRef}
-              onScroll={handleScroll}
-              style={{ flex: 1, overflow: 'auto', padding: '0.5rem 0' }}
-            >
-              {historyLoading && (
-                <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--fg-dim)', fontSize: 13 }}>
-                  <FontAwesomeIcon icon={faSpinner} spin /> Loading conversation…
-                </div>
+            <div className="relative flex flex-1 overflow-hidden">
+              <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-auto py-2">
+                {historyLoading && (
+                  <div className="flex items-center justify-center gap-2 p-4 text-sm text-faint">
+                    <Spinner size={13} /> Loading conversation…
+                  </div>
+                )}
+                {historyError && (
+                  <div className="px-4 py-3 text-xs text-danger">Could not load conversation: {historyError}</div>
+                )}
+                {history.map((msg) => (
+                  <MessageRow key={msg.id} message={msg} />
+                ))}
+                {history.length > 0 && (
+                  <div className="entity-row-group-header">Live stream</div>
+                )}
+                {streamEvents.length === 0 ? (
+                  <div className="p-8 text-center text-sm text-faint">Waiting for events…</div>
+                ) : (
+                  streamEvents.map((event, idx) => <StreamEventRow key={idx} event={event} />)
+                )}
+                <div ref={eventsEndRef} />
+              </div>
+              {!autoScroll && (
+                <Button variant="primary" size="sm" onClick={jumpToBottom} className="absolute bottom-3 right-4 shadow-md">
+                  ↓ Jump to latest
+                </Button>
               )}
-              {historyError && (
-                <div style={{ padding: '0.75rem 1rem', color: '#e55', fontSize: 12 }}>
-                  Could not load conversation: {historyError}
-                </div>
-              )}
-              {history.map((msg) => (
-                <MessageRow key={msg.id} message={msg} />
-              ))}
-              {history.length > 0 && (
-                <div
-                  style={{
-                    padding: '0.35rem 1rem',
-                    fontSize: 10,
-                    color: 'var(--fg-dim)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    borderTop: '1px solid var(--border)',
-                    borderBottom: '1px solid var(--border)',
-                    background: 'var(--sidebar-bg)',
-                  }}
-                >
-                  Live stream
-                </div>
-              )}
-              {streamEvents.length === 0 ? (
-                <div
-                  style={{
-                    padding: '2rem 1rem',
-                    textAlign: 'center',
-                    color: 'var(--fg-dim)',
-                    fontSize: 13,
-                  }}
-                >
-                  Waiting for events…
-                </div>
-              ) : (
-                streamEvents.map((event, idx) => (
-                  <StreamEventRow key={idx} event={event} />
-                ))
-              )}
-              <div ref={eventsEndRef} />
-            </div>
-            {!autoScroll && (
-              <button
-                onClick={jumpToBottom}
-                style={{
-                  position: 'absolute',
-                  right: '1rem',
-                  bottom: '0.75rem',
-                  padding: '0.35rem 0.75rem',
-                  borderRadius: 999,
-                  border: '1px solid var(--border)',
-                  background: 'var(--primary)',
-                  color: 'white',
-                  fontSize: 11,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                  boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
-                }}
-              >
-                ↓ Jump to latest
-              </button>
-            )}
             </div>
           </>
         )}
@@ -537,36 +317,31 @@ export default function RemoteSessionView({ instance }: RemoteSessionViewProps) 
 function MessageRow({ message }: { message: RemoteMessage }) {
   const isUser = message.role === 'user'
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.2rem',
-        padding: '0.5rem 1rem',
-        borderBottom: '1px solid var(--border)',
-      }}
-    >
-      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'baseline' }}>
-        <span
-          style={{
-            fontSize: 10,
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            color: isUser ? 'var(--primary)' : '#34d399',
-          }}
-        >
+    <div className="flex flex-col gap-0.5 border-b border-border px-4 py-2">
+      <div className="flex items-baseline gap-2">
+        <span className={`text-[10px] font-bold uppercase tracking-wide ${isUser ? 'text-accent' : 'text-success'}`}>
           {message.role}
         </span>
-        <span style={{ fontSize: 10, color: 'var(--fg-dim)' }}>
+        <span className="text-[10px] text-faint">
           {message.created_at ? format(new Date(message.created_at), 'MMM d HH:mm') : ''}
         </span>
       </div>
-      <div style={{ fontSize: 13, color: 'var(--fg)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-        {message.content}
-      </div>
+      <div className="whitespace-pre-wrap break-words text-sm text-fg">{message.content}</div>
     </div>
   )
+}
+
+const TOPIC_COLOR: Record<string, string> = {
+  llm: 'text-accent',
+  tool: 'text-warning',
+  session: 'text-info',
+  message: 'text-success',
+  instance: 'text-muted',
+}
+
+function topicColorClass(topic: string): string {
+  const prefix = topic.split('.')[0]
+  return TOPIC_COLOR[prefix] ?? 'text-faint'
 }
 
 function StreamEventRow({ event }: { event: StreamEvent }) {
@@ -578,46 +353,15 @@ function StreamEventRow({ event }: { event: StreamEvent }) {
   if (typeof payload.token === 'string') content = payload.token
   else if (typeof payload.content === 'string') content = payload.content
 
-  const topicColor = (t: string) => {
-    if (t.startsWith('llm.')) return 'var(--primary)'
-    if (t.startsWith('tool.')) return '#f59e0b'
-    if (t.startsWith('session.')) return '#4a9eff'
-    if (t.startsWith('message.')) return '#34d399'
-    if (t.startsWith('instance.')) return 'var(--fg-muted)'
-    return 'var(--fg-dim)'
-  }
-
   return (
-    <div
-      style={{
-        display: 'flex',
-        gap: '0.5rem',
-        padding: '0.2rem 1rem',
-        fontSize: 12,
-        alignItems: 'baseline',
-        borderBottom: '1px solid var(--border)',
-      }}
-    >
-      <span
-        style={{
-          fontFamily: 'monospace',
-          fontSize: 10,
-          color: topicColor(topic),
-          flexShrink: 0,
-          minWidth: 100,
-          fontWeight: 600,
-        }}
-      >
+    <div className="flex items-baseline gap-2 border-b border-border px-4 py-0.5 text-xs">
+      <span className={`min-w-[100px] flex-shrink-0 font-mono text-[10px] font-semibold ${topicColorClass(topic)}`}>
         {topic}
       </span>
       {content != null ? (
-        <span style={{ color: 'var(--fg)', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-          {content}
-        </span>
+        <span className="whitespace-pre-wrap break-all font-mono text-fg">{content}</span>
       ) : (
-        <span style={{ color: 'var(--fg-dim)', fontFamily: 'monospace', fontSize: 11 }}>
-          {JSON.stringify(payload)}
-        </span>
+        <span className="font-mono text-[11px] text-faint">{JSON.stringify(payload)}</span>
       )}
     </div>
   )

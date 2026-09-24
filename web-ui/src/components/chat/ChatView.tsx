@@ -1,14 +1,14 @@
 import { useEffect, useCallback, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlus } from '@fortawesome/free-solid-svg-icons'
+import { Button } from '@/components/ui'
+import { CircleAlert, Plus } from '@/components/ui/icons'
 import { useChat } from '@pando/client/hooks/useChat'
 import { useGoal } from '@pando/client/hooks/useGoal'
 import { useDesktopNotifications } from '@/hooks/useDesktopNotifications'
 import { useSessionStore } from '@pando/client/stores/sessionStore'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useFileChangesStore } from '@pando/client/stores/fileChangesStore'
-import MessageList from './MessageList'
+import MessageList, { ChatEmptyHead, ChatSuggestions } from './MessageList'
 import ChatInput from './ChatInput'
 import FileChangesBar from './FileChangesBar'
 import GoalStatus from './GoalStatus'
@@ -26,6 +26,8 @@ export default function ChatView() {
   // and would otherwise report the session as running and trigger a pointless
   // reattach — which replays the whole event buffer.
   const finishedSessionRef = useRef<string | null>(null)
+  // Session just created by our own sendMessage (see onNewSession).
+  const createdSessionRef = useRef<string | null>(null)
 
   const handleDone = useCallback((completed: boolean) => {
     if (!completed) return
@@ -43,6 +45,11 @@ export default function ChatView() {
 
   const { sendMessage, reconnectSession, streaming, error, cancelStreaming, streamingState, pendingFeedback } = useChat({
     onNewSession: (sessionId) => {
+      // The transcript of a session created by this very run is already on
+      // screen (optimistic user + streaming assistant message): the load effect
+      // below must not replace it with the server copy, which may not have the
+      // messages persisted yet and would blank the chat until a reload.
+      createdSessionRef.current = sessionId
       useSessionStore.setState({ activeSessionId: sessionId })
       fetchSessions()
     },
@@ -91,6 +98,10 @@ export default function ChatView() {
   // after this one turns it into a reconnection.
   useEffect(() => {
     if (!activeSessionId) return
+    if (createdSessionRef.current === activeSessionId) {
+      createdSessionRef.current = null
+      return
+    }
     void setActiveSession(activeSessionId)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSessionId])
@@ -139,69 +150,54 @@ export default function ChatView() {
     return () => window.clearInterval(timer)
   }, [activeSessionId])
 
+  const isEmpty = messages.length === 0 && !streaming
+  const composer = (
+    <ChatInput
+      onSend={sendMessage}
+      streaming={streaming}
+      onCancel={() => void cancelStreaming()}
+      goalActive={(goal ?? streamingState.goal)?.status === 'running'}
+    />
+  )
+
   return (
-    <div style={{ display: 'flex', height: '100%', overflow: 'hidden', position: 'relative' }}>
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
-      {/* New session FAB — visible only when sidebar is collapsed */}
-      {!sidebarOpen && (
-        <button
-          title={t('nav.newSession')}
-          onClick={() => {
-            useSessionStore.setState({ activeSessionId: null })
-            setMessages([])
-          }}
-          style={{
-            position: 'absolute',
-            top: '0.5rem',
-            left: '0.5rem',
-            zIndex: 10,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.375rem',
-            padding: '0.375rem 0.625rem',
-            background: 'var(--surface)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-sm)',
-            cursor: 'pointer',
-            color: 'var(--fg-muted)',
-            fontSize: 12,
-            lineHeight: 1,
-            boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.color = 'var(--fg)'
-            e.currentTarget.style.borderColor = 'var(--primary)'
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.color = 'var(--fg-muted)'
-            e.currentTarget.style.borderColor = 'var(--border)'
-          }}
-        >
-          <FontAwesomeIcon icon={faPlus} style={{ fontSize: 10 }} />
-          {t('nav.newSession')}
-        </button>
-      )}
-      <GoalStatus goal={goal ?? streamingState.goal} cancelling={cancelling} onCancel={() => void cancelGoal()} />
-      {activePlan.length > 0 && <PlanView plan={activePlan} />}
-      <MessageList messages={messages} streaming={streaming} streamingState={streamingState} pendingFeedback={pendingFeedback} />
-
-      {error && (
-        <div
-          style={{
-            margin: '0 1rem 0.5rem',
-            padding: '0.5rem 0.75rem',
-            background: 'var(--error)',
-            color: 'white',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 13,
-          }}
-        >
-          {error}
+    <div className="chat-root">
+      <div className={isEmpty ? 'chat-pane chat-pane--empty' : 'chat-pane'}>
+        {/* New session — visible only when the app sidebar is collapsed */}
+        {!sidebarOpen && (
+          <div className="chat-float chat-float--left">
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<Plus size={14} />}
+              onClick={() => {
+                useSessionStore.setState({ activeSessionId: null })
+                setMessages([])
+              }}
+            >
+              {t('nav.newSession')}
+            </Button>
+          </div>
+        )}
+        <div className="chat-column">
+          <GoalStatus goal={goal ?? streamingState.goal} cancelling={cancelling} onCancel={() => void cancelGoal()} />
+          {activePlan.length > 0 && <PlanView plan={activePlan} />}
         </div>
-      )}
 
-      <FileChangesBar />
-      <ChatInput onSend={sendMessage} streaming={streaming} onCancel={() => void cancelStreaming()} goalActive={(goal ?? streamingState.goal)?.status === 'running'} />
+        {isEmpty ? <ChatEmptyHead /> : (
+          <MessageList messages={messages} streaming={streaming} streamingState={streamingState} pendingFeedback={pendingFeedback} />
+        )}
+        <div className="chat-column">
+          {error && (
+            <div className="chat-error" role="alert">
+              <CircleAlert size={14} />
+              <span>{error}</span>
+            </div>
+          )}
+          {!isEmpty && <FileChangesBar />}
+        </div>
+        {composer}
+        {isEmpty && <ChatSuggestions />}
       </div>
 
       <ChatInfoSidebar plan={activePlan} />

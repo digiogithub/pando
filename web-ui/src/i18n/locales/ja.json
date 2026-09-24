@@ -1,4 +1,19 @@
 {
+  "shell": {
+    "switchToLight": "ライトモードに切り替え",
+    "switchToDark": "ダークモードに切り替え",
+    "openMenu": "メニューを開く",
+    "closeMenu": "メニューを閉じる",
+    "collapseSidebar": "サイドバーを折りたたむ",
+    "expandSidebar": "サイドバーを展開",
+    "documentation": "ドキュメント",
+    "sidebar": "サイドバー",
+    "searchSessions": "セッションを検索",
+    "running": "実行中",
+    "noMatches": "一致するセッションはありません",
+    "autoAcceptOn": "自動承認",
+    "autoAcceptOff": "自動承認オフ"
+  },
   "common": {
     "save": "保存",
     "saving": "保存中…",
@@ -64,6 +79,7 @@
   "settings": {
     "categories": {
       "general": "一般",
+      "appearance": "外観",
       "providers": "プロバイダー",
       "agents": "エージェント",
       "mcpServers": "MCP サーバー",
@@ -94,6 +110,9 @@
       "theme": "テーマ",
       "themeLight": "ライト",
       "themeDark": "ダーク",
+      "themeSystem": "システム",
+      "accent": "アクセントカラー",
+      "accentDefault": "デフォルト",
       "llmCache": "LLMプロンプトキャッシュ",
       "llmCacheDescription": "LLMプロバイダーのプロンプトキャッシュを有効化（主にAnthropic）",
       "modelsDev": "モデルカタログ (models.dev)",
@@ -227,6 +246,15 @@
       "revealFailed": "パスワードの表示に失敗しました"
     },
     "backToCategories": "カテゴリ",
+    "unsaved": {
+      "title": "未保存の変更",
+      "description": "保存されていない変更があります。移動する前に保存しますか？",
+      "descriptionSections": "{{sections}} に保存されていない変更があります。移動する前に保存しますか？",
+      "saveAndContinue": "保存して続行",
+      "discard": "変更を破棄",
+      "cancel": "キャンセル",
+      "saveFailed": "変更を保存できませんでした。セクション内のエラーを確認して再試行するか、変更を破棄してください。"
+    },
     "sandbox": {
       "title": "コマンドサンドボックス",
       "loading": "サンドボックス設定を読み込み中…",
@@ -275,6 +303,21 @@
       "save": "保存",
       "saving": "保存中…",
       "reset": "リセット"
+    },
+    "appearance": {
+      "description": "このデバイスでの Pando の見た目を選択します。モードとテーマは TUI でも使われます。アクセントカラーと文字サイズはこのブラウザーだけに適用されます。",
+      "mode": "外観モード",
+      "modeDescription": "「システム」は OS の設定に従い、自動で切り替わります。",
+      "fontSize": "インターフェースの文字サイズ",
+      "fontSizeDescription": "アプリ全体の基本文字サイズを調整します。",
+      "fontSizeSmall": "小",
+      "fontSizeDefault": "標準",
+      "fontSizeLarge": "大",
+      "themeFamily": "テーマ",
+      "themeFamilyDescription": "背景とテキストの配色ファミリーです。ライト/ダークは上のモードで決まります。",
+      "accent": "アクセントカラー",
+      "accentDescription": "主要なアクション、フォーカス、選択に使われます。それ以外はニュートラルなままです。",
+      "accentDefault": "テーマの既定"
     }
   },
   "chat": {
@@ -318,6 +361,128 @@
       "sessionScopePrefix": "「セッション中は許可」は次で始まるコマンドに適用されます: {{prefix}}",
       "sessionScopeExact": "「セッション中は許可」はこのコマンドのみに適用されます。",
       "runOnce": "サンドボックス外で実行"
+    },
+    "thinking": "思考中",
+    "thought": "思考",
+    "persona": "ペルソナプロンプト",
+    "copied": "コピーしました",
+    "copyCode": "コードをコピー",
+    "copyMessage": "メッセージをコピー",
+    "queued": "待機中",
+    "queuedHint": "待機中 — 次の安全なタイミングで実行に挿入されます",
+    "scrollToBottom": "一番下へ",
+    "slashCommands": "コマンド",
+    "activity": {
+      "commands_one": "{{count}} 件のコマンドを実行",
+      "commands_other": "{{count}} 件のコマンドを実行",
+      "read_one": "{{count}} 件のファイルを読み込み",
+      "read_other": "{{count}} 件のファイルを読み込み",
+      "edited_one": "{{count}} 件のファイルを編集",
+      "edited_other": "{{count}} 件のファイルを編集",
+      "searched_one": "{{count}} 回検索",
+      "searched_other": "{{count}} 回検索",
+      "fetched_one": "{{count}} ページを取得",
+      "fetched_other": "{{count}} ページを取得",
+      "tools_one": "{{count}} 件のツールを呼び出し",
+      "tools_other": "{{count}} 件のツールを呼び出し",
+      "thought_one": "思考",
+      "thought_other": "{{count}} 回思考",
+      "failed_one": "{{count}} 件失敗",
+      "failed_other": "{{count}} 件失敗"
+    },
+    "tool": {
+      "command": "コマンド",
+      "output": "出力",
+      "error": "エラー",
+      "input": "入力",
+      "removed": "削除",
+      "added": "追加",
+      "lines": "行",
+      "exitCode": "終了コード: {{code}}"
+    },
+    "composer": {
+      "placeholder": "Pando に何でも聞いてください…",
+      "placeholderRunning": "実行中のエージェントに指示…",
+      "send": "メッセージを送信",
+      "queue": "フィードバックを待機列に追加",
+      "stop": "生成を停止",
+      "hintIdle": "Enter で送信 · Shift+Enter で改行 · / でコマンド",
+      "hintRunning": "Enter で次の安全なタイミング用にフィードバックを追加",
+      "hintGoal": "/ でコマンド",
+      "chars": "{{count}} / {{max}} 文字",
+      "context": "コンテキスト {{pct}}%",
+      "tokens": "{{formatted}} トークン"
+    },
+    "empty": {
+      "title": "何に取り組みましょうか？",
+      "suggestions": {
+        "explain": "コードベースを説明",
+        "bug": "バグを見つけて修正",
+        "tests": "テストを書く",
+        "review": "変更をレビュー"
+      },
+      "prompts": {
+        "explain": "このコードベースの概要を教えてください：構成、主要コンポーネント、それらの関係。",
+        "bug": "バグを見つけて修正するのを手伝ってください。発生している現象：",
+        "tests": "このプロジェクトの最近の変更に対するテストを書いてください。",
+        "review": "コミットしていない変更をレビューし、バグや危険なコードを指摘してください。"
+      }
+    },
+    "files": {
+      "changed_one": "{{count}} 件のファイルを変更",
+      "changed_other": "{{count}} 件のファイルを変更",
+      "viewDiff": "差分を表示: {{path}}"
+    },
+    "diff": {
+      "close": "差分ビューアを閉じる",
+      "edits_one": "{{count}} 件の編集",
+      "edits_other": "{{count}} 件の編集",
+      "escToClose": "で閉じる"
+    },
+    "goal": {
+      "title": "ゴール",
+      "cancel": "キャンセル",
+      "cancelling": "キャンセル中…",
+      "iteration": "反復 {{current}}/{{max}}",
+      "started": "開始 {{time}}",
+      "finished": "終了 {{time}}",
+      "progress": "進捗",
+      "nextStep": "次のステップ",
+      "loading": "ゴールの状態を読み込み中…",
+      "status": {
+        "running": "実行中",
+        "completed": "完了",
+        "blocked": "ブロック",
+        "cancelled": "キャンセル",
+        "idle": "待機",
+        "loading": "読み込み中"
+      }
+    },
+    "question": {
+      "reviewTitle": "回答を確認",
+      "counter": "質問 {{current}}/{{total}}",
+      "single": "質問",
+      "otherAnswer": "その他: {{text}}",
+      "noSelection": "（選択なし）",
+      "otherPlaceholder": "その他の回答（自由記述）…",
+      "cancel": "キャンセル",
+      "back": "戻る",
+      "next": "次へ",
+      "review": "確認",
+      "confirm": "確定"
+    },
+    "simple": {
+      "toggleSessions": "セッションパネルを切り替え",
+      "advanced": "詳細ビューに切り替え",
+      "sessions": "セッション",
+      "untitled": "無題のセッション",
+      "sessionFallback": "セッション {{id}}",
+      "msgs_one": "{{count}} 件",
+      "msgs_other": "{{count}} 件",
+      "loadMore": "さらに読み込む ({{loaded}}/{{total}})",
+      "noSessions": "セッションはまだありません",
+      "commands": "コマンド",
+      "openCommands": "コマンドランチャーを開く"
     }
   },
   "pwa": {

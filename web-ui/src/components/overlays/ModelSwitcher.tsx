@@ -1,16 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import {
-  faMagnifyingGlass,
-  faTimes,
-  faCircle,
-  faCircleDot,
-} from '@fortawesome/free-solid-svg-icons'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useSettingsStore } from '@pando/client/stores/settingsStore'
 import api from '@pando/client/services/api'
 import { useToastStore } from '@pando/client/stores/toastStore'
 import { modelMetaLine } from '@/components/shared/ModelCombobox'
+import { Badge, IconButton, Kbd } from '@/components/ui'
+import { Circle, CircleCheck, Search, X } from '@/components/ui/icons'
+import type { BadgeTone } from '@/components/ui'
+import '@/styles/overlays.css'
 
 interface ModelInfo {
   id: string
@@ -31,13 +28,13 @@ interface ModelsResponse {
   models: ModelInfo[]
 }
 
-const BADGE_COLORS: Record<string, string> = {
-  fast: 'var(--success)',
-  cost: '#F59E0B',
-  capable: 'var(--info)',
-  vision: 'var(--accent)',
-  reasoning: 'var(--primary)',
-  thinking: '#A855F7',
+const BADGE_TONE: Record<string, BadgeTone> = {
+  fast: 'success',
+  cost: 'warning',
+  capable: 'info',
+  vision: 'accent',
+  reasoning: 'accent',
+  thinking: 'accent',
 }
 
 const FALLBACK_MODELS: ModelInfo[] = [
@@ -151,113 +148,32 @@ export default function ModelSwitcher() {
   const activeModel = config.default_model
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1000,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        paddingTop: '10vh',
-        animation: 'qm-fade-in 0.15s ease',
-      }}
-      onClick={close}
-    >
-      <style>{`
-        @keyframes qm-fade-in { from { opacity:0; } to { opacity:1; } }
-        @keyframes qm-slide-up {
-          from { opacity:0; transform:translateY(12px) scale(0.98); }
-          to   { opacity:1; transform:translateY(0) scale(1); }
-        }
-      `}</style>
-      <div
-        style={{
-          width: 560,
-          maxWidth: 'calc(100vw - 2rem)',
-          maxHeight: 480,
-          background: 'var(--card-bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-lg)',
-          boxShadow: '0 16px 48px rgba(0,0,0,0.24)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          animation: 'qm-slide-up 0.15s ease',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="ovl-scrim" onClick={close}>
+      <div className="ovl-panel ovl-panel--narrow" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            padding: '0.875rem 1rem',
-            borderBottom: '1px solid var(--border)',
-            gap: '0.75rem',
-          }}
-        >
-          <span style={{ flex: 1, fontWeight: 600, fontSize: 15, color: 'var(--fg)' }}>
-            Switch Model
-          </span>
-          <button
-            onClick={close}
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              color: 'var(--fg-dim)',
-              fontSize: 14,
-              padding: '0.25rem',
-              display: 'flex',
-              alignItems: 'center',
-            }}
-          >
-            <FontAwesomeIcon icon={faTimes} />
-          </button>
+        <div className="ovl-header">
+          <span className="ovl-header-title">Switch Model</span>
+          <IconButton aria-label="Close" icon={<X size={14} />} onClick={close} />
         </div>
 
         {/* Search */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-            padding: '0.625rem 1rem',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <FontAwesomeIcon
-            icon={faMagnifyingGlass}
-            style={{ color: 'var(--fg-dim)', fontSize: 13, flexShrink: 0 }}
-          />
+        <div className="ovl-search">
+          <Search size={13} />
           <input
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search models..."
-            style={{
-              flex: 1,
-              background: 'none',
-              border: 'none',
-              outline: 'none',
-              fontSize: 13,
-              color: 'var(--fg)',
-            }}
+            className="ovl-search-input"
           />
         </div>
 
         {/* Models list */}
-        <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: '0.25rem 0' }}>
+        <div ref={listRef} className="ovl-list">
           {loading ? (
-            <div style={{ padding: '2rem', textAlign: 'center', fontSize: 13, color: 'var(--fg-muted)' }}>
-              Loading models...
-            </div>
+            <div className="ovl-empty">Loading models...</div>
           ) : flatModels.length === 0 ? (
-            <div style={{ padding: '2rem', textAlign: 'center', fontSize: 13, color: 'var(--fg-muted)' }}>
-              No models found
-            </div>
+            <div className="ovl-empty">No models found</div>
           ) : (
             providers.map((provider) => {
               const providerModels = filtered.filter((m) => m.provider === provider)
@@ -265,18 +181,7 @@ export default function ModelSwitcher() {
               const providerOffset = flatModels.findIndex((m) => m.provider === provider)
               return (
                 <div key={provider}>
-                  <div
-                    style={{
-                      padding: '0.5rem 1rem 0.25rem',
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: 'var(--fg-dim)',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
-                    }}
-                  >
-                    {provider}
-                  </div>
+                  <div className="ovl-group-label">{provider}</div>
                   {providerModels.map((model, idx) => {
                     const flatIdx = providerOffset + idx
                     const isSelected = normalizedSelectedIndex === flatIdx
@@ -287,82 +192,22 @@ export default function ModelSwitcher() {
                         data-selected={isSelected ? 'true' : undefined}
                         onClick={() => selectModel(model.id)}
                         onMouseEnter={() => setSelectedIndex(flatIdx)}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.75rem',
-                          padding: '0.5rem 1rem',
-                          cursor: 'pointer',
-                          background: isSelected ? 'var(--selected)' : 'transparent',
-                          borderRadius: 'var(--radius-sm)',
-                          margin: '1px 0.5rem',
-                          transition: 'background 0.1s',
-                        }}
+                        className="ovl-item ovl-model-row"
                       >
-                        <FontAwesomeIcon
-                          icon={isActive ? faCircleDot : faCircle}
-                          style={{
-                            fontSize: isActive ? 14 : 10,
-                            color: isActive ? 'var(--primary)' : 'var(--fg-dim)',
-                            flexShrink: 0,
-                            width: 16,
-                          }}
-                        />
-                        <div style={{ flex: 1 }}>
-                          <div
-                            style={{
-                              fontSize: 13,
-                              color: 'var(--fg)',
-                              fontWeight: isActive ? 600 : 400,
-                            }}
-                          >
-                            {model.name}
-                          </div>
-                          {model.description && (
-                            <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>
-                              {model.description}
-                            </div>
-                          )}
-                          {modelMetaLine(model) && (
-                            <div style={{ fontSize: 11, color: 'var(--fg-dim)' }}>
-                              {modelMetaLine(model)}
-                            </div>
-                          )}
+                        <span className={isActive ? 'ovl-model-radio ovl-model-radio--active' : 'ovl-model-radio'}>
+                          {isActive ? <CircleCheck size={15} /> : <Circle size={10} />}
+                        </span>
+                        <div className="ovl-model-info">
+                          <div className={isActive ? 'ovl-model-name ovl-model-name--active' : 'ovl-model-name'}>{model.name}</div>
+                          {model.description && <div className="ovl-model-desc">{model.description}</div>}
+                          {modelMetaLine(model) && <div className="ovl-model-meta">{modelMetaLine(model)}</div>}
                         </div>
-                        <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        <div className="ovl-model-badges">
                           {model.canReason && (
-                            <span
-                              title="Supports extended thinking / reasoning"
-                              style={{
-                                fontSize: 10,
-                                fontWeight: 600,
-                                padding: '1px 6px',
-                                borderRadius: 0,
-                                background: `${BADGE_COLORS.thinking}22`,
-                                color: BADGE_COLORS.thinking,
-                                border: `1px solid ${BADGE_COLORS.thinking}44`,
-                                textTransform: 'lowercase',
-                              }}
-                            >
-                              ⚡ thinking
-                            </span>
+                            <Badge tone="accent" outline title="Supports extended thinking / reasoning">thinking</Badge>
                           )}
                           {model.badges.map((badge) => (
-                            <span
-                              key={badge}
-                              style={{
-                                fontSize: 10,
-                                fontWeight: 600,
-                                padding: '1px 6px',
-                                borderRadius: 0,
-                                background: `${BADGE_COLORS[badge] ?? 'var(--fg-dim)'}22`,
-                                color: BADGE_COLORS[badge] ?? 'var(--fg-dim)',
-                                border: `1px solid ${BADGE_COLORS[badge] ?? 'var(--fg-dim)'}44`,
-                                textTransform: 'lowercase',
-                              }}
-                            >
-                              {badge}
-                            </span>
+                            <Badge key={badge} tone={BADGE_TONE[badge] ?? 'neutral'}>{badge}</Badge>
                           ))}
                         </div>
                       </div>
@@ -375,19 +220,10 @@ export default function ModelSwitcher() {
         </div>
 
         {/* Footer hint */}
-        <div
-          style={{
-            padding: '0.5rem 1rem',
-            borderTop: '1px solid var(--border)',
-            display: 'flex',
-            gap: '1rem',
-            fontSize: 11,
-            color: 'var(--fg-dim)',
-          }}
-        >
-          <span><kbd style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 0, padding: '0 4px' }}>↑↓</kbd> navigate</span>
-          <span><kbd style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 0, padding: '0 4px' }}>Enter</kbd> select</span>
-          <span><kbd style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 0, padding: '0 4px' }}>Esc</kbd> close</span>
+        <div className="ovl-footer">
+          <span><Kbd>↑↓</Kbd> navigate</span>
+          <span><Kbd>Enter</Kbd> select</span>
+          <span><Kbd>Esc</Kbd> close</span>
         </div>
       </div>
     </div>
