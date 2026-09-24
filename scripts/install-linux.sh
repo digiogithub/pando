@@ -278,6 +278,11 @@ run_sudo_install_cmd() {
     esac
 }
 
+warn_ubuntu_runtime_hint() {
+    warn "  Ubuntu 22.04:        sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0"
+    warn "  Ubuntu 24.04, 26.04: sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0t64"
+}
+
 ensure_wails_runtime_dependencies() {
     local pm
     pm="$(pkg_manager)"
@@ -286,6 +291,7 @@ ensure_wails_runtime_dependencies() {
         warn "Could not detect a supported package manager (apt/dnf/pacman/zypper)."
         warn "Skipping automatic dependency installation for Wails desktop runtime."
         warn "Please ensure your system has GTK and WebKitGTK runtime libraries installed."
+        warn_ubuntu_runtime_hint
         return 0
     fi
 
@@ -300,6 +306,7 @@ ensure_wails_runtime_dependencies() {
         warn "No runtime dependency packages found for package manager '${pm}'."
         warn "Skipping automatic dependency installation."
         warn "Please ensure your system has GTK and WebKitGTK runtime libraries installed."
+        warn_ubuntu_runtime_hint
         return 0
     fi
 

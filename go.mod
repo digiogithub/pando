@@ -61,7 +61,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/toon-format/toon-go v0.0.0-20251108125615-44b4cd22477f
 	github.com/vadv/gopher-lua-libs v0.8.0
-	github.com/wailsapp/wails/v2 v2.12.0
+	github.com/wailsapp/wails/v2 v2.16.0
 	github.com/yuin/gopher-lua v1.1.1
 	go.dalton.dog/bubbleup v1.3.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.43.0
@@ -287,7 +287,7 @@ require (
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.47.0
 	golang.org/x/term v0.44.0
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 	google.golang.org/genai v1.51.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/grpc v1.83.1 // indirect

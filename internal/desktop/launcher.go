@@ -2,6 +2,7 @@ package desktop
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -150,14 +151,22 @@ func runDesktop(binPath, pandoURL string, simpleMode bool) error {
 		args = append(args, "--simple")
 	}
 
+	// Keep the head of stderr so loader failures (missing GTK/WebKitGTK
+	// libraries) can be turned into install instructions.
+	var stderr boundedBuffer
 	cmd := exec.Command(binPath, args...)
 	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
 	cmd.Stdin = os.Stdin
 
 	if err := cmd.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 0 {
 			return nil
+		}
+		if runtime.GOOS == "linux" {
+			if libErr := diagnoseLaunchFailure(stderr.String(), err); libErr != nil {
+				return libErr
+			}
 		}
 		return fmt.Errorf("desktop process exited: %w", err)
 	}

@@ -40,7 +40,16 @@ The desktop window includes a system menu for:
   - Showing or hiding the window
   - Toggling between Simple and Advanced UI modes
 
-Requires the pando-desktop binary to be embedded (built with 'make desktop-embed').`,
+Requires the pando-desktop binary to be embedded (built with 'make desktop-embed').
+
+Linux requirements: GTK 3 and WebKitGTK 4.1 runtime libraries.
+  Ubuntu 22.04:         sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0
+  Ubuntu 24.04, 26.04:  sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0t64
+
+If the window stays blank on Linux (GPU/driver issues in WebKitGTK), try:
+  WEBKIT_DISABLE_DMABUF_RENDERER=1 pando desktop
+  WEBKIT_DISABLE_COMPOSITING_MODE=1 pando desktop
+or use the browser UI instead: pando app`,
 	Example: `
   # Launch desktop app on default port
   pando desktop

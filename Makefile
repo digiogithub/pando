@@ -123,7 +123,7 @@ embed-stubs:
 
 ## Install the Wails CLI (run once)
 desktop-deps:
-	go install github.com/wailsapp/wails/v2/cmd/wails@latest
+	go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
 
 ## Build only the web-ui frontend in desktop mode (plain HTML shell for the WebView wrapper)
 desktop-ui:
