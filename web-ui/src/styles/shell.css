@@ -83,14 +83,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: var(--radius-sm);
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 1;
+  color: var(--fg);
   transition: opacity var(--dur) var(--ease);
 }
 

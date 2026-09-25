@@ -32,7 +32,8 @@ export function useDesktopNotifications() {
 
       const notification = new Notification(title, {
         body: options?.body,
-        icon: options?.icon ?? '/pando-icon.svg',
+        // PNG, not the SVG mark: Notification.icon has inconsistent SVG support.
+        icon: options?.icon ?? '/pwa-icon-192.png',
       })
 
       notification.onclick = () => {

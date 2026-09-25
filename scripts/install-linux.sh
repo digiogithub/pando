@@ -6,7 +6,7 @@ set -euo pipefail
 
 GITHUB_REPO="digiogithub/pando"
 GITHUB_API="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
-ICON_URL="https://raw.githubusercontent.com/${GITHUB_REPO}/main/assets/pando_icon0_optim.png"
+ICON_URL="https://raw.githubusercontent.com/${GITHUB_REPO}/main/assets/pando-brand-v1/png/pando-icon-256.png"
 INSTALL_DIR="${HOME}/.local/bin"
 ICON_DIR="${HOME}/.local/share/icons/hicolor/256x256/apps"
 DESKTOP_DIR="${HOME}/.local/share/applications"

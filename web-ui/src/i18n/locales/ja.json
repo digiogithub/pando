@@ -69,6 +69,10 @@
       "liveInjections": "ライブ注入",
       "reattachRecovered": "再アタッチ回復",
       "reattachFailed": "再アタッチ失敗"
+    },
+    "hero": {
+      "title": "Mesnada · オーケストレーター",
+      "tagline": "Mesnada のサブエージェントを委任・実行・監視します。"
     }
   },
   "header": {
@@ -99,6 +103,18 @@
       "containerRuntime": "コンテナランタイム",
       "tokenOptimization": "トークン最適化",
       "sandbox": "サンドボックス"
+    },
+    "remembrances": {
+      "hero": {
+        "title": "Remembrances",
+        "tagline": "セッションをまたいで保持されるナレッジベース、イベント、インデックス済みコード。"
+      }
+    },
+    "mesnada": {
+      "hero": {
+        "title": "Mesnada",
+        "tagline": "エージェントチームのオーケストレーション:サブエージェントの委任・実行・監視。"
+      }
     },
     "general": {
       "title": "一般設定",

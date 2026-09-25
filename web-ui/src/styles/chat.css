@@ -680,19 +680,7 @@
   text-align: center;
   user-select: none;
 }
-.chat-empty-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-lg);
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-family: 'Noto Serif CJK JP', 'Songti SC', serif;
-  font-size: 26px;
-  line-height: 1;
-}
+.chat-empty-mark { color: var(--fg); }
 .chat-empty-title {
   margin: 0;
   font-size: var(--text-2xl);
@@ -701,6 +689,9 @@
   line-height: 1.25;
   color: var(--fg);
 }
+/* Display font for this one greeting moment; specificity wins regardless of
+   stylesheet order (brand.css sets a plain .brand-display font-weight). */
+.chat-empty-title.brand-display { font-weight: 600; letter-spacing: -0.01em; }
 .chat-pane--empty .chat-composer-wrap { padding-bottom: 0; }
 .chat-suggestions {
   display: flex;
@@ -1065,7 +1056,6 @@ button.chat-banner-head:hover { background: var(--bg-hover); }
   flex-shrink: 0;
 }
 .chat-simple-brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: var(--text-base); color: var(--fg); user-select: none; }
-.chat-simple-brand img { width: 20px; height: 20px; }
 .chat-simple-sep { color: var(--fg-faint); user-select: none; }
 .chat-simple-title { min-width: 0; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); color: var(--fg-muted); }
 .chat-simple-body { position: relative; display: flex; flex: 1; overflow: hidden; }

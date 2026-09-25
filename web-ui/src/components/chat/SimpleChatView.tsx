@@ -17,6 +17,7 @@ import ModelSwitcher from '@/components/overlays/ModelSwitcher'
 import QuickMenu from '@/components/overlays/QuickMenu'
 import NetworkErrorBanner from '@/components/shared/NetworkErrorBanner'
 import { Button, IconButton } from '@/components/ui'
+import { BrandMark } from '@/components/brand'
 import {
   ChevronRight, CircleAlert, Columns2, PanelLeft, Plus, SquareTerminal,
 } from '@/components/ui/icons'
@@ -119,7 +120,7 @@ export default function SimpleChatView() {
           onClick={() => setSidebarOpen((v) => !v)}
         />
         <span className="chat-simple-brand" aria-label="Pando">
-          <img src="/pando-icon.svg" alt="" />
+          <BrandMark size={18} />
           Pando
         </span>
 

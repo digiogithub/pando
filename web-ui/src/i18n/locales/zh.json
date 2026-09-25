@@ -69,6 +69,10 @@
       "liveInjections": "实时注入",
       "reattachRecovered": "重新连接已恢复",
       "reattachFailed": "重新连接失败"
+    },
+    "hero": {
+      "title": "Mesnada · 编排器",
+      "tagline": "委派、运行并监督 Mesnada 的子智能体。"
     }
   },
   "header": {
@@ -99,6 +103,18 @@
       "containerRuntime": "容器运行时",
       "tokenOptimization": "Token 优化",
       "sandbox": "沙箱"
+    },
+    "remembrances": {
+      "hero": {
+        "title": "记忆库",
+        "tagline": "跨会话持久保存的知识库、事件与已索引代码。"
+      }
+    },
+    "mesnada": {
+      "hero": {
+        "title": "Mesnada",
+        "tagline": "智能体团队编排:委派、运行并监督子智能体。"
+      }
     },
     "general": {
       "title": "常规设置",

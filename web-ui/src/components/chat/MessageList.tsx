@@ -4,6 +4,7 @@ import type { Message } from '@pando/client/types'
 import type { StreamingState } from '@pando/client/hooks/useChat'
 import { useChatDraftStore } from '@pando/client/stores/chatDraftStore'
 import { Button } from '@/components/ui'
+import { BrandMark } from '@/components/brand'
 import { ArrowDown, FlaskConical, GitCompare, Hourglass, Bug, Search } from '@/components/ui/icons'
 import MessageBubble, { AssistantTurn, EventRow, ThinkingShimmer } from './MessageBubble'
 
@@ -30,8 +31,8 @@ export function ChatEmptyHead() {
   return (
     <div className="chat-column">
       <div className="chat-empty-head">
-        <span className="chat-empty-mark" aria-hidden>木</span>
-        <h1 className="chat-empty-title">{t('chat.empty.title')}</h1>
+        <BrandMark size={40} className="chat-empty-mark" />
+        <h1 className="chat-empty-title brand-display">{t('chat.empty.title')}</h1>
       </div>
     </div>
   )

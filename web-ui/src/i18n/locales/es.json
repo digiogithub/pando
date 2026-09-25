@@ -69,6 +69,10 @@
       "liveInjections": "Inyecciones en vivo",
       "reattachRecovered": "Recuperadas tras reconexión",
       "reattachFailed": "Fallidas tras reconexión"
+    },
+    "hero": {
+      "title": "Mesnada · Orquestador",
+      "tagline": "Delega, ejecuta y supervisa los subagentes de Mesnada."
     }
   },
   "header": {
@@ -99,6 +103,18 @@
       "containerRuntime": "Entorno de contenedores",
       "tokenOptimization": "Optimización de tokens",
       "sandbox": "Sandbox"
+    },
+    "remembrances": {
+      "hero": {
+        "title": "Remembrances",
+        "tagline": "Base de conocimiento, eventos y código indexado que persisten entre sesiones."
+      }
+    },
+    "mesnada": {
+      "hero": {
+        "title": "Mesnada",
+        "tagline": "Orquestación de equipos de agentes: delega, ejecuta y supervisa subagentes."
+      }
     },
     "general": {
       "title": "Configuración General",

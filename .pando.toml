@@ -1,5 +1,6 @@
 AgeKeys = ''
 AutoCompact = true
+ContextPaths = []
 Debug = false
 DebugLSP = false
 LSPActivateOn = 'edits'
@@ -12,11 +13,23 @@ LogFile = ''
 WorkingDir = ''
 
 [AGUI]
+AgentPoolSize = 0
+AgentPoolTTL = ''
+Agents = []
 AllowedOrigins = []
 AutoApprove = false
+DisconnectGrace = ''
 Enabled = false
+FrontendTools = false
+Host = ''
+HumanInTheLoop = false
+MaxConcurrentRuns = 0
+Path = ''
 Persona = ''
 Port = 0
+RequireToken = false
+ShutdownGrace = ''
+Tools = []
 
 [Agents]
 [Agents.cli-assist]
@@ -128,8 +141,15 @@ Jobs = []
 Directory = './.pando/data'
 
 [Design]
+DefaultKind = ''
+OutputDir = ''
+SystemDir = ''
 
 [Design.Critique]
+Enabled = false
+MaxRounds = 0
+Policy = ''
+Threshold = 0.0
 
 [Extensions]
 Disabled = []
@@ -146,9 +166,18 @@ TimeoutMs = 0
 WrapSearch = false
 
 [Goal]
+AutoApprove = false
+DangerousPatterns = []
+MaxDuration = ''
+MaxIterations = 0
+StallIterations = 0
 
 [Image]
 AutoResize = true
+MaxBase64Bytes = 0
+MaxHeight = 0
+MaxWidth = 0
+Quality = 0
 UseFilesAPI = true
 
 [InternalTools]
@@ -157,22 +186,31 @@ BraveAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBZRS9hdVV3WTBUTXdo
 BraveSearchEnabled = true
 BrowserEnabled = true
 BrowserExecutable = '/usr/bin/microsoft-edge'
+BrowserHeadless = false
 BrowserMaxSessions = 3
 BrowserTimeout = 30
 BrowserType = 'chrome'
 BrowserUserDataDir = ''
 Context7Enabled = true
+DesktopActionTimeout = 0
 DesktopAllowPhysicalInput = true
 DesktopAllowedApps = []
 DesktopBackend = 'auto'
+DesktopDefaultDepth = 0
 DesktopDeniedApps = []
 DesktopEnabled = true
+DesktopMaxNodes = 0
+DesktopScreenshotScale = 0.0
+DesktopSnapshotTTL = 0
 ExaAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBoU3I5ekVkZ1hQSmNoY1pDN0VqbUZYdWZJTTQreGYvdk9lcE5IUG9lcm1VCmxYWHlmMC93SXFidVdIb2VpTFJ3SFNLTjJRN25ES1h0REx6OXk2WjVBdGMKLS0tIHBJSXdBSk5NOEtSZjFnTEVKN0U5azNJeHVRNnh0VXBKYVFuV1NuZlFmN00KOZK338Qfr4dmxayHUi+1dyInW9WIivQ/8p6Kq+zTMpKsXCcCZUik7b1QKtNmutEDdi6PMVGNp+51hygV79QfI8IrpMs='
 ExaSearchEnabled = true
 FetchEnabled = true
+FetchMaxSizeMB = 0
 GoogleAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB4NjJ5WnVZY3VsT3pDYlZ1Ujc3UkpUWDhWSlhvT0RyaWl2REVITjVKUlRZCkI0ZUVKeW9panprd3ZEWHljZWFYS0c2Ni9YTzJ2cGo5VDdVZmRKODNuajQKLS0tIGI3K0YzbHc1RHgweE5HbWtxWG5VcEZTNlFqVXQ0Z0J2WGFWeWJ4OWdXRDQKbpzHH8uM2wDwEymDJkK/EVPybJyZ0B1xuk+7JuK6hL4bWWm2UmwcwjgzHoK3XjMPvj06ftVdw4KmtLiqwuBqLBaJ440v4o4='
 GoogleSearchEnabled = true
 GoogleSearchEngineID = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA5K004VWVnZkhsRHcrdEFob2RWUFQ5UUtJNjFCTFUyVWlPVUw2YkxhZUNZCjJVRnpLZ2JjUzNBOTdYZHpMOXUxaGxXMWJxVVNQUVQyYXRoaXV1M0hrUmsKLS0tIFBoZEljSGtWZS9GRmZ0VnJ2MTRBUCsxR090U0Y5Z0lkQkFQR1JmdzMxTTAKIZ3KjVF67gzr20PWK8RVVhb3TUJt4j83XMlQIa2KG9ebf8PWJabzgiqMpC0OCk9gQw=='
+PerplexityAPIKey = ''
+PerplexitySearchEnabled = false
 SetupModelSwitchEnabled = false
 SetupModelSwitchMaxPerRun = 0
 SourcegraphEnabled = false
@@ -194,6 +232,7 @@ HotReload = false
 LogFilteredData = false
 ScriptPath = ''
 StrictMode = false
+Timeout = ''
 
 [MCPGateway]
 DecayDays = 30
@@ -204,9 +243,11 @@ MaxFavorites = 10
 
 [MCPServer]
 Enabled = false
+HttpAllowedOrigins = []
 HttpEnabled = true
 HttpHost = 'localhost'
 HttpPort = 9777
+HttpToken = ''
 StdioEnabled = true
 
 [MCPServer.Design]
@@ -231,6 +272,7 @@ Enabled = false
 Args = []
 Command = ''
 Env = []
+Sandbox = false
 Timeout = ''
 Type = 'streamable-http'
 URL = 'https://mcp.betterstack.com'
@@ -251,12 +293,11 @@ Token = ''
 Type = 'oauth'
 Username = ''
 
-[MCPServers.betterstack.Headers]
-
 [MCPServers.deepwiki]
 Args = []
 Command = ''
 Env = []
+Sandbox = false
 Timeout = '5m'
 Type = 'streamable-http'
 URL = 'https://mcp.deepwiki.com/mcp'
@@ -265,6 +306,7 @@ URL = 'https://mcp.deepwiki.com/mcp'
 Args = ['-c', '.ai/mycommand-mcp.yaml']
 Command = 'mycommandmcp'
 Env = []
+Sandbox = false
 Timeout = ''
 Type = 'stdio'
 URL = ''
@@ -289,6 +331,7 @@ Transports = ['http']
 [Mesnada.Delegation]
 AcceptDelegations = true
 AllowExternalWarmTargets = true
+AutoStartWarmInstance = false
 BlackboardMaxEntriesPerSwarm = 200
 BlackboardTTL = '168h'
 BreakerDisabled = false
@@ -314,6 +357,7 @@ WarmQueueDepth = 0
 ClaimTTL = '2m'
 DefaultEngine = 'pando'
 DefaultMCPConfig = '.github/mcp-config.json'
+DefaultModel = 'sonnet'
 DispatchInterval = '10s'
 EnginesDir = ''
 LogDir = './.pando/mesnada/logs'
@@ -323,16 +367,21 @@ PersonaPath = './.pando/mesnada/personas'
 StorePath = './.pando/mesnada'
 
 [Mesnada.Server]
+Host = ''
 Port = 5013
 
 [Mesnada.TUI]
 Enabled = true
+WebUI = false
 
 [ModelsDev]
 Enabled = true
 
 [OpenLit]
 Enabled = false
+Endpoint = ''
+Insecure = false
+ServiceName = ''
 
 [Permissions]
 AutoApproveTools = true
@@ -400,10 +449,13 @@ MemoryGCInterval = ''
 MemoryPinnedScopes = []
 UseSameModel = false
 
+[Sandbox]
+
 [Server]
 Enabled = true
 Host = 'localhost'
 Port = 9999
+RequireAuth = false
 
 [Server.BasicAuth]
 Enabled = true
@@ -413,6 +465,8 @@ Password = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBCaVFwU1hpZzJnYUZxVHV
 Username = 'admin'
 
 [Shell]
+Args = []
+Path = ''
 
 [Skills]
 Enabled = true
@@ -420,6 +474,8 @@ Paths = ['./agents/skills']
 
 [SkillsCatalog]
 AutoUpdate = false
+BaseURL = ''
+DefaultScope = ''
 Enabled = true
 
 [Snapshots]
@@ -439,6 +495,7 @@ Theme = 'monokai-nobg'
 [TokenOptimization]
 BuildCodeGraph = true
 ReadDedupDisabled = false
+ReadModeDefault = ''
 ReadModeLearning = false
 RelatedFilesHint = false
 SavingsLedgerDisabled = false
@@ -453,6 +510,10 @@ SearchLimit = 8
 
 [acp]
 auto_permission = false
+enabled = false
+idle_timeout = ''
+log_level = ''
+max_sessions = 0
 
 [cliAssist]
 Model = ''

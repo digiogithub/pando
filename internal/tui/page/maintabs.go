@@ -37,8 +37,10 @@ var mainTabs = []mainTab{
 
 // logoAnimFrames are the glyphs cycled in place of the Pando tree icon while the
 // agent (or one of its subagents) is working. They spell out the growth of a
-// pando colony: root, branch, leaf, grove, dense forest.
-var logoAnimFrames = []string{"本", "枝", "葉", "林", "森"}
+// pando colony: branch, leaf, grove, dense forest. "本" (root) is excluded
+// here since it now identifies the Remembrances section
+// (styles.RemembrancesIcon) and would be ambiguous in the busy animation.
+var logoAnimFrames = []string{"枝", "葉", "林", "森"}
 
 // logoAnimMinInterval / logoAnimMaxInterval bound the random delay between two
 // logo frame swaps while the agent is busy.

@@ -29,6 +29,7 @@ import { useExtensionPanelsStore } from '@pando/client/stores/extensionPanelsSto
 import { useUIPolicyStore } from '@pando/client/stores/uiPolicyStore'
 import ExtensionSlot from '@/components/extensions/ExtensionSlot'
 import { Button } from '@/components/ui'
+import { BrandMark } from '@/components/brand'
 import {
   ArrowLeft,
   Bookmark,
@@ -304,6 +305,17 @@ export default function SettingsView() {
   const renderNavButton = (cat: (typeof CATEGORY_KEYS)[number]) => {
     const Icon = cat.icon
     const isActive = activeCategory === cat.id
+    // Remembrances and Mesnada get their own brand mark instead of a lucide
+    // icon in the category nav — the same small identity used in their
+    // settings section hero and the sidebar/orchestrator marks.
+    const iconNode =
+      cat.id === 'remembrances' ? (
+        <BrandMark variant="remembrances" size={16} bold />
+      ) : cat.id === 'mesnada' ? (
+        <BrandMark variant="mesnada" size={16} bold />
+      ) : (
+        <Icon size={16} aria-hidden />
+      )
     return (
       <button
         key={cat.id}
@@ -312,7 +324,7 @@ export default function SettingsView() {
         aria-current={isActive || undefined}
         onClick={() => selectCategory(cat.id)}
       >
-        <Icon size={16} aria-hidden />
+        {iconNode}
         <span className="settings-nav-item-label">{t(cat.labelKey)}</span>
       </button>
     )

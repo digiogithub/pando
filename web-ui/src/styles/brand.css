@@ -1,0 +1,32 @@
+/* Pando v1 brand marks (components/brand/BrandMark.tsx). Tokens: --brand-* in tokens.css. */
+
+.brand-mark {
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+/* Busy indicator: circuit nodes light up in sequence, like signals along the roots. */
+.brand-mark--pulse .brand-mark-node {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: brand-node-pulse 1.8s var(--ease, ease-in-out) infinite;
+}
+.brand-mark--pulse .brand-mark-node:nth-of-type(2) { animation-delay: 0.3s; }
+.brand-mark--pulse .brand-mark-node:nth-of-type(3) { animation-delay: 0.6s; }
+
+@keyframes brand-node-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.7); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-mark--pulse .brand-mark-node { animation: none; }
+}
+
+/* Display type (Space Grotesk) for brand moments: splash, section heroes. */
+.brand-display {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}

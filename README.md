@@ -4,7 +4,11 @@
 > Maintained by **José F. Rives**.
 
 
-<img alt="pando mascot" title="pando mascot" src="https://github.com/digiogithub/pando/blob/main/assets/pando_mascot-fs8.png?raw=true" width="300" style="margin: 30px auto">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/pando-brand-v1/png/pando-logo-light.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/pando-brand-v1/png/pando-logo-dark.png">
+  <img alt="Pando" title="Pando" src="assets/pando-brand-v1/png/pando-logo-dark.png" width="300" style="margin: 30px auto">
+</picture>
 
 
 A powerful terminal-based AI assistant for developers, providing intelligent coding assistance directly in your terminal.

@@ -310,7 +310,7 @@ done
 # ── Shared icon: PNG → ICNS (built once, reused per arch) ─────────────────────
 
 echo "Converting icon to AppIcon.icns..."
-SRC_ICON="$ASSETS_DIR/pando_icon0_optim.png"
+SRC_ICON="$ASSETS_DIR/pando-brand-v1/png/pando-icon-1024.png"
 ICONSET="$WORK_DIR/AppIcon.iconset"
 mkdir -p "$ICONSET"
 for size in 16 32 64 128 256 512; do

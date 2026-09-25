@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Plus, Network, Clock } from '@/components/ui/icons'
 import { Badge, Button, Spinner, Tabs, type TabItem } from '@/components/ui'
+import { SectionHero } from '@/components/brand'
 import { useOrchestratorStore } from '@pando/client/stores/orchestratorStore'
 import type { DelegationMetrics } from '@pando/client/types'
 import TaskRow from './TaskRow'
@@ -15,6 +16,7 @@ const POLL_INTERVAL = 5000
 type Tab = 'tasks' | 'cronjobs'
 
 export default function OrchestratorView() {
+  const { t } = useTranslation()
   const {
     tasks,
     loading,
@@ -51,6 +53,13 @@ export default function OrchestratorView() {
 
   return (
     <div className="view">
+      <SectionHero
+        className="px-6 pt-5"
+        variant="mesnada"
+        title={t('orchestrator.hero.title')}
+        tagline={t('orchestrator.hero.tagline')}
+      />
+
       {/* Tab bar */}
       <div className="border-b border-border bg-bg px-6">
         <Tabs items={tabItems} value={activeTab} onChange={setActiveTab} aria-label="Orchestrator sections" />

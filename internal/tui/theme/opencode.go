@@ -11,39 +11,50 @@ type PandoTheme struct {
 }
 
 // NewPandoTheme creates a new instance of the Pando theme.
+//
+// Colors are derived from the Pando v1 brand palette (assets/pando-brand-v1/README.md):
+//
+//	Bosque       #0F2A20  brand background / ink
+//	Marfil       #F4F1E8  stroke on dark
+//	Álamo        #E9B949  accent / nodes on dark
+//	Álamo oscuro #C68A17  accent on light
+//
+// Status colors (error/warning/success/info) are left as generic semantic
+// hues since the brief only calls for the accent, text, background, and
+// border families to follow the brand.
 func NewPandoTheme() *PandoTheme {
 	// Pando color palette
 	// Dark mode colors
-	darkBackground := "#212121"
-	darkCurrentLine := "#252525"
-	darkSelection := "#303030"
-	darkForeground := "#e0e0e0"
-	darkComment := "#6a6a6a"
-	darkPrimary := "#fab283"   // Primary orange/gold
-	darkSecondary := "#5c9cf5" // Secondary blue
-	darkAccent := "#9d7cd8"    // Accent purple
-	darkRed := "#e06c75"       // Error red
-	darkOrange := "#f5a742"    // Warning orange
-	darkGreen := "#7fd88f"     // Success green
-	darkCyan := "#56b6c2"      // Info cyan
-	darkYellow := "#e5c07b"    // Emphasized text
-	darkBorder := "#4b4c5c"    // Border color
+	darkBackground := "#0F2A20"  // Bosque
+	darkCurrentLine := "#16352A" // Bosque, one step lighter (elevated surface)
+	darkSelection := "#1E4A38"   // Bosque, two steps lighter (selection / dim border)
+	darkForeground := "#F4F1E8"  // Marfil
+	darkComment := "#5C7568"     // muted Bosque green-gray (de-emphasized: comments, hr)
+	darkPrimary := "#E9B949"     // Álamo
+	darkSecondary := "#5EAE86"   // Bosque-family green (secondary accent)
+	darkAccent := "#F0C868"      // Álamo, lighter tint (strong text, numbers)
+	darkRed := "#e06c75"         // Error red
+	darkOrange := "#f5a742"      // Warning orange
+	darkGreen := "#7fd88f"       // Success green
+	darkCyan := "#56b6c2"        // Info cyan
+	darkYellow := "#D9A73E"      // Álamo, deeper tint (emphasized text, blockquote)
+	darkBorder := "#2E5A46"      // Bosque-family mid green
 
 	// Light mode colors
-	lightBackground := "#f8f8f8"
-	lightCurrentLine := "#f0f0f0"
-	lightSelection := "#e5e5e6"
-	lightForeground := "#2a2a2a"
-	lightComment := "#8a8a8a"
-	lightPrimary := "#3b7dd8"   // Primary blue
-	lightSecondary := "#7b5bb6" // Secondary purple
-	lightAccent := "#d68c27"    // Accent orange/gold
-	lightRed := "#d1383d"       // Error red
-	lightOrange := "#d68c27"    // Warning orange
-	lightGreen := "#3d9a57"     // Success green
-	lightCyan := "#318795"      // Info cyan
-	lightYellow := "#b0851f"    // Emphasized text
-	lightBorder := "#d3d3d3"    // Border color
+	lightBackground := "#FAF8F3"  // Marfil tint (near-white ivory)
+	lightCurrentLine := "#F2EEE3" // Marfil tint, muted (elevated surface)
+	lightSelection := "#EAE5D6"   // Marfil tint, muted deeper
+	lightForeground := "#1C2B23"  // Bosque-tinted near-black (brand ink as text)
+	lightComment := "#8C8879"     // muted warm gray (Marfil family, de-emphasized)
+	lightPrimary := "#A8730E"     // Álamo oscuro, darkened for AA text contrast
+	lightSecondary := "#1F6B4A"   // Bosque-family deep green (secondary accent)
+	lightAccent := "#8F6210"      // Álamo oscuro, darker tint (strong text, numbers)
+	lightRed := "#d1383d"         // Error red
+	lightOrange := "#d68c27"      // Warning orange
+	lightGreen := "#3d9a57"       // Success green
+	lightCyan := "#318795"        // Info cyan
+	lightYellow := "#B37D12"      // Álamo oscuro, mid tint (emphasized text, blockquote)
+	lightBorder := "#D9D3C4"      // Marfil-muted (warm gray-tan)
 
 	theme := &PandoTheme{}
 
@@ -85,7 +96,7 @@ func NewPandoTheme() *PandoTheme {
 		Light: lightForeground,
 	}
 	theme.TextMutedColor = lipgloss.AdaptiveColor{
-		Dark:  "#808080", // Brighter than #6a6a6a for better readability on dark bg
+		Dark:  "#B9B6A9", // muted Marfil, brighter than darkComment for readability on dark bg
 		Light: lightComment,
 	}
 	theme.TextEmphasizedColor = lipgloss.AdaptiveColor{
@@ -103,8 +114,8 @@ func NewPandoTheme() *PandoTheme {
 		Light: lightCurrentLine,
 	}
 	theme.BackgroundDarkerColor = lipgloss.AdaptiveColor{
-		Dark:  "#121212", // Slightly darker than background
-		Light: "#F0F0F0", // Slightly lighter than background
+		Dark:  "#0A1D16", // Bosque, darker than background
+		Light: "#EFEBDE", // Marfil tint, deeper than background
 	}
 
 	// Selection colors
@@ -113,8 +124,8 @@ func NewPandoTheme() *PandoTheme {
 		Light: lightSelection, // #e5e5e6 - good contrast with dark text
 	}
 	theme.SelectionForegroundColor = lipgloss.AdaptiveColor{
-		Dark:  "#f0f0f0",       // Bright text on dark selection
-		Light: lightForeground, // #2a2a2a
+		Dark:  darkForeground,  // Marfil, bright text on dark selection
+		Light: lightForeground, // brand ink
 	}
 
 	// Border colors

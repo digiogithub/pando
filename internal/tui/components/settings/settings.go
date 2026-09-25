@@ -1,6 +1,8 @@
 package settings
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -236,6 +238,24 @@ func (m *SettingsCmp) SetActiveField(sectionTitle, fieldKey string) {
 	m.syncViewport()
 }
 
+// brandSectionGlyph reports whether a section title starts with one of the
+// Pando family's section marks (Remembrances 本 / Mesnada 众, see
+// internal/tui/styles.RemembrancesIcon / MesnadaIcon) and, if so, splits it
+// into the glyph and the remaining title text so callers can render the
+// glyph in the brand accent color while the rest of the title keeps its
+// normal styling.
+func brandSectionGlyph(title string) (glyph, rest string, ok bool) {
+	for _, g := range []string{styles.RemembrancesIcon, styles.MesnadaIcon} {
+		if g == "" {
+			continue
+		}
+		if prefix := g + " "; strings.HasPrefix(title, prefix) {
+			return g, strings.TrimPrefix(title, prefix), true
+		}
+	}
+	return "", title, false
+}
+
 func (m SettingsCmp) renderSidebar() string {
 	t := theme.CurrentTheme()
 	base := styles.BaseStyle()
@@ -268,18 +288,26 @@ func (m SettingsCmp) renderSidebar() string {
 				lastGroup = section.Group
 			}
 
-			style := base.
-				Width(width-2).
-				Padding(0, 1).
-				Foreground(t.Text())
-
+			active := i == m.activeSectionIdx
+			textStyle := base.Foreground(t.Text())
 			prefix := "  "
-			if i == m.activeSectionIdx {
+			if active {
 				prefix = "> "
-				style = style.Foreground(t.Primary()).Bold(true)
+				textStyle = base.Foreground(t.Primary()).Bold(true)
 			}
 
-			items = append(items, style.Render(prefix+section.Title))
+			var line string
+			if glyph, rest, ok := brandSectionGlyph(section.Title); ok {
+				glyphStyle := base.Foreground(t.Accent())
+				if active {
+					glyphStyle = glyphStyle.Bold(true)
+				}
+				line = prefix + glyphStyle.Render(glyph) + " " + textStyle.Render(rest)
+			} else {
+				line = textStyle.Render(prefix + section.Title)
+			}
+
+			items = append(items, base.Width(width-2).Padding(0, 1).Render(line))
 		}
 	}
 
@@ -307,10 +335,16 @@ func (m SettingsCmp) renderContent() string {
 		body = m.viewport.View()
 	}
 
-	header := base.
-		Foreground(t.Primary()).
-		Bold(true).
-		Render(title)
+	var header string
+	if glyph, rest, ok := brandSectionGlyph(title); ok {
+		header = base.Foreground(t.Accent()).Bold(true).Render(glyph) + " " +
+			base.Foreground(t.Primary()).Bold(true).Render(rest)
+	} else {
+		header = base.
+			Foreground(t.Primary()).
+			Bold(true).
+			Render(title)
+	}
 
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,

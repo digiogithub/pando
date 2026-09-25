@@ -2340,7 +2340,7 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 	}
 
 	return settings.Section{
-		Title:  "Subagents",
+		Title:  styles.MesnadaIcon + " Subagents",
 		Fields: fields,
 	}
 }
@@ -2380,7 +2380,7 @@ func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Se
 			Type:     settings.FieldText,
 			ReadOnly: true,
 		})
-		return settings.Section{Title: "KB & Code Index", Fields: fields}
+		return settings.Section{Title: styles.RemembrancesIcon + " KB & Code Index", Fields: fields}
 	}
 
 	fields = append(fields,
@@ -2803,7 +2803,7 @@ func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Se
 		ReadOnly: true,
 	})
 
-	return settings.Section{Title: "KB & Code Index", Fields: fields}
+	return settings.Section{Title: styles.RemembrancesIcon + " KB & Code Index", Fields: fields}
 }
 
 func buildInternalToolsSection(cfg *config.Config) settings.Section {

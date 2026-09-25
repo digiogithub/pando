@@ -23,8 +23,8 @@ export interface PreviewPalette {
 export const FAMILY_PALETTES: Record<ThemeFamily, { label: string } & Record<ResolvedMode, PreviewPalette>> = {
   pando: {
     label: 'Pando',
-    light: { bg: '#ffffff', shell: '#f5f5f6', raised: '#efeff1', fg: '#18181b', accent: '#8a6516' },
-    dark: { bg: '#111113', shell: '#18181a', raised: '#252528', fg: '#ececee', accent: '#c9a24e' },
+    light: { bg: '#fdfcf8', shell: '#f4f1e8', raised: '#ece6d4', fg: '#10251c', accent: '#8f6310' },
+    dark: { bg: '#0c1f18', shell: '#0a1a14', raised: '#16332a', fg: '#f4f1e8', accent: '#e9b949' },
   },
   paper: {
     label: 'Paper',
@@ -44,7 +44,7 @@ export const FAMILY_PALETTES: Record<ThemeFamily, { label: string } & Record<Res
 }
 
 export const ACCENT_PALETTES: Record<AccentPreset, { label: string } & Record<ResolvedMode, string>> = {
-  gold: { label: 'Gold', light: '#8a6516', dark: '#c9a24e' },
+  gold: { label: 'Gold', light: '#8f6310', dark: '#e9b949' },
   terracotta: { label: 'Terracotta', light: '#b0512e', dark: '#d97757' },
   violet: { label: 'Violet', light: '#5b43e8', dark: '#8b7cf6' },
   blue: { label: 'Blue', light: '#2563eb', dark: '#6ea8fe' },

@@ -13,7 +13,9 @@ import (
 // tofu (□). The fallback uses widely-supported BMP/ASCII symbols so the UI stays
 // legible on any terminal. See SetNerdFonts.
 type iconSet struct {
-	Pando string
+	Pando        string
+	Remembrances string
+	Mesnada      string
 
 	// Diagnostics
 	Check   string
@@ -95,7 +97,9 @@ type iconSet struct {
 }
 
 var nerdIconSet = iconSet{
-	Pando: "木",
+	Pando:        "木",
+	Remembrances: "本",
+	Mesnada:      "众",
 
 	Check:   "󰗠",
 	Error:   "󰅚",
@@ -168,6 +172,12 @@ var nerdIconSet = iconSet{
 // patched font.
 var asciiIconSet = iconSet{
 	Pando: "✦",
+	// Remembrances and Mesnada keep the brand's CJK section marks (本/众) even
+	// in the ASCII fallback set: they are plain Unicode (not Nerd Font Private
+	// Use Area codepoints) and render on any terminal with CJK-capable fonts,
+	// same as the Pando logo glyph itself in the animated busy state.
+	Remembrances: "本",
+	Mesnada:      "众",
 
 	Check:   "✓",
 	Error:   "✗",
@@ -239,8 +249,10 @@ var asciiIconSet = iconSet{
 // can be swapped at runtime via SetNerdFonts; call sites keep using
 // styles.CheckIcon, styles.FolderIcon, etc. unchanged.
 var (
-	PandoIcon    string
-	OpenCodeIcon string
+	PandoIcon        string
+	OpenCodeIcon     string
+	RemembrancesIcon string
+	MesnadaIcon      string
 
 	CheckIcon   string
 	ErrorIcon   string
@@ -339,6 +351,8 @@ func NerdFontsEnabled() bool {
 func applyIconSet(s iconSet) {
 	PandoIcon = s.Pando
 	OpenCodeIcon = s.Pando
+	RemembrancesIcon = s.Remembrances
+	MesnadaIcon = s.Mesnada
 
 	CheckIcon = s.Check
 	ErrorIcon = s.Error

@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CloudUpload, TriangleAlert } from '@/components/ui/icons'
+import { TriangleAlert } from '@/components/ui/icons'
+import { BrandMark } from '@/components/brand'
 import { useExtensionMemoryStore } from '@pando/client/stores/extensionMemoryStore'
 
 /**
@@ -67,7 +68,7 @@ export default function MemorySyncIndicator() {
 
   return (
     <span title={title} className={`flex items-center gap-1.5 text-xs ${colorClass} ${status.dryRun ? 'font-normal' : 'font-semibold'}`}>
-      {failing ? <TriangleAlert size={11} /> : <CloudUpload size={11} />}
+      {failing ? <TriangleAlert size={11} /> : <BrandMark variant="remembrances" size={12} bold />}
       <span>{label}</span>
       {pending > 0 && <span className="opacity-80">({pending})</span>}
     </span>

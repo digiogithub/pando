@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import clsx from 'clsx'
+import { BrandMark } from '@/components/brand'
 import '@/styles/splash.css'
 
 export type SplashStatus = 'connecting' | 'authenticating' | 'ready' | 'error'
@@ -41,12 +42,12 @@ export default function SplashScreen({ status, onDone }: SplashScreenProps) {
 
   return (
     <div className={clsx('splash-shell', fadeOut && 'splash-shell--fade-out')}>
-      {/* Same 木 mark as the title bar and the empty chat state. */}
-      <div className={clsx('splash-mark', status === 'ready' && 'splash-mark--done')} aria-hidden="true">
-        木
+      {/* Same brand mark as the title bar and the empty chat state, in its app-icon (tile) form. */}
+      <div className={clsx('splash-mark', status === 'ready' && 'splash-mark--done')}>
+        <BrandMark tile size={64} title="Pando" />
       </div>
 
-      <div className="splash-wordmark">Pando</div>
+      <div className="splash-wordmark brand-display">Pando</div>
       <div className="splash-tagline">AI assistant for code that grows with you</div>
 
       <div className={clsx('splash-status', status === 'error' && 'splash-status--error')}>{STATUS_TEXT[status]}</div>

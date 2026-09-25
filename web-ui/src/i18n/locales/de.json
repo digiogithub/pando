@@ -69,6 +69,10 @@
       "liveInjections": "Live-Injektionen",
       "reattachRecovered": "Wiederverbindung wiederhergestellt",
       "reattachFailed": "Wiederverbindung fehlgeschlagen"
+    },
+    "hero": {
+      "title": "Mesnada · Orchestrator",
+      "tagline": "Subagenten von Mesnada delegieren, ausführen und überwachen."
     }
   },
   "header": {
@@ -99,6 +103,18 @@
       "containerRuntime": "Container-Laufzeit",
       "tokenOptimization": "Token-Optimierung",
       "sandbox": "Sandbox"
+    },
+    "remembrances": {
+      "hero": {
+        "title": "Remembrances",
+        "tagline": "Wissensdatenbank, Ereignisse und indizierter Code, die sitzungsübergreifend erhalten bleiben."
+      }
+    },
+    "mesnada": {
+      "hero": {
+        "title": "Mesnada",
+        "tagline": "Orchestrierung von Agententeams: Subagenten delegieren, ausführen und überwachen."
+      }
     },
     "general": {
       "title": "Allgemeine Einstellungen",

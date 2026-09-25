@@ -64,6 +64,8 @@ func (s *Server) newGinEngine() *gin.Engine {
 			contentType = "image/jpeg"
 		} else if strings.HasSuffix(path, ".ico") {
 			contentType = "image/x-icon"
+		} else if strings.HasSuffix(path, ".svg") {
+			contentType = "image/svg+xml"
 		}
 		c.Data(http.StatusOK, contentType, b)
 	})

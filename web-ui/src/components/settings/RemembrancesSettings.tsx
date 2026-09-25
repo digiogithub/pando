@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useServicesSettingsStore } from '@pando/client/stores/servicesSettingsStore'
 import { useUnsavedChangesGuard } from './unsavedChanges'
 import MaskedInput from '@/components/shared/MaskedInput'
@@ -8,6 +9,7 @@ import { useToastStore } from '@pando/client/stores/toastStore'
 import api from '@pando/client/services/api'
 import type { CodeProjectInfo } from '@pando/client/types'
 import { Badge, Button, Input, Select, SettingsRow, SettingsSection, Switch } from '@/components/ui'
+import { SectionHero } from '@/components/brand'
 
 const EMBEDDING_PROVIDERS = ['', 'openai', 'openai-compatible', 'anthropic', 'ollama']
 
@@ -210,6 +212,7 @@ function TestConnectionRow({
 }
 
 export default function RemembrancesSettings() {
+  const { t } = useTranslation()
   const { config, dirty, loading, saving, error, fetchServices, updateRemembrances, saveServices, resetServices } =
     useServicesSettingsStore()
   useUnsavedChangesGuard({
@@ -331,9 +334,11 @@ export default function RemembrancesSettings() {
 
   return (
     <div>
-      <header className="settings-page-header">
-        <h2 className="settings-page-title">Remembrances</h2>
-      </header>
+      <SectionHero
+        variant="remembrances"
+        title={t('settings.remembrances.hero.title')}
+        tagline={t('settings.remembrances.hero.tagline')}
+      />
 
       <SettingsSection>
         <SettingsRow label="Enabled" description="Enable the Remembrances memory system" htmlFor="rem-enabled">

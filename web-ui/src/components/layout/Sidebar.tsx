@@ -6,6 +6,7 @@ import { useSessionStore } from '@pando/client/stores/sessionStore'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useExtensionPanelsStore } from '@pando/client/stores/extensionPanelsStore'
 import { IconButton, Input, Tooltip } from '@/components/ui'
+import { BrandMark } from '@/components/brand'
 import {
   ChevronDown, Code, FolderOpen, GitBranch, type LucideIcon, MessageSquare, MessageSquarePlus,
   Network, Palette, Puzzle, ScrollText, Search, Server, Settings, Sparkles, SquarePen,
@@ -115,6 +116,14 @@ export default function Sidebar({ variant = 'full' }: { variant?: SidebarVariant
 
   const renderNavItem = (item: NavItem) => {
     const Icon = item.icon
+    // Orchestrator = Mesnada agent orchestration: its own small identity
+    // instead of the generic lucide icon, in both the full nav and the rail.
+    const iconNode =
+      item.path === '/orchestrator' ? (
+        <BrandMark variant="mesnada" size={rail ? 18 : 16} />
+      ) : (
+        <Icon size={rail ? 18 : 16} />
+      )
     const link = (
       <NavLink
         key={item.path}
@@ -124,7 +133,7 @@ export default function Sidebar({ variant = 'full' }: { variant?: SidebarVariant
         className="shell-nav-item"
         aria-label={rail ? item.label : undefined}
       >
-        <Icon size={rail ? 18 : 16} />
+        {iconNode}
         {!rail && <span className="shell-nav-label">{item.label}</span>}
       </NavLink>
     )

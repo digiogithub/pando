@@ -351,12 +351,22 @@ func (p *orchestratorPage) View() string {
 	if p.filterTag != "" {
 		headerText += fmt.Sprintf(" [filter: %s]", p.filterTag)
 	}
-	header := lipgloss.NewStyle().
+	// Prefix the Mesnada section mark (众, the lord and its retinue) in the
+	// brand accent colour ahead of the title text.
+	headerGlyph := lipgloss.NewStyle().
+		Foreground(t.Accent()).
+		Background(t.Background()).
+		Bold(true).
+		Render(styles.MesnadaIcon)
+	headerTitle := lipgloss.NewStyle().
 		Foreground(t.Primary()).
 		Background(t.Background()).
 		Bold(true).
-		Width(p.width).
 		Render(headerText)
+	header := lipgloss.NewStyle().
+		Background(t.Background()).
+		Width(p.width).
+		Render(headerGlyph + " " + headerTitle)
 
 	subtitle := lipgloss.NewStyle().
 		Foreground(t.TextMuted()).

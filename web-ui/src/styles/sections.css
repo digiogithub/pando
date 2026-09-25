@@ -1,0 +1,66 @@
+/* ============================================================
+   Section hero (components/brand/SectionHero.tsx): a restrained
+   identity header for a feature section (Remembrances, Mesnada,
+   the Orchestrator view). Mark + display title + one-line tagline,
+   optional right-side slot. Tokens only, same brand system as
+   styles/brand.css. Class prefix `.section-hero-*`.
+   ============================================================ */
+
+.section-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  padding-bottom: 16px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.section-hero-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  flex: 1 1 260px;
+}
+
+.section-hero-mark {
+  flex-shrink: 0;
+}
+
+.section-hero-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.section-hero-title {
+  font-size: var(--text-xl);
+  color: var(--fg);
+  line-height: 1.25;
+}
+
+.section-hero-tagline {
+  max-width: 560px;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+
+.section-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 480px) {
+  .section-hero-tagline {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+}

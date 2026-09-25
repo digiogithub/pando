@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
 import '@fontsource-variable/inter'
 import '@fontsource-variable/jetbrains-mono'
+import '@fontsource-variable/space-grotesk'
 import '@/index.css'
 // Initialise the theme store early (attaches system-appearance listeners).
 import '@/hooks/useTheme'

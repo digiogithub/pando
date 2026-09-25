@@ -5,7 +5,8 @@ import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useSessionStore } from '@pando/client/stores/sessionStore'
 import { useExtensionPanelsStore } from '@pando/client/stores/extensionPanelsStore'
 import { useTheme } from '@/hooks/useTheme'
-import { useAnimatedLogo } from '@/hooks/useAnimatedLogo'
+import { useAgentBusy } from '@/hooks/useAgentBusy'
+import { BrandMark } from '@/components/brand'
 import PersonaSelector from '@/components/shared/PersonaSelector'
 import { IconButton, Tooltip } from '@/components/ui'
 import {
@@ -38,7 +39,7 @@ export default function Header({ isMobile = false }: { isMobile?: boolean }) {
   const { toggleSidebar, sidebarOpen, setChatMode } = useLayoutStore()
   const { resolvedMode, toggleMode } = useTheme()
   const [version, setVersion] = useState<string>('')
-  const logoGlyph = useAnimatedLogo()
+  const busy = useAgentBusy()
   const activeSession = useSessionStore((s) => s.sessions.find((x) => x.id === s.activeSessionId))
   const extensionPanels = useExtensionPanelsStore((s) => s.panels)
 
@@ -90,7 +91,7 @@ export default function Header({ isMobile = false }: { isMobile?: boolean }) {
         />
         {/* Version lives in the tooltip only: the title bar stays quiet. */}
         <div className="shell-brand" aria-label="Pando" title={version ? `Pando ${version}` : 'Pando'}>
-          <span className="shell-brand-glyph" aria-hidden="true">{logoGlyph}</span>
+          <span className="shell-brand-glyph"><BrandMark size={18} pulse={busy} /></span>
           <span className="shell-brand-name">Pando</span>
         </div>
       </div>

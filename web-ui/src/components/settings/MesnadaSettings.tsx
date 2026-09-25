@@ -1,12 +1,15 @@
 import { useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useServicesSettingsStore } from '@pando/client/stores/servicesSettingsStore'
 import { useUnsavedChangesGuard } from './unsavedChanges'
 import type { MesnadaACPConfig, MesnadaACPServerConfig, MesnadaOrchestratorConfig, MesnadaTUIConfig, MesnadaServerConfig } from '@pando/client/types'
 import { Button, Input, Select, SettingsRow, SettingsSection, Switch } from '@/components/ui'
+import { SectionHero } from '@/components/brand'
 
 const ENGINE_OPTIONS = ['pando', 'claude', 'copilot', 'openai', 'google', 'ollama'].map((v) => ({ value: v, label: v }))
 
 export default function MesnadaSettings() {
+  const { t } = useTranslation()
   const { config, dirty, loading, saving, error, fetchServices, updateMesnada, saveServices, resetServices } =
     useServicesSettingsStore()
   useUnsavedChangesGuard({
@@ -51,9 +54,11 @@ export default function MesnadaSettings() {
 
   return (
     <div>
-      <header className="settings-page-header">
-        <h2 className="settings-page-title">Mesnada</h2>
-      </header>
+      <SectionHero
+        variant="mesnada"
+        title={t('settings.mesnada.hero.title')}
+        tagline={t('settings.mesnada.hero.tagline')}
+      />
 
       <SettingsSection>
         <SettingsRow label="Enabled" description="Enable Mesnada integration" htmlFor="mesnada-enabled">

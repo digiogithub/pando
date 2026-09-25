@@ -62,19 +62,33 @@
   --shadow-lg: 0 4px 12px rgba(16, 16, 20, 0.08), 0 24px 56px rgba(16, 16, 20, 0.16);
   --scrim: rgba(24, 24, 27, 0.32);
 
-  /* ---- Pando family, light (default) — neutral zinc + muted gold -------- */
-  --bg: #ffffff;
-  --bg-shell: #f5f5f6;
-  --bg-raised: #efeff1;
+  /* ---- Brand (Pando v1 styleguide, assets/pando-brand-v1) --------------
+     Fixed identity colours, independent of the theme family/accent. Used by
+     BrandMark and brand tiles only; UI chrome keeps using --accent. */
+  --brand-bosque: #0F2A20;
+  --brand-marfil: #F4F1E8;
+  --brand-alamo: #E9B949;
+  --brand-alamo-dark: #C68A17;
+  /* Circuit-node colour for marks drawn on the current surface. */
+  --brand-node: var(--brand-alamo-dark);
+  --font-display: 'Space Grotesk Variable', 'Space Grotesk', var(--font-sans);
+
+  /* ---- Pando family, light (default) — Marfil-tinted + Álamo oscuro -----
+     Brand-aligned (assets/pando-brand-v1): ivory surfaces, Bosque-ink text,
+     a darkened Álamo for the accent (the brand's #C68A17 fails contrast as
+     UI text/fill on this bg — see scripts/check-contrast.mjs). */
+  --bg: #fdfcf8;
+  --bg-shell: #f4f1e8;
+  --bg-raised: #ece6d4;
   --bg-card: #ffffff;
   --bg-input: #ffffff;
   --bg-overlay: #ffffff;
-  --fg: #18181b;
-  --fg-muted: #52525b;
-  --fg-faint: #6e6e76;
-  --border: #e6e6e9;
-  --border-strong: #d4d4d8;
-  --accent: #8a6516;
+  --fg: #10251c;
+  --fg-muted: #4b564e;
+  --fg-faint: #707a71;
+  --border: #e9e3d2;
+  --border-strong: #d9d0b8;
+  --accent: #8f6310;
   --accent-fg: #ffffff;
 
   /* ---- Derived (resolved per element, follow overrides automatically) -- */
@@ -101,6 +115,8 @@
   --shadow-lg: 0 6px 16px rgba(0, 0, 0, 0.4), 0 28px 64px rgba(0, 0, 0, 0.55);
   --scrim: rgba(0, 0, 0, 0.55);
 
+  --brand-node: var(--brand-alamo);
+
   --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
   --accent-hover: color-mix(in srgb, var(--accent) 88%, #ffffff);
   --danger-soft: color-mix(in srgb, var(--danger) 16%, transparent);
@@ -108,20 +124,20 @@
   --success-soft: color-mix(in srgb, var(--success) 16%, transparent);
   --info-soft: color-mix(in srgb, var(--info) 16%, transparent);
 
-  /* Pando dark — graphite */
-  --bg: #111113;
-  --bg-shell: #18181a;
-  --bg-raised: #252528;
-  --bg-card: #18181b;
-  --bg-input: #1a1a1d;
-  --bg-overlay: #1c1c1f;
-  --fg: #ececee;
-  --fg-muted: #a6a6ad;
-  --fg-faint: #85858c;
-  --border: #27272b;
-  --border-strong: #38383d;
-  --accent: #c9a24e;
-  --accent-fg: #17130a;
+  /* Pando dark — Bosque (deep green-black) + Álamo */
+  --bg: #0c1f18;
+  --bg-shell: #0a1a14;
+  --bg-raised: #16332a;
+  --bg-card: #0e2419;
+  --bg-input: #0d221a;
+  --bg-overlay: #132d22;
+  --fg: #f4f1e8;
+  --fg-muted: #b6b2a2;
+  --fg-faint: #8b887c;
+  --border: #1c352b;
+  --border-strong: #2a4238;
+  --accent: #e9b949;
+  --accent-fg: #0f2a20;
 
   color-scheme: dark;
 }
@@ -230,8 +246,8 @@
 
 /* ---- Accent presets (override only the accent pair) -------------------- */
 
-:root[data-accent="gold"]:not([data-theme="dark"])       { --accent: #8a6516; --accent-fg: #ffffff; }
-:root[data-accent="gold"][data-theme="dark"]             { --accent: #c9a24e; --accent-fg: #17130a; }
+:root[data-accent="gold"]:not([data-theme="dark"])       { --accent: #8f6310; --accent-fg: #ffffff; }
+:root[data-accent="gold"][data-theme="dark"]             { --accent: #e9b949; --accent-fg: #0f2a20; }
 :root[data-accent="terracotta"]:not([data-theme="dark"]) { --accent: #b0512e; --accent-fg: #ffffff; }
 :root[data-accent="terracotta"][data-theme="dark"]       { --accent: #d97757; --accent-fg: #1f1e1d; }
 :root[data-accent="violet"]:not([data-theme="dark"])     { --accent: #5b43e8; --accent-fg: #ffffff; }

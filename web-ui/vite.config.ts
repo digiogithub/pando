@@ -14,13 +14,13 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['pando-icon.svg', 'pando_mascot.svg', 'pwa-icon-192.png', 'pwa-icon-512.png'],
+      includeAssets: ['favicon.svg', 'pando-icon.svg', 'apple-touch-icon.png', 'pwa-icon-192.png', 'pwa-icon-512.png'],
       manifest: {
         name: 'Pando AI Assistant',
         short_name: 'Pando',
         description: 'AI assistant designed to improve the workflow of software developers',
-        theme_color: '#111113',
-        background_color: '#111113',
+        theme_color: '#0F2A20',
+        background_color: '#0F2A20',
         display: 'standalone',
         orientation: 'any',
         scope: '/',

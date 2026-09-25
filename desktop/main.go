@@ -38,12 +38,15 @@ func main() {
 	app := desktop.NewApp(*url, *simpleMode)
 
 	err = wails.Run(&options.App{
-		Title:            "Pando",
-		Width:            1280,
-		Height:           800,
-		MinWidth:         800,
-		MinHeight:        600,
-		BackgroundColour: &options.RGBA{R: 18, G: 18, B: 18, A: 255},
+		Title:     "Pando",
+		Width:     1280,
+		Height:    800,
+		MinWidth:  800,
+		MinHeight: 600,
+		// Pre-paint colour shown before the WebUI loads; matches the brand's
+		// Bosque-derived dark background (~#0c1f18) so there's no flash of a
+		// mismatched shade while the webview spins up.
+		BackgroundColour: &options.RGBA{R: 12, G: 31, B: 24, A: 255},
 		AssetServer: &assetserver.Options{
 			Assets: frontendFS,
 		},

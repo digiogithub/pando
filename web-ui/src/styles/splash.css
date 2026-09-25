@@ -21,14 +21,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
   border-radius: var(--radius-lg);
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-family: 'Noto Serif CJK JP', 'Songti SC', serif;
-  font-size: 28px;
-  line-height: 1;
+  box-shadow: var(--shadow-md);
   animation: splash-pulse 2.4s ease-in-out infinite;
 }
 .splash-mark--done { animation: none; }
@@ -38,11 +32,11 @@
   align-items: baseline;
   gap: 2px;
   font-size: 1.15rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
   color: var(--fg);
   animation: splash-fade-in 0.5s var(--ease);
 }
+
+/* .brand-display (brand.css) supplies font-family/weight/tracking. */
 
 .splash-tagline {
   font-size: 12px;
