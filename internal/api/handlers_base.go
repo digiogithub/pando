@@ -1,7 +1,10 @@
 package api
 
 import (
+	"context"
 	"net/http"
+
+	"github.com/digiogithub/pando/internal/updatecheck"
 )
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -41,4 +44,10 @@ func (s *Server) handleProjectContext(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, context)
+}
+
+// handleVersion reports the running Pando version and whether a newer release
+// can be installed with `pando update`. The WebUI shows it but never downloads.
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, updatecheck.CurrentStatus(context.WithoutCancel(r.Context())))
 }

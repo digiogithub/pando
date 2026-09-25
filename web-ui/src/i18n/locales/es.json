@@ -203,7 +203,8 @@
       "orchestratorMaxParallel": "Tareas en paralelo máximas",
       "orchestratorMaxPerEngine": "Tareas máximas por motor (0 = sin límite)",
       "orchestratorClaimTtl": "TTL de la reserva de despacho",
-      "orchestratorDispatchInterval": "Intervalo de despacho"
+      "orchestratorDispatchInterval": "Intervalo de despacho",
+      "pandoVersion": "Versión de Pando"
     },
     "tokenOptimization": {
       "loading": "Cargando configuración de optimización de tokens…",
@@ -359,7 +360,8 @@
       "modifiedFiles": "Archivos modificados",
       "noModifiedFiles": "Sin archivos modificados",
       "sandbox": "Sandbox",
-      "sandboxNotEnforced": "No se aplica en este sistema: los comandos se ejecutan sin confinar."
+      "sandboxNotEnforced": "No se aplica en este sistema: los comandos se ejecutan sin confinar.",
+      "version": "Versión"
     },
     "permission": {
       "title": "Permiso requerido",
@@ -625,5 +627,9 @@
     },
     "canvasWindow": "Lienzo",
     "openCanvas": "Abre el lienzo de diseño de solo lectura: cada artefacto como una mesa de trabajo en una superficie con desplazamiento y zoom"
+  },
+  "version": {
+    "updateAvailable": "Actualización disponible: {{latest}}. Ejecuta",
+    "upToDate": "Actualizado"
   }
 }

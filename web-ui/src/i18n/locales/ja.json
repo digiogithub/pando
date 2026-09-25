@@ -203,7 +203,8 @@
       "toolDiscoveryModeAlways": "常に",
       "toolDiscoveryModeOff": "オフ",
       "toolDiscoveryMaxDirectTools": "直接ツールの最大数",
-      "toolDiscoverySearchLimit": "ツール検索の上限"
+      "toolDiscoverySearchLimit": "ツール検索の上限",
+      "pandoVersion": "Pando のバージョン"
     },
     "tokenOptimization": {
       "loading": "トークン最適化の設定を読み込んでいます…",
@@ -359,7 +360,8 @@
       "modifiedFiles": "変更されたファイル",
       "noModifiedFiles": "変更されたファイルなし",
       "sandbox": "サンドボックス",
-      "sandboxNotEnforced": "このOSでは適用されていません: コマンドは制限なしで実行されます。"
+      "sandboxNotEnforced": "このOSでは適用されていません: コマンドは制限なしで実行されます。",
+      "version": "バージョン"
     },
     "permission": {
       "title": "許可が必要です",
@@ -527,5 +529,9 @@
     "enabledToast": "外部アクセス オン: {{urls}}",
     "disabledToast": "外部アクセス オフ — Pando はローカルに戻りました。",
     "toggleFailed": "外部アクセスの変更に失敗しました"
+  },
+  "version": {
+    "updateAvailable": "アップデートがあります: {{latest}}。実行:",
+    "upToDate": "最新です"
   }
 }

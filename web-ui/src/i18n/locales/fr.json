@@ -203,7 +203,8 @@
       "toolDiscoveryModeAlways": "Toujours",
       "toolDiscoveryModeOff": "Désactivé",
       "toolDiscoveryMaxDirectTools": "Outils directs max.",
-      "toolDiscoverySearchLimit": "Limite de recherche d’outils"
+      "toolDiscoverySearchLimit": "Limite de recherche d’outils",
+      "pandoVersion": "Version de Pando"
     },
     "tokenOptimization": {
       "loading": "Chargement de la configuration d'optimisation des tokens…",
@@ -359,7 +360,8 @@
       "modifiedFiles": "Fichiers modifiés",
       "noModifiedFiles": "Aucun fichier modifié",
       "sandbox": "Sandbox",
-      "sandboxNotEnforced": "Non appliqué sur ce système : les commandes s'exécutent sans confinement."
+      "sandboxNotEnforced": "Non appliqué sur ce système : les commandes s'exécutent sans confinement.",
+      "version": "Version"
     },
     "permission": {
       "title": "Autorisation requise",
@@ -527,5 +529,9 @@
     "enabledToast": "Accès externe activé : {{urls}}",
     "disabledToast": "Accès externe désactivé — Pando est de nouveau local.",
     "toggleFailed": "Échec du changement d'accès externe"
+  },
+  "version": {
+    "updateAvailable": "Mise à jour disponible : {{latest}}. Exécutez",
+    "upToDate": "À jour"
   }
 }

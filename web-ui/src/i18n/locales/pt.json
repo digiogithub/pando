@@ -203,7 +203,8 @@
       "toolDiscoveryModeAlways": "Sempre",
       "toolDiscoveryModeOff": "Desligado",
       "toolDiscoveryMaxDirectTools": "Máx. de ferramentas diretas",
-      "toolDiscoverySearchLimit": "Limite de busca de ferramentas"
+      "toolDiscoverySearchLimit": "Limite de busca de ferramentas",
+      "pandoVersion": "Versão do Pando"
     },
     "tokenOptimization": {
       "loading": "A carregar a configuração de otimização de tokens…",
@@ -359,7 +360,8 @@
       "modifiedFiles": "Ficheiros modificados",
       "noModifiedFiles": "Nenhum ficheiro modificado",
       "sandbox": "Sandbox",
-      "sandboxNotEnforced": "Não aplicado neste sistema: os comandos são executados sem confinamento."
+      "sandboxNotEnforced": "Não aplicado neste sistema: os comandos são executados sem confinamento.",
+      "version": "Versão"
     },
     "permission": {
       "title": "Permissão necessária",
@@ -530,5 +532,9 @@
     "enabledToast": "Acesso externo ativo: {{urls}}",
     "disabledToast": "Acesso externo desativado — o Pando voltou a ser local.",
     "toggleFailed": "Falha ao alterar o acesso externo"
+  },
+  "version": {
+    "updateAvailable": "Atualização disponível: {{latest}}. Execute",
+    "upToDate": "Atualizado"
   }
 }

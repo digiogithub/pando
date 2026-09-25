@@ -203,7 +203,8 @@
       "toolDiscoveryModeAlways": "Immer",
       "toolDiscoveryModeOff": "Aus",
       "toolDiscoveryMaxDirectTools": "Max. direkte Werkzeuge",
-      "toolDiscoverySearchLimit": "Werkzeugsuche-Limit"
+      "toolDiscoverySearchLimit": "Werkzeugsuche-Limit",
+      "pandoVersion": "Pando-Version"
     },
     "tokenOptimization": {
       "loading": "Token-Optimierungskonfiguration wird geladen…",
@@ -359,7 +360,8 @@
       "modifiedFiles": "Geänderte Dateien",
       "noModifiedFiles": "Keine geänderten Dateien",
       "sandbox": "Sandbox",
-      "sandboxNotEnforced": "Auf diesem System nicht durchgesetzt: Befehle laufen uneingeschränkt."
+      "sandboxNotEnforced": "Auf diesem System nicht durchgesetzt: Befehle laufen uneingeschränkt.",
+      "version": "Version"
     },
     "permission": {
       "title": "Berechtigung erforderlich",
@@ -530,5 +532,9 @@
     "enabledToast": "Externer Zugriff an: {{urls}}",
     "disabledToast": "Externer Zugriff aus — Pando ist wieder lokal.",
     "toggleFailed": "Externer Zugriff konnte nicht geändert werden"
+  },
+  "version": {
+    "updateAvailable": "Update verfügbar: {{latest}}. Ausführen:",
+    "upToDate": "Aktuell"
   }
 }

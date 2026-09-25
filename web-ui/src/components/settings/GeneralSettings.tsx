@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSettingsStore } from '@pando/client/stores/settingsStore'
+import { useVersionStore } from '@pando/client/stores/versionStore'
 import { useUnsavedChangesGuard } from './unsavedChanges'
 import ModelCombobox from '@/components/shared/ModelCombobox'
 import CopyButton from '@/components/shared/CopyButton'
@@ -32,10 +33,16 @@ export default function GeneralSettings() {
     discard: resetSettings,
   })
   const { setTheme } = useTheme()
+  const versionStatus = useVersionStore((s) => s.status)
+  const fetchVersion = useVersionStore((s) => s.fetchVersion)
 
   useEffect(() => {
     fetchSettings()
   }, [fetchSettings])
+
+  useEffect(() => {
+    void fetchVersion()
+  }, [fetchVersion])
 
   // Adopt the backend theme only on a browser with no local choice yet. The
   // theme picker itself now lives in Appearance; this silent copy of the
@@ -159,6 +166,24 @@ export default function GeneralSettings() {
           server confirms it (after a save/regenerate), never invented
           client-side. */}
       <SettingsSection title={t('settings.general.diagnosticsTitle')}>
+        {versionStatus?.version && (
+          <SettingsRow
+            label={t('settings.general.pandoVersion')}
+            description={
+              versionStatus.update_available && versionStatus.latest ? (
+                <>
+                  {t('version.updateAvailable', { latest: versionStatus.latest })}{' '}
+                  <code>{versionStatus.update_command || 'pando update'}</code>
+                </>
+              ) : versionStatus.checkable && versionStatus.latest ? (
+                t('version.upToDate')
+              ) : undefined
+            }
+          >
+            <span className="settings-code-value">{versionStatus.version}</span>
+            <CopyButton text={versionStatus.version} size="md" />
+          </SettingsRow>
+        )}
         <SettingsRow
           label={t('settings.general.debug')}
           description={t('settings.general.debugDescription')}

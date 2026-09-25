@@ -203,7 +203,8 @@
       "toolDiscoveryModeAlways": "始终",
       "toolDiscoveryModeOff": "关闭",
       "toolDiscoveryMaxDirectTools": "最大直接工具数",
-      "toolDiscoverySearchLimit": "工具搜索上限"
+      "toolDiscoverySearchLimit": "工具搜索上限",
+      "pandoVersion": "Pando 版本"
     },
     "tokenOptimization": {
       "loading": "正在加载 Token 优化配置…",
@@ -359,7 +360,8 @@
       "modifiedFiles": "已修改文件",
       "noModifiedFiles": "没有已修改的文件",
       "sandbox": "沙箱",
-      "sandboxNotEnforced": "此系统未强制执行：命令在无限制状态下运行。"
+      "sandboxNotEnforced": "此系统未强制执行：命令在无限制状态下运行。",
+      "version": "版本"
     },
     "permission": {
       "title": "需要权限",
@@ -527,5 +529,9 @@
     "enabledToast": "外部访问已开启：{{urls}}",
     "disabledToast": "外部访问已关闭 — Pando 恢复为本地。",
     "toggleFailed": "更改外部访问失败"
+  },
+  "version": {
+    "updateAvailable": "有可用更新：{{latest}}。运行",
+    "upToDate": "已是最新"
   }
 }

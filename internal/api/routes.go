@@ -25,6 +25,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc(TokenPath, s.handleToken)
 	mux.HandleFunc("/api/v1/project", s.handleProject)
+	mux.HandleFunc("GET /api/v1/version", s.handleVersion)
 	mux.HandleFunc("/api/v1/project/context", s.handleProjectContext)
 	mux.HandleFunc("/api/v1/sessions", s.handleSessions)
 	mux.HandleFunc("GET /api/v1/sessions/{id}/stream", s.handleSessionStream)

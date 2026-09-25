@@ -1194,3 +1194,5 @@ button.chat-banner-head:hover { background: var(--bg-hover); }
     box-shadow: var(--shadow-lg);
   }
 }
+.chat-info-update { color: var(--fg-muted); }
+.chat-info-update code { font-family: var(--font-mono); color: var(--accent); }

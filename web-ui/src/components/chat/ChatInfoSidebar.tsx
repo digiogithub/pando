@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
 import { Badge, IconButton } from '@/components/ui'
 import {
-  Bot, Code, FileCode, FolderOpen, Gauge, ListChecks, PanelRight, PanelRightClose, Shield, type LucideIcon,
+  Bot, Code, FileCode, FolderOpen, Gauge, Info, ListChecks, PanelRight, PanelRightClose, Shield, type LucideIcon,
 } from '@/components/ui/icons'
 import { PlanStatusIcon } from './PlanView'
 import type { PlanEntry } from '@pando/client/hooks/useChat'
@@ -15,6 +15,7 @@ import { useOrchestratorStore } from '@pando/client/stores/orchestratorStore'
 import { useProjectStore } from '@pando/client/stores/projectStore'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useSandboxStore } from '@pando/client/stores/settingsStore'
+import { useVersionStore } from '@pando/client/stores/versionStore'
 import ExtensionSlot from '@/components/extensions/ExtensionSlot'
 
 /** Poll interval for the live subagent counts, in milliseconds. */
@@ -52,6 +53,15 @@ export default function ChatInfoSidebar({ plan = [] }: ChatInfoSidebarProps) {
   const fetchWorkspace = useProjectStore((s) => s.fetchWorkspace)
   const sandboxStatus = useSandboxStore((s) => s.info?.status)
   const refreshSandboxStatus = useSandboxStore((s) => s.refreshSandboxStatus)
+  const versionStatus = useVersionStore((s) => s.status)
+  const fetchVersion = useVersionStore((s) => s.fetchVersion)
+
+  // Pando version + update availability. The server caches the GitHub lookup,
+  // so fetching once per page load is enough.
+  useEffect(() => {
+    if (!infoSidebarOpen) return
+    void fetchVersion()
+  }, [infoSidebarOpen, fetchVersion])
 
   // Sandbox badge: refreshed on every open, so a settings change shows up.
   useEffect(() => {
@@ -139,6 +149,19 @@ export default function ChatInfoSidebar({ plan = [] }: ChatInfoSidebarProps) {
         </div>
 
         <div className="chat-info-scroll">
+          {/* Version — the running Pando build and whether `pando update` has a newer one */}
+          {versionStatus?.version && (
+            <Section icon={Info} title={t('chat.info.version')}>
+              <div className="chat-info-mono">Pando {versionStatus.version}</div>
+              {versionStatus.update_available && versionStatus.latest && (
+                <div className="chat-info-note chat-info-update">
+                  {t('version.updateAvailable', { latest: versionStatus.latest })}{' '}
+                  <code>{versionStatus.update_command || 'pando update'}</code>
+                </div>
+              )}
+            </Section>
+          )}
+
           {/* Workspace — the instance's working directory, mirroring the TUI's "cwd:" line */}
           {workspace?.cwd && (
             <Section icon={FolderOpen} title={t('chat.info.workingDir')}>

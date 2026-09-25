@@ -203,7 +203,8 @@
       "orchestratorMaxParallel": "Max parallel tasks",
       "orchestratorMaxPerEngine": "Max tasks per engine (0 = no limit)",
       "orchestratorClaimTtl": "Dispatch claim TTL",
-      "orchestratorDispatchInterval": "Dispatch interval"
+      "orchestratorDispatchInterval": "Dispatch interval",
+      "pandoVersion": "Pando version"
     },
     "tokenOptimization": {
       "loading": "Loading token optimization configuration…",
@@ -359,7 +360,8 @@
       "modifiedFiles": "Modified files",
       "noModifiedFiles": "No modified files",
       "sandbox": "Sandbox",
-      "sandboxNotEnforced": "Not enforced on this OS: commands run unconfined."
+      "sandboxNotEnforced": "Not enforced on this OS: commands run unconfined.",
+      "version": "Version"
     },
     "permission": {
       "title": "Permission required",
@@ -625,5 +627,9 @@
     },
     "canvasWindow": "Canvas",
     "openCanvas": "Open the read-only design canvas: every artifact as an artboard on one pan-and-zoom surface"
+  },
+  "version": {
+    "updateAvailable": "Update available: {{latest}}. Run",
+    "upToDate": "Up to date"
   }
 }
