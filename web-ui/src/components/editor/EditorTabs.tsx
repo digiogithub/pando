@@ -1,23 +1,30 @@
 import clsx from 'clsx'
 import { useEditorStore } from '@pando/client/stores/editorStore'
 import { X } from '@/components/ui/icons'
+import { useDialogs } from '@/components/shared/useDialogs'
 
 export default function EditorTabs() {
   const { openFiles, activeFilePath, setActiveFile, closeFile } = useEditorStore()
+  const { confirm, dialogs } = useDialogs()
 
   if (openFiles.length === 0) return null
 
-  const handleClose = async (
-    e: React.MouseEvent,
-    path: string,
-    isDirty: boolean,
-  ) => {
-    e.stopPropagation()
+  const requestClose = async (path: string, isDirty: boolean) => {
     if (isDirty) {
-      const confirmed = window.confirm('File has unsaved changes. Close without saving?')
+      const confirmed = await confirm({
+        title: 'Unsaved changes',
+        message: `"${getFileName(path)}" has unsaved changes. Close without saving?`,
+        confirmLabel: 'Close without saving',
+        dangerous: true,
+      })
       if (!confirmed) return
     }
     closeFile(path)
+  }
+
+  const handleClose = (e: React.MouseEvent, path: string, isDirty: boolean) => {
+    e.stopPropagation()
+    void requestClose(path, isDirty)
   }
 
   const getFileName = (path: string) => path.split('/').pop() ?? path
@@ -37,11 +44,7 @@ export default function EditorTabs() {
               if (e.button === 1) {
                 e.preventDefault()
                 e.stopPropagation()
-                if (file.isDirty) {
-                  const confirmed = window.confirm('File has unsaved changes. Close without saving?')
-                  if (!confirmed) return
-                }
-                closeFile(file.path)
+                void requestClose(file.path, file.isDirty)
               }
             }}
             title={file.path}
@@ -63,6 +66,7 @@ export default function EditorTabs() {
           </button>
         )
       })}
+      {dialogs}
     </div>
   )
 }

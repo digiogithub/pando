@@ -4,6 +4,7 @@ import { Button, IconButton, Input, Spinner, Switch, Textarea } from '@/componen
 import { useCronJobsStore } from '@pando/client/stores/cronJobsStore'
 import type { CronJobCreate } from '@pando/client/types'
 import EmptyState from '@/components/shared/EmptyState'
+import { useDialogs } from '@/components/shared/useDialogs'
 
 const POLL_INTERVAL = 30_000
 
@@ -27,6 +28,7 @@ function formatNextRun(nextRun?: string): string {
 export default function CronJobsPanel() {
   const { jobs, loading, fetchJobs, runJob, toggleEnabled, createJob, deleteJob } =
     useCronJobsStore()
+  const { confirm, dialogs } = useDialogs()
 
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<CronJobCreate>(EMPTY_FORM)
@@ -67,7 +69,13 @@ export default function CronJobsPanel() {
   }
 
   const handleDelete = async (name: string) => {
-    if (!confirm(`Delete cronjob "${name}"?`)) return
+    const ok = await confirm({
+      title: 'Delete cronjob',
+      message: `Delete cronjob "${name}"?`,
+      confirmLabel: 'Delete',
+      dangerous: true,
+    })
+    if (!ok) return
     await deleteJob(name)
   }
 
@@ -262,6 +270,7 @@ export default function CronJobsPanel() {
           </div>
         )}
       </div>
+      {dialogs}
     </div>
   )
 }

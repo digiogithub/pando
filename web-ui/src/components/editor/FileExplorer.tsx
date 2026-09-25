@@ -3,6 +3,7 @@ import clsx from 'clsx'
 import type { FileNode } from '@pando/client/types'
 import { useEditorStore } from '@pando/client/stores/editorStore'
 import api from '@pando/client/services/api'
+import { useDialogs } from '@/components/shared/useDialogs'
 import { IconButton, Input } from '@/components/ui'
 import {
   Folder,
@@ -162,6 +163,8 @@ function TreeNode({ node, depth, filter, treeVersion, onContextMenu }: TreeNodeP
 
 export default function FileExplorer({ files, treeVersion = 0, onRefresh, onClose }: FileExplorerProps) {
   const [filter, setFilter] = useState('')
+  const closeFile = useEditorStore((s) => s.closeFile)
+  const { confirm, prompt, dialogs } = useDialogs()
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({
     visible: false,
     x: 0,
@@ -180,8 +183,9 @@ export default function FileExplorer({ files, treeVersion = 0, onRefresh, onClos
 
   const handleNewFile = useCallback(async () => {
     const node = contextMenu.node
-    const parentPath = node?.is_dir ? node.path : (node?.path.split('/').slice(0, -1).join('/') ?? '.')
-    const name = window.prompt('New file name:')
+    closeContextMenu()
+    const parentPath = node?.is_dir ? node.path : (node?.path.split('/').slice(0, -1).join('/') || '.')
+    const name = await prompt({ title: 'New file', label: 'File name', confirmLabel: 'Create' })
     if (!name) return
     const newPath = parentPath === '.' ? name : `${parentPath}/${name}`
     try {
@@ -190,13 +194,13 @@ export default function FileExplorer({ files, treeVersion = 0, onRefresh, onClos
     } catch (err) {
       console.error('Failed to create file:', err)
     }
-    closeContextMenu()
-  }, [contextMenu.node, onRefresh, closeContextMenu])
+  }, [contextMenu.node, onRefresh, closeContextMenu, prompt])
 
   const handleNewFolder = useCallback(async () => {
     const node = contextMenu.node
-    const parentPath = node?.is_dir ? node.path : (node?.path.split('/').slice(0, -1).join('/') ?? '.')
-    const name = window.prompt('New folder name:')
+    closeContextMenu()
+    const parentPath = node?.is_dir ? node.path : (node?.path.split('/').slice(0, -1).join('/') || '.')
+    const name = await prompt({ title: 'New folder', label: 'Folder name', confirmLabel: 'Create' })
     if (!name) return
     const newPath = parentPath === '.' ? name : `${parentPath}/${name}`
     try {
@@ -205,13 +209,13 @@ export default function FileExplorer({ files, treeVersion = 0, onRefresh, onClos
     } catch (err) {
       console.error('Failed to create folder:', err)
     }
-    closeContextMenu()
-  }, [contextMenu.node, onRefresh, closeContextMenu])
+  }, [contextMenu.node, onRefresh, closeContextMenu, prompt])
 
   const handleRename = useCallback(async () => {
     const node = contextMenu.node
+    closeContextMenu()
     if (!node) return
-    const newName = window.prompt('Rename to:', node.name)
+    const newName = await prompt({ title: `Rename "${node.name}"`, label: 'New name', defaultValue: node.name, confirmLabel: 'Rename' })
     if (!newName || newName === node.name) return
     const parentPath = node.path.split('/').slice(0, -1).join('/') || '.'
     const newPath = parentPath === '.' ? newName : `${parentPath}/${newName}`
@@ -221,25 +225,32 @@ export default function FileExplorer({ files, treeVersion = 0, onRefresh, onClos
     } catch (err) {
       console.error('Failed to rename:', err)
     }
-    closeContextMenu()
-  }, [contextMenu.node, onRefresh, closeContextMenu])
+  }, [contextMenu.node, onRefresh, closeContextMenu, prompt])
 
   const handleDelete = useCallback(async () => {
     const node = contextMenu.node
+    closeContextMenu()
     if (!node) return
-    const confirmed = window.confirm(`Delete "${node.name}"?`)
+    const confirmed = await confirm({
+      title: node.is_dir ? 'Delete folder' : 'Delete file',
+      message: node.is_dir
+        ? `Delete "${node.name}" and everything inside it? This cannot be undone.`
+        : `Delete "${node.name}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      dangerous: true,
+    })
     if (!confirmed) return
     try {
-      await api.delete(`/api/v1/files/${node.path}`)
+      await api.delete(`/api/v1/files/${node.path.split('/').map(encodeURIComponent).join('/')}`)
+      if (!node.is_dir) closeFile(node.path)
       onRefresh()
     } catch (err) {
       console.error('Failed to delete:', err)
     }
-    closeContextMenu()
-  }, [contextMenu.node, onRefresh, closeContextMenu])
+  }, [contextMenu.node, onRefresh, closeContextMenu, confirm, closeFile])
 
   async function handleNewFileFromHeader() {
-    const name = window.prompt('New file name:')
+    const name = await prompt({ title: 'New file', label: 'File name', confirmLabel: 'Create' })
     if (!name) return
     try {
       await api.post('/api/v1/files', { path: name, content: '' })
@@ -250,7 +261,7 @@ export default function FileExplorer({ files, treeVersion = 0, onRefresh, onClos
   }
 
   async function handleNewFolderFromHeader() {
-    const name = window.prompt('New folder name:')
+    const name = await prompt({ title: 'New folder', label: 'Folder name', confirmLabel: 'Create' })
     if (!name) return
     try {
       await api.post('/api/v1/files', { path: name, content: null, isDir: true })
@@ -322,6 +333,7 @@ export default function FileExplorer({ files, treeVersion = 0, onRefresh, onClos
           ))}
         </div>
       )}
+      {dialogs}
     </div>
   )
 }

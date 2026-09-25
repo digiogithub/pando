@@ -8,6 +8,7 @@ import FileExplorer from './FileExplorer'
 import EditorTabs from './EditorTabs'
 import CodeEditor from './CodeEditor'
 import EditorStatusBar from './EditorStatusBar'
+import { useDialogs } from '@/components/shared/useDialogs'
 import '@/styles/editor.css'
 import type { FileNode } from '@pando/client/types'
 
@@ -53,6 +54,7 @@ export default function CodeEditorView() {
   const [files, setFiles] = useState<FileNode[]>([])
   const [treeVersion, setTreeVersion] = useState(0)
   const [gitBranch, setGitBranch] = useState('main')
+  const { prompt, dialogs } = useDialogs()
   const [explorerOpen, setExplorerOpen] = useState(() => window.innerWidth >= 768)
   const [saving, setSaving] = useState(false)
 
@@ -111,7 +113,7 @@ export default function CodeEditorView() {
   }, [fetchFiles])
 
   const handleNewFile = useCallback(async () => {
-    const name = window.prompt('New file name:')
+    const name = await prompt({ title: 'New file', label: 'File name', confirmLabel: 'Create' })
     if (!name) return
     try {
       await api.post('/api/v1/files', { path: name, content: '' })
@@ -119,7 +121,7 @@ export default function CodeEditorView() {
     } catch (err) {
       console.error('Failed to create file:', err)
     }
-  }, [fetchFiles])
+  }, [fetchFiles, prompt])
 
   const handleSave = useCallback(async () => {
     if (!activeFile) return
@@ -222,6 +224,7 @@ export default function CodeEditorView() {
 
       {/* Status bar */}
       <EditorStatusBar gitBranch={gitBranch} />
+      {dialogs}
     </div>
   )
 }
