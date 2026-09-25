@@ -253,7 +253,7 @@ func runDesktopMode(cmd *cobra.Command) error {
 				openedDesignWindowsMu.Unlock()
 
 				targetURL := fmt.Sprintf("%s/design/%s", baseURL, url.PathEscape(artifactID))
-				if err := desktop.LaunchWindow(desktop.DesktopBinary, targetURL); err != nil {
+				if err := desktop.LaunchWindow(desktop.EmbeddedDesktopBinary(), targetURL); err != nil {
 					openedDesignWindowsMu.Lock()
 					delete(openedDesignWindows, artifactID)
 					openedDesignWindowsMu.Unlock()
@@ -263,7 +263,7 @@ func runDesktopMode(cmd *cobra.Command) error {
 		}
 	}()
 
-	if err := desktop.Launch(desktop.DesktopBinary, baseURL, simpleMode); err != nil {
+	if err := desktop.Launch(desktop.EmbeddedDesktopBinary(), baseURL, simpleMode); err != nil {
 		return fmt.Errorf("desktop window exited with error: %w", err)
 	}
 

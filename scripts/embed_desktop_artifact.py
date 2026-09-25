@@ -26,6 +26,8 @@ def main() -> int:
         # even on platforms that don't produce a real Pando.app bundle.
         app_target.mkdir(parents=True, exist_ok=True)
         (app_target / ".keep").touch()
+        # go:embed skips dotfiles, so bin/Pando.app/** needs a visible file.
+        (app_target / "desktop-placeholder").touch()
 
     candidates = [
         (build_bin / "Pando.app", app_target, True),

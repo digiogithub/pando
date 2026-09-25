@@ -195,7 +195,7 @@ desktop-clean:
 	rm -rf desktop/build/bin
 	rm -rf internal/desktop/bin/Pando.app
 	@mkdir -p internal/desktop/bin/Pando.app
-	@touch internal/desktop/bin/Pando.app/.keep
+	@touch internal/desktop/bin/Pando.app/.keep internal/desktop/bin/Pando.app/desktop-placeholder
 	echo -n "" > internal/desktop/bin/pando-desktop
 
 ## Remove distribution artifacts

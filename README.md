@@ -96,9 +96,14 @@ go install github.com/digiogithub/pando@latest
 git clone https://github.com/your-repo/pando.git
 cd pando
 cd web-ui && bun install && bun run build:embedded && cd ..
-go build -o pando
+go build ./...
+go build -o pando .
 ./pando app
 ```
+
+`go build ./...` also works immediately after cloning; it embeds a tracked WebUI
+placeholder until the real assets are generated. Generated desktop binaries
+are embedded when present, without overwriting any existing build assets.
 
 Extensions are linked in at build time. To write one, see
 [docs/extension-authoring.md](docs/extension-authoring.md); to decide whether

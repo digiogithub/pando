@@ -2,13 +2,14 @@
 id: PANDO-T-0006
 type: task
 title: Make a fresh clone build without running a full build first
-status: backlog
+status: done
 priority: medium
 author: claude
 labels: [build, dx, ci]
 estimate: 2
 created: 2026-09-15T00:00:00Z
-updated: 2026-09-15T00:00:00Z
+updated: 2026-09-25T10:57:10Z
+closed: 2026-09-25T10:57:10Z
 ---
 
 ## Description
