@@ -182,33 +182,33 @@ UseFilesAPI = true
 
 [InternalTools]
 AskUserQuestionDisabled = false
-BraveAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBZRS9hdVV3WTBUTXdoaTN5VG13cHZ6NEVJMytCQ1A3QWE4MDdQMkNIUEdjCmpjMU8zWFR6bDg3VkNGTGppeUhhS1BKblpkc2NaSHhac3FwUHVLVmNXWDQKLS0tIHpGZW82Tmxkc0ptaE5BVFZDQmxGSmpseVhhU3h6N0hNSmFDaWhudHhVUkkK2CR9VSSHfFVJPPktwkm7eTFng/HMiLiZaF9FKfv15+kApi9IpSKszoR5BdM29XXhtLYpkNBHk4gVtpOj4C3H'
+BraveAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBkYnJyRk5zU01IT3FOdVA1WlJDWDVZcTh1QmhNTS9pMzhxNkI3L0QwUEI4CmJuNERhTWFjQTZxWDNuOXFuVE9JemMxRldwcC8zUXJRR3hGcTFJd0IvQTQKLS0tIFBlZlBOd05WTEJjVG53VGlCazROeEw4MUt4RlJ0K1AzVnE1VHhkLzFiS0EKGrINcKb7db9efkuS3D/kUqVKXQC0ctsVvSbpzJFIR/d5gcQHi7LK20q7kicM5jR3oNQGDbNEbjkIvNHuIDoF'
 BraveSearchEnabled = true
 BrowserEnabled = true
 BrowserExecutable = '/usr/bin/microsoft-edge'
 BrowserHeadless = false
 BrowserMaxSessions = 3
 BrowserTimeout = 30
-BrowserType = 'chrome'
+BrowserType = 'msedge'
 BrowserUserDataDir = ''
 Context7Enabled = true
-DesktopActionTimeout = 0
+DesktopActionTimeout = 10
 DesktopAllowPhysicalInput = true
 DesktopAllowedApps = []
 DesktopBackend = 'auto'
-DesktopDefaultDepth = 0
+DesktopDefaultDepth = 3
 DesktopDeniedApps = []
 DesktopEnabled = true
-DesktopMaxNodes = 0
-DesktopScreenshotScale = 0.0
-DesktopSnapshotTTL = 0
-ExaAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBoU3I5ekVkZ1hQSmNoY1pDN0VqbUZYdWZJTTQreGYvdk9lcE5IUG9lcm1VCmxYWHlmMC93SXFidVdIb2VpTFJ3SFNLTjJRN25ES1h0REx6OXk2WjVBdGMKLS0tIHBJSXdBSk5NOEtSZjFnTEVKN0U5azNJeHVRNnh0VXBKYVFuV1NuZlFmN00KOZK338Qfr4dmxayHUi+1dyInW9WIivQ/8p6Kq+zTMpKsXCcCZUik7b1QKtNmutEDdi6PMVGNp+51hygV79QfI8IrpMs='
+DesktopMaxNodes = 500
+DesktopScreenshotScale = 1.0
+DesktopSnapshotTTL = 60
+ExaAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBIeExTUEhkNWd3VUd2amc3QWFwTHIvNW1PSS9uR1hYeXRORlMxQ0laeFg0CmJvS3R1dnliVWJySjJuazN6ZC9YSHl1bkVKeTVkQ0VvSGJzNE1mNnNXZWcKLS0tIFc3UmtvZW02a3p0RkkrVVg1K3daUlVkU3F0Y1Zqam01QVpPbFB0QmxSYWcKW9b48Hj1+vSQw+nGbjLH+69pSaNgevRhoUQQ63LPT/ky1fD6l7WYq2BU05MVLk0XvHUm1x3pTJO0Nno5CXP8zKvchrE='
 ExaSearchEnabled = true
 FetchEnabled = true
-FetchMaxSizeMB = 0
-GoogleAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB4NjJ5WnVZY3VsT3pDYlZ1Ujc3UkpUWDhWSlhvT0RyaWl2REVITjVKUlRZCkI0ZUVKeW9panprd3ZEWHljZWFYS0c2Ni9YTzJ2cGo5VDdVZmRKODNuajQKLS0tIGI3K0YzbHc1RHgweE5HbWtxWG5VcEZTNlFqVXQ0Z0J2WGFWeWJ4OWdXRDQKbpzHH8uM2wDwEymDJkK/EVPybJyZ0B1xuk+7JuK6hL4bWWm2UmwcwjgzHoK3XjMPvj06ftVdw4KmtLiqwuBqLBaJ440v4o4='
+FetchMaxSizeMB = 10
+GoogleAPIKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAxVDZlL2p1L2k3VUNIajFKdXpEcVBVWVFWTUVmK1NYQ1VPYXU3M0h6SFhzCmNMM0FpakZFa2tGbW9Yb2VhSk1NWWlSRUpiRXVCdFJGSlZBU1hEQndYRTgKLS0tIHc1ZFBHU1pVajVNSXBXRUJmbWtMdE9zZzlRNEhTV01FTVpqZURrbzdabUkKh1cZhw1P1SVbPa8LbIPLAJja/OrMm7d1MGYEhzlRTvXHCVyX+4B2kk3hNThYID71lJjsivxyX2ivxUNrucUt/L+B1r5QbAA='
 GoogleSearchEnabled = true
-GoogleSearchEngineID = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA5K004VWVnZkhsRHcrdEFob2RWUFQ5UUtJNjFCTFUyVWlPVUw2YkxhZUNZCjJVRnpLZ2JjUzNBOTdYZHpMOXUxaGxXMWJxVVNQUVQyYXRoaXV1M0hrUmsKLS0tIFBoZEljSGtWZS9GRmZ0VnJ2MTRBUCsxR090U0Y5Z0lkQkFQR1JmdzMxTTAKIZ3KjVF67gzr20PWK8RVVhb3TUJt4j83XMlQIa2KG9ebf8PWJabzgiqMpC0OCk9gQw=='
+GoogleSearchEngineID = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA2OVZzYjNCWUtvRVZGd0VCM3dvdTNMK0MwR21RRU9pTVdXM1JjYXdGVEZjCk1NYjJEUUJPRFlWTUxnYTMzUm82VFBGNTdRK3lzd1NKOHpwQmYyY0RObTAKLS0tIHFxTkd2emRKTFc5dW1yWnluT1RTT2RDTVVkTERXaXJsK2gyTnAwckdPRlEKy/6lQyZNkc+77vrD1RZy3SOWNUTkuEnjFbgWH05CNsXBUzUf8t8jnQxqHFuPHzs0PQ=='
 PerplexityAPIKey = ''
 PerplexitySearchEnabled = false
 SetupModelSwitchEnabled = false
@@ -301,6 +301,31 @@ Sandbox = false
 Timeout = '5m'
 Type = 'streamable-http'
 URL = 'https://mcp.deepwiki.com/mcp'
+
+[MCPServers.gintrack]
+Args = ['mcp']
+Command = 'gintrack'
+Env = []
+Sandbox = false
+Timeout = ''
+Type = 'stdio'
+URL = ''
+
+[MCPServers.gintrack.Auth]
+CACert = ''
+CACertExclusive = false
+ClientCert = ''
+ClientKey = ''
+ClientKeyPassword = ''
+HeaderName = ''
+MaxTLSVersion = ''
+MinTLSVersion = ''
+Password = ''
+SkipTLSVerify = false
+TLSServerName = ''
+Token = ''
+Type = 'none'
+Username = ''
 
 [MCPServers.mycommandmcp]
 Args = ['-c', '.ai/mycommand-mcp.yaml']

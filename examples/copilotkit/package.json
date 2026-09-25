@@ -14,7 +14,8 @@
     "@copilotkit/react-ui": "^1.10.0",
     "@copilotkit/runtime": "^1.10.0",
     "@pando-ai/sdk": "file:../../sdk/typescript",
-    "next": "^16.3.2",
+    "hono": "^4.13.9",
+    "next": "^16.3.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
