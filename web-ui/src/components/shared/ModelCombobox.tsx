@@ -154,10 +154,11 @@ export default function ModelCombobox({
         <ChevronDown size={14} className="model-combo-chevron" />
       </button>
 
-      <Popover open={open} onClose={closeDropdown} anchorRef={buttonRef} placement="bottom-start" padded={false}>
+      <Popover open={open} onClose={closeDropdown} anchorRef={buttonRef} placement="bottom-start" padded={false} className="model-combo-popover">
         <div
           className="model-combo-panel"
-          style={{ width: triggerWidth }}
+          // Minus the popover's 1px border on each side so it lines up with the trigger.
+          style={{ width: triggerWidth ? triggerWidth - 2 : undefined }}
           onKeyDown={(e) => {
             if (e.key === 'Escape') {
               e.preventDefault()
