@@ -861,6 +861,7 @@ button.chat-banner-head:hover { background: var(--bg-hover); }
 }
 .chat-diff-stats { display: inline-flex; gap: 8px; flex-shrink: 0; font-size: var(--text-xs); color: var(--fg-faint); font-family: var(--font-mono); }
 .chat-diff-body { flex: 1; overflow: hidden; }
+.chat-diff-loading { display: flex; align-items: center; justify-content: center; height: 100%; font-size: var(--text-sm); color: var(--fg-faint); }
 .chat-diff-foot {
   display: flex;
   align-items: center;
