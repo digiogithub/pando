@@ -2,11 +2,12 @@
 id: PANDO-M-0003
 type: milestone
 title: "WebUI 2.0: native, professional look"
-status: backlog
+status: done
 author: mcp
 labels: [webui, design, theme]
 created: 2026-09-24T21:00:26Z
-updated: 2026-09-24T21:00:26Z
+updated: 2026-09-25T10:49:19Z
+closed: 2026-09-25T10:49:19Z
 due: 2026-10-15
 ---
 

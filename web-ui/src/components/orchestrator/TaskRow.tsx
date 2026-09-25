@@ -21,12 +21,12 @@ export default function TaskRow({
       <td>
         <StatusBadge status={task.status} />
       </td>
-      <td className="is-ellipsis font-medium" style={{ maxWidth: 200 }}>
+      <td className="font-medium" title={task.name}>
         {task.name}
       </td>
-      <td className="is-muted">{task.agent}</td>
-      <td className="is-mono">{task.model}</td>
-      <td style={{ minWidth: 120 }}>
+      <td className="is-muted" title={task.agent}>{task.agent}</td>
+      <td className="is-mono" title={task.model}>{task.model}</td>
+      <td>
         <ProgressBar value={task.progress} />
       </td>
       <td className="is-numeric is-mono">{task.tokens.toLocaleString()}</td>

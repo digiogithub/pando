@@ -86,6 +86,10 @@
 .view-table .is-mono { font-family: var(--font-mono); font-size: 12px; color: var(--fg-muted); }
 .view-table .is-muted { color: var(--fg-muted); }
 .view-table .is-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 1px; }
+/* Fixed layout: widths come from <colgroup>; the auto column absorbs the rest.
+   min-width makes the wrapper scroll horizontally once a side panel narrows it. */
+.view-table--fixed { table-layout: fixed; min-width: 720px; }
+.view-table--fixed td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── Status dot ─────────────────────────────────────────────────────────── */
 .status-dot {
@@ -161,6 +165,28 @@
 .detail-field-label { font-size: var(--text-xs); font-weight: 500; color: var(--fg-muted); margin-bottom: 6px; }
 .detail-meta-row { display: flex; align-items: center; gap: 8px; font-size: var(--text-sm); color: var(--fg-muted); }
 .detail-meta-row strong, .detail-meta-row .value { color: var(--fg); font-weight: 500; }
+
+/* Drag handle on the left edge of a right-docked detail panel */
+.resize-handle {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
+  width: 7px;
+  margin: 0 -4px 0 -3px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  inset: 0 3px;
+  background: transparent;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+.resize-handle:hover::after,
+.resize-handle:focus-visible::after,
+.resize-handle[data-dragging]::after { background: var(--accent); }
 
 /* Bottom-docked detail (logs) */
 .view-detail--bottom {
@@ -255,4 +281,6 @@
   /* List/detail panes stack on phones (the side width is set inline). */
   .split-pane { flex-direction: column; }
   .split-pane-side { width: 100% !important; max-height: 40%; border-right: 0; border-bottom: 1px solid var(--border); }
+  .resize-handle { display: none; }
+  .split-pane > .view-detail { width: 100% !important; border-left: 0; border-top: 1px solid var(--border); }
 }

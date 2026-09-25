@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Plus, Network, Clock } from '@/components/ui/icons'
 import { Badge, Button, Spinner, Tabs, type TabItem } from '@/components/ui'
@@ -10,6 +10,8 @@ import TaskDetail from './TaskDetail'
 import CreateTaskDialog from './CreateTaskDialog'
 import CronJobsPanel from './CronJobsPanel'
 import EmptyState from '@/components/shared/EmptyState'
+import ResizeHandle from '@/components/shared/ResizeHandle'
+import { useResizablePanel } from '@/hooks/useResizablePanel'
 
 const POLL_INTERVAL = 5000
 
@@ -30,6 +32,12 @@ export default function OrchestratorView() {
   } = useOrchestratorStore()
 
   const [activeTab, setActiveTab] = useState<Tab>('tasks')
+  const splitRef = useRef<HTMLDivElement>(null)
+  const detailPanel = useResizablePanel({
+    containerRef: splitRef,
+    defaultWidth: 380,
+    storageKey: 'pando.orchestrator.detailWidth',
+  })
 
   // Initial fetch + polling (only when tasks tab is active)
   useEffect(() => {
@@ -93,7 +101,7 @@ export default function OrchestratorView() {
           <DelegationMetricsBar metrics={delegationMetrics} />
 
           {/* Main area: table + optional detail panel */}
-          <div className="split-pane">
+          <div className="split-pane" ref={splitRef}>
             {/* Task table */}
             <div className="min-w-0 flex-1 overflow-auto">
               {tasks.length === 0 && !loading ? (
@@ -109,14 +117,23 @@ export default function OrchestratorView() {
                 />
               ) : (
                 <div className="view-table-wrap">
-                  <table className="view-table">
+                  <table className="view-table view-table--fixed">
+                    <colgroup>
+                      <col style={{ width: 120 }} />
+                      <col />
+                      <col style={{ width: 120 }} />
+                      <col style={{ width: 170 }} />
+                      <col style={{ width: 90 }} />
+                      <col style={{ width: 100 }} />
+                      <col style={{ width: 80 }} />
+                    </colgroup>
                     <thead>
                       <tr>
                         <th>Status</th>
                         <th>Name</th>
                         <th>Agent</th>
                         <th>Model</th>
-                        <th style={{ minWidth: 130 }}>Progress</th>
+                        <th>Progress</th>
                         <th className="is-numeric">Tokens</th>
                         <th>Actions</th>
                       </tr>
@@ -140,7 +157,19 @@ export default function OrchestratorView() {
 
             {/* Detail panel */}
             {selectedTask && (
-              <TaskDetail task={selectedTask} onClose={() => setSelectedTask(null)} />
+              <>
+                <ResizeHandle
+                  width={detailPanel.width}
+                  minWidth={detailPanel.minWidth}
+                  onResize={detailPanel.setWidth}
+                  label="Resize task detail"
+                />
+                <TaskDetail
+                  task={selectedTask}
+                  width={detailPanel.width}
+                  onClose={() => setSelectedTask(null)}
+                />
+              </>
             )}
           </div>
 

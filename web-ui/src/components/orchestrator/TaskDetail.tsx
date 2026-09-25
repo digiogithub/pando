@@ -64,12 +64,14 @@ function ToolCallCard({ toolCall }: { toolCall: OrchestratorToolCall }) {
 export default function TaskDetail({
   task,
   onClose,
+  width,
 }: {
   task: OrchestratorTask
   onClose: () => void
+  width?: number
 }) {
   return (
-    <div className="view-detail">
+    <div className="view-detail" style={width ? { width } : undefined}>
       <div className="view-detail-header">
         <span className="view-detail-title">Task Detail</span>
         <IconButton aria-label="Close detail" tooltip icon={<X size={14} />} size="sm" onClick={onClose} />
