@@ -120,6 +120,9 @@ func NewStdioTransport(agent *PandoACPAgent, logger *log.Logger) *StdioTransport
 func (t *StdioTransport) Run(ctx context.Context) error {
 	t.logger.Printf("[ACP TRANSPORT] Starting stdio transport with interceptor")
 	logging.Info("acp: stdio transport started")
+	// Client-provided MCP servers belong to this connection: release them
+	// however the transport ends.
+	defer t.agent.ReleaseSessionMCPServers()
 
 	select {
 	case <-ctx.Done():

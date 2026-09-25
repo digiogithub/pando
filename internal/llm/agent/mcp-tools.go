@@ -92,6 +92,20 @@ func runTool(ctx context.Context, c MCPClient, serverName string, timeout time.D
 		return mcpOperationError(serverName, toolName, "initialize", err, timeout), nil
 	}
 
+	response, callErr := invokeMCPTool(ctx, c, serverName, timeout, toolName, input)
+	if callErr != nil {
+		return mcpOperationError(serverName, toolName, "call", callErr, timeout), nil
+	}
+	return response, nil
+}
+
+// invokeMCPTool calls toolName on an already initialized client, applying the
+// Lua input/output filters. It never returns a Go error for tool failures: the
+// response carries them for the model. The one exception is callErr, the raw
+// CallTool error: it is returned unreported (response is then empty) so a
+// caller that keeps a persistent client can decide whether the transport died
+// and a reconnect is worth a retry before reporting it with mcpOperationError.
+func invokeMCPTool(ctx context.Context, c MCPClient, serverName string, timeout time.Duration, toolName string, input string) (response tools.ToolResponse, callErr error) {
 	toolRequest := mcp.CallToolRequest{}
 	toolRequest.Params.Name = toolName
 
@@ -119,7 +133,7 @@ func runTool(ctx context.Context, c MCPClient, serverName string, timeout time.D
 	result, err := c.CallTool(callCtx, toolRequest)
 	callCancel()
 	if err != nil {
-		return mcpOperationError(serverName, toolName, "call", err, timeout), nil
+		return tools.ToolResponse{}, err
 	}
 
 	output := ""
@@ -173,6 +187,21 @@ func (b *mcpTool) Run(ctx context.Context, params tools.ToolCall) (tools.ToolRes
 
 	var response tools.ToolResponse
 	var err error
+
+	// Xcode's mcpbridge prompts the user on every new connection: reuse one
+	// persistent client per process, and never reach a global bridge from a
+	// session that attached its own (PANDO-US-0068).
+	if b.mcpConfig.IsXcodeMCPBridge() {
+		if sessionHasXcodeBridge(sessionID) {
+			return tools.NewTextErrorResponse(fmt.Sprintf(
+				"MCP server %q is not available in this session: the ACP client attached its own Xcode bridge, use its tools (xcode-tools_*) directly instead", b.mcpName)), nil
+		}
+		response = globalBridgeServer(b.mcpName, b.mcpConfig).call(ctx, b.tool.Name, params.Input)
+		if cache := tools.GetSessionCache(ctx); cache != nil {
+			response = tools.InterceptToolResponse(cache, params.ID, b.Info().Name, response)
+		}
+		return response, nil
+	}
 
 	timeout := mcpclient.ResolveTimeout(b.mcpConfig.Timeout, mcpclient.DefaultOperationTimeout)
 	clientCtx, clientCancel := context.WithCancel(ctx)
@@ -235,8 +264,11 @@ var (
 // the next GetMcpTools re-runs discovery.
 func ResetMcpToolsCache() {
 	mcpToolsMu.Lock()
-	defer mcpToolsMu.Unlock()
 	mcpToolDescriptors = nil
+	mcpToolsMu.Unlock()
+	// The MCP configuration may have changed: persistent bridge clients must
+	// not outlive the configuration they were opened with.
+	closeGlobalBridgeClients()
 }
 
 func cachedMcpToolDescriptors() []mcpToolDescriptor {
@@ -334,6 +366,11 @@ func discoverMcpTools(ctx context.Context) []mcpToolDescriptor {
 	var descriptors []mcpToolDescriptor
 	for name, m := range config.Get().MCPServers {
 		logging.Debug("Initializing MCP server", "name", name, "type", string(m.Type))
+		if m.IsXcodeMCPBridge() {
+			// Discover over the persistent client that tool calls reuse.
+			descriptors = append(descriptors, discoverBridgeTools(ctx, name, m)...)
+			continue
+		}
 		clientCtx, clientCancel := context.WithCancel(ctx)
 		c, err := mcpclient.New(clientCtx, name, m)
 		if err != nil {

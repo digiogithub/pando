@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/procgroup"
 	"github.com/digiogithub/pando/internal/sandbox"
@@ -45,15 +46,26 @@ func wrapStdioCommand(cmd *exec.Cmd, explicit bool) (sandbox.Policy, sandbox.Cap
 // exec.Cmd for a stdio MCP server (see client/transport.WithCommandFunc):
 // mcp-go otherwise builds the command itself (client.NewStdioMCPClient),
 // giving us no chance to sandbox it, so New() always installs this factory
-// instead and lets it decide.
+// instead and lets it decide. resolved is the server's fully-resolved config
+// (post ResolveMCPServerSecrets), so IsXcodeMCPBridge/SandboxExempt see the
+// real command/args.
 //
-// Wrap errors: when the server explicitly asked for the sandbox
-// (Sandbox=true), fail closed and never start the process unconfined. When
-// coverage came only from the global Sandbox.ExtendTo policy, log and fall
-// back to the plain, unwrapped command — the operator did not single this
-// server out, so a setup problem here should degrade the same way a
+// Exemption: a server for which resolved.SandboxExempt() is true (NoSandbox,
+// or Xcode's mcpbridge detected automatically) is NEVER wrapped, regardless
+// of the global Sandbox.ExtendTo policy or the server's own Sandbox flag —
+// plain command, unscrubbed env, same as when the sandbox is off entirely.
+// This exists because the SBPL rule hiding the parent process from a sandboxed
+// child (internal/sandbox/sbpl.go, `process-info* (target same-sandbox)`)
+// breaks Xcode's "Allow 'pando-gateway' to access Xcode?" identity check: it
+// can only remember an agent whose path and code signature it can resolve.
+//
+// Wrap errors (non-exempt path): when the server explicitly asked for the
+// sandbox (Sandbox=true), fail closed and never start the process unconfined.
+// When coverage came only from the global Sandbox.ExtendTo policy, log and
+// fall back to the plain, unwrapped command — the operator did not single
+// this server out, so a setup problem here should degrade the same way a
 // disabled/unavailable sandbox does elsewhere (fail open with a warning).
-func newSandboxedCommandFunc(serverName string, explicit bool) transport.CommandFunc {
+func newSandboxedCommandFunc(serverName string, resolved config.MCPServer) transport.CommandFunc {
 	return func(ctx context.Context, command string, env []string, args []string) (*exec.Cmd, error) {
 		plain := func() *exec.Cmd {
 			c := exec.CommandContext(ctx, command, args...)
@@ -61,6 +73,19 @@ func newSandboxedCommandFunc(serverName string, explicit bool) transport.Command
 			return c
 		}
 
+		if resolved.Sandbox && resolved.NoSandbox {
+			logging.Warn("sandbox: MCP stdio server sets both Sandbox and NoSandbox; NoSandbox wins, running unconfined",
+				"server", serverName)
+		}
+		if resolved.SandboxExempt() {
+			if !resolved.NoSandbox && resolved.IsXcodeMCPBridge() {
+				logging.Info("sandbox: running Xcode mcpbridge outside the sandbox so Xcode can identify the agent",
+					"server", serverName)
+			}
+			return plain(), nil
+		}
+
+		explicit := resolved.Sandbox
 		cmd := plain()
 		policy, capability, err := wrapStdioCommand(cmd, explicit)
 		if err != nil {

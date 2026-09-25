@@ -38,6 +38,12 @@ type AgentEvent struct {
 	// SystemMessage is populated for AgentEventTypeSystemMessage events.
 	// It carries a human-readable status string (compaction, retry, etc.).
 	SystemMessage string
+	// MessageID identifies the assistant message a delta/tool-call event
+	// belongs to (mirrors agent.AgentEvent.MessageID). Populated from the
+	// first delta of a message, it lets live ACP chunks carry the same
+	// messageId used by session/load replay instead of only after the
+	// terminal AgentEventTypeResponse event.
+	MessageID string
 }
 
 // ACPModelInfo holds minimal model metadata for ACP responses.
@@ -136,6 +142,14 @@ type AgentService interface {
 	OpenCopilotUsage() error
 	// OpenClaudeUsage opens the Claude usage page when Claude OAuth auth is available.
 	OpenClaudeUsage() error
+	// AttachSessionMCPServers connects the MCP servers an ACP client passed in
+	// session/new or session/load and exposes their tools to that session's
+	// agent runs only. It replaces any set attached before. Servers that fail
+	// are skipped; their errors come back joined while the rest stay attached.
+	AttachSessionMCPServers(ctx context.Context, sessionID string, servers []SessionMCPServer) error
+	// DetachSessionMCPServers closes the session's MCP connections and drops
+	// their tools. It is a no-op when nothing is attached.
+	DetachSessionMCPServers(sessionID string)
 }
 
 // ACPSessionInfo is a minimal session descriptor used by the ACP layer.

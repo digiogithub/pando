@@ -682,8 +682,9 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 	// Build adapters (defined below) that bridge internal services to ACP interfaces,
 	// avoiding import cycles between internal/mesnada/acp and internal/llm/agent.
 	agentAdapter := &acpAgentAdapter{
-		svc:        pandoApp.CoderAgent,
-		goalRunner: agent.NewGoalRunner(pandoApp.CoderAgent, pandoApp.DBQuerier),
+		svc:         pandoApp.CoderAgent,
+		goalRunner:  agent.NewGoalRunner(pandoApp.CoderAgent, pandoApp.DBQuerier),
+		permissions: pandoApp.Permissions,
 	}
 	sessionAdapter := &acpSessionAdapter{svc: pandoApp.Sessions, msgSvc: pandoApp.Messages, q: pandoApp.DBQuerier}
 	permAdapter := &acpPermissionAdapter{svc: pandoApp.Permissions}
@@ -720,6 +721,8 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 type acpAgentAdapter struct {
 	svc        agent.Service
 	goalRunner *agent.GoalRunner
+	// permissions gates the tools of client-provided (per-session) MCP servers.
+	permissions permission.Service
 }
 
 func (a *acpAgentAdapter) Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan acpPkg.AgentEvent, error) {
@@ -840,6 +843,17 @@ func (a *acpAgentAdapter) SetModelOverride(modelID string) error {
 		return nil
 	}
 	return config.OverrideAgentModel(config.AgentCoder, models.ModelID(modelID))
+}
+
+// AttachSessionMCPServers connects the ACP client's MCP servers for the
+// session and exposes their tools to that session only.
+func (a *acpAgentAdapter) AttachSessionMCPServers(ctx context.Context, sessionID string, servers []acpPkg.SessionMCPServer) error {
+	return agent.AttachSessionMCPServers(ctx, sessionID, acpPkg.SessionMCPServerConfigs(servers), a.permissions)
+}
+
+// DetachSessionMCPServers releases the session's client-provided MCP servers.
+func (a *acpAgentAdapter) DetachSessionMCPServers(sessionID string) {
+	agent.DetachSessionMCPServers(sessionID)
 }
 
 func (a *acpAgentAdapter) SetSessionLLMOverrides(sessionID string, overrides acpPkg.SessionLLMOverrides) {

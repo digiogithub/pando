@@ -56,14 +56,17 @@ func (g *Gateway) Initialize(ctx context.Context, mcpServers map[string]config.M
 		return nil
 	}
 	resolved := make(map[string]config.MCPServer, len(mcpServers))
+	fingerprints := make(map[string]string, len(mcpServers))
 	for name, srv := range mcpServers {
+		// Hash the raw configuration, never the secret-resolved one.
+		fingerprints[name] = ConfigFingerprint(srv)
 		resolvedSrv, err := config.ResolveMCPServerSecrets(srv)
 		if err != nil {
 			return fmt.Errorf("resolve MCP server %s secrets: %w", name, err)
 		}
 		resolved[name] = resolvedSrv
 	}
-	return g.registry.DiscoverAll(ctx, resolved)
+	return g.registry.DiscoverAll(ctx, resolved, fingerprints)
 }
 
 // RefreshServer re-runs tool discovery for a single server and replaces its
@@ -71,7 +74,9 @@ func (g *Gateway) Initialize(ctx context.Context, mcpServers map[string]config.M
 // is evicted first so a configuration change (new headers, new credentials,
 // new URL) takes effect immediately instead of reusing the stale connection.
 //
-// srv is the raw configuration; secrets are resolved here.
+// srv is the raw configuration; secrets are resolved here. An explicit refresh
+// always reconnects (it ignores the cached catalog) and records the new config
+// fingerprint.
 func (g *Gateway) RefreshServer(ctx context.Context, name string, srv config.MCPServer) (int, error) {
 	if g == nil {
 		return 0, fmt.Errorf("MCP gateway not initialized")
@@ -83,7 +88,7 @@ func (g *Gateway) RefreshServer(ctx context.Context, name string, srv config.MCP
 	if g.pool != nil {
 		g.pool.Evict(name)
 	}
-	return g.registry.DiscoverServer(ctx, name, resolved)
+	return g.registry.DiscoverServer(ctx, name, resolved, ConfigFingerprint(srv))
 }
 
 // GetFavorites returns the current favorite tools based on usage statistics.
@@ -116,6 +121,9 @@ func (g *Gateway) CallTool(ctx context.Context, toolID string, params map[string
 	}
 	if tool == nil {
 		return nil, fmt.Errorf("tool not found: %s", toolID)
+	}
+	if isExcluded(excludedServers(ctx), tool.ServerName) {
+		return nil, supersededServerError(tool.ServerName)
 	}
 
 	cfg := config.Get()

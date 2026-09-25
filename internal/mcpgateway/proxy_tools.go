@@ -78,7 +78,9 @@ func runCatalogQuery(ctx context.Context, gw *Gateway, query string, maxResults,
 		offset = 0
 	}
 
-	results, total, err := gw.ListCatalog(ctx, query, offset, maxResults)
+	// Hide global Xcode mcpbridge servers from a session that attached its own
+	// bridge (PANDO-US-0068); gw.CallTool refuses them as well.
+	results, total, err := gw.registry.listCatalogExcluding(ctx, query, offset, maxResults, excludedServers(ctx))
 	if err != nil {
 		return tools.NewTextErrorResponse(fmt.Sprintf("search failed: %s", err))
 	}

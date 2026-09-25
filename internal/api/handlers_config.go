@@ -549,7 +549,7 @@ func (s *Server) refreshMCPServerTools(ctx context.Context, name string) (int, e
 	if err != nil {
 		return 0, fmt.Errorf("resolve MCP server %s secrets: %w", name, err)
 	}
-	return mcpgateway.NewRegistry(s.config.DB).DiscoverServer(ctx, name, resolved)
+	return mcpgateway.NewRegistry(s.config.DB).DiscoverServer(ctx, name, resolved, mcpgateway.ConfigFingerprint(srv))
 }
 
 // handleDeleteConfigMCPServer handles DELETE /api/v1/config/mcp-servers/{name}.

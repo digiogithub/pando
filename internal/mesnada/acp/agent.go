@@ -132,9 +132,11 @@ func NewPandoACPAgent(
 		planService:       NewPlanService(logger),
 		capabilities: acpsdk.AgentCapabilities{
 			LoadSession: true,
+			// Client-provided MCP servers are connected per session through
+			// internal/mcpclient, which speaks stdio, SSE and streamable HTTP.
 			McpCapabilities: acpsdk.McpCapabilities{
-				Http: false,
-				Sse:  false,
+				Http: true,
+				Sse:  true,
 			},
 			PromptCapabilities: acpsdk.PromptCapabilities{
 				Audio:           false,
@@ -252,12 +254,6 @@ func (a *PandoACPAgent) ListSessions(ctx context.Context, _ acpsdk.ListSessionsR
 func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionRequest) (acpsdk.NewSessionResponse, error) {
 	a.logger.Printf("[ACP AGENT] NewSession request: WorkDir=%v", req.Cwd)
 
-	// 6b: Per-session MCP servers from client.
-	// TODO: wire into Pando's MCP registry once per-session MCP is supported.
-	if len(req.McpServers) > 0 {
-		a.logger.Printf("[ACP AGENT] Warning: %d MCP server(s) requested by client but per-session MCP is not yet supported — ignoring", len(req.McpServers))
-	}
-
 	workDir := a.workDir
 	if req.Cwd != "" {
 		workDir = req.Cwd
@@ -305,6 +301,9 @@ func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionReq
 	if err := a.persistACPState(ctx, acpSession); err != nil {
 		return acpsdk.NewSessionResponse{}, err
 	}
+	// Client-provided MCP servers (e.g. Xcode's xcode-tools) connect in the
+	// background; the first prompt waits for them (bounded).
+	a.attachSessionMCPServers(acpSession, req.McpServers)
 
 	a.logger.Printf("[ACP AGENT] NewSession created: SessionID=%s, PandoSessionID=%s, WorkDir=%s",
 		sessionID, pandoSessionID, workDir)
@@ -410,6 +409,11 @@ func (a *PandoACPAgent) Prompt(ctx context.Context, req acpsdk.PromptRequest) (r
 		return a.finishPrompt(ctx, req.SessionId, acpSession, stopReason)
 	}
 
+	// The session's client-provided MCP servers may still be connecting
+	// (session/new returns before discovery ends); give them a bounded chance
+	// so their tools are advertised on this turn.
+	a.waitSessionMCPReady(ctx, acpSession, sessionMCPReadyTimeout)
+
 	var stopReason acpsdk.StopReason
 	if mode == goalModeID {
 		stopReason, err = a.processGoalPrompt(ctx, req.SessionId, acpSession, promptText)
@@ -500,12 +504,6 @@ func (a *PandoACPAgent) finishPrompt(ctx context.Context, sessionID acpsdk.Sessi
 func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionRequest) (acpsdk.LoadSessionResponse, error) {
 	a.logger.Printf("[ACP AGENT] LoadSession: SessionID=%s, Cwd=%s", req.SessionId, req.Cwd)
 
-	// 6b: Per-session MCP servers from client.
-	// TODO: wire into Pando's MCP registry once per-session MCP is supported.
-	if len(req.McpServers) > 0 {
-		a.logger.Printf("[ACP AGENT] Warning: %d MCP server(s) requested by client but per-session MCP is not yet supported — ignoring", len(req.McpServers))
-	}
-
 	_, err := a.sessionService.GetSession(ctx, string(req.SessionId))
 	if err != nil {
 		a.logger.Printf("[ACP AGENT] LoadSession: session not found: %v", err)
@@ -573,6 +571,7 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 			return acpsdk.LoadSessionResponse{}, err
 		}
 	}
+	a.attachSessionMCPServers(acpSession, req.McpServers)
 
 	// Stream the full conversation history back to the client as required by the ACP protocol:
 	// "Stream the entire conversation history back to the client via notifications".
@@ -758,6 +757,7 @@ func (a *PandoACPAgent) CloseSession(ctx context.Context, req acpsdk.CloseSessio
 		a.permissionService.UnregisterSessionHandler(sid)
 	}
 	a.agentService.SetSessionLLMOverrides(acpSession.PandoSessionID(), SessionLLMOverrides{})
+	a.detachSessionMCPServers(acpSession)
 
 	a.sessionsMu.Lock()
 	delete(a.sessions, req.SessionId)
@@ -831,6 +831,7 @@ func (a *PandoACPAgent) ResumeSession(ctx context.Context, req acpsdk.ResumeSess
 			return acpsdk.ResumeSessionResponse{}, err
 		}
 	}
+	a.attachSessionMCPServers(acpSession, req.McpServers)
 	configOptions := buildSessionConfigOptions(a.agentService, acpSession)
 	return acpsdk.ResumeSessionResponse{
 		ConfigOptions: buildUnstableSessionConfigOptions(configOptions),

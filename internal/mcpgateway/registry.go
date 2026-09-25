@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
@@ -26,21 +27,39 @@ func NewRegistry(db *sql.DB) *Registry {
 
 // DiscoverAll iterates the configured MCP servers, calls ListTools on each,
 // and upserts every discovered tool into mcp_tool_registry.
-func (r *Registry) DiscoverAll(ctx context.Context, mcpServers map[string]config.MCPServer) error {
+//
+// fingerprints maps a server name to ConfigFingerprint of its RAW
+// configuration. A server whose catalog rows exist and whose stored
+// fingerprint matches is not contacted at all (PANDO-US-0068): opening a
+// connection has a cost beyond latency for servers such as Xcode's mcpbridge,
+// which prompts the user on every new client. A nil map disables the cache.
+func (r *Registry) DiscoverAll(ctx context.Context, mcpServers map[string]config.MCPServer, fingerprints map[string]string) error {
 	for name, srv := range mcpServers {
+		fp := fingerprints[name]
+		if r.hasCachedCatalog(ctx, name, fp) {
+			logging.Debug("MCP gateway: using cached catalog", "server", name)
+			continue
+		}
 		logging.Debug("MCP gateway: discovering tools", "server", name)
 		tools, err := listServerTools(ctx, name, srv)
 		if err != nil {
 			logging.Error("MCP gateway: failed to list tools", "server", name, "error", err)
 			continue
 		}
+		stored := true
 		for _, t := range tools {
 			schema := map[string]interface{}{}
 			if t.InputSchema.Properties != nil {
 				schema = t.InputSchema.Properties
 			}
 			if err := r.UpsertTool(ctx, name, t.Name, t.Description, schema); err != nil {
+				stored = false
 				logging.Error("MCP gateway: failed to upsert tool", "server", name, "tool", t.Name, "error", err)
+			}
+		}
+		if stored {
+			if err := r.setServerFingerprint(ctx, name, fp); err != nil {
+				logging.Debug("MCP gateway: failed to store config fingerprint", "server", name, "error", err)
 			}
 		}
 		logging.Debug("MCP gateway: discovered tools", "server", name, "count", len(tools))
@@ -55,7 +74,11 @@ func (r *Registry) DiscoverAll(ctx context.Context, mcpServers map[string]config
 // server ends up with zero tools instead of silently logging it.
 //
 // srv must already be resolved via config.ResolveMCPServerSecrets.
-func (r *Registry) DiscoverServer(ctx context.Context, name string, srv config.MCPServer) (int, error) {
+//
+// fingerprint is ConfigFingerprint of the RAW configuration; it is stored so
+// the next startup can reuse this catalog ("" leaves no fingerprint, which
+// forces the next startup to rediscover).
+func (r *Registry) DiscoverServer(ctx context.Context, name string, srv config.MCPServer, fingerprint string) (int, error) {
 	tools, err := listServerTools(ctx, name, srv)
 	if err != nil {
 		return 0, err
@@ -73,8 +96,17 @@ func (r *Registry) DiscoverServer(ctx context.Context, name string, srv config.M
 			return 0, fmt.Errorf("store tool %s: %w", t.Name, err)
 		}
 	}
+	if err := r.setServerFingerprint(ctx, name, fingerprint); err != nil {
+		logging.Debug("MCP registry: failed to store config fingerprint", "server", name, "error", err)
+	}
 	logging.Debug("MCP registry: refreshed server", "server", name, "count", len(tools))
 	return len(tools), nil
+}
+
+// newDiscoveryClient builds the client used to list a server's tools. Tests
+// replace it to count connections without spawning processes.
+var newDiscoveryClient = func(ctx context.Context, name string, srv config.MCPServer) (mcpclient.Client, error) {
+	return mcpclient.New(ctx, name, srv)
 }
 
 // listServerTools creates an MCP client for the given server, initializes it,
@@ -83,7 +115,7 @@ func listServerTools(ctx context.Context, name string, srv config.MCPServer) ([]
 	clientCtx, clientCancel := context.WithCancel(ctx)
 	defer clientCancel()
 
-	c, err := mcpclient.New(clientCtx, name, srv)
+	c, err := newDiscoveryClient(clientCtx, name, srv)
 	if err != nil {
 		return nil, fmt.Errorf("create client: %w", err)
 	}
@@ -157,6 +189,12 @@ func (r *Registry) SearchTools(ctx context.Context, query string, maxResults int
 // pagination). An empty query lists the entire catalog. Results are ordered by
 // server_name, tool_name so pagination via offset/limit is stable.
 func (r *Registry) ListCatalog(ctx context.Context, query string, offset, limit int) ([]RegisteredTool, int, error) {
+	return r.listCatalogExcluding(ctx, query, offset, limit, nil)
+}
+
+// listCatalogExcluding is ListCatalog without the rows of the servers listed
+// in exclude (both in the page and in the total).
+func (r *Registry) listCatalogExcluding(ctx context.Context, query string, offset, limit int, exclude []string) ([]RegisteredTool, int, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -165,13 +203,23 @@ func (r *Registry) ListCatalog(ctx context.Context, query string, offset, limit 
 	}
 
 	var (
-		whereClause string
-		filterArgs  []interface{}
+		conditions []string
+		filterArgs []interface{}
 	)
 	if query != "" {
 		pattern := "%" + query + "%"
-		whereClause = "WHERE tool_name LIKE ? OR description LIKE ?"
-		filterArgs = []interface{}{pattern, pattern}
+		conditions = append(conditions, "(tool_name LIKE ? OR description LIKE ?)")
+		filterArgs = append(filterArgs, pattern, pattern)
+	}
+	if len(exclude) > 0 {
+		conditions = append(conditions, "server_name NOT IN (?"+strings.Repeat(", ?", len(exclude)-1)+")")
+		for _, name := range exclude {
+			filterArgs = append(filterArgs, name)
+		}
+	}
+	whereClause := ""
+	if len(conditions) > 0 {
+		whereClause = "WHERE " + strings.Join(conditions, " AND ")
 	}
 
 	var total int
@@ -214,12 +262,21 @@ func (r *Registry) GetAllTools(ctx context.Context) ([]RegisteredTool, error) {
 }
 
 // DeleteServer removes all registry rows for a server; usage rows are cascade-deleted by FK.
+// The server's config fingerprint goes too, so a later startup rediscovers it.
 func (r *Registry) DeleteServer(ctx context.Context, serverName string) error {
 	_, err := r.db.ExecContext(ctx, `
 		DELETE FROM mcp_tool_registry
 		WHERE server_name = ?
 	`, serverName)
-	return err
+	if err != nil {
+		return err
+	}
+	if ferr := r.deleteServerFingerprint(ctx, serverName); ferr != nil {
+		// Older schemas (and some tests) lack the table; the catalog rows are
+		// gone, which already forces rediscovery.
+		logging.Debug("MCP registry: failed to delete config fingerprint", "server", serverName, "error", ferr)
+	}
+	return nil
 }
 
 // GetToolsByIDs returns tools matching the given IDs.

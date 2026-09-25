@@ -67,7 +67,7 @@ func New(ctx context.Context, serverName string, srv config.MCPServer) (Client, 
 		// newSandboxedCommandFunc (sandbox.go) is what actually constructs it,
 		// deciding per Sandbox.ExtendTo and the server's own Sandbox flag.
 		c, err := client.NewStdioMCPClientWithOptions(resolved.Command, resolved.Env, resolved.Args,
-			transport.WithCommandFunc(newSandboxedCommandFunc(serverName, resolved.Sandbox)))
+			transport.WithCommandFunc(newSandboxedCommandFunc(serverName, resolved)))
 		if err != nil {
 			return nil, err
 		}

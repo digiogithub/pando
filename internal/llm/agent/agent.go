@@ -226,6 +226,13 @@ type AgentEvent struct {
 	ToolCall   *message.ToolCall
 	ToolResult *message.ToolResult
 
+	// MessageID identifies the assistant message this event belongs to. It is
+	// populated on ThinkingDelta/ContentDelta/ToolCall events with the ID of the
+	// in-flight assistant message (assistantMsg.ID) so ACP-side streaming can
+	// group live chunks under the same messageId used by session/load replay,
+	// from the very first delta rather than only after AgentEventTypeResponse.
+	MessageID string
+
 	// When summarizing
 	SessionID string
 	Progress  string
@@ -1216,10 +1223,11 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 	// irrelevant tools. Falls back silently to all tools on any error.
 	runCtx := ctx
 	if globalContextTrimmer != nil && len(msgs) == 0 {
-		toolDescs := toolDescriptionsFrom(a.currentTools())
+		sessionTools := a.toolsForSession(sessionID)
+		toolDescs := toolDescriptionsFrom(sessionTools)
 		if filteredNames, trimErr := globalContextTrimmer.ProfileTask(ctx, content, toolDescs); trimErr == nil && len(filteredNames) > 0 {
 			runCtx = context.WithValue(ctx, trimmedToolsKey{}, filteredNames)
-			logging.Debug("Context trimmer applied", "original_tools", len(a.currentTools()), "filtered_tools", len(filteredNames))
+			logging.Debug("Context trimmer applied", "original_tools", len(sessionTools), "filtered_tools", len(filteredNames))
 		} else if trimErr != nil {
 			logging.Debug("Context trimmer failed, using all tools", "error", trimErr)
 		}
@@ -1581,10 +1589,12 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 	// Apply context-trimmed tool list if a pre-session profile was computed.
 	// Only the advertised tool list is filtered; tool execution still looks up from a.currentTools()
 	// so any tool can always be invoked (e.g. if the LLM calls one based on prior context).
-	activeTools := a.currentTools()
+	// The session's own MCP tools (ACP per-session servers) are merged in here.
+	sessionTools := a.toolsForSession(sessionID)
+	activeTools := sessionTools
 	if filteredNames, ok := ctx.Value(trimmedToolsKey{}).([]string); ok && len(filteredNames) > 0 {
-		activeTools = filterToolsByNames(a.currentTools(), filteredNames)
-		logging.Debug("streamAndHandleEvents: using trimmed tool list", "active", len(activeTools), "total", len(a.currentTools()))
+		activeTools = filterToolsByNames(sessionTools, filteredNames)
+		logging.Debug("streamAndHandleEvents: using trimmed tool list", "active", len(activeTools), "total", len(sessionTools))
 	}
 
 	providerEventChan := requestProvider.StreamResponse(ctx, msgHistory, activeTools)
@@ -1652,7 +1662,7 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 			var tool tools.BaseTool
 			// Resolve cross-model alias first (e.g. "read" → "view" for non-Anthropic models).
 			resolvedName := tools.ResolveToolAlias(toolCall.Name)
-			for _, availableTool := range a.currentTools() {
+			for _, availableTool := range a.toolsForSession(sessionID) {
 				name := availableTool.Info().Name
 				if name == toolCall.Name || name == resolvedName {
 					tool = availableTool
@@ -1854,27 +1864,27 @@ func (a *agent) processEvent(
 	case provider.EventThinkingDelta:
 		logging.Debug("Event: ThinkingDelta", "sessionID", sessionID, "contentLength", len(event.Thinking))
 		assistantMsg.AppendReasoningContent(event.Thinking)
-		a.publishEvent(AgentEvent{Type: AgentEventTypeThinkingDelta, SessionID: sessionID, Delta: event.Thinking})
+		a.publishEvent(AgentEvent{Type: AgentEventTypeThinkingDelta, SessionID: sessionID, Delta: event.Thinking, MessageID: assistantMsg.ID})
 		select {
-		case eventCh <- AgentEvent{Type: AgentEventTypeThinkingDelta, SessionID: sessionID, Delta: event.Thinking}:
+		case eventCh <- AgentEvent{Type: AgentEventTypeThinkingDelta, SessionID: sessionID, Delta: event.Thinking, MessageID: assistantMsg.ID}:
 		default:
 		}
 		return a.messages.Update(ctx, *assistantMsg)
 	case provider.EventContentDelta:
 		logging.Debug("Event: ContentDelta", "sessionID", sessionID, "contentLength", len(event.Content))
 		assistantMsg.AppendContent(event.Content)
-		a.publishEvent(AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: event.Content})
+		a.publishEvent(AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: event.Content, MessageID: assistantMsg.ID})
 		select {
-		case eventCh <- AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: event.Content}:
+		case eventCh <- AgentEvent{Type: AgentEventTypeContentDelta, SessionID: sessionID, Delta: event.Content, MessageID: assistantMsg.ID}:
 		default:
 		}
 		return a.messages.Update(ctx, *assistantMsg)
 	case provider.EventToolUseStart:
 		logging.Debug("Event: ToolUseStart", "sessionID", sessionID, "toolName", event.ToolCall.Name, "toolID", event.ToolCall.ID)
 		assistantMsg.AddToolCall(*event.ToolCall)
-		a.publishEvent(AgentEvent{Type: AgentEventTypeToolCall, SessionID: sessionID, ToolCall: event.ToolCall})
+		a.publishEvent(AgentEvent{Type: AgentEventTypeToolCall, SessionID: sessionID, ToolCall: event.ToolCall, MessageID: assistantMsg.ID})
 		select {
-		case eventCh <- AgentEvent{Type: AgentEventTypeToolCall, SessionID: sessionID, ToolCall: event.ToolCall}:
+		case eventCh <- AgentEvent{Type: AgentEventTypeToolCall, SessionID: sessionID, ToolCall: event.ToolCall, MessageID: assistantMsg.ID}:
 		default:
 		}
 		return a.messages.Update(ctx, *assistantMsg)
@@ -1896,9 +1906,9 @@ func (a *agent) processEvent(
 			for _, tc := range assistantMsg.ToolCalls() {
 				if tc.ID == event.ToolCall.ID {
 					tcCopy := tc
-					a.publishEvent(AgentEvent{Type: AgentEventTypeToolCall, SessionID: sessionID, ToolCall: &tcCopy})
+					a.publishEvent(AgentEvent{Type: AgentEventTypeToolCall, SessionID: sessionID, ToolCall: &tcCopy, MessageID: assistantMsg.ID})
 					select {
-					case eventCh <- AgentEvent{Type: AgentEventTypeToolCall, SessionID: sessionID, ToolCall: &tcCopy}:
+					case eventCh <- AgentEvent{Type: AgentEventTypeToolCall, SessionID: sessionID, ToolCall: &tcCopy, MessageID: assistantMsg.ID}:
 					default:
 					}
 					break
@@ -1914,9 +1924,9 @@ func (a *agent) processEvent(
 		// Send updated tool_call event with complete input to frontend
 		for _, tc := range assistantMsg.ToolCalls() {
 			if tc.ID == event.ToolCall.ID {
-				a.publishEvent(AgentEvent{Type: AgentEventTypeToolCall, SessionID: sessionID, ToolCall: &tc})
+				a.publishEvent(AgentEvent{Type: AgentEventTypeToolCall, SessionID: sessionID, ToolCall: &tc, MessageID: assistantMsg.ID})
 				select {
-				case eventCh <- AgentEvent{Type: AgentEventTypeToolCall, SessionID: sessionID, ToolCall: &tc}:
+				case eventCh <- AgentEvent{Type: AgentEventTypeToolCall, SessionID: sessionID, ToolCall: &tc, MessageID: assistantMsg.ID}:
 				default:
 				}
 				break
@@ -2563,8 +2573,10 @@ func (a *agent) prepareProvider(ctx context.Context, userPrompt string, personaC
 	// A per-session model override also has to leave this fast path: a.provider was
 	// built for the agent's configured model, so returning it would silently answer
 	// on the wrong model.
+	// Session MCP tools also leave the fast path: the pre-built provider's
+	// system prompt does not name them.
 	if a.skillManager == nil && personaContent == "" && !sessionPolicyActive(ctx) &&
-		sessionLLMOverridesForContext(ctx).Model == "" {
+		sessionLLMOverridesForContext(ctx).Model == "" && len(SessionTools(sessionIDFromContext(ctx))) == 0 {
 		return a.provider, nil
 	}
 
@@ -2587,7 +2599,7 @@ func (a *agent) prepareProvider(ctx context.Context, userPrompt string, personaC
 
 	activeSkillInstructions = append(activeSkillInstructions, sessionPolicyInstructions(ctx)...)
 
-	return createAgentProvider(ctx, a.agentName, a.currentTools(), a.skillManager, activeSkillInstructions, personaContent)
+	return createAgentProvider(ctx, a.agentName, a.toolsForSession(sessionIDFromContext(ctx)), a.skillManager, activeSkillInstructions, personaContent)
 }
 
 // sessionPolicyActive reports whether any per-session prompt policy (Ponytail,
@@ -2860,8 +2872,8 @@ func buildSystemMessage(
 // MCP connections, and it must never populate the shared cache with tools bound
 // to a throwaway permission service (PANDO-US-0031, defect 2 -- that used to
 // deadlock the next MCP tool call on every surface, the TUI included).
-func promptMcpCatalogListing(_ context.Context) string {
-	names := CachedMcpToolNames()
+func promptMcpCatalogListing(ctx context.Context) string {
+	names := append(CachedMcpToolNames(), sessionMCPToolNames(sessionIDFromContext(ctx))...)
 	sort.Strings(names)
 	return prompt.FormatMCPToolsForPrompt(names)
 }

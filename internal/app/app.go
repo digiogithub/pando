@@ -631,8 +631,9 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 				// Build ACP agent adapters so PandoACPAgent can use the live app services
 				// without causing import cycles (the ACP package defines narrow interfaces).
 				agentAdapter := &appACPAgentAdapter{
-					svc:        app.CoderAgent,
-					goalRunner: agent.NewGoalRunner(app.CoderAgent, app.DBQuerier),
+					svc:         app.CoderAgent,
+					goalRunner:  agent.NewGoalRunner(app.CoderAgent, app.DBQuerier),
+					permissions: app.Permissions,
 				}
 				sessionAdapter := &appACPSessionAdapter{svc: app.Sessions, msgSvc: app.Messages, q: app.DBQuerier}
 				permAdapter := &appACPPermissionAdapter{svc: app.Permissions}
@@ -2546,6 +2547,8 @@ func (app *App) Shutdown() {
 type appACPAgentAdapter struct {
 	svc        agent.Service
 	goalRunner *agent.GoalRunner
+	// permissions gates the tools of client-provided (per-session) MCP servers.
+	permissions permission.Service
 }
 
 func (a *appACPAgentAdapter) Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan mesnadaACP.AgentEvent, error) {
@@ -2589,12 +2592,15 @@ func (a *appACPAgentAdapter) forwardEvents(ctx context.Context, realCh <-chan ag
 			case agent.AgentEventTypeContentDelta:
 				acpEv.Type = mesnadaACP.AgentEventTypeContentDelta
 				acpEv.Delta = ev.Delta
+				acpEv.MessageID = ev.MessageID
 			case agent.AgentEventTypeThinkingDelta:
 				acpEv.Type = mesnadaACP.AgentEventTypeThinkingDelta
 				acpEv.Delta = ev.Delta
+				acpEv.MessageID = ev.MessageID
 			case agent.AgentEventTypeToolCall:
 				acpEv.Type = mesnadaACP.AgentEventTypeToolCall
 				acpEv.ToolCall = ev.ToolCall
+				acpEv.MessageID = ev.MessageID
 			case agent.AgentEventTypeToolResult:
 				acpEv.Type = mesnadaACP.AgentEventTypeToolResult
 				acpEv.ToolResult = ev.ToolResult
@@ -2657,6 +2663,17 @@ func (a *appACPAgentAdapter) SetModelOverride(modelID string) error {
 		return nil
 	}
 	return config.OverrideAgentModel(config.AgentCoder, models.ModelID(modelID))
+}
+
+// AttachSessionMCPServers connects the ACP client's MCP servers for the
+// session and exposes their tools to that session only.
+func (a *appACPAgentAdapter) AttachSessionMCPServers(ctx context.Context, sessionID string, servers []mesnadaACP.SessionMCPServer) error {
+	return agent.AttachSessionMCPServers(ctx, sessionID, mesnadaACP.SessionMCPServerConfigs(servers), a.permissions)
+}
+
+// DetachSessionMCPServers releases the session's client-provided MCP servers.
+func (a *appACPAgentAdapter) DetachSessionMCPServers(sessionID string) {
+	agent.DetachSessionMCPServers(sessionID)
 }
 
 func (a *appACPAgentAdapter) SetSessionLLMOverrides(sessionID string, overrides mesnadaACP.SessionLLMOverrides) {

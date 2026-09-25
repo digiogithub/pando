@@ -59,6 +59,13 @@ type MCPServer struct {
 	// already-installed tools that a wrap could break (e.g. one that shells
 	// out further); see docs/sandbox-coverage.md.
 	Sandbox bool `json:"sandbox,omitempty" toml:"Sandbox" yaml:"sandbox"`
+	// NoSandbox keeps a stdio MCP server out of the host sandbox even when the
+	// global Sandbox.ExtendTo list covers MCP, for a trusted server that has to
+	// inspect its parent process (Xcode's mcpbridge identifies the calling
+	// agent by path and code signature, which the sandbox hides). Servers
+	// handed over by an ACP client and Xcode's mcpbridge are exempt without it
+	// (see SandboxExempt). Ignored for non-stdio servers.
+	NoSandbox bool `json:"noSandbox,omitempty" toml:"NoSandbox" yaml:"noSandbox"`
 }
 
 type AgentName string

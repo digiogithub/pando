@@ -120,7 +120,8 @@ func TestNewSandboxedCommandFuncFailsClosedWhenExplicit(t *testing.T) {
 	restore := sandbox.SetDefaultForTests(w)
 	defer restore()
 
-	fn := newSandboxedCommandFunc("explicit-server", true)
+	srv := config.MCPServer{Type: config.MCPStdio, Command: "true", Sandbox: true}
+	fn := newSandboxedCommandFunc("explicit-server", srv)
 	if _, err := fn(context.Background(), "true", nil, nil); err == nil {
 		t.Fatal("expected a wrap failure to fail closed for an explicitly-sandboxed server")
 	}
@@ -132,13 +133,88 @@ func TestNewSandboxedCommandFuncFallsBackWhenGlobalOnly(t *testing.T) {
 	restore := sandbox.SetDefaultForTests(w)
 	defer restore()
 
-	fn := newSandboxedCommandFunc("global-only-server", false)
+	srv := config.MCPServer{Type: config.MCPStdio, Command: "true"}
+	fn := newSandboxedCommandFunc("global-only-server", srv)
 	cmd, err := fn(context.Background(), "true", nil, nil)
 	if err != nil {
 		t.Fatalf("expected a fallback to the unwrapped command, got error: %v", err)
 	}
 	if cmd == nil {
 		t.Fatal("expected a plain, unwrapped *exec.Cmd")
+	}
+}
+
+// --- PANDO-US-0067: sandbox-exempt MCP stdio servers (never wrapped) ---
+
+func TestNewSandboxedCommandFuncExemptServerNeverWrapped(t *testing.T) {
+	// Global policy covers MCP, but the server opts out explicitly: it must
+	// never be wrapped, even though a non-exempt server would be.
+	isolateSandboxConfig(t, config.SandboxConfig{ExtendTo: []string{"mcp"}})
+	w := &fakeWrapper{}
+	restore := sandbox.SetDefaultForTests(w)
+	defer restore()
+
+	srv := config.MCPServer{Type: config.MCPStdio, Command: "true", NoSandbox: true}
+	fn := newSandboxedCommandFunc("exempt-server", srv)
+	if _, err := fn(context.Background(), "true", nil, nil); err != nil {
+		t.Fatalf("command func: %v", err)
+	}
+	if w.Calls() != 0 {
+		t.Fatalf("calls = %d, want 0 (NoSandbox server must never be wrapped)", w.Calls())
+	}
+}
+
+func TestNewSandboxedCommandFuncXcodeMCPBridgeAutoExempt(t *testing.T) {
+	// mcpbridge is exempt automatically (IsXcodeMCPBridge), without NoSandbox
+	// set explicitly, even though the global policy covers MCP.
+	isolateSandboxConfig(t, config.SandboxConfig{ExtendTo: []string{"mcp"}})
+	w := &fakeWrapper{}
+	restore := sandbox.SetDefaultForTests(w)
+	defer restore()
+
+	srv := config.MCPServer{Type: config.MCPStdio, Command: "xcrun", Args: []string{"mcpbridge"}}
+	fn := newSandboxedCommandFunc("xcode-tools", srv)
+	if _, err := fn(context.Background(), "xcrun", nil, []string{"mcpbridge"}); err != nil {
+		t.Fatalf("command func: %v", err)
+	}
+	if w.Calls() != 0 {
+		t.Fatalf("calls = %d, want 0 (mcpbridge is auto-exempt)", w.Calls())
+	}
+}
+
+func TestNewSandboxedCommandFuncNonExemptStillWrappedByGlobalPolicy(t *testing.T) {
+	// Sanity check: an ordinary server is still wrapped by the global
+	// ExtendTo policy — the exemption must not swallow the normal path.
+	isolateSandboxConfig(t, config.SandboxConfig{ExtendTo: []string{"mcp"}})
+	w := &fakeWrapper{}
+	restore := sandbox.SetDefaultForTests(w)
+	defer restore()
+
+	srv := config.MCPServer{Type: config.MCPStdio, Command: "true"}
+	fn := newSandboxedCommandFunc("regular-server", srv)
+	if _, err := fn(context.Background(), "true", nil, nil); err != nil {
+		t.Fatalf("command func: %v", err)
+	}
+	if w.Calls() != 1 {
+		t.Fatalf("calls = %d, want 1 (non-exempt server covered by policy must still be wrapped)", w.Calls())
+	}
+}
+
+func TestNewSandboxedCommandFuncNoSandboxWinsOverSandbox(t *testing.T) {
+	// A server that sets both Sandbox=true and NoSandbox=true must not be
+	// wrapped: NoSandbox wins (a logging.Warn is emitted, not asserted here).
+	isolateSandboxConfig(t, config.SandboxConfig{})
+	w := &fakeWrapper{}
+	restore := sandbox.SetDefaultForTests(w)
+	defer restore()
+
+	srv := config.MCPServer{Type: config.MCPStdio, Command: "true", Sandbox: true, NoSandbox: true}
+	fn := newSandboxedCommandFunc("conflicting-server", srv)
+	if _, err := fn(context.Background(), "true", nil, nil); err != nil {
+		t.Fatalf("command func: %v", err)
+	}
+	if w.Calls() != 0 {
+		t.Fatalf("calls = %d, want 0 (NoSandbox must win over Sandbox)", w.Calls())
 	}
 }
 

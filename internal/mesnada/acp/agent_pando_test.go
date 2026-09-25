@@ -175,12 +175,18 @@ func TestGroupedThinkingStateMarkFlushedResetsPending(t *testing.T) {
 	}
 }
 
-func TestProcessPromptWithAgentEmitsUserMessageChunk(t *testing.T) {
+// TestProcessPromptWithAgentDoesNotEmitLiveUserMessageChunk verifies the fix for
+// the Xcode 27 "merged bubbles" bug: the ACP spec only expects user_message_chunk
+// during session/load history replay (streamSessionHistory), because a live
+// session/prompt caller already rendered the text it just sent. Pando used to
+// echo it back with a constant "<pandoSessionID>-user" id on every turn; that
+// echo must be gone from the live path.
+func TestProcessPromptWithAgentDoesNotEmitLiveUserMessageChunk(t *testing.T) {
 	agent := newTestPandoAgentWithModels(string(llmmodels.Claude46Sonnet), ACPModelInfo{
 		ID:   string(llmmodels.Claude46Sonnet),
 		Name: "Claude Sonnet 4.6",
 	})
-	acpSession := NewACPServerSession(acpsdk.SessionId("session-1"), "/tmp", nil, "pando-session-1")
+	acpSession, updates := newThoughtCaptureSession(t)
 	acpSession.SetThinkingMode(thinkingModeDisabled)
 
 	stopReason, err := agent.processPromptWithAgent(context.Background(), acpSession, "hello world")
@@ -191,12 +197,10 @@ func TestProcessPromptWithAgentEmitsUserMessageChunk(t *testing.T) {
 		t.Fatalf("unexpected stop reason: %q", stopReason)
 	}
 
-	update := updateUserMessageTextWithID("hello world", "pando-session-1-user")
-	if update.UserMessageChunk == nil || update.UserMessageChunk.MessageId == nil {
-		t.Fatal("expected helper-generated user chunk to include messageId")
-	}
-	if got := *update.UserMessageChunk.MessageId; got != "pando-session-1-user" {
-		t.Fatalf("unexpected user messageId: %q", got)
+	for _, rec := range decodeSessionUpdateRecords(t, updates.String()) {
+		if rec.Kind == "user_message_chunk" {
+			t.Fatalf("expected no live user_message_chunk to be sent, got %#v", rec)
+		}
 	}
 
 	mockSvc := agent.agentService.(*mockAgentService)
@@ -424,10 +428,21 @@ type mockAgentService struct {
 	learningFinishCalled   bool
 	learningFinishErr      error
 	learningFinishSucceeds bool
+
+	// Per-session MCP (PANDO-US-0066). mcpMu guards the fields below because
+	// attaches run on a background goroutine.
+	mcpMu       sync.Mutex
+	mcpAttachFn func(ctx context.Context, sessionID string, servers []SessionMCPServer) error
+	mcpAttached map[string][]SessionMCPServer
+	mcpDetached []string
+	mcpTrace    []string
 }
 
 func (m *mockAgentService) Run(ctx context.Context, sessionID string, content string, attachments ...message.Attachment) (<-chan AgentEvent, error) {
 	m.runCalled = true
+	m.mcpMu.Lock()
+	m.mcpTrace = append(m.mcpTrace, "run:"+sessionID)
+	m.mcpMu.Unlock()
 	if m.runErr != nil {
 		return nil, m.runErr
 	}
@@ -682,6 +697,31 @@ func (m *mockAgentService) OpenCopilotUsage() error {
 
 func (m *mockAgentService) OpenClaudeUsage() error {
 	return m.claudeUsageErr
+}
+
+func (m *mockAgentService) AttachSessionMCPServers(ctx context.Context, sessionID string, servers []SessionMCPServer) error {
+	m.mcpMu.Lock()
+	fn := m.mcpAttachFn
+	m.mcpMu.Unlock()
+	var err error
+	if fn != nil {
+		err = fn(ctx, sessionID, servers)
+	}
+	m.mcpMu.Lock()
+	defer m.mcpMu.Unlock()
+	if m.mcpAttached == nil {
+		m.mcpAttached = make(map[string][]SessionMCPServer)
+	}
+	m.mcpAttached[sessionID] = servers
+	m.mcpTrace = append(m.mcpTrace, "attach:"+sessionID)
+	return err
+}
+
+func (m *mockAgentService) DetachSessionMCPServers(sessionID string) {
+	m.mcpMu.Lock()
+	defer m.mcpMu.Unlock()
+	m.mcpDetached = append(m.mcpDetached, sessionID)
+	m.mcpTrace = append(m.mcpTrace, "detach:"+sessionID)
 }
 
 // mockSessionService is a test double for SessionService.
@@ -2673,6 +2713,114 @@ func TestPandoACPAgent_ProcessAgentEventStream_HonorsThinkingStreamMode(t *testi
 	}
 }
 
+// TestPandoACPAgent_ProcessAgentEventStream_ContentDeltaUsesEventMessageIDFromFirstDelta
+// covers the other half of the Xcode 27 fix: previously currentMessageID was only
+// set from AgentEventTypeResponse (which arrives at the END of an assistant
+// message), so every live content delta was sent without a messageId. Now the
+// event carries MessageID (populated from assistantMsg.ID in agent.processEvent)
+// and processAgentEventStream must adopt it before sending, so even the FIRST
+// delta already carries the final messageId.
+func TestPandoACPAgent_ProcessAgentEventStream_ContentDeltaUsesEventMessageIDFromFirstDelta(t *testing.T) {
+	agent := newTestPandoAgent()
+	acpSession, updates := newThoughtCaptureSession(t)
+
+	eventChan := make(chan AgentEvent, 3)
+	eventChan <- AgentEvent{Type: AgentEventTypeContentDelta, Delta: "Hel", MessageID: "assistant-msg-1"}
+	eventChan <- AgentEvent{Type: AgentEventTypeContentDelta, Delta: "lo", MessageID: "assistant-msg-1"}
+	eventChan <- AgentEvent{
+		Type: AgentEventTypeResponse,
+		Message: message.Message{
+			ID: "assistant-msg-1",
+			Parts: []message.ContentPart{
+				message.TextContent{Text: "Hello"},
+			},
+		},
+	}
+	close(eventChan)
+
+	if _, err := agent.processAgentEventStream(context.Background(), acpSession, eventChan); err != nil {
+		t.Fatalf("processAgentEventStream failed: %v", err)
+	}
+
+	var contentChunks []acpUpdateRecord
+	for _, rec := range decodeSessionUpdateRecords(t, updates.String()) {
+		if rec.Kind == "agent_message_chunk" {
+			contentChunks = append(contentChunks, rec)
+		}
+	}
+	if len(contentChunks) != 2 {
+		t.Fatalf("expected exactly 2 agent_message_chunk updates (one per streamed delta, response text not resent), got %d: %#v", len(contentChunks), contentChunks)
+	}
+	for i, rec := range contentChunks {
+		if rec.MessageID != "assistant-msg-1" {
+			t.Fatalf("content delta #%d: expected messageId %q from the very first delta, got %q (%#v)", i, "assistant-msg-1", rec.MessageID, rec)
+		}
+	}
+}
+
+// TestPandoACPAgent_ProcessAgentEventStream_NewMessageAfterToolCallGetsNewID
+// covers the "Xcode merges answer1+answer2+answer3 into one bubble" symptom: a
+// new assistant message started after a tool round-trip must carry a different
+// messageId than the message before the tool call, from its own first delta.
+func TestPandoACPAgent_ProcessAgentEventStream_NewMessageAfterToolCallGetsNewID(t *testing.T) {
+	agent := newTestPandoAgent()
+	acpSession, updates := newThoughtCaptureSession(t)
+
+	eventChan := make(chan AgentEvent, 8)
+	eventChan <- AgentEvent{Type: AgentEventTypeContentDelta, Delta: "Let me check.", MessageID: "assistant-msg-1"}
+	eventChan <- AgentEvent{
+		Type: AgentEventTypeResponse,
+		Message: message.Message{
+			ID: "assistant-msg-1",
+			Parts: []message.ContentPart{
+				message.TextContent{Text: "Let me check."},
+			},
+		},
+	}
+	eventChan <- AgentEvent{
+		Type:     AgentEventTypeToolCall,
+		ToolCall: &message.ToolCall{ID: "tool-1", Name: "bash", Input: `{"command":"echo hi"}`, Finished: true},
+	}
+	eventChan <- AgentEvent{
+		Type:       AgentEventTypeToolResult,
+		ToolResult: &message.ToolResult{ToolCallID: "tool-1", Name: "bash", Content: "hi"},
+	}
+	eventChan <- AgentEvent{Type: AgentEventTypeContentDelta, Delta: "It printed hi.", MessageID: "assistant-msg-2"}
+	eventChan <- AgentEvent{
+		Type: AgentEventTypeResponse,
+		Message: message.Message{
+			ID: "assistant-msg-2",
+			Parts: []message.ContentPart{
+				message.TextContent{Text: "It printed hi."},
+			},
+		},
+	}
+	close(eventChan)
+
+	if _, err := agent.processAgentEventStream(context.Background(), acpSession, eventChan); err != nil {
+		t.Fatalf("processAgentEventStream failed: %v", err)
+	}
+
+	var contentChunks []acpUpdateRecord
+	for _, rec := range decodeSessionUpdateRecords(t, updates.String()) {
+		if rec.Kind == "agent_message_chunk" {
+			contentChunks = append(contentChunks, rec)
+		}
+	}
+	if len(contentChunks) != 2 {
+		t.Fatalf("expected exactly 2 agent_message_chunk updates (one per assistant message), got %d: %#v", len(contentChunks), contentChunks)
+	}
+	if contentChunks[0].MessageID != "assistant-msg-1" {
+		t.Fatalf("expected first message chunk id %q, got %q", "assistant-msg-1", contentChunks[0].MessageID)
+	}
+	if contentChunks[1].MessageID != "assistant-msg-2" {
+		t.Fatalf("expected second message chunk id %q, got %q", "assistant-msg-2", contentChunks[1].MessageID)
+	}
+	if contentChunks[0].MessageID == contentChunks[1].MessageID {
+		t.Fatal("expected distinct messageIds for assistant messages before and after a tool round-trip")
+	}
+}
+
 func TestPandoACPAgent_ProcessAgentEventStream_LogsGroupedThinkingFlush(t *testing.T) {
 	var logs bytes.Buffer
 	logger := log.New(&logs, "", 0)
@@ -2802,6 +2950,73 @@ func thoughtUpdateTexts(t *testing.T, raw string) []string {
 	}
 
 	return texts
+}
+
+// acpUpdateRecord is a decoded session/update notification captured from a fake
+// client connection (see newThoughtCaptureSession), used by tests that need to
+// inspect the messageId carried by user_message_chunk / agent_message_chunk /
+// agent_thought_chunk notifications, not just their text.
+type acpUpdateRecord struct {
+	Kind      string
+	Text      string
+	MessageID string
+}
+
+// decodeSessionUpdateRecords decodes every session/update notification found in
+// raw (the raw JSON-RPC stream written to a fake AgentSideConnection) into an
+// acpUpdateRecord, in send order.
+func decodeSessionUpdateRecords(t *testing.T, raw string) []acpUpdateRecord {
+	t.Helper()
+
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	type notification struct {
+		Params struct {
+			Update struct {
+				SessionUpdate string  `json:"sessionUpdate"`
+				MessageId     *string `json:"messageId"`
+				// Content is a single ContentBlock object for
+				// user/agent_message_chunk and agent_thought_chunk, but an ARRAY
+				// of ContentBlock for tool_call/tool_call_update. Decode it lazily
+				// as raw JSON and only parse the "text" field for the chunk kinds
+				// that carry a single object, so tool call updates don't fail
+				// unmarshaling.
+				Content json.RawMessage `json:"content"`
+			} `json:"update"`
+		} `json:"params"`
+	}
+
+	var records []acpUpdateRecord
+	for {
+		var note notification
+		if err := decoder.Decode(&note); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			t.Fatalf("decode ACP update: %v", err)
+		}
+		if note.Params.Update.SessionUpdate == "" {
+			continue
+		}
+		rec := acpUpdateRecord{Kind: note.Params.Update.SessionUpdate}
+		switch rec.Kind {
+		case "user_message_chunk", "agent_message_chunk", "agent_thought_chunk":
+			var block struct {
+				Text string `json:"text"`
+			}
+			if len(note.Params.Update.Content) > 0 {
+				if err := json.Unmarshal(note.Params.Update.Content, &block); err != nil {
+					t.Fatalf("decode chunk content text: %v", err)
+				}
+			}
+			rec.Text = block.Text
+		}
+		if note.Params.Update.MessageId != nil {
+			rec.MessageID = *note.Params.Update.MessageId
+		}
+		records = append(records, rec)
+	}
+
+	return records
 }
 
 func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {

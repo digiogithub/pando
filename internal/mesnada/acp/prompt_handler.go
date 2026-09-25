@@ -335,12 +335,14 @@ func (a *PandoACPAgent) processPromptWithAgent(
 		ctx = context.WithValue(ctx, cleanModeContextKey{}, true)
 	}
 	reconcileACPThinkingSession(a.agentService, acpSession)
-	if promptText != "" && acpSession.HasAgentConnection() {
-		userMessageID := acpSession.PandoSessionID() + "-user"
-		if err := acpSession.SendUpdate(updateUserMessageTextWithID(promptText, userMessageID)); err != nil {
-			a.logger.Printf("[ACP AGENT] Failed to send user message chunk: %v", err)
-		}
-	}
+	// Note: the user prompt is NOT echoed back as a user_message_chunk here.
+	// Per the ACP spec, user_message_chunk is only expected during session/load
+	// history replay (see streamSessionHistory in session_state.go) — the client
+	// already renders the prompt it just sent. Echoing it live here used a
+	// constant per-session id ("<pandoSessionID>-user") on every turn, which is
+	// harmless for the user bubble itself but was a symptom of the same
+	// messageId confusion that affected assistant chunks (see currentMessageID
+	// handling below).
 	// Adopt a switch made by pando_setup in an earlier turn before reading the
 	// session's overrides: otherwise this call would hand the pre-switch model
 	// back to the agent and revert it.
@@ -428,6 +430,13 @@ func (a *PandoACPAgent) processAgentEventStream(
 
 		case AgentEventTypeThinkingDelta:
 			if event.Delta != "" {
+				// Adopt the event's messageId before buffering/sending so that even
+				// the very first thinking delta of a message — and any grouped
+				// flush of text accumulated under it — carries the correct id,
+				// instead of only picking it up later from AgentEventTypeResponse.
+				if event.MessageID != "" {
+					currentMessageID = event.MessageID
+				}
 				switch thinkingStreamMode {
 				case thinkingStreamModeOff:
 				case thinkingStreamModeFull:
@@ -449,6 +458,14 @@ func (a *PandoACPAgent) processAgentEventStream(
 
 		case AgentEventTypeContentDelta:
 			if event.Delta != "" {
+				// Same rationale as AgentEventTypeThinkingDelta above: adopt the
+				// event's messageId before sending so the first content delta of a
+				// message already carries its final id, and a new assistant
+				// message started after a tool round-trip gets a new id
+				// immediately instead of inheriting the previous message's id.
+				if event.MessageID != "" {
+					currentMessageID = event.MessageID
+				}
 				if err := acpSession.SendUpdate(updateAgentMessageTextWithID(event.Delta, currentMessageID)); err != nil {
 					a.logger.Printf("[ACP AGENT] Failed to send content delta: %v", err)
 				} else {

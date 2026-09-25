@@ -84,6 +84,11 @@ type ACPServerSession struct {
 	// design-created events.
 	designAutoOpen *design.BrowserAutoOpener
 
+	// mcpReady is closed once the client-provided MCP servers of this session
+	// (session/new, session/load) finished connecting. Nil when none were
+	// requested or after they were detached.
+	mcpReady chan struct{}
+
 	// mu protects concurrent access to session state
 	mu sync.Mutex
 }
@@ -425,4 +430,19 @@ func (s *ACPServerSession) CancelDesignSubscription() {
 	if cancel != nil {
 		cancel()
 	}
+}
+
+// SetMCPReady records the readiness channel of the session's MCP attach (nil
+// clears it).
+func (s *ACPServerSession) SetMCPReady(ready chan struct{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.mcpReady = ready
+}
+
+// MCPReady returns the readiness channel of the session's MCP attach, or nil.
+func (s *ACPServerSession) MCPReady() chan struct{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.mcpReady
 }

@@ -719,17 +719,11 @@ func (c *copilotClient) convertMessagesToResponsesInput(msgs []message.Message) 
 			input = append(input, item)
 
 		case message.Assistant:
-			if len(msg.ToolCalls()) > 0 {
-				// Each tool call becomes a separate function_call input item
-				for _, tc := range msg.ToolCalls() {
-					callID := tc.ID
-					if callID == "" {
-						callID = "call_" + uuid.New().String()
-					}
-					item := responses.ResponseInputItemParamOfFunctionCall(sanitizeToolCallArguments(tc.Name, tc.Input), callID, tc.Name)
-					input = append(input, item)
-				}
-			} else if msg.Content().String() != "" {
+			// Emit the assistant's text output first (when present), then any
+			// function_call items. Previously the text was dropped whenever the
+			// message also carried tool calls, which lost the assistant's prose
+			// from history on every turn that made a tool call.
+			if msg.Content().String() != "" {
 				textContent := responses.ResponseOutputMessageContentUnionParam{
 					OfOutputText: &responses.ResponseOutputTextParam{
 						Text: msg.Content().String(),
@@ -740,6 +734,14 @@ func (c *copilotClient) convertMessagesToResponsesInput(msgs []message.Message) 
 					"msg_"+uuid.New().String(),
 					responses.ResponseOutputMessageStatusCompleted,
 				)
+				input = append(input, item)
+			}
+			for _, tc := range msg.ToolCalls() {
+				callID := tc.ID
+				if callID == "" {
+					callID = "call_" + uuid.New().String()
+				}
+				item := responses.ResponseInputItemParamOfFunctionCall(sanitizeToolCallArguments(tc.Name, tc.Input), callID, tc.Name)
 				input = append(input, item)
 			}
 
@@ -806,6 +808,47 @@ func (c *copilotClient) responsesFinishReason(status string) message.FinishReaso
 	}
 }
 
+// responsesReasoningParam builds the Reasoning request parameter for the
+// OpenAI Responses API when the configured model supports reasoning effort
+// (mirrors the Chat Completions path in preparedParams). The reasoning summary
+// that lets ACP clients (e.g. Xcode) render agent_thought_chunk events is
+// requested separately through responsesReasoningSummaryOpts: the vendored
+// openai-go SDK only knows the deprecated "generate_summary" key, while the
+// Responses API reads "reasoning.summary".
+// ok is false when the model does not support reasoning effort, in which case
+// no Reasoning param should be sent at all.
+func (c *copilotClient) responsesReasoningParam() (reasoning shared.ReasoningParam, ok bool) {
+	if !c.providerOptions.model.SupportsReasoningEffort {
+		return shared.ReasoningParam{}, false
+	}
+	return shared.ReasoningParam{
+		Effort: shared.ReasoningEffort(c.options.reasoningEffort),
+	}, true
+}
+
+// responsesReasoningSummaryOpts asks the Responses API for an automatic
+// reasoning summary whenever a Reasoning param is present on the request.
+func responsesReasoningSummaryOpts(params responses.ResponseNewParams) []option.RequestOption {
+	if !params.Reasoning.IsPresent() {
+		return nil
+	}
+	return []option.RequestOption{option.WithJSONSet("reasoning.summary", "auto")}
+}
+
+// isReasoningSummaryRejection reports whether err is a 400 from the Copilot
+// API whose body mentions both "reasoning" and "summary", i.e. it looks like
+// the backend rejected the reasoning summary request field for this model.
+// Callers use this to retry once without Reasoning rather than failing the
+// whole request outright.
+func isReasoningSummaryRejection(err error) bool {
+	var apierr *openai.Error
+	if !errors.As(err, &apierr) || apierr.StatusCode != 400 {
+		return false
+	}
+	body := strings.ToLower(apierr.RawJSON())
+	return strings.Contains(body, "reasoning") && strings.Contains(body, "summary")
+}
+
 func (c *copilotClient) sendWithResponsesAPI(ctx context.Context, msgs []message.Message, tools []toolsPkg.BaseTool) (*ProviderResponse, error) {
 	input := c.convertMessagesToResponsesInput(msgs)
 	respTools := c.convertToolsToResponses(tools)
@@ -819,14 +862,24 @@ func (c *copilotClient) sendWithResponsesAPI(ctx context.Context, msgs []message
 	if len(respTools) > 0 {
 		params.Tools = respTools
 	}
+	if reasoning, ok := c.responsesReasoningParam(); ok {
+		params.Reasoning = reasoning
+	}
 
 	cfg := config.Get()
 	attempts := 0
+	reasoningStripped := false
 	for {
 		attempts++
 		client := c.requestClient(msgs)
-		resp, err := client.Responses.New(ctx, params)
+		resp, err := client.Responses.New(ctx, params, responsesReasoningSummaryOpts(params)...)
 		if err != nil {
+			if !reasoningStripped && params.Reasoning.IsPresent() && isReasoningSummaryRejection(err) {
+				logging.Warn("Copilot Responses API rejected the reasoning summary request; retrying without it", "model", c.providerOptions.model.APIModel, "error", err)
+				params.Reasoning = shared.ReasoningParam{}
+				reasoningStripped = true
+				continue
+			}
 			retry, after, retryErr := c.shouldRetry(attempts, err)
 			if retryErr != nil {
 				return nil, retryErr
@@ -904,9 +957,13 @@ func (c *copilotClient) streamWithResponsesAPI(ctx context.Context, msgs []messa
 	if len(respTools) > 0 {
 		params.Tools = respTools
 	}
+	if reasoning, ok := c.responsesReasoningParam(); ok {
+		params.Reasoning = reasoning
+	}
 
 	cfg := config.Get()
 	attempts := 0
+	reasoningStripped := false
 	eventChan := make(chan ProviderEvent)
 
 	go func() {
@@ -916,10 +973,11 @@ func (c *copilotClient) streamWithResponsesAPI(ctx context.Context, msgs []messa
 				logging.Debug("Copilot Responses API stream started", "model", c.providerOptions.model.APIModel, "attempt", attempts)
 			}
 			client := c.requestClient(msgs)
-			stream := client.Responses.NewStreaming(ctx, params)
+			stream := client.Responses.NewStreaming(ctx, params, responsesReasoningSummaryOpts(params)...)
 
 			currentContent := ""
 			var completedResp responses.Response
+			reasoningPartsSeen := 0
 
 			for stream.Next() {
 				event := stream.Current()
@@ -930,12 +988,35 @@ func (c *copilotClient) streamWithResponsesAPI(ctx context.Context, msgs []messa
 					eventChan <- ProviderEvent{Type: EventContentDelta, Content: delta.Delta}
 					currentContent += delta.Delta
 
+				case "response.reasoning_summary_part.added":
+					// A new reasoning summary part starts; separate it from any
+					// previous part with a blank line, matching how multi-paragraph
+					// thinking is normally rendered.
+					if reasoningPartsSeen > 0 {
+						eventChan <- ProviderEvent{Type: EventThinkingDelta, Thinking: "\n\n"}
+					}
+					reasoningPartsSeen++
+
+				case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
+					// The vendored SDK has no typed variant for these reasoning
+					// events, but ResponseStreamEventUnion.Delta is a generic field
+					// populated from the raw "delta" JSON key for any event type.
+					if event.Delta != "" {
+						eventChan <- ProviderEvent{Type: EventThinkingDelta, Thinking: event.Delta}
+					}
+
 				case "response.completed":
 					completedResp = event.AsResponseCompleted().Response
 				}
 			}
 
 			err := stream.Err()
+			if err != nil && !errors.Is(err, io.EOF) && !reasoningStripped && params.Reasoning.IsPresent() && isReasoningSummaryRejection(err) {
+				logging.Warn("Copilot Responses API rejected the reasoning summary request; retrying stream without it", "model", c.providerOptions.model.APIModel, "error", err)
+				params.Reasoning = shared.ReasoningParam{}
+				reasoningStripped = true
+				continue
+			}
 			if err == nil || errors.Is(err, io.EOF) {
 				// Extract tool calls from the complete response output
 				var toolCalls []message.ToolCall
