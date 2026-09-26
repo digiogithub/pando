@@ -12,6 +12,7 @@ import { MOBILE_QUERY, needsMacTrafficLightInset, readSidebarPref, useMediaQuery
 import QuickMenu from '@/components/overlays/QuickMenu'
 import ModelSwitcher from '@/components/overlays/ModelSwitcher'
 import ConfigInitBanner from '@/components/overlays/ConfigInitBanner'
+import SetupWizard from '@/components/setup/SetupWizard'
 import NetworkErrorBanner from '@/components/shared/NetworkErrorBanner'
 import PermissionDialog from '@/components/chat/PermissionDialog'
 import QuestionDialog from '@/components/chat/QuestionDialog'
@@ -141,6 +142,7 @@ export default function MainLayout() {
       {modelSwitcherOpen && <ModelSwitcher />}
       <PermissionDialog />
       <QuestionDialog />
+      <SetupWizard />
     </div>
   )
 }

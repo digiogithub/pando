@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useConfigInitStore } from '@pando/client/stores/configInitStore'
+import { useSetupWizardStore } from '@pando/client/stores/setupWizardStore'
 import { Button } from '@/components/ui'
 import { Info } from '@/components/ui/icons'
 import '@/styles/overlays.css'
@@ -14,6 +15,7 @@ export default function ConfigInitBanner() {
   const { status, loading, generating, dismissed, fetchStatus, generateConfig, dismiss } =
     useConfigInitStore()
   const navigate = useNavigate()
+  const openWizard = useSetupWizardStore((s) => s.openWizard)
 
   useEffect(() => {
     void fetchStatus()
@@ -44,6 +46,9 @@ export default function ConfigInitBanner() {
       </span>
 
       <div className="ovl-banner-actions">
+        <Button size="sm" variant="primary" onClick={openWizard}>
+          Setup assistant
+        </Button>
         <Button size="sm" variant="secondary" loading={generating} onClick={handleGenerate}>
           {generating ? 'Generating…' : 'Generate .pando.toml'}
         </Button>
