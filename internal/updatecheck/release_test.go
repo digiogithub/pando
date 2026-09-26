@@ -117,6 +117,15 @@ func TestParseReleaseVersion(t *testing.T) {
 	}
 }
 
+func TestReleaseTagCandidates(t *testing.T) {
+	for _, input := range []string{"v0.311.0", "0.311.0", " v0.311.0 "} {
+		got := releaseTagCandidates(input)
+		if len(got) != 2 || got[0] != "v0.311.0" || got[1] != "0.311.0" {
+			t.Fatalf("releaseTagCandidates(%q) = %v, want [v0.311.0 0.311.0]", input, got)
+		}
+	}
+}
+
 func TestSelectReleaseForTargetsPrefersLinuxX64Asset(t *testing.T) {
 	publishedAt := github.Timestamp{Time: time.Date(2026, time.May, 19, 21, 20, 8, 0, time.UTC)}
 	releases := []*github.RepositoryRelease{
