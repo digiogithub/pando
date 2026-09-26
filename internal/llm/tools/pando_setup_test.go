@@ -644,12 +644,11 @@ func TestBuildSetupConfigTreeRedactsRealConfig(t *testing.T) {
 		WorkingDir: "/tmp/project",
 		AgeKeys:    "AGE-SECRET-KEY-WXYZ",
 		ProviderAccounts: []config.ProviderAccount{{
-			ID:               "copilot",
-			Type:             models.ProviderCopilot,
-			APIKey:           "sk-live-000011112222",
-			OAuthAccessToken: "gho-aaaabbbbcccc",
-			BaseURL:          "https://api.githubcopilot.com",
-			ExtraHeaders:     map[string]string{"Authorization": "Bearer 55556666"},
+			ID:           "copilot",
+			Type:         models.ProviderCopilot,
+			APIKey:       "sk-live-000011112222",
+			BaseURL:      "https://api.githubcopilot.com",
+			ExtraHeaders: map[string]string{"Authorization": "Bearer 55556666"},
 		}},
 		MCPServers: map[string]config.MCPServer{
 			"pando": {Command: "pando", Env: []string{"PANDO_TOKEN=zzzz88889999"}},
@@ -665,7 +664,7 @@ func TestBuildSetupConfigTreeRedactsRealConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal tree: %v", err)
 	}
-	for _, secret := range []string{"sk-live-000011112222", "gho-aaaabbbbcccc", "Bearer 55556666", "zzzz88889999", "AGE-SECRET-KEY-WXYZ"} {
+	for _, secret := range []string{"sk-live-000011112222", "Bearer 55556666", "zzzz88889999", "AGE-SECRET-KEY-WXYZ"} {
 		if strings.Contains(string(rendered), secret) {
 			t.Fatalf("secret %q leaked into the config dump:\n%s", secret, rendered)
 		}

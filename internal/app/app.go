@@ -2063,8 +2063,8 @@ func RefreshDynamicModels(ctx context.Context) {
 	accounts := config.GetProviderAccounts()
 	logging.Debug("Refreshing dynamic models", "accountCount", len(accounts))
 
-	// Fill pricing/limits the curated static catalogues omit (Antigravity,
-	// Bedrock, Vertex AI, …) from models.dev. Best-effort: a failure here leaves
+	// Fill pricing/limits the curated static catalogues omit (Bedrock,
+	// Vertex AI, …) from models.dev. Best-effort: a failure here leaves
 	// every model exactly as it was.
 	models.EnrichRegisteredModels(ctx)
 
@@ -2094,18 +2094,6 @@ func RefreshDynamicModels(ctx context.Context) {
 			apiKey = ""
 		case models.ProviderOllama:
 			// Ollama does not require an API key
-		case models.ProviderAnthropic:
-			// Anthropic accounts may authenticate via Claude.ai OAuth instead of an
-			// API key. Without this, an OAuth-only account is skipped here, never
-			// registers per-account models, and selection silently falls back to
-			// another (API-key) account of the same type.
-			if apiKey == "" {
-				token, err := auth.LoadClaudeBearerToken()
-				if err != nil || token == "" {
-					continue
-				}
-				bearerToken = token
-			}
 		default:
 			// Providers with a static catalog but no listing API (e.g. Vertex AI,
 			// which authenticates via OAuth and has no API key) still need their
@@ -2568,6 +2556,14 @@ func (a *appACPAgentAdapter) RunGoal(ctx context.Context, sessionID string, obje
 }
 
 func (a *appACPAgentAdapter) forwardEvents(ctx context.Context, realCh <-chan agent.AgentEvent) <-chan mesnadaACP.AgentEvent {
+	return ForwardACPAgentEvents(ctx, realCh)
+}
+
+// ForwardACPAgentEvents translates agent events into ACP agent events. It is
+// shared by every ACP adapter (the in-app one and the `pando acp` stdio one in
+// cmd/root.go) so fields such as MessageID cannot be forgotten in one copy:
+// Xcode groups streamed chunks by messageId, and a dropped id merges turns.
+func ForwardACPAgentEvents(ctx context.Context, realCh <-chan agent.AgentEvent) <-chan mesnadaACP.AgentEvent {
 	// Buffered to decouple the event-drain goroutine from the ACP handler.
 	// Without a buffer, each SendUpdate (RPC write) stalls the goroutine and
 	// prevents it from draining agent.eventCh, causing overflow and lost events.
@@ -2753,14 +2749,6 @@ func (a *appACPAgentAdapter) OpenCopilotUsage() error {
 		return fmt.Errorf("/copilot-usage is only available when the copilot provider is authenticated")
 	}
 	return auth.OpenBrowser("https://github.com/settings/copilot/features")
-}
-
-func (a *appACPAgentAdapter) OpenClaudeUsage() error {
-	status, err := auth.GetClaudeAuthStatus()
-	if err != nil || status == nil || !status.Authenticated || status.Source == "env" {
-		return fmt.Errorf("/claude-usage is only available when Claude OAuth is authenticated")
-	}
-	return auth.OpenBrowser("https://claude.ai/settings/usage")
 }
 
 // ---------------------------------------------------------------------------

@@ -742,48 +742,7 @@ func (a *acpAgentAdapter) RunGoal(ctx context.Context, sessionID string, objecti
 }
 
 func (a *acpAgentAdapter) forwardEvents(ctx context.Context, realCh <-chan agent.AgentEvent) <-chan acpPkg.AgentEvent {
-	// Buffered to decouple the event-drain goroutine from the ACP handler.
-	// Without a buffer, each SendUpdate (RPC write) stalls the goroutine and
-	// prevents it from draining agent.eventCh, causing overflow and lost events.
-	acpCh := make(chan acpPkg.AgentEvent, 512)
-	go func() {
-		defer close(acpCh)
-		for ev := range realCh {
-			var acpEv acpPkg.AgentEvent
-			switch ev.Type {
-			case agent.AgentEventTypeError:
-				acpEv.Type = acpPkg.AgentEventTypeError
-				acpEv.Error = ev.Error
-			case agent.AgentEventTypeResponse:
-				acpEv.Type = acpPkg.AgentEventTypeResponse
-				acpEv.Message = ev.Message
-			case agent.AgentEventTypeSummarize:
-				acpEv.Type = acpPkg.AgentEventTypeSummarize
-				acpEv.Progress = ev.Progress
-			case agent.AgentEventTypeContentDelta:
-				acpEv.Type = acpPkg.AgentEventTypeContentDelta
-				acpEv.Delta = ev.Delta
-			case agent.AgentEventTypeThinkingDelta:
-				acpEv.Type = acpPkg.AgentEventTypeThinkingDelta
-				acpEv.Delta = ev.Delta
-			case agent.AgentEventTypeToolCall:
-				acpEv.Type = acpPkg.AgentEventTypeToolCall
-				acpEv.ToolCall = ev.ToolCall
-			case agent.AgentEventTypeToolResult:
-				acpEv.Type = acpPkg.AgentEventTypeToolResult
-				acpEv.ToolResult = ev.ToolResult
-			default:
-				continue
-			}
-			select {
-			case acpCh <- acpEv:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	return acpCh
+	return app.ForwardACPAgentEvents(ctx, realCh)
 }
 
 func (a *acpAgentAdapter) Cancel(sessionID string) {
@@ -957,14 +916,6 @@ func (a *acpAgentAdapter) OpenCopilotUsage() error {
 		return fmt.Errorf("/copilot-usage is only available when the copilot provider is authenticated")
 	}
 	return auth.OpenBrowser("https://github.com/settings/copilot/features")
-}
-
-func (a *acpAgentAdapter) OpenClaudeUsage() error {
-	status, err := auth.GetClaudeAuthStatus()
-	if err != nil || status == nil || !status.Authenticated || status.Source == "env" {
-		return fmt.Errorf("/claude-usage is only available when Claude OAuth is authenticated")
-	}
-	return auth.OpenBrowser("https://claude.ai/settings/usage")
 }
 
 // acpSessionAdapter adapts session.Service to acpPkg.SessionService.

@@ -156,14 +156,6 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			id := strings.TrimPrefix(msg.Field.Key, "action:login_provider_account:")
 			return p, p.loginProviderAccount(id)
 		}
-		if strings.HasPrefix(msg.Field.Key, "action:verify_provider_account:") {
-			id := strings.TrimPrefix(msg.Field.Key, "action:verify_provider_account:")
-			return p, p.verifyProviderAccount(id)
-		}
-		if strings.HasPrefix(msg.Field.Key, "action:refresh_provider_account:") {
-			id := strings.TrimPrefix(msg.Field.Key, "action:refresh_provider_account:")
-			return p, p.refreshProviderAccount(id)
-		}
 		if msg.Field.Key == "action:add_provider" {
 			return p, p.openAddProviderDialog()
 		}
@@ -553,8 +545,8 @@ func (p *settingsPage) deleteMCPServer(name string) tea.Cmd {
 }
 
 // loginMCPServer starts the interactive OAuth 2.1 authorization flow for an
-// MCP server configured with Auth.Type == "oauth". It mirrors
-// antigravityLoginCommand's shape: an immediate "opening browser" message via
+// MCP server configured with Auth.Type == "oauth". It gives
+// immediate feedback: an immediate "opening browser" message via
 // tea.Batch so the user gets feedback before the (blocking) flow completes,
 // reusing mcpauth.Login for the whole authorization-code + PKCE + local
 // callback dance rather than reimplementing it here. The result is reported
@@ -645,56 +637,11 @@ func (p *settingsPage) loginProviderAccount(id string) tea.Cmd {
 			return providerAccountActionMsg{err: fmt.Errorf("provider account %q not found", id)}
 		}
 	}
-	if acc.Type == models.ProviderAntigravity {
-		return antigravityLoginCommand(id)
+	if acc.Type == models.ProviderCopilot {
+		return util.CmdHandler(dialog.StartCopilotLoginMsg{})
 	}
 	return func() tea.Msg {
 		return providerAccountActionMsg{err: fmt.Errorf("provider account %q does not support login", id)}
-	}
-}
-
-func (p *settingsPage) verifyProviderAccount(id string) tea.Cmd {
-	return func() tea.Msg {
-		id = strings.TrimSpace(id)
-		if id == "" {
-			return providerAccountActionMsg{err: fmt.Errorf("provider account ID cannot be empty")}
-		}
-		acc, ok := config.GetProviderAccount(id)
-		if !ok {
-			return providerAccountActionMsg{err: fmt.Errorf("provider account %q not found", id)}
-		}
-		if acc.Type != models.ProviderAntigravity {
-			return providerAccountActionMsg{err: fmt.Errorf("provider account %q does not support verify", id)}
-		}
-		info := fmt.Sprintf("%s: %s", acc.DisplayName, providerAccountStatus(*acc))
-		if email := strings.TrimSpace(acc.Email); email != "" {
-			info += fmt.Sprintf(" | email: %s", email)
-		}
-		if projectID := strings.TrimSpace(acc.ProjectID); projectID != "" {
-			info += fmt.Sprintf(" | project: %s", projectID)
-		}
-		return providerAccountActionMsg{info: info}
-	}
-}
-
-func (p *settingsPage) refreshProviderAccount(id string) tea.Cmd {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return func() tea.Msg {
-			return providerAccountActionMsg{err: fmt.Errorf("provider account ID cannot be empty")}
-		}
-	}
-	acc, ok := config.GetProviderAccount(id)
-	if !ok {
-		return func() tea.Msg {
-			return providerAccountActionMsg{err: fmt.Errorf("provider account %q not found", id)}
-		}
-	}
-	if acc.Type == models.ProviderAntigravity {
-		return antigravityRefreshCommand(id)
-	}
-	return func() tea.Msg {
-		return providerAccountActionMsg{err: fmt.Errorf("provider account %q does not support refresh", id)}
 	}
 }
 
@@ -702,24 +649,7 @@ func providerAccountStatus(acc config.ProviderAccount) string {
 	if acc.Disabled {
 		return "disabled"
 	}
-	if acc.Type == models.ProviderAntigravity {
-		if strings.TrimSpace(acc.OAuthRefreshToken) == "" && strings.TrimSpace(acc.OAuthAccessToken) == "" {
-			return "pending login"
-		}
-		if (strings.TrimSpace(acc.OAuthAccessToken) == "" && strings.TrimSpace(acc.OAuthRefreshToken) != "") || (strings.TrimSpace(acc.OAuthAccessToken) != "" && acc.OAuthExpiry > 0 && time.Now().Add(30*time.Second).Unix() >= acc.OAuthExpiry) {
-			return "needs refresh"
-		}
-		return "connected"
-	}
 	return "configured"
-}
-
-func providerAccountMetadataValue(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return "—"
-	}
-	return value
 }
 
 // testEmbeddingConnection creates a fresh embedder from current config and runs a test query.
@@ -1327,7 +1257,7 @@ func buildProviderAccountsSection(cfg *config.Config) settings.Section {
 	providerOptions := []string{
 		"anthropic", "openai", "openai-compatible",
 		"ollama", "copilot", "gemini", "groq",
-		"openrouter", "xai", "azure", "bedrock", "vertexai", "antigravity",
+		"openrouter", "xai", "azure", "bedrock", "vertexai",
 	}
 
 	for _, acc := range accounts {
@@ -1347,13 +1277,7 @@ func buildProviderAccountsSection(cfg *config.Config) settings.Section {
 				Type:    settings.FieldSelect,
 				Options: ensureOption(providerOptions, accType),
 			},
-			settings.Field{
-				Label:  fmt.Sprintf("[%s] API Key", acc.ID),
-				Key:    fmt.Sprintf("providerAccount.%s.apiKey", acc.ID),
-				Value:  acc.APIKey,
-				Type:   settings.FieldText,
-				Masked: true,
-			},
+			credentialField(acc),
 			settings.Field{
 				Label: fmt.Sprintf("[%s] Base URL", acc.ID),
 				Key:   fmt.Sprintf("providerAccount.%s.baseUrl", acc.ID),
@@ -1381,58 +1305,42 @@ func buildProviderAccountsSection(cfg *config.Config) settings.Section {
 				ReadOnly: true,
 			},
 		)
-		if acc.Type == models.ProviderAntigravity {
-			fields = append(fields,
-				settings.Field{
-					Label:    fmt.Sprintf("[%s] Email", acc.ID),
-					Key:      fmt.Sprintf("providerAccount.%s.email", acc.ID),
-					Value:    providerAccountMetadataValue(acc.Email),
-					Type:     settings.FieldText,
-					ReadOnly: true,
-				},
-				settings.Field{
-					Label:    fmt.Sprintf("[%s] Project ID", acc.ID),
-					Key:      fmt.Sprintf("providerAccount.%s.projectId", acc.ID),
-					Value:    providerAccountMetadataValue(acc.ProjectID),
-					Type:     settings.FieldText,
-					ReadOnly: true,
-				},
-			)
-
-			loginLabel := "Login with Google"
-			if strings.TrimSpace(acc.OAuthRefreshToken) != "" || strings.TrimSpace(acc.OAuthAccessToken) != "" {
-				loginLabel = "Reauthenticate with Google"
-			}
-			fields = append(fields,
-				settings.Field{
-					Label:    fmt.Sprintf("[%s] Login", acc.ID),
-					Key:      fmt.Sprintf("action:login_provider_account:%s", acc.ID),
-					Value:    loginLabel,
-					Type:     settings.FieldAction,
-					ReadOnly: true,
-				},
-				settings.Field{
-					Label:    fmt.Sprintf("[%s] Verify", acc.ID),
-					Key:      fmt.Sprintf("action:verify_provider_account:%s", acc.ID),
-					Value:    "Verify account connection",
-					Type:     settings.FieldAction,
-					ReadOnly: true,
-				},
-				settings.Field{
-					Label:    fmt.Sprintf("[%s] Refresh", acc.ID),
-					Key:      fmt.Sprintf("action:refresh_provider_account:%s", acc.ID),
-					Value:    "Refresh OAuth access token",
-					Type:     settings.FieldAction,
-					ReadOnly: true,
-					Disabled: strings.TrimSpace(acc.OAuthRefreshToken) == "",
-				},
-			)
+		if acc.Type == models.ProviderCopilot {
+			fields = append(fields, settings.Field{
+				Label:    fmt.Sprintf("[%s] Login", acc.ID),
+				Key:      fmt.Sprintf("action:login_provider_account:%s", acc.ID),
+				Value:    "Login with GitHub (device flow)",
+				Type:     settings.FieldAction,
+				ReadOnly: true,
+			})
 		}
 	}
 
 	return settings.Section{
 		Title:  "Providers",
 		Fields: fields,
+	}
+}
+
+// credentialField returns the credential row for a provider account: a masked
+// API key input for most providers, or a read-only note for GitHub Copilot,
+// which only supports its official GitHub OAuth flow.
+func credentialField(acc config.ProviderAccount) settings.Field {
+	if acc.Type == models.ProviderCopilot {
+		return settings.Field{
+			Label:    fmt.Sprintf("[%s] Auth", acc.ID),
+			Key:      fmt.Sprintf("providerAccount.%s.auth", acc.ID),
+			Value:    "GitHub OAuth (official)",
+			Type:     settings.FieldText,
+			ReadOnly: true,
+		}
+	}
+	return settings.Field{
+		Label:  fmt.Sprintf("[%s] API Key", acc.ID),
+		Key:    fmt.Sprintf("providerAccount.%s.apiKey", acc.ID),
+		Value:  acc.APIKey,
+		Type:   settings.FieldText,
+		Masked: true,
 	}
 }
 
@@ -4021,6 +3929,9 @@ func saveProvider(field settings.Field) error {
 	providerCfg := config.Get().Providers[providerName]
 	switch parts[2] {
 	case "apiKey":
+		if providerName == models.ProviderCopilot {
+			return fmt.Errorf("GitHub Copilot authenticates with GitHub OAuth; API keys are not supported")
+		}
 		providerCfg.APIKey = strings.TrimSpace(field.Value)
 	case "baseURL":
 		providerCfg.BaseURL = strings.TrimSpace(field.Value)
@@ -4030,27 +3941,15 @@ func saveProvider(field settings.Field) error {
 			return fmt.Errorf("invalid provider enabled value: %w", err)
 		}
 		providerCfg.Disabled = !enabled
-	case "useOAuth":
-		useOAuth, err := parseBoolValue(field.Value)
-		if err != nil {
-			return fmt.Errorf("invalid useOAuth value: %w", err)
-		}
-		if providerName != models.ProviderAnthropic {
-			return fmt.Errorf("useOAuth is only supported for the anthropic provider")
-		}
-		return config.UpdateProviderOAuth(providerName, useOAuth)
 	default:
 		return fmt.Errorf("unsupported provider field %q", parts[2])
 	}
 
 	if !providerCfg.Disabled {
-		if providerName == models.ProviderCopilot {
-			return config.UpdateProvider(providerName, providerCfg.APIKey, providerCfg.BaseURL, providerCfg.Disabled)
-		}
 		if providerName == models.ProviderOllama && strings.TrimSpace(providerCfg.BaseURL) == "" {
 			return fmt.Errorf("provider %s requires a non-empty base URL when enabled", providerName)
 		}
-		if providerName != models.ProviderOllama && strings.TrimSpace(providerCfg.APIKey) == "" {
+		if providerName != models.ProviderOllama && providerName != models.ProviderCopilot && strings.TrimSpace(providerCfg.APIKey) == "" {
 			return fmt.Errorf("provider %s requires a non-empty API key when enabled", providerName)
 		}
 	}
@@ -4077,7 +3976,13 @@ func saveProviderAccountField(field settings.Field) error {
 		acc.DisplayName = strings.TrimSpace(field.Value)
 	case "type":
 		acc.Type = models.ModelProvider(strings.TrimSpace(field.Value))
+		if acc.Type == models.ProviderCopilot {
+			acc.APIKey = ""
+		}
 	case "apiKey":
+		if acc.Type == models.ProviderCopilot {
+			return fmt.Errorf("GitHub Copilot authenticates with GitHub OAuth; API keys are not supported")
+		}
 		acc.APIKey = strings.TrimSpace(field.Value)
 	case "baseUrl":
 		acc.BaseURL = strings.TrimSpace(field.Value)

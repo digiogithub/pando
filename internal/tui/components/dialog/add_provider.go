@@ -53,7 +53,6 @@ type providerTypeEntry struct {
 
 var addProviderTypeList = []providerTypeEntry{
 	{models.ProviderAnthropic, "Anthropic", true, false, false},
-	{models.ProviderAntigravity, "Antigravity", false, false, true},
 	{models.ProviderOpenAI, "OpenAI", true, false, false},
 	{models.ProviderOpenAICompatible, "OpenAI Compatible (custom)", true, true, false},
 	{models.ProviderOllama, "Ollama", false, true, false},
@@ -291,6 +290,10 @@ func (d *addProviderDialogCmp) saveAccount() tea.Cmd {
 		id = string(d.selectedType.Type)
 	}
 	id = addProviderSlugRe.ReplaceAllString(id, "-")
+
+	if !d.selectedType.RequiresAPIKey {
+		apiKey = ""
+	}
 
 	account := config.ProviderAccount{
 		ID:          id,

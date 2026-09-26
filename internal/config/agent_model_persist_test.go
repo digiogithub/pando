@@ -28,6 +28,8 @@ func TestAgentModelSurvivesReloadAfterResolve(t *testing.T) {
 	t.Cleanup(func() { models.DeleteSupportedModels(canonical) })
 
 	isolateGlobalConfig(t)
+	// Copilot authenticates through GitHub OAuth only; discovery honours this env var.
+	t.Setenv("COPILOT_GITHUB_TOKEN", "test-copilot-token")
 
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, ".pando.toml")
@@ -35,7 +37,7 @@ func TestAgentModelSurvivesReloadAfterResolve(t *testing.T) {
 	// is declared here rather than inherited from whoever runs the test: an agent
 	// whose provider is not configured is reverted to a default model, which would
 	// make this assert something other than what it means to.
-	original := "[Providers]\n[Providers.copilot]\nAPIKey = 'test-copilot-key'\n" +
+	original := "[Providers]\n[Providers.copilot]\nDisabled = false\n" +
 		"[Agents]\n[Agents.coder]\nModel = 'gpt-5.4-mini'\n"
 	if err := os.WriteFile(configPath, []byte(original), 0o644); err != nil {
 		t.Fatalf("write config file: %v", err)

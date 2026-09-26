@@ -22,45 +22,82 @@ import (
 )
 
 var updateCmd = &cobra.Command{
-	Use:   "update",
+	Use:   "update [version]",
 	Short: "Update the Pando binary from the latest GitHub release",
 	Long: `Download the latest compatible Pando release asset from GitHub and replace
 this executable in place.
 
-This command only works for released builds with a semantic version such as v0.311.0.`,
+Pass an existing release version (e.g. v0.311.0 or 0.311.0) to install that
+exact release instead, even when it is older than the running binary. This is
+useful to roll back to a previous version or to reinstall the current one.
+
+Updating to the latest release only works for released builds with a semantic
+version such as v0.311.0; installing a specific version works from any build.`,
 	Example: `
   # Update to the latest stable release
   pando update
 
   # Show whether a newer release is available without changing the binary
   pando update --check
+
+  # Install a specific release, e.g. to roll back to an older version
+  pando update v0.311.0
   `,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		checkOnly, _ := cmd.Flags().GetBool("check")
-		current, ok := version.Semver()
-		if !ok {
-			return fmt.Errorf("self-update requires a released semantic version build, current version is %q", version.Normalize())
-		}
-
-		result, err := updatecheck.DetectLatest(context.Background())
-		if err != nil {
-			return err
-		}
-		if !result.Found {
-			return fmt.Errorf("no compatible release asset found for %s/%s", runtime.GOOS, runtime.GOARCH)
-		}
-		latest := result.Release
-
 		currentDisplay := version.Canonical()
-		if latest.Version.LTE(current) {
-			fmt.Printf("Pando is already up to date (%s)\n", currentDisplay)
-			return nil
-		}
 
-		fmt.Printf("New version available: %s -> v%s\n", currentDisplay, latest.Version)
-		if checkOnly {
-			fmt.Printf("Release: %s\n", latest.URL)
-			return nil
+		var target *selfupdate.Release
+		if len(args) == 1 {
+			result, err := updatecheck.DetectVersion(context.Background(), args[0])
+			if err != nil {
+				return err
+			}
+			if !result.Found {
+				return fmt.Errorf("release %s has no compatible asset for %s/%s", args[0], runtime.GOOS, runtime.GOARCH)
+			}
+			target = result.Release
+
+			direction := "Installing"
+			if current, ok := version.Semver(); ok {
+				switch {
+				case target.Version.LT(current):
+					direction = "Downgrading"
+				case target.Version.Equals(current):
+					direction = "Reinstalling"
+				}
+			}
+			fmt.Printf("%s Pando: %s -> v%s\n", direction, currentDisplay, target.Version)
+			if checkOnly {
+				fmt.Printf("Release: %s\n", target.URL)
+				return nil
+			}
+		} else {
+			current, ok := version.Semver()
+			if !ok {
+				return fmt.Errorf("self-update requires a released semantic version build, current version is %q (pass a version, e.g. pando update v0.311.0, to install a specific release)", version.Normalize())
+			}
+
+			result, err := updatecheck.DetectLatest(context.Background())
+			if err != nil {
+				return err
+			}
+			if !result.Found {
+				return fmt.Errorf("no compatible release asset found for %s/%s", runtime.GOOS, runtime.GOARCH)
+			}
+			target = result.Release
+
+			if target.Version.LTE(current) {
+				fmt.Printf("Pando is already up to date (%s)\n", currentDisplay)
+				return nil
+			}
+
+			fmt.Printf("New version available: %s -> v%s\n", currentDisplay, target.Version)
+			if checkOnly {
+				fmt.Printf("Release: %s\n", target.URL)
+				return nil
+			}
 		}
 
 		exe, err := os.Executable()
@@ -73,18 +110,18 @@ This command only works for released builds with a semantic version such as v0.3
 			exe = resolved
 		}
 
-		if err := applyUpdate(context.Background(), latest, exe); err != nil {
+		if err := applyUpdate(context.Background(), target, exe); err != nil {
 			return fmt.Errorf("apply self-update: %w", err)
 		}
 
-		fmt.Printf("Updated Pando to v%s\n", latest.Version)
+		fmt.Printf("Updated Pando to v%s\n", target.Version)
 		return nil
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(updateCmd)
-	updateCmd.Flags().Bool("check", false, "Only check whether a newer compatible release exists")
+	updateCmd.Flags().Bool("check", false, "Only check whether a newer compatible release (or the given version) exists")
 }
 
 // applyUpdate downloads the release asset, extracts the pando binary from the

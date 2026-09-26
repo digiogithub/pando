@@ -19,10 +19,8 @@ import {
   RefreshCw,
   FileIcon,
   LogIn,
-  Key,
   Info,
   LogOut,
-  ChartColumn,
   type LucideIcon,
 } from '@/components/ui/icons'
 import '@/styles/overlays.css'
@@ -73,11 +71,6 @@ function addToRecent(id: string) {
 }
 
 const AUTH_ICONS: Record<string, LucideIcon> = {
-  'anthropic:login': LogIn,
-  'anthropic:complete-login': Key,
-  'anthropic:status': Info,
-  'anthropic:logout': LogOut,
-  'anthropic:usage': ChartColumn,
   'copilot:login': LogIn,
   'copilot:status': Info,
   'copilot:logout': LogOut,

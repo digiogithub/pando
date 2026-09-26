@@ -387,15 +387,16 @@ func (a *PandoACPAgent) processAgentEventStream(
 	// re-sending the full content (which would cause duplicate text in the client).
 	var sentContentDeltas, sentThinkingDeltas bool
 	var thinkingState groupedThinkingState
-	sendThinking := func(text string) {
+	sendThinking := func(text string) bool {
 		if text == "" {
-			return
+			return false
 		}
 		if err := acpSession.SendUpdate(updateAgentThoughtTextWithID(text, currentMessageID)); err != nil {
 			a.logger.Printf("[ACP AGENT] Failed to send thinking update: %v", err)
-			return
+			return false
 		}
 		sentThinkingDeltas = true
+		return true
 	}
 	flushThinking := func(force bool) {
 		if thinkingStreamMode != thinkingStreamModeGrouped {
@@ -412,9 +413,11 @@ func (a *PandoACPAgent) processAgentEventStream(
 			reason,
 			len(text),
 		)
-		beforeSent := sentThinkingDeltas
-		sendThinking(text)
-		if sentThinkingDeltas == beforeSent {
+		// Reset the buffer after every successful send. Comparing against
+		// sentThinkingDeltas only worked for the first flush of a turn (it stays
+		// true afterwards), so later flushes never reset the buffer and re-sent
+		// the whole accumulated thought on every delta.
+		if !sendThinking(text) {
 			return
 		}
 		thinkingState.markFlushed(now)

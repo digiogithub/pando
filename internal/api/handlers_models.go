@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -153,16 +152,9 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 				entry.skipReason = "no GitHub OAuth token found — run 'pando auth login'"
 			}
 		case models.ProviderAnthropic:
-			// OAuth-only Anthropic accounts have no API key; authenticate the model
-			// listing with the Claude.ai OAuth token so the account's models appear
-			// in the selector instead of falling back to another account's.
-			if acc.APIKey == "" {
-				if token, err := auth.LoadClaudeBearerToken(); err == nil && token != "" {
-					entry.bearerToken = token
-				} else {
-					entry.skip = true
-					entry.skipReason = "no Anthropic credentials found — set an API key or run Claude.ai login"
-				}
+			if strings.TrimSpace(acc.APIKey) == "" {
+				entry.skip = true
+				entry.skipReason = "no Anthropic API key configured"
 			}
 		}
 		entries = append(entries, entry)
@@ -192,7 +184,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 			// Providers with no listing API (Azure, Vertex AI, …) expose a static
 			// catalog. Surface per-account copies so each account is independently
 			// selectable instead of erroring on the (unsupported) fetch.
-			if !models.ProviderSupportsModelListing(acc.Type) && acc.Type != models.ProviderAntigravity {
+			if !models.ProviderSupportsModelListing(acc.Type) {
 				resultCh <- accountResult{
 					accountID: acc.ID,
 					provider:  acc.Type,
@@ -204,10 +196,6 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 			fetched, err := models.FetchModelsFromProvider(ctx, acc.Type, acc.APIKey, e.bearerToken, acc.BaseURL)
 			if err != nil {
 				resultCh <- accountResult{accountID: acc.ID, provider: acc.Type, err: err.Error()}
-				return
-			}
-			if acc.Type == models.ProviderAntigravity {
-				resultCh <- accountResult{accountID: acc.ID, provider: acc.Type}
 				return
 			}
 
@@ -337,8 +325,6 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	allModels = append(allModels, logicalAntigravityModelInfos(accounts)...)
-
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"models": allModels,
 		"errors": providerErrors,
@@ -386,39 +372,6 @@ func staticModelInfosForAccount(acc config.ProviderAccount, sameTypeCount int) [
 			AccountID: acc.ID,
 		}
 		modelInfoMetadata(&info, m)
-		items = append(items, info)
-	}
-	return items
-}
-
-func logicalAntigravityModelInfos(accounts []config.ProviderAccount) []ModelInfo {
-	hasAntigravity := false
-	for _, acc := range accounts {
-		if !acc.Disabled && acc.Type == models.ProviderAntigravity {
-			hasAntigravity = true
-			break
-		}
-	}
-	if !hasAntigravity {
-		return nil
-	}
-
-	ids := make([]models.ModelID, 0, len(models.AntigravityModels))
-	for id := range models.AntigravityModels {
-		ids = append(ids, id)
-	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-
-	items := make([]ModelInfo, 0, len(ids))
-	for _, id := range ids {
-		model := models.AntigravityModels[id]
-		info := ModelInfo{
-			ID:          string(model.ID),
-			Name:        model.Name,
-			Provider:    string(model.Provider),
-			Description: model.APIModel,
-		}
-		modelInfoMetadata(&info, model)
 		items = append(items, info)
 	}
 	return items

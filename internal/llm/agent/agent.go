@@ -2692,21 +2692,16 @@ func createAgentProvider(ctx context.Context, agentName config.AgentName, agentT
 	// Resolve the provider account: by AccountID if set, otherwise by provider type.
 	var acc *config.ProviderAccount
 	var err error
-	needsConcreteAccount := model.AccountID != "" || model.Provider != models.ProviderAntigravity
-	if needsConcreteAccount {
-		if model.AccountID != "" {
-			acc, err = config.ResolveProviderAccountByID(model.AccountID)
-		} else {
-			acc, err = config.ResolveProviderAccountForType(model.Provider)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("could not resolve provider account: %w", err)
-		}
-		if acc.Disabled {
-			return nil, fmt.Errorf("provider account %q is disabled", acc.ID)
-		}
+	if model.AccountID != "" {
+		acc, err = config.ResolveProviderAccountByID(model.AccountID)
 	} else {
-		acc = &config.ProviderAccount{Type: models.ProviderAntigravity}
+		acc, err = config.ResolveProviderAccountForType(model.Provider)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("could not resolve provider account: %w", err)
+	}
+	if acc.Disabled {
+		return nil, fmt.Errorf("provider account %q is disabled", acc.ID)
 	}
 
 	maxTokens := config.ResolveAgentMaxTokens(agentName, agentConfig, model)
@@ -2728,7 +2723,6 @@ func createAgentProvider(ctx context.Context, agentName config.AgentName, agentT
 	if needsExtraOpts {
 		opts := []provider.ProviderClientOption{
 			provider.WithAPIKey(acc.APIKey),
-			provider.WithUseOAuth(acc.UseOAuth),
 			provider.WithModel(model),
 			provider.WithSystemMessage(systemMessage),
 			provider.WithMaxTokens(maxTokens),

@@ -326,7 +326,6 @@ export interface ProviderConfigItem {
   apiKey: string // masked in GET responses (e.g. "••••last4")
   baseUrl: string
   disabled: boolean
-  useOAuth: boolean
 }
 
 export interface ProvidersConfigResponse {
@@ -991,7 +990,6 @@ export interface ProviderAccount {
   baseUrl?: string
   extraHeaders?: Record<string, string>
   disabled?: boolean
-  useOAuth?: boolean
 }
 
 export interface ProviderTypeInfo {

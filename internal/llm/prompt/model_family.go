@@ -38,7 +38,7 @@ func ClassifyModelFamily(provider, model string) ModelFamily {
 		return classifyOpenAIFamily(m)
 	case p == "copilot":
 		return classifyCopilotFamily(m)
-	case p == "gemini" || p == "antigravity":
+	case p == "gemini":
 		return classifyGeminiFamily(m)
 	default:
 		return FamilyDefault

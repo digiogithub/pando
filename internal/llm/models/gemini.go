@@ -1,8 +1,7 @@
 package models
 
 const (
-	ProviderAntigravity ModelProvider = "antigravity"
-	ProviderGemini      ModelProvider = "gemini"
+	ProviderGemini ModelProvider = "gemini"
 
 	// Gemini 3 preview models (require preview access)
 	Gemini31ProPreview       ModelID = "gemini.gemini-3.1-pro-preview-customtools"

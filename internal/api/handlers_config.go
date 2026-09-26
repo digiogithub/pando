@@ -44,7 +44,6 @@ type ProviderConfigItem struct {
 	APIKey   string `json:"apiKey"` // masked in GET responses
 	BaseURL  string `json:"baseUrl"`
 	Disabled bool   `json:"disabled"`
-	UseOAuth bool   `json:"useOAuth"`
 }
 
 // ProviderConfigUpdateRequest is the body for PUT /api/v1/config/providers.
@@ -78,7 +77,6 @@ func (s *Server) handleGetConfigProviders(w http.ResponseWriter, r *http.Request
 			APIKey:   maskAPIKey(p.APIKey),
 			BaseURL:  p.BaseURL,
 			Disabled: p.Disabled,
-			UseOAuth: p.UseOAuth,
 		})
 	}
 
@@ -107,16 +105,14 @@ func (s *Server) handlePutConfigProviders(w http.ResponseWriter, r *http.Request
 		if apiKey == "" || strings.HasPrefix(apiKey, "••••") {
 			apiKey = existing.APIKey
 		}
+		// Copilot authenticates through GitHub OAuth only; it never stores an API key.
+		if name == models.ProviderCopilot {
+			apiKey = ""
+		}
 
 		if err := config.UpdateProvider(name, apiKey, item.BaseURL, item.Disabled); err != nil {
 			writeConfigError(w, http.StatusBadRequest, "failed to update provider "+item.Name+": "+err.Error(), err)
 			return
-		}
-		if item.UseOAuth != existing.UseOAuth {
-			if err := config.UpdateProviderOAuth(name, item.UseOAuth); err != nil {
-				writeConfigError(w, http.StatusInternalServerError, "failed to update provider OAuth "+item.Name+": "+err.Error(), err)
-				return
-			}
 		}
 	}
 

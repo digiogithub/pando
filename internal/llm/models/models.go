@@ -30,8 +30,8 @@ type Model struct {
 	// "reasoning_effort" or Anthropic adaptive "thinking" budget. It comes from
 	// the models.dev catalog (ReasoningOptions) when available. Empty means
 	// "unknown", and the resolver falls back to a per-family table.
-	ReasoningEfforts []string `json:"reasoning_efforts,omitempty"`
-	SupportsAttachments     bool          `json:"supports_attachments"`
+	ReasoningEfforts    []string `json:"reasoning_efforts,omitempty"`
+	SupportsAttachments bool     `json:"supports_attachments"`
 	// SupportedEndpoints lists the API routes the provider accepts for this
 	// model, as reported by its model-listing API (e.g. "/responses",
 	// "/chat/completions"). Empty for statically-defined models and for
@@ -97,7 +97,6 @@ var ProviderPopularity = map[ModelProvider]int{
 	ProviderCopilot:          1,
 	ProviderAnthropic:        2,
 	ProviderOpenAI:           3,
-	ProviderAntigravity:      4,
 	ProviderOllama:           5,
 	ProviderLlamaCpp:         6,
 	ProviderGemini:           7,
@@ -200,14 +199,11 @@ func init() {
 	// Azure and VertexAI are kept static because they don't expose a simple model listing endpoint.
 	// Anthropic models are hardcoded (same approach as Claude Code CLI) since the model list is static.
 	// Gemini includes a curated static baseline, and dynamic discovery augments provider coverage.
-	// Antigravity exposes a small curated logical catalog so users choose stable provider models
-	// without binding selections to a specific OAuth account.
 	// All other providers populate models dynamically via RefreshProviderModels.
 	catalogue := maps.Clone(staticSupportedModels)
 	maps.Copy(catalogue, AzureModels)
 	maps.Copy(catalogue, VertexAIGeminiModels)
 	maps.Copy(catalogue, GeminiModels)
-	maps.Copy(catalogue, AntigravityModels)
 	maps.Copy(catalogue, AnthropicModels)
 	supportedModelsStore.Store(&catalogue)
 }

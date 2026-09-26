@@ -62,8 +62,6 @@ func TestClassifyModelFamily(t *testing.T) {
 		{"gemini-3.1-pro", "gemini", "gemini-3.1-pro", FamilyGemini3},
 		{"gemini-2.5-pro", "gemini", "gemini-2.5-pro", FamilyGemini},
 		{"gemini-2.0-flash", "gemini", "gemini-2.0-flash", FamilyGemini},
-		// Antigravity maps to Gemini families
-		{"antigravity-gemini-3", "antigravity", "gemini-3-pro", FamilyGemini3},
 
 		// Ollama — no family classification
 		{"ollama-llama", "ollama", "llama3:latest", FamilyDefault},

@@ -76,7 +76,7 @@ func TestMigrateProvidersToAccountsSkipsCredentialLessProviders(t *testing.T) {
 
 	c := &Config{
 		Providers: map[models.ModelProvider]Provider{
-			models.ProviderAnthropic: {UseOAuth: true},
+			models.ProviderAnthropic: {},
 			models.ProviderOpenAI:    {APIKey: "sk-openai"},
 		},
 	}

@@ -755,9 +755,6 @@ func runSetupProviders(_ context.Context, _ *pandoSetupTool, args setupArgs) (st
 		if acc.Disabled {
 			state = "disabled"
 		}
-		if acc.ReauthRequired {
-			state += ", reauth required"
-		}
 
 		sb.WriteString(fmt.Sprintf("- %s (%s) — %s\n", acc.ID, acc.Type, label))
 		sb.WriteString(fmt.Sprintf("  state: %s | credentials: %s | models: %d\n",
@@ -787,8 +784,9 @@ func describeSetupCredentials(acc config.ProviderAccount) string {
 	if strings.TrimSpace(acc.APIKey) != "" {
 		kinds = append(kinds, "api key")
 	}
-	if strings.TrimSpace(acc.OAuthAccessToken) != "" || strings.TrimSpace(acc.OAuthRefreshToken) != "" || acc.UseOAuth {
-		kinds = append(kinds, "oauth")
+	if acc.Type == models.ProviderCopilot {
+		// Copilot has no key of its own: it signs in through GitHub OAuth.
+		kinds = append(kinds, "github oauth")
 	}
 	if len(kinds) == 0 {
 		return "none"

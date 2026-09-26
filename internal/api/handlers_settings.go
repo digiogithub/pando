@@ -163,7 +163,6 @@ type ProviderStatus struct {
 	Enabled   bool   `json:"enabled"`
 	HasAPIKey bool   `json:"has_api_key"`
 	BaseURL   string `json:"base_url,omitempty"`
-	UseOAuth  bool   `json:"use_oauth,omitempty"`
 }
 
 // buildSettingsResponse builds the settings response from the current config.
@@ -741,7 +740,6 @@ func (s *Server) handleGetProviders(w http.ResponseWriter, r *http.Request) {
 			Enabled:   !providerCfg.Disabled,
 			HasAPIKey: providerCfg.APIKey != "",
 			BaseURL:   providerCfg.BaseURL,
-			UseOAuth:  providerCfg.UseOAuth,
 		})
 	}
 

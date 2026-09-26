@@ -22,7 +22,6 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/bedrock"
 	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 	toolsPkg "github.com/digiogithub/pando/internal/llm/tools"
@@ -37,7 +36,6 @@ type anthropicOptions struct {
 	disableCache    bool
 	thinkingMode    config.ThinkingMode
 	reasoningEffort string
-	oauthToken      string // Bearer access token (if using OAuth instead of API key)
 }
 
 type AnthropicOption func(*anthropicOptions)
@@ -174,9 +172,6 @@ func newAnthropicClient(opts providerClientOptions) AnthropicClient {
 	if opts.apiKey != "" {
 		anthropicClientOptions = append(anthropicClientOptions, option.WithAPIKey(opts.apiKey))
 		anthropicClientOptions = append(anthropicClientOptions, claudeCodeHeaders(anthropicBetaHeader)...)
-	} else if anthropicOpts.oauthToken != "" {
-		anthropicClientOptions = append(anthropicClientOptions, option.WithAuthToken(anthropicOpts.oauthToken))
-		anthropicClientOptions = append(anthropicClientOptions, claudeCodeHeaders(auth.ClaudeOAuthBetaHeader+","+anthropicBetaHeader)...)
 	}
 	if anthropicOpts.useBedrock {
 		anthropicClientOptions = append(anthropicClientOptions, bedrock.WithLoadDefaultConfig(context.Background()))
@@ -909,11 +904,5 @@ func WithAnthropicReasoningEffort(effort string) AnthropicOption {
 			logging.Warn("Invalid anthropic reasoning effort, using default: medium")
 		}
 		options.reasoningEffort = defaultReasoningEffort
-	}
-}
-
-func WithAnthropicOAuthToken(token string) AnthropicOption {
-	return func(options *anthropicOptions) {
-		options.oauthToken = token
 	}
 }

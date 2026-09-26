@@ -30,9 +30,6 @@ func NormalizeModelID(input string) ModelID {
 	if alias, ok := anthropicShorthandAliases[lower]; ok {
 		return alias
 	}
-	if alias, ok := antigravityModelAliases[lower]; ok {
-		return alias
-	}
 	if strings.HasPrefix(lower, "anthropic.") {
 		return ModelID(lower)
 	}

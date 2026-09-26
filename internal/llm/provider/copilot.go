@@ -65,11 +65,8 @@ type copilotCredentials struct {
 	enterpriseURL string
 }
 
-func loadCopilotCredentials(savedToken, configuredToken, configuredBaseURL string) (copilotCredentials, error) {
+func loadCopilotCredentials(savedToken, configuredBaseURL string) (copilotCredentials, error) {
 	token := strings.TrimSpace(savedToken)
-	if token == "" {
-		token = strings.TrimSpace(configuredToken)
-	}
 	enterpriseURL := ""
 
 	if token == "" {
@@ -187,7 +184,7 @@ func (c *copilotClient) hasVisionInput(messages []message.Message) bool {
 }
 
 func (c *copilotClient) reloadCredentials() bool {
-	creds, err := loadCopilotCredentials("", c.providerOptions.apiKey, c.options.baseURL)
+	creds, err := loadCopilotCredentials("", c.options.baseURL)
 	if err != nil || strings.TrimSpace(creds.bearerToken) == "" {
 		return false
 	}
@@ -214,7 +211,7 @@ func newCopilotClient(opts providerClientOptions) CopilotClient {
 		o(&copilotOpts)
 	}
 
-	creds, err := loadCopilotCredentials(copilotOpts.bearerToken, opts.apiKey, copilotOpts.baseURL)
+	creds, err := loadCopilotCredentials(copilotOpts.bearerToken, copilotOpts.baseURL)
 	if err != nil {
 		logging.Error("GitHub Copilot login is required. Run `pando auth copilot login` or provide a compatible GitHub token.", "error", err)
 		return &copilotClient{providerOptions: opts, options: copilotOpts, baseURL: auth.CopilotAPIBaseURL("")}

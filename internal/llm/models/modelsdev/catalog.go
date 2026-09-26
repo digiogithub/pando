@@ -144,7 +144,7 @@ func (c Catalog) Lookup(providerID, modelID string) (Model, bool) {
 
 // LookupAny tries several models.dev providers in order and returns the first
 // hit. Used for Pando providers that front more than one upstream catalog
-// (Antigravity, Bedrock, Vertex AI).
+// (Bedrock, Vertex AI).
 func (c Catalog) LookupAny(providerIDs []string, modelID string) (Model, bool) {
 	for _, providerID := range providerIDs {
 		if m, ok := c.Lookup(providerID, modelID); ok {

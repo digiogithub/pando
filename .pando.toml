@@ -586,7 +586,6 @@ taskType = 'search'
 displayName = 'copilot'
 id = 'copilot'
 type = 'copilot'
-useOAuth = true
 
 [[providerAccounts]]
 apiKey = 'age1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBIalJySUZJeDNDd3AzZFVHMFhNbCtMNmo5UHdBYjcxUkVBS0NtcURWdEFVCmdnZFNsTFppWm1ZK1Raak0wUDVRZWM3OUdKTTFON0x4TzZUcVYyeW0ya2cKLS0tIG9KdG5mSmc4d28rTS9NMExzWmo4RC9EQyt4bHZ1VVJ4TThIVU53c2xjWXcKzvj8pn0kqomhkK1anxt3EDvRYCc8ZvOBzejzU6QEW0Hg93P/RkWLF6/t9vdd/lEDalZ0XG+pioRfP3bPwaMFjU/JU5dt+vw='

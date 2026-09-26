@@ -88,12 +88,11 @@ Directory = './.pando/data'
 # left here with an empty key still counts as a configured provider, so Pando
 # would advertise an account that cannot answer.
 
-# Anthropic (Claude models). Set APIKey or enable OAuth for claude.ai login.
+# Anthropic (Claude models). Set APIKey (API key only).
 # [Providers.anthropic]
 # APIKey   = ''    # ANTHROPIC_API_KEY env var also accepted
 # BaseURL  = ''    # Override only if using a proxy; leave empty for official API
 # Disabled = false
-# UseOAuth = true  # Use claude.ai OAuth instead of a raw API key
 
 # OpenAI — uncomment and add your key to enable.
 # [Providers.openai]

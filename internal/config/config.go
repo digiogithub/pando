@@ -137,8 +137,6 @@ type Provider struct {
 	APIKey   string `json:"apiKey"`
 	BaseURL  string `json:"baseURL,omitempty"`
 	Disabled bool   `json:"disabled"`
-	// UseOAuth enables OAuth mode for the anthropic provider (claude.ai OAuth instead of API key).
-	UseOAuth bool `json:"useOAuth,omitempty"`
 }
 
 // Data defines storage configuration.
@@ -1077,23 +1075,13 @@ type SandboxEnvConfig struct {
 // It allows multiple accounts of the same provider type (e.g., two Anthropic API keys).
 // The ID field is a unique slug used to identify the account (e.g., "anthropic-work").
 type ProviderAccount struct {
-	ID                string               `json:"id" toml:"id"`
-	DisplayName       string               `json:"displayName,omitempty" toml:"displayName,omitempty"`
-	Type              models.ModelProvider `json:"type" toml:"type"`
-	APIKey            string               `json:"apiKey,omitempty" toml:"apiKey,omitempty"`
-	OAuthRefreshToken string               `json:"oauthRefreshToken,omitempty" toml:"oauthRefreshToken,omitempty"`
-	OAuthAccessToken  string               `json:"oauthAccessToken,omitempty" toml:"oauthAccessToken,omitempty"`
-	OAuthExpiry       int64                `json:"oauthExpiry,omitempty" toml:"oauthExpiry,omitempty"`
-	ProjectID         string               `json:"projectId,omitempty" toml:"projectId,omitempty"`
-	Email             string               `json:"email,omitempty" toml:"email,omitempty"`
-	OAuthState        string               `json:"oauthState,omitempty" toml:"oauthState,omitempty"`
-	OAuthCodeVerifier string               `json:"oauthCodeVerifier,omitempty" toml:"oauthCodeVerifier,omitempty"`
-	OAuthRedirectURI  string               `json:"oauthRedirectUri,omitempty" toml:"oauthRedirectUri,omitempty"`
-	ReauthRequired    bool                 `json:"reauthRequired,omitempty" toml:"reauthRequired,omitempty"`
-	BaseURL           string               `json:"baseUrl,omitempty" toml:"baseUrl,omitempty"`
-	ExtraHeaders      map[string]string    `json:"extraHeaders,omitempty" toml:"extraHeaders,omitempty"`
-	Disabled          bool                 `json:"disabled,omitempty" toml:"disabled,omitempty"`
-	UseOAuth          bool                 `json:"useOAuth,omitempty" toml:"useOAuth,omitempty"`
+	ID           string               `json:"id" toml:"id"`
+	DisplayName  string               `json:"displayName,omitempty" toml:"displayName,omitempty"`
+	Type         models.ModelProvider `json:"type" toml:"type"`
+	APIKey       string               `json:"apiKey,omitempty" toml:"apiKey,omitempty"`
+	BaseURL      string               `json:"baseUrl,omitempty" toml:"baseUrl,omitempty"`
+	ExtraHeaders map[string]string    `json:"extraHeaders,omitempty" toml:"extraHeaders,omitempty"`
+	Disabled     bool                 `json:"disabled,omitempty" toml:"disabled,omitempty"`
 }
 
 // Config is the main configuration structure for the application.
@@ -2642,9 +2630,6 @@ func setProviderDefaults() {
 	if hasCopilotCredentials() {
 		viper.SetDefault("providers.copilot.disabled", false)
 	}
-	if hasClaudeCredentials() {
-		viper.SetDefault("providers.anthropic.disabled", false)
-	}
 
 	// Internal Tools API keys from environment
 	if apiKey := os.Getenv("PANDO_GOOGLE_API_KEY"); apiKey != "" {
@@ -2777,17 +2762,6 @@ func hasCopilotCredentials() bool {
 		return true
 	}
 	return false
-}
-
-// hasClaudeCredentials returns true if a Claude OAuth token is available from any source:
-// the CLAUDE_CODE_OAUTH_TOKEN env var, pando's own credential file, or the existing
-// Claude Code installation (~/.claude/.credentials.json).
-func hasClaudeCredentials() bool {
-	if strings.TrimSpace(os.Getenv("CLAUDE_CODE_OAUTH_TOKEN")) != "" {
-		return true
-	}
-	creds, _, err := auth.LoadClaudeCredentials()
-	return err == nil && creds != nil && creds.ClaudeAiOauth != nil && creds.ClaudeAiOauth.AccessToken != ""
 }
 
 // readConfig handles the result of reading a configuration file.
@@ -3236,9 +3210,6 @@ func validateAgent(cfg *Config, name AgentName, agent Agent) error {
 		if provider == models.ProviderCopilot && hasCopilotCredentials() {
 			cfg.Providers[provider] = Provider{}
 			logging.Info("added Copilot provider from saved login session")
-		} else if provider == models.ProviderAnthropic && hasClaudeCredentials() {
-			cfg.Providers[provider] = Provider{}
-			logging.Info("added Anthropic provider from Claude OAuth credentials")
 		} else {
 			// Provider not configured, check if we have environment variables
 			apiKey := getProviderAPIKey(provider)
@@ -3263,7 +3234,7 @@ func validateAgent(cfg *Config, name AgentName, agent Agent) error {
 				logging.Info("added provider from environment", "provider", provider)
 			}
 		}
-	} else if providerCfg.Disabled || (providerRequiresAPIKey(provider) && providerCfg.APIKey == "" && !providerCfg.Disabled && !(provider == models.ProviderAnthropic && hasClaudeCredentials())) || (provider == models.ProviderCopilot && providerCfg.APIKey == "" && !hasCopilotCredentials()) {
+	} else if providerCfg.Disabled || (providerRequiresAPIKey(provider) && providerCfg.APIKey == "" && !providerCfg.Disabled) || (provider == models.ProviderCopilot && !hasCopilotCredentials()) {
 		// Provider is disabled or has no API key
 		logging.Warn("provider is disabled or has no API key, reverting to default",
 			"agent", name,
@@ -3405,14 +3376,11 @@ func Validate() error {
 			if providerCfg.Disabled {
 				continue
 			}
-			if providerCfg.APIKey == "" && hasCopilotCredentials() {
+			if hasCopilotCredentials() {
 				continue
 			}
 		}
 		if providerRequiresAPIKey(provider) && providerCfg.APIKey == "" && !providerCfg.Disabled {
-			if provider == models.ProviderAnthropic && hasClaudeCredentials() {
-				continue // OAuth credentials available — no API key needed
-			}
 			logging.Warn("provider has no API key, marking as disabled", "provider", provider)
 			providerCfg.Disabled = true
 			cfg.Providers[provider] = providerCfg
@@ -3425,9 +3393,6 @@ func Validate() error {
 			continue
 		}
 		if acc.Type == models.ProviderCopilot && hasCopilotCredentials() {
-			continue
-		}
-		if acc.Type == models.ProviderAnthropic && hasClaudeCredentials() {
 			continue
 		}
 		if providerAccountRequiresAPIKey(acc.Type) && strings.TrimSpace(acc.APIKey) == "" {
@@ -3522,7 +3487,6 @@ func migrateProvidersToAccounts(c *Config) {
 			APIKey:      p.APIKey,
 			BaseURL:     p.BaseURL,
 			Disabled:    p.Disabled,
-			UseOAuth:    p.UseOAuth,
 		})
 	}
 	logging.Info("migrated legacy providers to provider accounts", "count", len(c.ProviderAccounts))
@@ -3548,8 +3512,6 @@ func providerEntryHasCredentials(provider models.ModelProvider, p Provider) bool
 		return true
 	}
 	switch provider {
-	case models.ProviderAnthropic:
-		return hasClaudeCredentials()
 	case models.ProviderCopilot:
 		return hasCopilotCredentials()
 	case models.ProviderBedrock:
@@ -3582,7 +3544,6 @@ func syncProvidersFromAccounts(c *Config) {
 			APIKey:   acc.APIKey,
 			BaseURL:  acc.BaseURL,
 			Disabled: acc.Disabled,
-			UseOAuth: acc.UseOAuth,
 		}
 	}
 }
@@ -3637,6 +3598,10 @@ func AddProviderAccount(account ProviderAccount) error {
 			return fmt.Errorf("provider account with ID %q already exists", account.ID)
 		}
 	}
+	if account.Type == models.ProviderCopilot {
+		// Copilot authenticates through GitHub OAuth only; it never stores an API key.
+		account.APIKey = ""
+	}
 	cfg.ProviderAccounts = append(cfg.ProviderAccounts, account)
 	if err := updateCfgFile(func(c *Config) {
 		c.ProviderAccounts = append(c.ProviderAccounts, account)
@@ -3667,7 +3632,10 @@ func UpdateProviderAccount(id string, updated ProviderAccount) error {
 	if idx < 0 {
 		return fmt.Errorf("provider account %q not found", id)
 	}
-	if strings.TrimSpace(updated.APIKey) == "" {
+	if updated.Type == models.ProviderCopilot {
+		// Copilot authenticates through GitHub OAuth only; it never stores an API key.
+		updated.APIKey = ""
+	} else if strings.TrimSpace(updated.APIKey) == "" {
 		updated.APIKey = cfg.ProviderAccounts[idx].APIKey
 	}
 	updated.ID = id
@@ -3754,7 +3722,7 @@ func SetProviderAccountDisabled(id string, disabled bool) error {
 // providerAccountRequiresAPIKey returns true if the given provider type requires an API key.
 func providerAccountRequiresAPIKey(providerType models.ModelProvider) bool {
 	switch providerType {
-	case models.ProviderAntigravity, models.ProviderCopilot, models.ProviderOllama, models.ProviderLlamaCpp:
+	case models.ProviderCopilot, models.ProviderOllama, models.ProviderLlamaCpp:
 		return false
 	default:
 		return true
@@ -3802,7 +3770,6 @@ func ResolveProviderAccountForType(providerType models.ModelProvider) (*Provider
 			APIKey:   p.APIKey,
 			BaseURL:  p.BaseURL,
 			Disabled: p.Disabled,
-			UseOAuth: p.UseOAuth,
 		}, nil
 	}
 	return nil, fmt.Errorf("no configured account for provider %s", providerType)
@@ -3946,9 +3913,9 @@ func providerUsableForDefaults(provider models.ModelProvider) bool {
 	}
 	switch provider {
 	case models.ProviderCopilot:
-		return hasCopilotCredentials() || strings.TrimSpace(providerCfg.APIKey) != ""
+		return hasCopilotCredentials()
 	case models.ProviderAnthropic:
-		return hasClaudeCredentials() || strings.TrimSpace(providerCfg.APIKey) != "" ||
+		return strings.TrimSpace(providerCfg.APIKey) != "" ||
 			strings.TrimSpace(getProviderAPIKey(provider)) != ""
 	case models.ProviderBedrock:
 		return hasAWSCredentials()
@@ -4499,17 +4466,17 @@ func OverrideAgentModel(agentName AgentName, modelID models.ModelID) error {
 		if !providerConfigured && !hasCopilotCredentials() {
 			return fmt.Errorf("provider %s is not configured", model.Provider)
 		}
-		if providerConfigured && providerCfg.APIKey == "" && !hasCopilotCredentials() && !providerCfg.Disabled {
+		if providerConfigured && !hasCopilotCredentials() && !providerCfg.Disabled {
 			return fmt.Errorf("provider %s has no credentials configured", model.Provider)
 		}
 	case models.ProviderAnthropic:
 		if providerConfigured && providerCfg.Disabled {
 			return fmt.Errorf("provider %s is disabled", model.Provider)
 		}
-		if !providerConfigured && !hasClaudeCredentials() {
+		if !providerConfigured {
 			return fmt.Errorf("provider %s is not configured", model.Provider)
 		}
-		if providerConfigured && providerCfg.APIKey == "" && !hasClaudeCredentials() && !providerCfg.Disabled {
+		if providerConfigured && providerCfg.APIKey == "" && !providerCfg.Disabled {
 			return fmt.Errorf("provider %s has no credentials configured", model.Provider)
 		}
 	case models.ProviderOllama:
@@ -5152,40 +5119,6 @@ func UpdateInternalTools(internalToolsCfg InternalToolsConfig) error {
 	return nil
 }
 
-// UpdateProviderOAuth updates only the UseOAuth flag for the specified provider and persists the change.
-func UpdateProviderOAuth(name models.ModelProvider, useOAuth bool) error {
-	if cfg == nil {
-		return fmt.Errorf("config not loaded")
-	}
-
-	if cfg.Providers == nil {
-		cfg.Providers = make(map[models.ModelProvider]Provider)
-	}
-
-	oldProvider, hadProvider := cfg.Providers[name]
-	newProvider := cfg.Providers[name]
-	newProvider.UseOAuth = useOAuth
-	cfg.Providers[name] = newProvider
-
-	if err := updateCfgFile(func(config *Config) {
-		if config.Providers == nil {
-			config.Providers = make(map[models.ModelProvider]Provider)
-		}
-		p := config.Providers[name]
-		p.UseOAuth = useOAuth
-		config.Providers[name] = p
-	}); err != nil {
-		if hadProvider {
-			cfg.Providers[name] = oldProvider
-		} else {
-			delete(cfg.Providers, name)
-		}
-		return err
-	}
-
-	return nil
-}
-
 func UpdateProvider(name models.ModelProvider, apiKey string, baseURL string, disabled bool) error {
 	if cfg == nil {
 		return fmt.Errorf("config not loaded")
@@ -5227,7 +5160,7 @@ func UpdateProvider(name models.ModelProvider, apiKey string, baseURL string, di
 }
 
 func providerRequiresAPIKey(provider models.ModelProvider) bool {
-	return provider != models.ProviderAntigravity && provider != models.ProviderCopilot && provider != models.ProviderOllama && provider != models.ProviderLlamaCpp
+	return provider != models.ProviderCopilot && provider != models.ProviderOllama && provider != models.ProviderLlamaCpp
 }
 
 func refreshConfiguredDynamicModels() {

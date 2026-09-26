@@ -149,36 +149,6 @@ func (t fakePromptTool) Run(ctx context.Context, params tools.ToolCall) (tools.T
 	return tools.NewTextResponse(""), nil
 }
 
-func TestCreateAgentProviderAllowsLogicalAntigravityModelWithoutConcreteAccount(t *testing.T) {
-	oldCfg := config.Get()
-	t.Cleanup(func() {
-		setTestConfig(oldCfg)
-	})
-
-	setTestConfig(&config.Config{
-		WorkingDir: t.TempDir(),
-		Agents: map[config.AgentName]config.Agent{
-			config.AgentCoder: {Model: models.AntigravityGemini30Pro},
-		},
-		ProviderAccounts: []config.ProviderAccount{{
-			ID:                "ag-1",
-			Type:              models.ProviderAntigravity,
-			Email:             "user@example.com",
-			OAuthRefreshToken: "refresh-token",
-			OAuthAccessToken:  "access-token",
-			OAuthExpiry:       4102444800,
-		}},
-		Providers: map[models.ModelProvider]config.Provider{},
-		LSP:       make(map[string]config.LSPConfig),
-	})
-
-	p, err := createAgentProvider(context.Background(), config.AgentCoder, nil, nil, nil)
-	require.NoError(t, err)
-	require.NotNil(t, p)
-	assert.Equal(t, models.AntigravityGemini30Pro, p.Model().ID)
-	assert.Equal(t, models.ProviderAntigravity, p.Model().Provider)
-}
-
 func TestBuildSystemMessageUsesTemplatePromptBuilder(t *testing.T) {
 	// config.Load is a process-wide singleton loader (it short-circuits with
 	// "if cfg != nil { return cfg, nil }" and otherwise assigns the package

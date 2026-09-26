@@ -43,6 +43,8 @@ func shortReloadDebounce(t *testing.T, d time.Duration) {
 
 func TestReloadPreservesOverrides(t *testing.T) {
 	isolateGlobalConfig(t)
+	// Copilot authenticates through GitHub OAuth only; discovery honours this env var.
+	t.Setenv("COPILOT_GITHUB_TOKEN", "test-copilot-token")
 	resetOverlayState(t)
 	resetRuntimeState(t)
 
@@ -53,7 +55,7 @@ func TestReloadPreservesOverrides(t *testing.T) {
 
 	dir := writeProjectConfig(t, map[string]any{
 		"tui":       map[string]any{"theme": "dark"},
-		"providers": map[string]any{"copilot": map[string]any{"apiKey": "test-key"}},
+		"providers": map[string]any{"copilot": map[string]any{"disabled": false}},
 		"agents":    map[string]any{"coder": map[string]any{"model": string(fileModel)}},
 	})
 

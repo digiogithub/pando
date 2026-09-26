@@ -351,9 +351,6 @@ func AccountScopedStaticModels(provider ModelProvider, accountID string, allAcco
 }
 
 func dynamicModelPrefix(providerType ModelProvider, accountID string, allAccountsOfType int) string {
-	if providerType == ProviderAntigravity {
-		return string(providerType)
-	}
 	if allAccountsOfType > 1 {
 		return accountID
 	}
@@ -408,9 +405,6 @@ func shouldSkipAccountScopedModel(providerType ModelProvider, modelID ModelID, a
 	// account fetched before is exactly how stale cached metadata gets fixed.
 	if isStaticModel(modelID) {
 		return true
-	}
-	if providerType == ProviderAntigravity {
-		return staticModelExistsByAPIModel(providerType, apiModel)
 	}
 	return false
 }

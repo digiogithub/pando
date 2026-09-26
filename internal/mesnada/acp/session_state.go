@@ -276,6 +276,30 @@ func buildSessionConfigOptions(svc AgentService, session *ACPServerSession) []ac
 	return options
 }
 
+// buildUnstableSessionModelState converts the stable model state into the
+// unstable shape used by session/resume responses (identical JSON).
+func buildUnstableSessionModelState(state *acpsdk.SessionModelState) *acpsdk.UnstableSessionModelState {
+	if state == nil {
+		return nil
+	}
+	raw, err := json.Marshal(state)
+	if err != nil {
+		return nil
+	}
+	var unstable acpsdk.UnstableSessionModelState
+	if err := json.Unmarshal(raw, &unstable); err != nil {
+		return nil
+	}
+	return &unstable
+}
+
+// clientKeepsOwnTranscript reports whether an ACP client persists and
+// re-renders its own conversation transcript, so replaying history on
+// session/load would duplicate every earlier message. Xcode 27 does this.
+func clientKeepsOwnTranscript(clientName string) bool {
+	return strings.EqualFold(strings.TrimSpace(clientName), "xcode")
+}
+
 func buildUnstableSessionConfigOptions(opts []acpsdk.SessionConfigOption) []acpsdk.UnstableSessionConfigOption {
 	if len(opts) == 0 {
 		return nil

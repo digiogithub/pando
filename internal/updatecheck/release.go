@@ -6,6 +6,7 @@ package updatecheck
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"runtime"
 	"strings"
 
@@ -41,6 +42,55 @@ func DetectLatest(ctx context.Context) (*Result, error) {
 		}
 		return &Result{Release: result.release, Found: result.found}, nil
 	}
+}
+
+// DetectVersion returns the published GitHub release tagged with the given
+// version (with or without the "v" prefix) when it ships an asset for the
+// running platform. Found is false when the tag exists but carries no asset for
+// this platform; a tag that does not exist is reported as an error.
+func DetectVersion(ctx context.Context, requested string) (*Result, error) {
+	want, ok := parseReleaseVersion(requested)
+	if !ok {
+		return nil, fmt.Errorf("invalid release version %q", requested)
+	}
+
+	repo := strings.Split(RepoSlug, "/")
+	if len(repo) != 2 {
+		return nil, fmt.Errorf("invalid repository slug %q", RepoSlug)
+	}
+	client := github.NewClient(nil)
+
+	var lastErr error
+	for _, tag := range releaseTagCandidates(requested) {
+		rel, resp, err := client.Repositories.GetReleaseByTag(ctx, repo[0], repo[1], tag)
+		if err != nil {
+			if resp != nil && resp.StatusCode == http.StatusNotFound {
+				continue
+			}
+			lastErr = err
+			continue
+		}
+		release, found, err := selectReleaseForTargets([]*github.RepositoryRelease{rel}, repo[0], repo[1], releaseArchAliases(runtime.GOOS, runtime.GOARCH))
+		if err != nil {
+			return nil, err
+		}
+		if found && !release.Version.Equals(want) {
+			return nil, fmt.Errorf("release tag %q resolves to version v%s, not v%s", tag, release.Version, want)
+		}
+		return &Result{Release: release, Found: found}, nil
+	}
+	if lastErr != nil {
+		return nil, fmt.Errorf("lookup release v%s: %w", want, lastErr)
+	}
+	return nil, fmt.Errorf("release v%s not found in %s", want, RepoSlug)
+}
+
+// releaseTagCandidates lists the tag spellings tried for a requested version:
+// the "v"-prefixed form first (the project's tagging convention), then the
+// bare form.
+func releaseTagCandidates(requested string) []string {
+	bare := strings.TrimPrefix(strings.TrimSpace(requested), "v")
+	return []string{"v" + bare, bare}
 }
 
 func detectLatestReleaseManual() (*selfupdate.Release, bool, error) {

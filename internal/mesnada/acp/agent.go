@@ -66,6 +66,9 @@ type PandoACPAgent struct {
 	// terminal transport metadata via _meta.terminal_output / terminal_exit.
 	clientSupportsTerminalOutput bool
 
+	// clientName is ClientInfo.Name from Initialize (e.g. "Xcode", "Zed").
+	clientName string
+
 	// pendingToolCalls maps tool call IDs to their raw input JSON for edit/write operations.
 	// Used to extract the file path when sending WriteTextFile after a successful tool result.
 	pendingToolCallsMu sync.Mutex
@@ -132,6 +135,11 @@ func NewPandoACPAgent(
 		planService:       NewPlanService(logger),
 		capabilities: acpsdk.AgentCapabilities{
 			LoadSession: true,
+			// session/resume restores a session without replaying its history,
+			// for clients that keep their own transcript (see ResumeSession).
+			SessionCapabilities: acpsdk.SessionCapabilities{
+				Resume: &acpsdk.SessionResumeCapabilities{},
+			},
 			// Client-provided MCP servers are connected per session through
 			// internal/mcpclient, which speaks stdio, SSE and streamable HTTP.
 			McpCapabilities: acpsdk.McpCapabilities{
@@ -149,7 +157,6 @@ func NewPandoACPAgent(
 	agent.extensionHandlers = map[string]func(ctx context.Context, params json.RawMessage) (any, error){
 		"_pando.setPersona":       agent.handleExtensionSetPersona,
 		"_pando.openCopilotUsage": agent.handleExtensionOpenCopilotUsage,
-		"_pando.openClaudeUsage":  agent.handleExtensionOpenClaudeUsage,
 	}
 
 	return agent
@@ -181,6 +188,7 @@ func (a *PandoACPAgent) Initialize(ctx context.Context, req acpsdk.InitializeReq
 	// Store whether this client supports receiving file content via WriteTextFile (6a).
 	a.clientSupportsWriteFile = req.ClientCapabilities.Fs.WriteTextFile
 	a.clientSupportsTerminalOutput = req.ClientCapabilities.Terminal
+	a.clientName = clientName
 
 	agentInfo := &acpsdk.Implementation{
 		Name:    "pando",
@@ -579,8 +587,20 @@ func (a *PandoACPAgent) LoadSession(ctx context.Context, req acpsdk.LoadSessionR
 	// response is flushed) so it does not interleave with history and is not
 	// dropped for a session Zed has not registered yet. See
 	// scheduleAvailableCommandsUpdate.
+	//
+	// Exception: clients that persist and re-render their own transcript
+	// (Xcode) append the replay to what they already show, so every earlier
+	// message appears twice after reopening a conversation. Skip the replay for
+	// them; the agent still has the full history server-side.
+	replay := !clientKeepsOwnTranscript(a.clientName)
+	if !replay {
+		a.logger.Printf("[ACP AGENT] LoadSession: skipping history replay for client %q (keeps its own transcript)", a.clientName)
+		logging.Info("acp: load session replay skipped", "session_id", string(req.SessionId), "client_name", a.clientName)
+	}
 	go func() {
-		a.streamSessionHistory(context.Background(), req.SessionId, string(req.SessionId))
+		if replay {
+			a.streamSessionHistory(context.Background(), req.SessionId, string(req.SessionId))
+		}
 		a.scheduleAvailableCommandsUpdate(req.SessionId)
 	}()
 
@@ -813,7 +833,9 @@ func (a *PandoACPAgent) ResumeSession(ctx context.Context, req acpsdk.ResumeSess
 			}
 		}
 		acpSession.SetMode(currentMode)
-		acpSession.SetAskPermission(defaultAskPermissionForMode(currentMode))
+		// Same default as NewSession/LoadSession: a resumed session must not
+		// start prompting for permissions a loaded one would not.
+		acpSession.SetAskPermission(false)
 		a.sessions[req.SessionId] = acpSession
 	}
 	a.sessionsMu.Unlock()
@@ -826,16 +848,21 @@ func (a *PandoACPAgent) ResumeSession(ctx context.Context, req acpsdk.ResumeSess
 	if err != nil {
 		return acpsdk.ResumeSessionResponse{}, err
 	}
+	reconcileACPThinkingSession(a.agentService, acpSession)
 	if hadPersistedACPState {
 		if err := a.persistACPState(ctx, acpSession); err != nil {
 			return acpsdk.ResumeSessionResponse{}, err
 		}
 	}
 	a.attachSessionMCPServers(acpSession, req.McpServers)
+	// No history replay (that is the point of resume), but slash commands are
+	// still announced once the response is flushed, as in LoadSession.
+	go a.scheduleAvailableCommandsUpdate(req.SessionId)
 	configOptions := buildSessionConfigOptions(a.agentService, acpSession)
 	return acpsdk.ResumeSessionResponse{
 		ConfigOptions: buildUnstableSessionConfigOptions(configOptions),
 		Modes:         buildSessionModeState(a.agentService, currentMode),
+		Models:        buildUnstableSessionModelState(buildSessionModelState(a.agentService, a.mustSessionModel(req.SessionId))),
 		Meta:          mergeMetaMaps(personaStateToMeta(buildSessionPersonaState(a.agentService, acpSession.Persona())), goalMeta(acpSession.Goal())),
 	}, nil
 }
@@ -1274,14 +1301,6 @@ func (a *PandoACPAgent) handleExtensionSetPersona(ctx context.Context, params js
 func (a *PandoACPAgent) handleExtensionOpenCopilotUsage(context.Context, json.RawMessage) (any, error) {
 	const url = "https://github.com/settings/copilot/features"
 	if err := a.agentService.OpenCopilotUsage(); err != nil {
-		return nil, err
-	}
-	return usageOpenResult{Opened: true, URL: url}, nil
-}
-
-func (a *PandoACPAgent) handleExtensionOpenClaudeUsage(context.Context, json.RawMessage) (any, error) {
-	const url = "https://claude.ai/settings/usage"
-	if err := a.agentService.OpenClaudeUsage(); err != nil {
 		return nil, err
 	}
 	return usageOpenResult{Opened: true, URL: url}, nil

@@ -144,7 +144,6 @@ Directory = './.pando/data'
 # APIKey   = ''
 # BaseURL  = ''
 # Disabled = false
-# UseOAuth = true
 
 # [Providers.openai]
 # APIKey   = ''

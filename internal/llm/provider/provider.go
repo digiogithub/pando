@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/tools"
@@ -70,15 +69,10 @@ type Provider interface {
 }
 
 type providerClientOptions struct {
-	apiKey            string
-	useOAuth          bool
-	oauthAccountID    string
-	oauthAccessToken  string
-	oauthRefreshToken string
-	oauthExpiry       int64
-	model             models.Model
-	maxTokens         int64
-	systemMessage     string
+	apiKey        string
+	model         models.Model
+	maxTokens     int64
+	systemMessage string
 
 	anthropicOptions []AnthropicOption
 	openaiOptions    []OpenAIOption
@@ -95,9 +89,8 @@ type ProviderClient interface {
 }
 
 type baseProvider[C ProviderClient] struct {
-	options            providerClientOptions
-	client             C
-	antigravityContext *antigravityRequestContext
+	options providerClientOptions
+	client  C
 }
 
 func wrapInstrumented(p Provider, err error) (Provider, error) {
@@ -105,28 +98,6 @@ func wrapInstrumented(p Provider, err error) (Provider, error) {
 		return nil, err
 	}
 	return NewInstrumentedProvider(p), nil
-}
-
-func attachAntigravityContext(p Provider, ctx *antigravityRequestContext) Provider {
-	if ctx == nil || p == nil {
-		return p
-	}
-	switch typed := p.(type) {
-	case *instrumentedProvider:
-		typed.inner = attachAntigravityContext(typed.inner, ctx)
-		return typed
-	case *baseProvider[GeminiClient]:
-		typed.antigravityContext = ctx
-		return typed
-	case *baseProvider[OpenAIClient]:
-		typed.antigravityContext = ctx
-		return typed
-	case *baseProvider[ProviderClient]:
-		typed.antigravityContext = ctx
-		return typed
-	default:
-		return p
-	}
 }
 
 func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption) (Provider, error) {
@@ -144,38 +115,9 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 			client:  newCopilotClient(clientOptions),
 		}, nil)
 	case models.ProviderAnthropic:
-		anthropicOpts := clientOptions.anthropicOptions
-		// Use OAuth when explicitly requested via UseOAuth config flag, or as a
-		// fallback when no API key is configured.
-		// When UseOAuth is true, Claude Code credentials take priority over any
-		// configured API key (the key is cleared so the OAuth path is used).
-		useOAuth := clientOptions.useOAuth || clientOptions.apiKey == ""
-		if useOAuth {
-			if creds, source, err := auth.LoadClaudeCredentials(); err == nil && creds != nil {
-				if token, updatedCreds, err := auth.GetClaudeToken(creds); err == nil && token != "" {
-					// Save refreshed token back to the same source it came from.
-					if updatedCreds != nil {
-						if source == "claude-code" {
-							_ = auth.SaveClaudeCodeCredentials(updatedCreds)
-						} else {
-							_ = auth.SaveClaudeCredentials(updatedCreds)
-						}
-					}
-					anthropicOpts = append(anthropicOpts, WithAnthropicOAuthToken(token))
-					clientOptions.apiKey = "" // OAuth takes over — clear API key
-					logging.Debug("Using Claude OAuth token for authentication", "source", source, "explicit", clientOptions.useOAuth)
-				}
-			}
-		}
 		return wrapInstrumented(&baseProvider[AnthropicClient]{
 			options: clientOptions,
-			client: newAnthropicClient(providerClientOptions{
-				apiKey:           clientOptions.apiKey,
-				model:            clientOptions.model,
-				maxTokens:        clientOptions.maxTokens,
-				systemMessage:    clientOptions.systemMessage,
-				anthropicOptions: anthropicOpts,
-			}),
+			client:  newAnthropicClient(clientOptions),
 		}, nil)
 	case models.ProviderOpenAI:
 		return wrapInstrumented(&baseProvider[OpenAIClient]{
@@ -280,26 +222,11 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 // This is the preferred way to create providers when using the multi-account system.
 func NewProviderFromAccount(account config.ProviderAccount, model models.Model, maxTokens int64, systemMessage string) (Provider, error) {
 	providerType := account.Type
-	var antigravityCtx *antigravityRequestContext
-
-	opts := []ProviderClientOption{}
-	if providerType == models.ProviderAntigravity {
-		prepared, ctx, err := prepareAntigravityAccount(account, model)
-		if err != nil {
-			return nil, err
-		}
-		account = prepared
-		antigravityCtx = ctx
-		providerType = models.ProviderOpenAICompatible
-		opts = append(opts, antigravityProviderOptions(account, model, maxTokens, systemMessage)...)
-	} else {
-		opts = append(opts,
-			WithAPIKey(account.APIKey),
-			WithUseOAuth(account.UseOAuth),
-			WithModel(model),
-			WithMaxTokens(maxTokens),
-			WithSystemMessage(systemMessage),
-		)
+	opts := []ProviderClientOption{
+		WithAPIKey(account.APIKey),
+		WithModel(model),
+		WithMaxTokens(maxTokens),
+		WithSystemMessage(systemMessage),
 	}
 
 	// Apply cache-disable options based on global config
@@ -342,11 +269,7 @@ func NewProviderFromAccount(account config.ProviderAccount, model models.Model, 
 		}
 	}
 
-	providerInstance, err := NewProvider(providerType, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return attachAntigravityContext(providerInstance, antigravityCtx), nil
+	return NewProvider(providerType, opts...)
 }
 
 func (p *baseProvider[C]) cleanMessages(messages []message.Message) (cleaned []message.Message) {
@@ -366,12 +289,6 @@ func (p *baseProvider[C]) SendMessages(ctx context.Context, messages []message.M
 		logging.Debug("Sending messages", "model", p.options.model.APIModel, "message_count", len(messages))
 	}
 	response, err := p.client.send(ctx, messages, tools)
-	if err != nil && p.antigravityContext != nil {
-		return nil, applyAntigravityFailure(p.antigravityContext.Account, p.antigravityContext.Pool, p.antigravityContext.Model, err)
-	}
-	if err == nil && p.antigravityContext != nil {
-		defaultAntigravityScheduler.ReportSuccess(p.antigravityContext.Account.ID, p.antigravityContext.Pool, p.antigravityContext.Model)
-	}
 	return response, err
 }
 
@@ -384,43 +301,12 @@ func (p *baseProvider[C]) StreamResponse(ctx context.Context, messages []message
 	if cfg := config.Get(); cfg != nil && cfg.Debug {
 		logging.Debug("Starting stream response", "model", p.options.model.APIModel, "message_count", len(messages), "tool_count", len(tools))
 	}
-	inner := p.client.stream(ctx, messages, tools)
-	if p.antigravityContext == nil {
-		return inner
-	}
-	out := make(chan ProviderEvent)
-	go func() {
-		defer close(out)
-		for event := range inner {
-			if event.Type == EventError && event.Error != nil {
-				event.Error = applyAntigravityFailure(p.antigravityContext.Account, p.antigravityContext.Pool, p.antigravityContext.Model, event.Error)
-			} else if event.Type == EventComplete {
-				defaultAntigravityScheduler.ReportSuccess(p.antigravityContext.Account.ID, p.antigravityContext.Pool, p.antigravityContext.Model)
-			}
-			out <- event
-		}
-	}()
-	return out
+	return p.client.stream(ctx, messages, tools)
 }
 
 func WithAPIKey(apiKey string) ProviderClientOption {
 	return func(options *providerClientOptions) {
 		options.apiKey = apiKey
-	}
-}
-
-func WithUseOAuth(useOAuth bool) ProviderClientOption {
-	return func(options *providerClientOptions) {
-		options.useOAuth = useOAuth
-	}
-}
-
-func WithOAuthAccount(account config.ProviderAccount) ProviderClientOption {
-	return func(options *providerClientOptions) {
-		options.oauthAccountID = account.ID
-		options.oauthAccessToken = account.OAuthAccessToken
-		options.oauthRefreshToken = account.OAuthRefreshToken
-		options.oauthExpiry = account.OAuthExpiry
 	}
 }
 

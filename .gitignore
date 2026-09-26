@@ -69,3 +69,6 @@ internal/desktop/bin/pando-desktop
 
 # Sandbox e2e scratch dirs (must live outside the temp dirs the sandbox allows)
 .sandbox-e2e-*/
+
+# Python bytecode
+__pycache__/

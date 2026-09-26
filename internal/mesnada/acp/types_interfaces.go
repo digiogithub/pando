@@ -140,8 +140,6 @@ type AgentService interface {
 	Summarize(ctx context.Context, sessionID string) (<-chan AgentEvent, error)
 	// OpenCopilotUsage opens the Copilot usage/features page when Copilot auth is available.
 	OpenCopilotUsage() error
-	// OpenClaudeUsage opens the Claude usage page when Claude OAuth auth is available.
-	OpenClaudeUsage() error
 	// AttachSessionMCPServers connects the MCP servers an ACP client passed in
 	// session/new or session/load and exposes their tools to that session's
 	// agent runs only. It replaces any set attached before. Servers that fail

@@ -308,27 +308,6 @@ func TestHandleCopilotUsageRPC(t *testing.T) {
 	}
 }
 
-func TestHandleClaudeUsageRPCError(t *testing.T) {
-	mockSvc := &mockAgentService{claudeUsageErr: errors.New("oauth required")}
-	agent := NewPandoACPAgent("1.0.0-test", "/tmp", log.Default(), mockSvc, newMockSessionService(), nil)
-	var out bytes.Buffer
-
-	handleClaudeUsageRPC(jsonRPCMsg{ID: json.RawMessage("1")}, &out, agent, log.Default())
-
-	var resp struct {
-		Error struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal error response: %v", err)
-	}
-	if resp.Error.Code != -32602 || resp.Error.Message != "oauth required" {
-		t.Fatalf("unexpected error response: %+v", resp.Error)
-	}
-}
-
 func TestPandoACPAgent_HandleExtensionMethod(t *testing.T) {
 	agent := newTestPandoAgent()
 	ctx := context.Background()
@@ -399,7 +378,6 @@ type mockAgentService struct {
 	modelOverride      string
 	modelOverrideErr   error
 	copilotUsageErr    error
-	claudeUsageErr     error
 	goalObjective      string
 	summarizeSessionID string
 	lastRunMessages    []string
@@ -693,10 +671,6 @@ func (m *mockAgentService) Summarize(ctx context.Context, sessionID string) (<-c
 
 func (m *mockAgentService) OpenCopilotUsage() error {
 	return m.copilotUsageErr
-}
-
-func (m *mockAgentService) OpenClaudeUsage() error {
-	return m.claudeUsageErr
 }
 
 func (m *mockAgentService) AttachSessionMCPServers(ctx context.Context, sessionID string, servers []SessionMCPServer) error {
@@ -2854,6 +2828,56 @@ func TestPandoACPAgent_ProcessAgentEventStream_LogsGroupedThinkingFlush(t *testi
 	}
 }
 
+// TestPandoACPAgent_ProcessAgentEventStream_GroupedThinkingSendsOnlyNewText
+// covers the Xcode "thinking repeats with every new word" symptom: after the
+// first grouped flush of a turn the buffer was never reset, so every later
+// flush re-sent the whole accumulated thought instead of only the new text.
+func TestPandoACPAgent_ProcessAgentEventStream_GroupedThinkingSendsOnlyNewText(t *testing.T) {
+	agent := newTestPandoAgent()
+	acpSession, updates := newThoughtCaptureSession(t)
+	acpSession.SetThinkingStreamMode(thinkingStreamModeGrouped)
+
+	parts := []string{
+		strings.Repeat("a", acpGroupedThinkingFlushChars),
+		strings.Repeat("b", acpGroupedThinkingFlushChars),
+		strings.Repeat("c", acpGroupedThinkingFlushChars),
+	}
+	eventChan := make(chan AgentEvent, len(parts)+1)
+	for _, p := range parts {
+		eventChan <- AgentEvent{Type: AgentEventTypeThinkingDelta, Delta: p, MessageID: "assistant-msg-1"}
+	}
+	eventChan <- AgentEvent{
+		Type: AgentEventTypeResponse,
+		Message: message.Message{
+			ID:    "assistant-msg-1",
+			Parts: []message.ContentPart{message.ReasoningContent{Thinking: strings.Join(parts, "")}},
+		},
+	}
+	close(eventChan)
+
+	if _, err := agent.processAgentEventStream(context.Background(), acpSession, eventChan); err != nil {
+		t.Fatalf("processAgentEventStream failed: %v", err)
+	}
+
+	var thoughts []acpUpdateRecord
+	for _, rec := range decodeSessionUpdateRecords(t, updates.String()) {
+		if rec.Kind == "agent_thought_chunk" {
+			thoughts = append(thoughts, rec)
+		}
+	}
+	if len(thoughts) != len(parts) {
+		t.Fatalf("expected %d thought chunks, got %d: %#v", len(parts), len(thoughts), thoughts)
+	}
+	for i, rec := range thoughts {
+		if rec.Text != parts[i] {
+			t.Fatalf("thought chunk #%d: expected only the new text (%d chars), got %d chars", i, len(parts[i]), len(rec.Text))
+		}
+		if rec.MessageID != "assistant-msg-1" {
+			t.Fatalf("thought chunk #%d: expected messageId %q, got %q", i, "assistant-msg-1", rec.MessageID)
+		}
+	}
+}
+
 func TestPandoACPAgent_ProcessPromptWithAgent_LogsAppliedThinkingSettings(t *testing.T) {
 	var logs bytes.Buffer
 	logger := log.New(&logs, "", 0)
@@ -3114,6 +3138,87 @@ func TestPandoACPAgent_ResumeSession_IncludesConfigOptions(t *testing.T) {
 
 	if len(resumeResp.ConfigOptions) != 5 {
 		t.Fatalf("expected 5 resume config options, got %d", len(resumeResp.ConfigOptions))
+	}
+}
+
+// TestPandoACPAgent_Initialize_AdvertisesResume ensures session/resume is
+// announced so clients with their own transcript can reopen a conversation
+// without a history replay.
+func TestPandoACPAgent_Initialize_AdvertisesResume(t *testing.T) {
+	agent := newTestPandoAgent()
+	resp, err := agent.Initialize(context.Background(), acpsdk.InitializeRequest{ProtocolVersion: 1})
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	if resp.AgentCapabilities.SessionCapabilities.Resume == nil {
+		t.Fatal("expected sessionCapabilities.resume to be advertised")
+	}
+}
+
+// TestPandoACPAgent_LoadSession_SkipsReplayForXcode covers the "reopening a
+// conversation shows all earlier messages again" symptom: Xcode re-renders its
+// own transcript, so session/load must not replay history for it, while other
+// clients (Zed) still get the spec-mandated replay.
+func TestPandoACPAgent_LoadSession_SkipsReplayForXcode(t *testing.T) {
+	for _, tc := range []struct {
+		client   string
+		wantSkip bool
+	}{
+		{client: "Xcode", wantSkip: true},
+		{client: "zed", wantSkip: false},
+		{client: "", wantSkip: false},
+	} {
+		t.Run(tc.client, func(t *testing.T) {
+			var logs bytes.Buffer
+			sessions := newMockSessionService()
+			sessions.sessions["existing-session-1"] = ACPSessionInfo{ID: "existing-session-1"}
+			agent := NewPandoACPAgent("1.0.0-test", "/tmp", log.New(&logs, "", 0), &mockAgentService{}, sessions, nil)
+			req := acpsdk.InitializeRequest{ProtocolVersion: 1}
+			if tc.client != "" {
+				req.ClientInfo = &acpsdk.Implementation{Name: tc.client, Version: "1"}
+			}
+			if _, err := agent.Initialize(context.Background(), req); err != nil {
+				t.Fatalf("Initialize failed: %v", err)
+			}
+			if _, err := agent.LoadSession(context.Background(), acpsdk.LoadSessionRequest{
+				SessionId: acpsdk.SessionId("existing-session-1"),
+				Cwd:       "/tmp",
+			}); err != nil {
+				t.Fatalf("LoadSession failed: %v", err)
+			}
+			skipped := strings.Contains(logs.String(), "skipping history replay")
+			if skipped != tc.wantSkip {
+				t.Fatalf("client %q: replay skipped=%t, want %t", tc.client, skipped, tc.wantSkip)
+			}
+		})
+	}
+}
+
+// TestPandoACPAgent_ResumeSession_IncludesModelsAndNoPermissionPrompt keeps
+// resume aligned with load: model picker state included and permissions not
+// requested by default.
+func TestPandoACPAgent_ResumeSession_IncludesModelsAndNoPermissionPrompt(t *testing.T) {
+	agent := newTestPandoAgentWithModels(string(llmmodels.Claude46Sonnet),
+		ACPModelInfo{ID: string(llmmodels.Claude46Sonnet), Name: "Claude Sonnet 4.6"},
+	)
+	agent.sessionService.(*mockSessionService).sessions["existing-session-1"] = ACPSessionInfo{ID: "existing-session-1"}
+
+	resp, err := agent.ResumeSession(context.Background(), acpsdk.ResumeSessionRequest{
+		SessionId: acpsdk.SessionId("existing-session-1"),
+		Cwd:       "/tmp",
+	})
+	if err != nil {
+		t.Fatalf("ResumeSession failed: %v", err)
+	}
+	if resp.Models == nil || len(resp.Models.AvailableModels) == 0 {
+		t.Fatalf("expected model state in resume response, got %#v", resp.Models)
+	}
+	sess, err := agent.getSession(acpsdk.SessionId("existing-session-1"))
+	if err != nil {
+		t.Fatalf("getSession failed: %v", err)
+	}
+	if sess.AskPermission() {
+		t.Fatal("expected resumed session not to ask for permissions by default (same as LoadSession)")
 	}
 }
 

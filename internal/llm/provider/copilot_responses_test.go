@@ -10,9 +10,23 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/message"
 )
+
+// setProviderConfigForTests installs a minimal in-memory configuration holding
+// the given provider accounts.
+func setProviderConfigForTests(t *testing.T, accounts ...config.ProviderAccount) {
+	t.Helper()
+	config.SetForTests(&config.Config{
+		WorkingDir:       t.TempDir(),
+		ProviderAccounts: append([]config.ProviderAccount(nil), accounts...),
+		Providers:        map[models.ModelProvider]config.Provider{},
+		MCPServers:       map[string]config.MCPServer{},
+		LSP:              map[string]config.LSPConfig{},
+	})
+}
 
 // newTestCopilotClient builds a copilotClient wired directly to an httptest
 // server, bypassing newCopilotClient's credential-loading and models-API

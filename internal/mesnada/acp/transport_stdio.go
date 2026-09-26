@@ -233,12 +233,6 @@ func interceptStdin(in io.Reader, out *syncWriter, fwd *io.PipeWriter, agent *Pa
 			continue
 		}
 
-		if msg.Method == "claude/usage" {
-			logger.Printf("[ACP INTERCEPT] Handling claude/usage (id=%s)", string(msg.ID))
-			handleClaudeUsageRPC(msg, out, agent, logger)
-			continue
-		}
-
 		// Forward everything else to the SDK connection.
 		if _, werr := fwd.Write(line); werr != nil {
 			break
@@ -413,18 +407,6 @@ func handleCopilotUsageRPC(req jsonRPCMsg, out io.Writer, agent *PandoACPAgent, 
 	writeRPCResult(out, req.ID, usageOpenResult{Opened: true, URL: url})
 	if logger != nil {
 		logger.Printf("[ACP INTERCEPT] copilot/usage: opened=%q", url)
-	}
-}
-
-func handleClaudeUsageRPC(req jsonRPCMsg, out io.Writer, agent *PandoACPAgent, logger *log.Logger) {
-	const url = "https://claude.ai/settings/usage"
-	if err := agent.agentService.OpenClaudeUsage(); err != nil {
-		writeRPCError(out, req.ID, -32602, err.Error())
-		return
-	}
-	writeRPCResult(out, req.ID, usageOpenResult{Opened: true, URL: url})
-	if logger != nil {
-		logger.Printf("[ACP INTERCEPT] claude/usage: opened=%q", url)
 	}
 }
 

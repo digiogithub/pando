@@ -39,12 +39,12 @@ const PROVIDER_TYPES: { value: string; label: string; icon: LucideIcon }[] = [
   { value: 'bedrock', label: 'AWS Bedrock', icon: Server },
   { value: 'vertexai', label: 'Google Vertex AI', icon: Globe },
   { value: 'copilot', label: 'GitHub Copilot', icon: Code },
-  { value: 'antigravity', label: 'Antigravity', icon: Sparkles },
 ]
 
 const TYPES_WITH_BASE_URL = ['openai-compatible', 'azure', 'ollama', 'openai']
 const TYPES_WITH_EXTRA_HEADERS = ['openai-compatible', 'azure', 'openai', 'anthropic', 'openrouter']
-const TYPES_WITH_OAUTH = ['copilot', 'vertexai', 'antigravity']
+// Copilot authenticates exclusively via GitHub OAuth (device flow): no API key.
+const TYPES_WITHOUT_API_KEY = ['copilot', 'vertexai']
 
 function MaskedApiKeyInput({
   maskedValue,
@@ -98,7 +98,6 @@ interface FormState {
   baseUrl: string
   extraHeaderPairs: KVPair[]
   disabled: boolean
-  useOAuth: boolean
 }
 
 function emptyForm(preselectedType = 'anthropic'): FormState {
@@ -111,7 +110,6 @@ function emptyForm(preselectedType = 'anthropic'): FormState {
     baseUrl: '',
     extraHeaderPairs: [],
     disabled: false,
-    useOAuth: false,
   }
 }
 
@@ -126,7 +124,6 @@ function accountToForm(a: ProviderAccount): FormState {
     baseUrl: a.baseUrl ?? '',
     extraHeaderPairs: Object.entries(headers).map(([key, value]) => ({ key, value })),
     disabled: a.disabled ?? false,
-    useOAuth: a.useOAuth ?? false,
   }
 }
 
@@ -136,13 +133,12 @@ function formToPayload(f: FormState, isEdit: boolean): Record<string, unknown> {
     type: f.type,
     baseUrl: f.baseUrl,
     disabled: f.disabled,
-    useOAuth: f.useOAuth,
     extraHeaders: Object.fromEntries(f.extraHeaderPairs.map(({ key, value }) => [key, value])),
   }
   if (!isEdit) {
     payload.id = f.id
   }
-  if (f.apiKeyTouched && f.apiKey) {
+  if (f.type !== 'copilot' && f.apiKeyTouched && f.apiKey) {
     payload.apiKey = f.apiKey
   }
   return payload
@@ -208,7 +204,7 @@ function AccountCard({
       <div className="flex items-center gap-1.5 shrink-0">
         {onLogin && (
           <Button variant="secondary" size="sm" onClick={onLogin}>
-            Login
+            Login with GitHub
           </Button>
         )}
         <Button variant="secondary" size="sm" onClick={onEdit}>
@@ -278,8 +274,8 @@ function AccountModal({
 }) {
   const showBaseUrl = TYPES_WITH_BASE_URL.includes(form.type)
   const showExtraHeaders = TYPES_WITH_EXTRA_HEADERS.includes(form.type)
-  const showOAuth = TYPES_WITH_OAUTH.includes(form.type)
-  const needsAPIKey = !showOAuth
+  const isCopilot = form.type === 'copilot'
+  const needsAPIKey = !TYPES_WITHOUT_API_KEY.includes(form.type)
 
   // Auto-generate ID from displayName when adding
   function handleDisplayNameChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -342,6 +338,12 @@ function AccountModal({
           </div>
         )}
 
+        {isCopilot && (
+          <div className="text-xs text-muted">
+            Authenticates with your GitHub account via OAuth (official Copilot method). No API key is needed.
+          </div>
+        )}
+
         {showBaseUrl && (
           <div className="settings-field">
             <label className="settings-field-label">Base URL</label>
@@ -357,16 +359,6 @@ function AccountModal({
             keyPlaceholder="Header-Name"
             valuePlaceholder="value"
           />
-        )}
-
-        {showOAuth && (
-          <div className="flex items-center gap-3">
-            <Switch id="account-use-oauth" checked={form.useOAuth} onCheckedChange={(v) => setField('useOAuth', v)} />
-            <label htmlFor="account-use-oauth" className="cursor-pointer">
-              <div className="text-sm font-medium text-fg">Use OAuth</div>
-              <div className="text-xs text-muted">Authenticate via OAuth instead of an API key</div>
-            </label>
-          </div>
         )}
 
         <div className="flex items-center gap-3">
@@ -414,24 +406,6 @@ export default function ProviderAccountsSettings() {
   useEffect(() => {
     loadAccounts()
 
-    // Handle OAuth redirect results from query params.
-    const params = new URLSearchParams(window.location.search)
-    const authSuccess = params.get('authSuccess')
-    const authError = params.get('authError')
-    const authAccount = params.get('account')
-    if (authSuccess) {
-      toast.success(`Login successful${authAccount ? ` for "${authAccount}"` : ''}`)
-      // Clean up URL params.
-      const url = new URL(window.location.href)
-      url.searchParams.delete('authSuccess')
-      url.searchParams.delete('account')
-      window.history.replaceState({}, '', url.toString())
-    } else if (authError) {
-      toast.error(`Login failed: ${authError}`)
-      const url = new URL(window.location.href)
-      url.searchParams.delete('authError')
-      window.history.replaceState({}, '', url.toString())
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -521,21 +495,6 @@ export default function ProviderAccountsSettings() {
     }
   }
 
-  async function handleLogin(account: ProviderAccount) {
-    try {
-      const result = await api.post<{ authUrl: string; accountId: string }>(
-        '/api/v1/config/provider-accounts/antigravity/start',
-        { accountId: account.id, displayName: account.displayName }
-      )
-      if (result.authUrl) {
-        window.open(result.authUrl, '_blank', 'noopener,noreferrer')
-        toast.info(`Complete Google login for "${account.displayName}" in the opened browser tab.`)
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to start login')
-    }
-  }
-
   async function handleTest(id: string) {
     setTestStatuses((s) => ({ ...s, [id]: 'testing' }))
     try {
@@ -591,7 +550,7 @@ export default function ProviderAccountsSettings() {
               onEdit={() => openEdit(a)}
               onDelete={() => setConfirmDelete(a.id)}
               onTest={() => handleTest(a.id)}
-              onLogin={TYPES_WITH_OAUTH.includes(a.type) && a.type === 'antigravity' ? () => handleLogin(a) : undefined}
+              onLogin={a.type === 'copilot' ? startCopilotLogin : undefined}
             />
           ))}
         </div>

@@ -9,24 +9,23 @@ import (
 
 // modelsDevProviders maps a Pando provider type to the models.dev provider ids
 // that can describe its models, in preference order. Providers that front more
-// than one upstream catalog (Antigravity, Bedrock, Vertex AI) list several.
+// than one upstream catalog (Bedrock, Vertex AI) list several.
 //
 // Local runtimes (Ollama, llama.cpp, …) are deliberately absent: their models
 // are free to run, so importing a hosted provider's pricing for a same-named
 // open-weights model would show an invented cost. They still gain nothing from
 // the catalog and keep their current behaviour.
 var modelsDevProviders = map[ModelProvider][]string{
-	ProviderAnthropic:   {"anthropic"},
-	ProviderOpenAI:      {"openai"},
-	ProviderGemini:      {"google"},
-	ProviderVertexAI:    {"google-vertex", "google-vertex-anthropic", "google"},
-	ProviderAzure:       {"azure", "openai"},
-	ProviderCopilot:     {"github-copilot"},
-	ProviderGROQ:        {"groq"},
-	ProviderOpenRouter:  {"openrouter"},
-	ProviderXAI:         {"xai"},
-	ProviderBedrock:     {"amazon-bedrock", "anthropic"},
-	ProviderAntigravity: {"google", "anthropic", "openai"},
+	ProviderAnthropic:  {"anthropic"},
+	ProviderOpenAI:     {"openai"},
+	ProviderGemini:     {"google"},
+	ProviderVertexAI:   {"google-vertex", "google-vertex-anthropic", "google"},
+	ProviderAzure:      {"azure", "openai"},
+	ProviderCopilot:    {"github-copilot"},
+	ProviderGROQ:       {"groq"},
+	ProviderOpenRouter: {"openrouter"},
+	ProviderXAI:        {"xai"},
+	ProviderBedrock:    {"amazon-bedrock", "anthropic"},
 }
 
 // ModelsDevMetadata returns the models.dev entry describing a provider/model
@@ -64,7 +63,7 @@ func EnrichModelFromModelsDev(ctx context.Context, model *Model) {
 }
 
 // EnrichRegisteredModels tops up every model already in the registry with the
-// catalog data it is missing. Curated static entries (Antigravity, Bedrock,
+// catalog data it is missing. Curated static entries (Bedrock,
 // Vertex AI, …) are hand-written without prices, so without this pass they would
 // keep reporting a zero session cost even though the catalog knows their rates.
 //

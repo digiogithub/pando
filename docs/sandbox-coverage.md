@@ -56,8 +56,6 @@ listeners are blocked as well.
 | IPC primary's ports, seen from a secondary (read from `ipc.lock`) | `internal/ipc/runtime/runtime.go` (`Bootstrap`) | `ipc-primary-pub`, `ipc-primary-rpc` |
 | Design preview server | `internal/design/preview/preview.go` (`StartLoopback`) | `design-preview` |
 | MCP OAuth callback | `internal/mcpauth/callback.go` | `mcp-oauth-callback` |
-| Claude OAuth callback | `internal/auth/claude.go` | `claude-oauth-callback` |
-| Antigravity OAuth callback | `internal/tui/page/antigravity_commands.go` | `antigravity-oauth-callback` |
 | Browser DevTools (CDP) port of the browser Pando drives (Pando now picks the port) | `internal/llm/tools/browser_session.go` | `browser-cdp` |
 | `pando serve` children of the Projects feature, the desktop app | Their own process registers its API/IPC ports; this process sees them through the shared registry | — |
 

@@ -220,12 +220,6 @@ func resolveSetupModel(modelID string) (models.Model, error) {
 			"unknown model %q. Run pando_setup with command=\"models\" to list the selectable ids", modelID)
 	}
 
-	// Mirrors createAgentProvider: Antigravity is the one provider that works
-	// without a concrete account.
-	if model.AccountID == "" && model.Provider == models.ProviderAntigravity {
-		return model, nil
-	}
-
 	var (
 		acc *config.ProviderAccount
 		err error
