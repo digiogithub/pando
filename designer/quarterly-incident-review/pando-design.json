@@ -1,0 +1,18 @@
+{
+  "id": "dsg_1cf35d8c54f7254a",
+  "kind": "deck",
+  "title": "Quarterly Incident Response Review",
+  "version": 2,
+  "entry": "index.html",
+  "skill": "deck-basic",
+  "preview": {
+    "viewport": {
+      "w": 1280,
+      "h": 720
+    }
+  },
+  "deck": {
+    "slides": 10,
+    "navigation": "horizontal"
+  }
+}

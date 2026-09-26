@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quarterly Incident Response Review</title>
+<link rel="stylesheet" href="../_system/system.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<section class="slide cover" data-slide="0">
+  <p class="eyebrow">INTERNAL REVIEW · [QUARTER / YEAR]</p>
+  <h1>Incident response,<br>last quarter.</h1>
+  <p class="sub">What broke. How long it lasted. What we changed — and what remains.</p>
+  <aside class="notes" hidden>Replace [QUARTER / YEAR]. All bracketed text across this deck is an intentional placeholder; no incident records were provided.</aside>
+</section>
+
+<section class="slide" data-slide="1">
+  <p class="eyebrow">01 / THE QUARTER</p>
+  <h2>Start with the impact.</h2>
+  <div class="stat-row">
+    <div><strong>[#]</strong><span>incidents</span></div>
+    <div><strong>[TOTAL]</strong><span>total outage time</span></div>
+    <div><strong>[#]</strong><span>fixes shipped</span></div>
+  </div>
+  <p class="callout">Replace every bracketed field with verified incident data.</p>
+  <aside class="notes" hidden>Use the incident review window consistently. Define whether outage time is summed across incidents or measures customer-impact time.</aside>
+</section>
+
+<section class="slide" data-slide="2">
+  <p class="eyebrow">02 / OUTAGE REGISTER</p>
+  <h2>What went down, and for how long?</h2>
+  <div class="register">
+    <div class="register-head"><span>INCIDENT</span><span>WHAT BROKE</span><span>DURATION</span></div>
+    <div><b>01</b><span>[Service / failure]</span><strong>[hh:mm]</strong></div>
+    <div><b>02</b><span>[Service / failure]</span><strong>[hh:mm]</strong></div>
+    <div><b>03</b><span>[Service / failure]</span><strong>[hh:mm]</strong></div>
+  </div>
+  <p class="callout">Add or remove rows to match the quarter’s incident count.</p>
+  <aside class="notes" hidden>Durations are placeholders, not measured values. Include every outage in scope; add rows as needed. Define start/end using the team’s incident convention.</aside>
+</section>
+
+<section class="slide" data-slide="3">
+  <p class="eyebrow">03 / FAILURE PATTERN</p>
+  <h2>What broke underneath?</h2>
+  <p class="big-placeholder">[Verified recurring cause or failure pattern]</p>
+  <p class="sub">Evidence: [incident IDs, systems, or observable signal]</p>
+  <aside class="notes" hidden>Summarize only a pattern supported by incident evidence. If there was no shared cause, replace this with the distinct failure modes.</aside>
+</section>
+
+<section class="slide" data-slide="4">
+  <p class="eyebrow">04 / INCIDENT DEEP DIVE</p>
+  <h2>[Incident name]: the failure chain.</h2>
+  <div class="chain"><span>[Trigger]</span><i>→</i><span>[Failure]</span><i>→</i><span>[Customer impact]</span></div>
+  <p class="sub">Outage: <strong>[hh:mm]</strong> · Detection: <strong>[how / when]</strong> · Recovery: <strong>[how]</strong></p>
+  <aside class="notes" hidden>Choose the incident that best explains the quarter’s impact. All fields are placeholders; replace with a verified timeline and customer impact.</aside>
+</section>
+
+<section class="slide" data-slide="5">
+  <p class="eyebrow">05 / RESPONSE</p>
+  <h2>Where did response time go?</h2>
+  <div class="timeline">
+    <div><b>DETECT</b><span>[time to detect]</span></div>
+    <div><b>MITIGATE</b><span>[time to mitigate]</span></div>
+    <div><b>RESTORE</b><span>[time to restore]</span></div>
+  </div>
+  <p class="sub">[One concrete response bottleneck or lesson]</p>
+  <aside class="notes" hidden>Use one incident’s timeline or a clearly labeled aggregate. Do not compare unlike measurement windows.</aside>
+</section>
+
+<section class="slide" data-slide="6">
+  <p class="eyebrow">06 / FIXES SHIPPED</p>
+  <h2>Three changes are live.</h2>
+  <div class="fix-list">
+    <div><b>01</b><span>[Fix shipped]</span><small>[Incident / failure addressed]</small></div>
+    <div><b>02</b><span>[Fix shipped]</span><small>[Incident / failure addressed]</small></div>
+    <div><b>03</b><span>[Fix shipped]</span><small>[Incident / failure addressed]</small></div>
+  </div>
+  <aside class="notes" hidden>List the three shipped fixes requested for this review. Use released changes only; put in-progress work on the outstanding-work slide.</aside>
+</section>
+
+<section class="slide" data-slide="7">
+  <p class="eyebrow">07 / FIXES SHIPPED</p>
+  <h2>What changed in practice?</h2>
+  <div class="before-after">
+    <div><b>BEFORE</b><span>[Failure or response gap]</span></div>
+    <div><b>NOW</b><span>[New protection or capability]</span></div>
+  </div>
+  <p class="sub">Proof it works: [test, alert, drill, or observed result]</p>
+  <aside class="notes" hidden>Connect shipped fixes to their operational effect. Avoid claiming impact without verification.</aside>
+</section>
+
+<section class="slide" data-slide="8">
+  <p class="eyebrow">08 / STILL OWED</p>
+  <h2>Open work has an owner and a date.</h2>
+  <div class="owed-list">
+    <div><b>[P1]</b><span>[Remaining risk or task]</span><strong>[Owner] · [Due date]</strong></div>
+    <div><b>[P2]</b><span>[Remaining risk or task]</span><strong>[Owner] · [Due date]</strong></div>
+    <div><b>[P3]</b><span>[Remaining risk or task]</span><strong>[Owner] · [Due date]</strong></div>
+  </div>
+  <aside class="notes" hidden>Replace placeholders with open postmortem actions, explicit owners, and target dates. Keep unresolved risk visible even if no date is committed.</aside>
+</section>
+
+<section class="slide close" data-slide="9">
+  <p class="eyebrow">09 / NEXT QUARTER</p>
+  <h2>Close the loop.</h2>
+  <p class="big-placeholder">[The one response capability we must improve next]</p>
+  <p class="sub">Decision needed: [specific approval, trade-off, or commitment]</p>
+  <aside class="notes" hidden>End with a decision the review group can make. Fill this from the outstanding work and agreed priorities.</aside>
+</section>
+</body>
+</html>
