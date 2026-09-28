@@ -2,6 +2,7 @@ package desktop
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -22,6 +23,14 @@ type App struct {
 	pandoURL      string
 	simpleMode    atomic.Bool
 	windowFocused atomic.Bool
+
+	// runtimeBridge holds the Wails IPC + runtime JavaScript captured from the
+	// local loading page. The real UI is served from the Pando origin, where
+	// Wails injects nothing, so OnDomReady replays this bundle into it.
+	runtimeBridge atomic.Pointer[string]
+	// trayAvailable reports whether a system tray icon is live, which decides
+	// whether "minimise" hides the window into the tray or to the taskbar.
+	trayAvailable atomic.Bool
 }
 
 // NewApp creates a new desktop App that wraps the given Pando URL in a WebView.
@@ -46,18 +55,37 @@ func (a *App) Startup(ctx context.Context) {
 	go a.startNotificationListener(ctx)
 }
 
-// OnDomReady is called by Wails when the DOM is ready.
-// We navigate the webview to the Pando URL.
+// OnDomReady is called by Wails every time a document finishes loading.
+//
+// The first load is the embedded loading page, served by the Wails asset
+// server with the runtime injected: it captures that runtime, hands it to Go
+// and then navigates to the Pando URL. Every later load is a Pando page, where
+// Wails injects nothing, so the captured runtime is replayed into it. That is
+// what gives the WebUI window.runtime (window controls, drag regions) and the
+// window.go bindings.
 func (a *App) OnDomReady(ctx context.Context) {
+	runtime.WindowExecJS(ctx, a.domReadyScript())
+}
+
+// domReadyScript builds the script run on every document load.
+func (a *App) domReadyScript() string {
 	mode := "advanced"
 	if a.simpleMode.Load() {
 		mode = "simple"
 	}
-	script := `
+	bridge := ""
+	if b := a.runtimeBridge.Load(); b != nil {
+		bridge = *b
+	}
+	urlJSON, _ := json.Marshal(a.pandoURL)
+
+	return `
 (function() {
-	var url = ` + "`" + a.pandoURL + "`" + `;
+	var url = ` + string(urlJSON) + `;
 	var mode = "` + mode + `";
-	if (window.location.href === "about:blank" || window.location.href === "" || !window.location.href.startsWith(url)) {
+
+	if (!window.location.href.startsWith(url)) {
+		// Loading page: capture the Wails runtime before leaving this origin.
 		var target = mode === "simple" ? url + "/chat/simple" : url;
 		var attempts = 0;
 		function tryNavigate() {
@@ -68,28 +96,59 @@ func (a *App) OnDomReady(ctx context.Context) {
 				setTimeout(tryNavigate, 300);
 			});
 		}
-		tryNavigate();
-	}
-})();
-`
-	runtime.WindowExecJS(ctx, script)
-
-	// Inject focus/blur tracking so the Go side knows when to show OS notifications.
-	focusScript := `
-(function() {
-	window.addEventListener("focus", function() {
-		if (window.go && window.go.desktop && window.go.desktop.App) {
-			window.go.desktop.App.SetWindowFocused(true);
+		var capture = Promise.resolve();
+		if (window.go && window.go.desktop && window.go.desktop.App && window.go.desktop.App.RegisterRuntimeBridge) {
+			capture = Promise.all([
+				fetch("/wails/ipc.js").then(function(r) { return r.text(); }),
+				fetch("/wails/runtime.js").then(function(r) { return r.text(); })
+			]).then(function(parts) {
+				return window.go.desktop.App.RegisterRuntimeBridge(parts[0], parts[1]);
+			}).catch(function(err) {
+				console.error("pando desktop: runtime capture failed", err);
+			});
 		}
+		capture.then(tryNavigate);
+		return;
+	}
+
+	// Pando page: install the captured runtime once per document.
+	// Inlined rather than eval'd, so a page CSP without 'unsafe-eval' cannot
+	// block it (scripts run through ExecJS are not subject to the page CSP).
+	if (!window.wails) {
+		try {
+` + bridge + `
+		} catch (err) {
+			console.error("pando desktop: runtime injection failed", err);
+		}
+	}
+	if (!window.wails || window.__PANDO_DESKTOP_SHELL__) {
+		return;
+	}
+	window.__PANDO_DESKTOP_SHELL__ = { frameless: true };
+
+	// Focus tracking decides whether OS notifications are shown.
+	window.addEventListener("focus", function() {
+		window.go.desktop.App.SetWindowFocused(true);
 	});
 	window.addEventListener("blur", function() {
-		if (window.go && window.go.desktop && window.go.desktop.App) {
-			window.go.desktop.App.SetWindowFocused(false);
-		}
+		window.go.desktop.App.SetWindowFocused(false);
 	});
+
+	window.dispatchEvent(new CustomEvent("pando:desktop-shell"));
 })();
 `
-	runtime.WindowExecJS(ctx, focusScript)
+}
+
+// RegisterRuntimeBridge stores the Wails IPC and runtime scripts captured by
+// the loading page. Only the first registration is kept: it comes from the
+// Wails-served page, before any remote content has loaded.
+// Exposed as Wails binding.
+func (a *App) RegisterRuntimeBridge(ipcJS, runtimeJS string) {
+	if strings.TrimSpace(runtimeJS) == "" {
+		return
+	}
+	bundle := ipcJS + "\n;\n" + runtimeJS
+	a.runtimeBridge.CompareAndSwap(nil, &bundle)
 }
 
 // Shutdown is called by Wails when the application is closing.
@@ -152,10 +211,82 @@ func (a *App) toggleMode(simple bool) {
 	runtime.WindowExecJS(a.ctx, `window.location.href = `+"`"+target+"`"+`;`)
 }
 
-// ToggleWindow shows the window if hidden, hides it if visible.
+// ToggleWindow shows the window, restoring it from the tray or the taskbar.
 // Exposed as Wails binding.
 func (a *App) ToggleWindow() {
+	a.ShowWindow()
+}
+
+// ShowWindow brings the window back from the tray or the taskbar.
+// Exposed as Wails binding.
+func (a *App) ShowWindow() {
+	if a.ctx == nil {
+		return
+	}
 	runtime.WindowShow(a.ctx)
+	runtime.WindowUnminimise(a.ctx)
+}
+
+// MinimiseToTray hides the window into the system tray when a tray icon is
+// live, and falls back to a regular taskbar minimise otherwise: hiding a window
+// with no tray icon would leave no way to bring it back.
+// Exposed as Wails binding.
+func (a *App) MinimiseToTray() {
+	if a.ctx == nil {
+		return
+	}
+	if a.trayAvailable.Load() {
+		runtime.WindowHide(a.ctx)
+		return
+	}
+	runtime.WindowMinimise(a.ctx)
+}
+
+// TrayAvailable reports whether a system tray icon is live.
+// Exposed as Wails binding.
+func (a *App) TrayAvailable() bool {
+	return a.trayAvailable.Load()
+}
+
+// SetTrayAvailable is called by the tray integration once its icon is up (or
+// known to be impossible on this desktop).
+func (a *App) SetTrayAvailable(ok bool) {
+	a.trayAvailable.Store(ok)
+}
+
+// OpenSettings shows the window on the Settings view. The WebUI handles the
+// event with its router (no reload); a page without that listener, such as the
+// loading page, gets a plain navigation.
+// Exposed as Wails binding.
+func (a *App) OpenSettings() {
+	if a.ctx == nil {
+		return
+	}
+	a.ShowWindow()
+	a.navigateInApp("/settings")
+}
+
+// QuitApp closes the application.
+// Exposed as Wails binding.
+func (a *App) QuitApp() {
+	if a.ctx == nil {
+		return
+	}
+	runtime.Quit(a.ctx)
+}
+
+// navigateInApp asks the WebUI router to move to path, falling back to a full
+// navigation when the WebUI is not listening.
+func (a *App) navigateInApp(path string) {
+	pathJSON, _ := json.Marshal(path)
+	target, _ := json.Marshal(a.pandoURL + path)
+	runtime.WindowExecJS(a.ctx, `(function() {
+	if (window.__PANDO_DESKTOP_NAV__) {
+		window.dispatchEvent(new CustomEvent("pando:desktop-navigate", { detail: `+string(pathJSON)+` }));
+	} else {
+		window.location.href = `+string(target)+`;
+	}
+})();`)
 }
 
 // GetPandoURL returns the configured Pando URL.

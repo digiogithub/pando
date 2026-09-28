@@ -12,7 +12,13 @@
     "running": "Em execução",
     "noMatches": "Nenhuma sessão corresponde",
     "autoAcceptOn": "auto-aceitar",
-    "autoAcceptOff": "auto-aceitar desligado"
+    "autoAcceptOff": "auto-aceitar desligado",
+    "minimiseToTray": "Minimizar para a bandeja",
+    "minimise": "Minimizar",
+    "restoreWindow": "Restaurar",
+    "maximiseWindow": "Maximizar",
+    "closeWindow": "Fechar",
+    "windowControls": "Controles da janela"
   },
   "common": {
     "save": "Salvar",

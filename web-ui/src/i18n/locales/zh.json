@@ -12,7 +12,13 @@
     "running": "运行中",
     "noMatches": "没有匹配的会话",
     "autoAcceptOn": "自动接受",
-    "autoAcceptOff": "自动接受已关闭"
+    "autoAcceptOff": "自动接受已关闭",
+    "minimiseToTray": "最小化到托盘",
+    "minimise": "最小化",
+    "restoreWindow": "还原",
+    "maximiseWindow": "最大化",
+    "closeWindow": "关闭",
+    "windowControls": "窗口控制"
   },
   "common": {
     "save": "保存",

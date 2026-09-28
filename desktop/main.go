@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"flag"
 	"io/fs"
+	"net/url"
 	"os"
 
 	"github.com/digiogithub/pando/internal/desktop"
@@ -17,15 +19,15 @@ import (
 var assets embed.FS
 
 func main() {
-	url := flag.String("url", "http://localhost:8765", "Pando API URL to load in the webview")
+	pandoURL := flag.String("url", "http://localhost:8765", "Pando API URL to load in the webview")
 	simpleMode := flag.Bool("simple", false, "Start in simple mode")
 	flag.Parse()
 
-	if *url == "" {
-		*url = os.Getenv("PANDO_URL")
+	if *pandoURL == "" {
+		*pandoURL = os.Getenv("PANDO_URL")
 	}
-	if *url == "" {
-		*url = "http://localhost:8765"
+	if *pandoURL == "" {
+		*pandoURL = "http://localhost:8765"
 	}
 
 	// Sub into the "frontend" directory so that Wails finds index.html at the FS root.
@@ -35,7 +37,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	app := desktop.NewApp(*url, *simpleMode)
+	app := desktop.NewApp(*pandoURL, *simpleMode)
+	tray := newTray(app)
 
 	err = wails.Run(&options.App{
 		Title:     "Pando",
@@ -50,14 +53,31 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: frontendFS,
 		},
-		Menu:                     appMenu(),
-		HideWindowOnClose:        false,
-		OnStartup:                app.Startup,
-		OnDomReady:               app.OnDomReady,
-		OnShutdown:               app.Shutdown,
-		Bind:                     []interface{}{app},
-		CSSDragProperty:          "widows",
-		CSSDragValue:             "1",
+		Menu:              appMenu(),
+		HideWindowOnClose: false,
+		// The WebUI draws its own title bar (drag region + minimise to tray,
+		// maximise, close), so the native decorations are dropped.
+		Frameless: true,
+		OnStartup: func(ctx context.Context) {
+			app.Startup(ctx)
+			tray.Start()
+		},
+		OnDomReady: func(ctx context.Context) {
+			// The window is mapped by now, so the Wayland decoration object
+			// exists and the CSD announcement takes effect.
+			suppressServerDecorations()
+			app.OnDomReady(ctx)
+		},
+		OnShutdown: func(ctx context.Context) {
+			tray.Stop()
+			app.Shutdown(ctx)
+		},
+		Bind: []interface{}{app},
+		// The UI is served by the Pando server, not the Wails asset server, so
+		// its origin must be allowed to reach the runtime and the bindings.
+		BindingsAllowedOrigins:   originOf(*pandoURL),
+		CSSDragProperty:          "--wails-draggable",
+		CSSDragValue:             "drag",
 		EnableDefaultContextMenu: false,
 		Linux: &linux.Options{
 			ProgramName: "pando",
@@ -67,4 +87,14 @@ func main() {
 		println("Error:", err.Error())
 		os.Exit(1)
 	}
+}
+
+// originOf returns the scheme://host[:port] origin of rawURL, or "" when it
+// cannot be parsed.
+func originOf(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }

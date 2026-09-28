@@ -12,7 +12,13 @@
     "running": "実行中",
     "noMatches": "一致するセッションはありません",
     "autoAcceptOn": "自動承認",
-    "autoAcceptOff": "自動承認オフ"
+    "autoAcceptOff": "自動承認オフ",
+    "minimiseToTray": "トレイに最小化",
+    "minimise": "最小化",
+    "restoreWindow": "元に戻す",
+    "maximiseWindow": "最大化",
+    "closeWindow": "閉じる",
+    "windowControls": "ウィンドウ操作"
   },
   "common": {
     "save": "保存",

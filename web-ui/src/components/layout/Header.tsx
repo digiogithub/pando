@@ -13,6 +13,8 @@ import {
   CircleQuestionMark, MessageSquare, Moon, PanelLeft, PanelLeftClose, Settings, Sun,
 } from '@/components/ui/icons'
 import { isMacPlatform } from './shellHooks'
+import DesktopWindowControls from './DesktopWindowControls'
+import { onTitleBarDoubleClick, useDesktopShell } from '@/services/desktopWindow'
 
 const DOCS_URL = 'https://madeindigio.github.io/pando-docs/'
 
@@ -42,6 +44,7 @@ export default function Header({ isMobile = false }: { isMobile?: boolean }) {
   const busy = useAgentBusy()
   const activeSession = useSessionStore((s) => s.sessions.find((x) => x.id === s.activeSessionId))
   const extensionPanels = useExtensionPanelsStore((s) => s.panels)
+  const desktopShell = useDesktopShell()
 
   useEffect(() => {
     fetch('/health')
@@ -81,7 +84,7 @@ export default function Header({ isMobile = false }: { isMobile?: boolean }) {
       : t('shell.expandSidebar', 'Expand sidebar')
 
   return (
-    <header className="shell-titlebar">
+    <header className="shell-titlebar" onDoubleClick={desktopShell ? onTitleBarDoubleClick : undefined}>
       <div className="shell-titlebar-group">
         <IconButton
           aria-label={sidebarLabel}
@@ -142,6 +145,7 @@ export default function Header({ isMobile = false }: { isMobile?: boolean }) {
             <Settings />
           </NavLink>
         </Tooltip>
+        <DesktopWindowControls />
       </div>
     </header>
   )

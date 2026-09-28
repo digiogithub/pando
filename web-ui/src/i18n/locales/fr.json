@@ -12,7 +12,13 @@
     "running": "En cours",
     "noMatches": "Aucune session correspondante",
     "autoAcceptOn": "acceptation auto",
-    "autoAcceptOff": "acceptation auto désactivée"
+    "autoAcceptOff": "acceptation auto désactivée",
+    "minimiseToTray": "Réduire dans la zone de notification",
+    "minimise": "Réduire",
+    "restoreWindow": "Restaurer",
+    "maximiseWindow": "Agrandir",
+    "closeWindow": "Fermer",
+    "windowControls": "Contrôles de la fenêtre"
   },
   "common": {
     "save": "Enregistrer",

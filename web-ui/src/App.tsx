@@ -39,6 +39,8 @@ import { useExtensionPanelsStore } from '@pando/client/stores/extensionPanelsSto
 import ExtensionPanelPage from '@/components/extensions/ExtensionPanelPage'
 import { installPandoUI } from '@/lib/pandoUI'
 import { useThemeStore } from '@/hooks/useTheme'
+import { DesktopFrameBar } from '@/components/layout/DesktopWindowControls'
+import { useDesktopNavigation } from '@/services/desktopWindow'
 
 /**
  * Global Ctrl/Cmd+Shift+L flips light/dark from any route (including the
@@ -74,6 +76,13 @@ function InitialModeRedirect() {
  * <BrowserRouter>. It renders inside the router, so hooks such as useNavigate
  * and useLocation keep working for every descendant.
  */
+/** Lets the desktop shell (tray menu) drive the router without a reload. */
+function DesktopNavigationBridge() {
+  const navigate = useNavigate()
+  useDesktopNavigation(navigate)
+  return null
+}
+
 function RootLayout() {
   return (
     <Suspense
@@ -84,6 +93,7 @@ function RootLayout() {
       }
     >
       <ErrorBoundary>
+        <DesktopNavigationBridge />
         <DesignRouteEffects />
         <Outlet />
       </ErrorBoundary>
@@ -193,6 +203,7 @@ function App() {
 
   return (
     <>
+      <DesktopFrameBar />
       {showSplash && (
         <SplashScreen status={splashStatus} onDone={() => setShowSplash(false)} />
       )}

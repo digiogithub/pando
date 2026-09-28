@@ -12,7 +12,13 @@
     "running": "Running",
     "noMatches": "No matching sessions",
     "autoAcceptOn": "auto-accept",
-    "autoAcceptOff": "auto-accept off"
+    "autoAcceptOff": "auto-accept off",
+    "minimiseToTray": "Minimise to tray",
+    "minimise": "Minimise",
+    "restoreWindow": "Restore",
+    "maximiseWindow": "Maximise",
+    "closeWindow": "Close",
+    "windowControls": "Window controls"
   },
   "common": {
     "save": "Save",

@@ -12,7 +12,13 @@
     "running": "Läuft",
     "noMatches": "Keine passenden Sitzungen",
     "autoAcceptOn": "Auto-Akzeptieren",
-    "autoAcceptOff": "Auto-Akzeptieren aus"
+    "autoAcceptOff": "Auto-Akzeptieren aus",
+    "minimiseToTray": "In den Infobereich minimieren",
+    "minimise": "Minimieren",
+    "restoreWindow": "Wiederherstellen",
+    "maximiseWindow": "Maximieren",
+    "closeWindow": "Schließen",
+    "windowControls": "Fenstersteuerung"
   },
   "common": {
     "save": "Speichern",

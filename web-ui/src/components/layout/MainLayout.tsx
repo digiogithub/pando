@@ -16,6 +16,7 @@ import SetupWizard from '@/components/setup/SetupWizard'
 import NetworkErrorBanner from '@/components/shared/NetworkErrorBanner'
 import PermissionDialog from '@/components/chat/PermissionDialog'
 import QuestionDialog from '@/components/chat/QuestionDialog'
+import { useProvidesWindowTitleBar } from '@/services/desktopWindow'
 import '@/styles/shell.css'
 
 export default function MainLayout() {
@@ -28,6 +29,8 @@ export default function MainLayout() {
   const location = useLocation()
   const isMobile = useMediaQuery(MOBILE_QUERY)
   const [macInset] = useState(needsMacTrafficLightInset)
+  // The header carries the desktop window controls; no standalone bar needed.
+  useProvidesWindowTitleBar()
 
   // Initialize auth + health check
   useEffect(() => {
