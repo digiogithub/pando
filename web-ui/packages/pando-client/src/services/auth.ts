@@ -9,10 +9,10 @@ export async function authenticate(): Promise<string> {
   const existing = api.getToken()
   if (existing) return existing
 
-  // In desktop mode the token is injected via initDesktopMode — if it's already
-  // set we never reach here. If somehow we do, skip the HTTP call.
-  if (isDesktop) return ''
-
+  // No early return for desktop mode: the Wails window loads the UI from the
+  // Pando server origin, where the Go side re-injects window.go, so isDesktop
+  // is true, yet no binding hands over a token. Skipping the exchange there
+  // left every API call unauthorized (empty sessions, no config).
   const data = await api.post<TokenResponse>('/api/v1/token', {})
   api.setToken(data.token)
   return data.token
