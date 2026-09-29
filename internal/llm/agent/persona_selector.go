@@ -92,6 +92,20 @@ func SetActivePersona(name string) error {
 	return nil
 }
 
+// SetAndPersistActivePersona activates the persona like SetActivePersona and
+// then saves the choice to the config (project file when present, else global)
+// so it survives a restart. Persistence failures are returned after the
+// in-memory switch has already taken effect.
+func SetAndPersistActivePersona(name string) error {
+	if err := SetActivePersona(name); err != nil {
+		return err
+	}
+	if err := config.UpdateActivePersona(name); err != nil {
+		return fmt.Errorf("persona activated but not saved: %w", err)
+	}
+	return nil
+}
+
 // setActivePersonaForTest sets the active persona without validating it, so tests
 // can install a global persona through the same lock the agent goroutines use.
 func setActivePersonaForTest(name string) {

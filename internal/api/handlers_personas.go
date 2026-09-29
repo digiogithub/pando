@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/digiogithub/pando/internal/config"
 	agentpkg "github.com/digiogithub/pando/internal/llm/agent"
 )
 
@@ -56,6 +57,10 @@ func (s *Server) handleSetActivePersona(w http.ResponseWriter, r *http.Request) 
 
 	if err := agentpkg.SetActivePersona(req.Name); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := config.UpdateActivePersona(req.Name); err != nil {
+		writeError(w, http.StatusInternalServerError, "persona activated but not saved: "+err.Error())
 		return
 	}
 

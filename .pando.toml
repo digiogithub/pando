@@ -33,16 +33,14 @@ Tools = []
 
 [Agents]
 [Agents.cli-assist]
-AutoCompact = false
 AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 MaxTokens = 0
-Model = 'openrouter.deepseek/deepseek-v4-flash-0731'
+Model = 'copilot.gpt-6-luna'
 ReasoningEffort = ''
 ThinkingMode = ''
 
 [Agents.cliassist]
-AutoCompact = false
 AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 MaxTokens = 0
@@ -51,7 +49,6 @@ ReasoningEffort = ''
 ThinkingMode = ''
 
 [Agents.coder]
-AutoCompact = false
 AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 MaxTokens = 0
@@ -60,47 +57,42 @@ ReasoningEffort = ''
 ThinkingMode = ''
 
 [Agents.context-enricher]
-AutoCompact = false
 AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 MaxTokens = 0
-Model = 'ollama.nova4b:latest'
+Model = 'copilot.gpt-6-luna'
 ReasoningEffort = ''
 ThinkingMode = ''
 
 [Agents.persona-selector]
-AutoCompact = false
 AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 MaxTokens = 0
-Model = 'openrouter.deepseek/deepseek-v4-flash-0731'
+Model = 'copilot.gpt-6-luna'
 ReasoningEffort = ''
 ThinkingMode = ''
 
 [Agents.summarizer]
-AutoCompact = false
 AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 MaxTokens = 0
-Model = 'copilot.mai-code-1.1-flash'
+Model = 'copilot.gpt-6-luna'
 ReasoningEffort = ''
 ThinkingMode = ''
 
 [Agents.task]
-AutoCompact = false
 AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 MaxTokens = 0
-Model = 'copilot.mai-code-1.1-flash'
+Model = 'copilot.gpt-6-luna'
 ReasoningEffort = ''
 ThinkingMode = ''
 
 [Agents.title]
-AutoCompact = false
 AutoCompactThreshold = 0.0
 ContextWindowOverride = 0
 MaxTokens = 0
-Model = 'copilot.gpt-5-mini'
+Model = 'copilot.gpt-6-luna'
 ReasoningEffort = ''
 ThinkingMode = ''
 
@@ -272,6 +264,7 @@ Enabled = false
 Args = []
 Command = ''
 Env = []
+NoSandbox = false
 Sandbox = false
 Timeout = ''
 Type = 'streamable-http'
@@ -297,6 +290,7 @@ Username = ''
 Args = []
 Command = ''
 Env = []
+NoSandbox = false
 Sandbox = false
 Timeout = '5m'
 Type = 'streamable-http'
@@ -306,6 +300,7 @@ URL = 'https://mcp.deepwiki.com/mcp'
 Args = ['mcp']
 Command = 'gintrack'
 Env = []
+NoSandbox = false
 Sandbox = false
 Timeout = ''
 Type = 'stdio'
@@ -331,6 +326,7 @@ Username = ''
 Args = ['-c', '.ai/mycommand-mcp.yaml']
 Command = 'mycommandmcp'
 Env = []
+NoSandbox = false
 Sandbox = false
 Timeout = ''
 Type = 'stdio'
@@ -464,7 +460,6 @@ KBConvertExtensions = []
 KBPath = './.kb'
 KBWatch = true
 KBWikiLinks = true
-MemoryAutoCapture = true
 MemoryContextEnrichmentEnabled = true
 MemoryContextMaxChars = 500
 MemoryContextMaxItems = 3
@@ -547,16 +542,32 @@ Timeout = 0
 [evaluator]
 alphaWeight = 0.8
 async = true
+backfillJudge = false
+backfillLimit = 50
 betaWeight = 0.2
 correctionsPatterns = ['(?i)\\bno[,.]?\\b', '(?i)\\bwrong\\b', '(?i)\\bincorrect\\b', "(?i)that'?s not", '(?i)not what i', '(?i)\\bmistake\\b', '(?i)\\bfix that\\b', '(?i)\\bvuelve a\\b', '(?i)\\bno era eso\\b', '(?i)\\bte equivocaste\\b']
 enabled = true
 explorationC = 1.41
+idleTimeout = '30m'
+includeSubagents = false
 judgePromptTemplate = ''
 maxSkills = 100
 maxTokensBaseline = 50
 minSessionsForUCB = 5
 model = 'openrouter.deepseek/deepseek-v4-flash-0731'
 provider = 'openrouter'
+
+[evaluator.contextTrimmer]
+enabled = false
+minConfidence = 0.7
+
+[evaluator.judge]
+dailyCalls = 20
+dailyTokens = 200000
+highReward = 0.8
+lowReward = 0.3
+maxTranscriptTokens = 6000
+minTurns = 4
 
 [[evaluator.taskPatterns]]
 pattern = 'fix|bug|error|crash|exception|failing|panic|traceback'
@@ -581,6 +592,18 @@ taskType = 'code'
 [[evaluator.taskPatterns]]
 pattern = 'find|search|where\s+is|locate|grep\s+for'
 taskType = 'search'
+
+[evaluator.templates]
+enabled = true
+
+[evaluator.weights]
+cancels = 0.05
+endState = 0.1
+repetition = 0.05
+success = 0.8
+tokens = 0.2
+toolErrors = 0.1
+turns = 0.05
 
 [[providerAccounts]]
 displayName = 'copilot'

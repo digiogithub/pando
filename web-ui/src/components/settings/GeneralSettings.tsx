@@ -19,6 +19,7 @@ export default function GeneralSettings() {
     error,
     fetchSettings,
     updateField,
+    setLanguage,
     saveSettings,
     resetSettings,
     regenerateTelemetryId,
@@ -96,7 +97,7 @@ export default function GeneralSettings() {
             id="general-language"
             options={languageOptions}
             value={config.language}
-            onChange={(e) => updateField('language', e.target.value)}
+            onChange={(e) => setLanguage(e.target.value)}
           />
         </SettingsRow>
       </SettingsSection>

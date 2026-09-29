@@ -1573,7 +1573,7 @@ func buildAgentsSection(cfg *config.Config) settings.Section {
 				settings.Field{
 					Label: fmt.Sprintf("%s Auto Compact", string(agentName)),
 					Key:   fmt.Sprintf("agents.%s.autoCompact", agentName),
-					Value: boolString(agentCfg.AutoCompact),
+					Value: boolString(config.ResolveAutoCompact(cfg.AutoCompact, agentCfg)),
 					Type:  settings.FieldToggle,
 				},
 				settings.Field{
@@ -1581,7 +1581,7 @@ func buildAgentsSection(cfg *config.Config) settings.Section {
 					Key:      fmt.Sprintf("agents.%s.autoCompactThreshold", agentName),
 					Value:    fmt.Sprintf("%.2f", agentCfg.AutoCompactThreshold),
 					Type:     settings.FieldText,
-					Disabled: !agentCfg.AutoCompact,
+					Disabled: !config.ResolveAutoCompact(cfg.AutoCompact, agentCfg),
 				},
 			)
 		}
@@ -4133,7 +4133,7 @@ func saveAgent(field settings.Field) error {
 		if err != nil {
 			return fmt.Errorf("invalid auto compact value: %w", err)
 		}
-		agentCfg.AutoCompact = v
+		agentCfg.AutoCompact = &v
 	case "autoCompactThreshold":
 		v, err := strconv.ParseFloat(strings.TrimSpace(field.Value), 64)
 		if err != nil {

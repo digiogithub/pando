@@ -854,9 +854,18 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		}
 	}
 
-	// Default active persona to "assistant" if none is configured.
+	// Restore the persisted persona (project config > global config), falling
+	// back to "assistant" when nothing was saved or the saved persona no longer
+	// exists. An explicit saved "Auto" choice stays empty.
 	if agent.GetActivePersona() == "" {
-		_ = agent.SetActivePersona("assistant")
+		want := config.EffectiveActivePersona()
+		if want != "" {
+			if err := agent.SetActivePersona(want); err != nil {
+				logging.Warn("Saved active persona unavailable, using default", "persona", want, "error", err)
+				want = config.DefaultPersona
+				_ = agent.SetActivePersona(want)
+			}
+		}
 	}
 
 	// Load compiled-in extensions last, so they see a fully built app. A broken
@@ -2704,7 +2713,7 @@ func (a *appACPAgentAdapter) LearningFinish(ctx context.Context, sessionID strin
 
 func (a *appACPAgentAdapter) ListPersonas() []string             { return agent.ListAvailablePersonas() }
 func (a *appACPAgentAdapter) GetActivePersona() string           { return agent.GetActivePersona() }
-func (a *appACPAgentAdapter) SetActivePersona(name string) error { return agent.SetActivePersona(name) }
+func (a *appACPAgentAdapter) SetActivePersona(name string) error { return agent.SetAndPersistActivePersona(name) }
 func (a *appACPAgentAdapter) Summarize(ctx context.Context, sessionID string) (<-chan mesnadaACP.AgentEvent, error) {
 	realCh, err := a.svc.SummarizeStream(ctx, sessionID)
 	if err != nil {

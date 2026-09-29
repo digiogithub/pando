@@ -170,7 +170,7 @@ func (s *Server) handleGetConfigAgents(w http.ResponseWriter, r *http.Request) {
 			ResolvedMaxTokens:    config.ResolveAgentMaxTokens(name, a, model),
 			ReasoningEffort:      a.ReasoningEffort,
 			ThinkingMode:         a.ThinkingMode,
-			AutoCompact:          a.AutoCompact,
+			AutoCompact:          config.ResolveAutoCompact(cfg.AutoCompact, a),
 			AutoCompactThreshold: a.AutoCompactThreshold,
 			ContextControls:      config.AgentExposesContextControls(name),
 		})
@@ -202,11 +202,19 @@ func (s *Server) handlePutConfigAgents(w http.ResponseWriter, r *http.Request) {
 			MaxTokens:            item.MaxTokens,
 			ReasoningEffort:      item.ReasoningEffort,
 			ThinkingMode:         item.ThinkingMode,
-			AutoCompact:          item.AutoCompact,
 			AutoCompactThreshold: item.AutoCompactThreshold,
 		}
 		if cfg := config.Get(); cfg != nil {
 			existing := cfg.Agents[name]
+			// GET reports the effective value, so only persist a per-agent
+			// override when the payload differs from what is already in effect;
+			// otherwise the agent keeps inheriting (or keeps its own) setting.
+			if config.ResolveAutoCompact(cfg.AutoCompact, existing) == item.AutoCompact {
+				agent.AutoCompact = existing.AutoCompact
+			} else {
+				v := item.AutoCompact
+				agent.AutoCompact = &v
+			}
 			// ContextWindowOverride is never carried by this API; keep the
 			// configured value instead of resetting it on every save.
 			agent.ContextWindowOverride = existing.ContextWindowOverride
@@ -218,6 +226,9 @@ func (s *Server) handlePutConfigAgents(w http.ResponseWriter, r *http.Request) {
 				agent.AutoCompact = existing.AutoCompact
 				agent.AutoCompactThreshold = existing.AutoCompactThreshold
 			}
+		} else {
+			v := item.AutoCompact
+			agent.AutoCompact = &v
 		}
 		if err := config.UpdateAgent(name, agent); err != nil {
 			writeConfigError(w, http.StatusBadRequest, "failed to update agent "+item.Name+": "+err.Error(), err)
@@ -771,6 +782,12 @@ func (s *Server) handlePutConfigLSP(w http.ResponseWriter, r *http.Request) {
 		Languages: req.Languages,
 		Filenames: req.Filenames,
 		Autostart: req.Autostart,
+	}
+	// The UI never sends Options; keep the stored ones instead of wiping them.
+	if cfg := config.Get(); cfg != nil {
+		if existing, ok := cfg.LSP[req.Language]; ok {
+			lsp.Options = existing.Options
+		}
 	}
 	if err := config.UpdateLSP(req.Language, lsp); err != nil {
 		writeConfigError(w, http.StatusBadRequest, "failed to update LSP config: "+err.Error(), err)

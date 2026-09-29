@@ -906,7 +906,7 @@ func (a *acpAgentAdapter) GetActivePersona() string {
 
 // SetActivePersona sets the active persona by name (empty = clear).
 func (a *acpAgentAdapter) SetActivePersona(name string) error {
-	return agent.SetActivePersona(name)
+	return agent.SetAndPersistActivePersona(name)
 }
 
 func (a *acpAgentAdapter) Summarize(ctx context.Context, sessionID string) (<-chan acpPkg.AgentEvent, error) {

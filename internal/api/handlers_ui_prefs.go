@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/digiogithub/pando/internal/config"
@@ -22,6 +23,9 @@ const uiPrefsFileName = "webui-prefs.json"
 type UIPrefs struct {
 	// ChatMode is "simple" or "advanced"; empty means "never chosen".
 	ChatMode string `json:"chatMode"`
+	// Language is the UI (i18n) language code, e.g. "en" or "es"; empty means
+	// "never chosen".
+	Language string `json:"language"`
 }
 
 var uiPrefsMu sync.Mutex
@@ -95,6 +99,11 @@ func (s *Server) handleUIPrefs(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "chatMode must be \"simple\" or \"advanced\"")
 			return
 		}
+		patch.Language = strings.TrimSpace(patch.Language)
+		if len(patch.Language) > 16 {
+			writeError(w, http.StatusBadRequest, "language is too long")
+			return
+		}
 		uiPrefsMu.Lock()
 		defer uiPrefsMu.Unlock()
 		prefs, err := loadUIPrefs()
@@ -104,6 +113,9 @@ func (s *Server) handleUIPrefs(w http.ResponseWriter, r *http.Request) {
 		}
 		if patch.ChatMode != "" {
 			prefs.ChatMode = patch.ChatMode
+		}
+		if patch.Language != "" {
+			prefs.Language = patch.Language
 		}
 		if err := saveUIPrefs(prefs); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())

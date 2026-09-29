@@ -26,6 +26,7 @@ export default function MainLayout() {
   const hydrateChatMode = useLayoutStore((s) => s.hydrateChatMode)
   const fetchSessions = useSessionStore((s) => s.fetchSessions)
   const fetchSettings = useSettingsStore((s) => s.fetchSettings)
+  const hydrateLanguage = useSettingsStore((s) => s.hydrateLanguage)
   const startHealthCheck = useServerStore((s) => s.startHealthCheck)
   const setConnected = useServerStore((s) => s.setConnected)
   const { setQuickMenuOpen, setModelSwitcherOpen, toggleSidebar } = useLayoutStore()
@@ -41,12 +42,13 @@ export default function MainLayout() {
       fetchSessions()
       fetchSettings()
       void hydrateChatMode()
+      void hydrateLanguage()
       setConnected(true)
     }).catch(() => setConnected(false))
 
     const stop = startHealthCheck()
     return stop
-  }, [fetchSessions, fetchSettings, hydrateChatMode, setConnected, startHealthCheck])
+  }, [fetchSessions, fetchSettings, hydrateChatMode, hydrateLanguage, setConnected, startHealthCheck])
 
   // Keyboard shortcuts (the theme toggle Ctrl/Cmd+Shift+L is global, in App).
   useEffect(() => {

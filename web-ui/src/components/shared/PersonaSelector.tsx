@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { UserRound, ChevronDown } from '@/components/ui/icons'
 import { Menu, MenuItem } from '@/components/ui'
 import api from '@pando/client/services/api'
+import { useToastStore } from '@pando/client/stores/toastStore'
 
 function formatPersonaName(name: string): string {
   if (!name) return 'Auto'
@@ -30,8 +31,8 @@ export default function PersonaSelector() {
     try {
       await api.put('/api/v1/personas/active', { name })
       setActive(name)
-    } catch {
-      // silently ignore
+    } catch (e) {
+      useToastStore.getState().addToast(e instanceof Error ? e.message : 'Failed to change persona', 'error')
     } finally {
       setLoading(false)
     }

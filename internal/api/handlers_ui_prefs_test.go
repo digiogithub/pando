@@ -59,3 +59,31 @@ func TestUIPrefsEndpointRoundTrip(t *testing.T) {
 		t.Fatalf("chatMode = %q, want advanced", got.ChatMode)
 	}
 }
+
+// The UI language must persist user-level and survive patches that omit it.
+func TestUIPrefsLanguageRoundTrip(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	server := &Server{}
+	do := func(method, body string) UIPrefs {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.handleUIPrefs(rec, httptest.NewRequest(method, "/api/v1/ui/preferences", strings.NewReader(body)))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d, body %s", method, rec.Code, rec.Body.String())
+		}
+		var p UIPrefs
+		if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return p
+	}
+	if got := do(http.MethodGet, ""); got.Language != "" {
+		t.Fatalf("fresh language = %q, want empty", got.Language)
+	}
+	do(http.MethodPut, `{"language":"es"}`)
+	do(http.MethodPut, `{"chatMode":"simple"}`)
+	got := do(http.MethodGet, "")
+	if got.Language != "es" || got.ChatMode != "simple" {
+		t.Fatalf("prefs = %+v, want language es and chatMode simple", got)
+	}
+}

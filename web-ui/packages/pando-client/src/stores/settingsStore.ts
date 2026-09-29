@@ -3,6 +3,20 @@ import api from '../services/api'
 import type { SettingsConfig, ProviderConfigItem, AgentConfigItem, ToolsConfig, BashConfig, TokenOptimizationConfig, SandboxConfig, SandboxConfigResponse } from '../types'
 import { useToastStore } from './toastStore'
 
+const LANGUAGE_KEY = 'pando_language'
+
+function readStoredLanguage(): string {
+  try {
+    return localStorage.getItem(LANGUAGE_KEY) || 'en'
+  } catch {
+    return 'en'
+  }
+}
+
+// Set once the user picks a language in this page load, so a slower server
+// read never overrides that fresher choice.
+let languageChosen = false
+
 const DEFAULTS: SettingsConfig = {
   home_directory: '',
   working_directory: '',
@@ -57,8 +71,9 @@ const DEFAULTS: SettingsConfig = {
   orchestrator_max_per_engine: 0,
   orchestrator_claim_ttl: '2m',
   orchestrator_dispatch_interval: '10s',
-  // UI-only, not persisted via /api/v1/settings
-  language: 'en',
+  // UI-only: persisted via /api/v1/ui/preferences (see setLanguage), never
+  // via /api/v1/settings.
+  language: readStoredLanguage(),
 }
 
 interface SettingsStore {
@@ -71,6 +86,10 @@ interface SettingsStore {
   fetchSettings: () => Promise<void>
   updateField: <K extends keyof SettingsConfig>(key: K, value: SettingsConfig[K]) => void
   saveSettings: () => Promise<void>
+  /** Applies the UI language immediately and stores it user-level (not dirty-draft). */
+  setLanguage: (lang: string) => void
+  /** Adopts the UI language stored server-side (user-level, port independent). */
+  hydrateLanguage: () => Promise<void>
   resetSettings: () => void
   /**
    * Regenerates the remote telemetry debug id. Sent as a minimal, dedicated
@@ -94,11 +113,13 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     set({ loading: true, error: null })
     try {
       const data = await api.get<SettingsConfig>('/api/v1/settings')
-      const merged = { ...DEFAULTS, ...data }
+      // language is a UI preference, not part of /api/v1/settings: keep the current one.
+      const merged = { ...DEFAULTS, ...data, language: get().config.language }
       set({ config: merged, original: merged, dirty: false })
     } catch {
       // Backend may not have this endpoint yet — use defaults silently
-      set({ config: { ...DEFAULTS }, original: { ...DEFAULTS } })
+      const language = get().config.language
+      set({ config: { ...DEFAULTS, language }, original: { ...DEFAULTS, language } })
     } finally {
       set({ loading: false })
     }
@@ -110,10 +131,48 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       return { config, dirty: JSON.stringify(config) !== JSON.stringify(s.original) }
     }),
 
+  setLanguage: (lang) => {
+    languageChosen = true
+    try {
+      localStorage.setItem(LANGUAGE_KEY, lang)
+    } catch {
+      // ignore unavailable storage
+    }
+    set((s) => ({
+      config: { ...s.config, language: lang },
+      original: { ...s.original, language: lang },
+    }))
+    // localStorage is per origin and the desktop app gets a random port each
+    // launch, so the choice is also kept user-level.
+    void api.put('/api/v1/ui/preferences', { language: lang }).catch(() => {})
+  },
+
+  hydrateLanguage: async () => {
+    try {
+      const prefs = await api.get<{ language?: string }>('/api/v1/ui/preferences')
+      if (languageChosen || !prefs.language) return
+      try {
+        localStorage.setItem(LANGUAGE_KEY, prefs.language)
+      } catch {
+        // ignore unavailable storage
+      }
+      const lang = prefs.language
+      set((s) => ({
+        config: { ...s.config, language: lang },
+        original: { ...s.original, language: lang },
+      }))
+    } catch {
+      // keep the local value when the server cannot answer
+    }
+  },
+
   saveSettings: async () => {
     set({ saving: true, error: null })
     try {
-      const data = await api.put<SettingsConfig>('/api/v1/settings', get().config)
+      // language is persisted through UI preferences, not /api/v1/settings.
+      const { language: _language, ...payload } = get().config
+      void _language
+      const data = await api.put<SettingsConfig>('/api/v1/settings', payload)
       set((s) => {
         // Merge the server-authoritative telemetry fields back in: enabling
         // telemetry generates a debug id server-side, and the PUT response

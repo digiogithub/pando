@@ -751,7 +751,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			model := a.app.CoderAgent.Model()
 			contextWindow := model.ContextWindow
 			tokens := a.selectedSession.CompletionTokens + a.selectedSession.PromptTokens
-			if (tokens >= int64(float64(contextWindow)*0.95)) && config.Get().AutoCompact {
+			if (tokens >= int64(float64(contextWindow)*0.95)) && config.ResolveAutoCompact(config.Get().AutoCompact, config.Get().Agents[config.AgentCoder]) {
 				return a, tea.Batch(append(cmds, util.CmdHandler(startCompactSessionMsg{}))...)
 			}
 		}
@@ -949,14 +949,14 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case dialog.PersonaSelectedMsg:
-		if err := agent.SetActivePersona(msg.Name); err != nil {
-			return a, util.ReportWarn("Persona not found: " + msg.Name)
+		if err := agent.SetAndPersistActivePersona(msg.Name); err != nil {
+			return a, util.ReportWarn("Persona error: " + err.Error())
 		}
 		a.showPersonaDialog = false
 		return a, util.ReportInfo("Persona: " + msg.Name)
 
 	case dialog.PersonaClearedMsg:
-		_ = agent.SetActivePersona("")
+		_ = agent.SetAndPersistActivePersona("")
 		a.showPersonaDialog = false
 		return a, util.ReportInfo("Persona cleared (auto-select)")
 

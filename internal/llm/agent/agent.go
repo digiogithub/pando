@@ -2327,12 +2327,9 @@ func (a *agent) shouldCompact(sess session.Session) bool {
 	if !ok {
 		return false
 	}
-	// Auto-compaction is enabled when either the global switch or the agent's
-	// own flag is set. The generated template writes AutoCompact = true at the
-	// top level but historically left agents.coder.AutoCompact = false, so
-	// relying only on the per-agent flag disabled compaction everywhere (which
-	// is what surfaces as "no auto compact in ACP mode").
-	if !cfg.AutoCompact && !agentCfg.AutoCompact {
+	// The agent's own AutoCompact overrides the global switch when it is
+	// explicitly set in the config; otherwise the global value applies.
+	if !config.ResolveAutoCompact(cfg.AutoCompact, agentCfg) {
 		return false
 	}
 	threshold := agentCfg.AutoCompactThreshold

@@ -125,11 +125,11 @@ const (
 type Agent struct {
 	Model                 models.ModelID `json:"model"`
 	MaxTokens             int64          `json:"maxTokens"`
-	ReasoningEffort       string         `json:"reasoningEffort"`                 // For openai models low,medium,high
-	ThinkingMode          ThinkingMode   `json:"thinkingMode,omitempty"`          // For anthropic models: disabled,low,medium,high
-	AutoCompact           bool           `json:"autoCompact,omitempty"`           // enable auto-compaction when context fills up
-	AutoCompactThreshold  float64        `json:"autoCompactThreshold,omitempty"`  // 0.0-1.0, default 0.85
-	ContextWindowOverride int64          `json:"contextWindowOverride,omitempty"` // override model's reported context window (tokens); 0 = use model default
+	ReasoningEffort       string         `json:"reasoningEffort"`                                    // For openai models low,medium,high
+	ThinkingMode          ThinkingMode   `json:"thinkingMode,omitempty"`                             // For anthropic models: disabled,low,medium,high
+	AutoCompact           *bool          `json:"autoCompact,omitempty" toml:"AutoCompact,omitempty"` // per-agent override of the global AutoCompact; nil = inherit the global value
+	AutoCompactThreshold  float64        `json:"autoCompactThreshold,omitempty"`                     // 0.0-1.0, default 0.85
+	ContextWindowOverride int64          `json:"contextWindowOverride,omitempty"`                    // override model's reported context window (tokens); 0 = use model default
 }
 
 // Provider defines configuration for an LLM provider.
@@ -1288,6 +1288,7 @@ type Config struct {
 	Sandbox           SandboxConfig           `json:"sandbox,omitempty" toml:"Sandbox"`
 	MCPServer         MCPServerConfig         `json:"mcpServer,omitempty" toml:"MCPServer"`
 	Ponytail          PonytailConfig          `json:"ponytail,omitempty" toml:"Ponytail"`
+	Persona           PersonaConfig           `json:"persona,omitempty" toml:"Persona"`
 	Caveman           CavemanConfig           `json:"caveman,omitempty" toml:"Caveman"`
 	TokenOptimization TokenOptimizationConfig `json:"tokenOptimization,omitempty" toml:"TokenOptimization"`
 	ModelsDev         ModelsDevConfig         `json:"modelsDev,omitempty" toml:"ModelsDev"`
@@ -3959,10 +3960,20 @@ func setDefaultModelForAgent(agent AgentName) bool {
 // MaxTokens override and dropping controls the new model may not accept
 // (reasoning effort / thinking mode are re-validated by validateAgent).
 func agentInheritingModel(base Agent, modelID models.ModelID) Agent {
-	return Agent{
-		Model:     modelID,
-		MaxTokens: base.MaxTokens,
+	// Keep every other knob (AutoCompact, threshold, context window override):
+	// a model change must not reset the user's context management settings.
+	base.Model = modelID
+	return base
+}
+
+// ResolveAutoCompact returns the effective auto-compaction switch for an
+// agent: the agent's own value when it is explicitly set, otherwise the global
+// AutoCompact.
+func ResolveAutoCompact(global bool, a Agent) bool {
+	if a.AutoCompact != nil {
+		return *a.AutoCompact
 	}
+	return global
 }
 
 // defaultCoderModel picks the strongest usable model for the first provider that
@@ -4647,11 +4658,10 @@ func setAgentModel(agentName AgentName, modelID models.ModelID, persist bool) er
 	}
 
 	// Preserve existing MaxTokens; 0 means Auto (resolved at runtime by ResolveAgentMaxTokens).
-	newAgentCfg := Agent{
-		Model:           modelID,
-		MaxTokens:       existingAgentCfg.MaxTokens,
-		ReasoningEffort: existingAgentCfg.ReasoningEffort,
-	}
+	// Every other knob (AutoCompact, threshold, thinking mode, context window
+	// override) is kept; validateAgent re-validates the model-dependent ones.
+	newAgentCfg := existingAgentCfg
+	newAgentCfg.Model = modelID
 	cfg.Agents[agentName] = newAgentCfg
 
 	if err := validateAgent(cfg, agentName, newAgentCfg); err != nil {
@@ -5536,10 +5546,13 @@ func UpdateLSP(language string, lsp LSPConfig) error {
 
 	oldLSP, hadLSP := cfg.LSP[language]
 	newLSP := LSPConfig{
-		Disabled: lsp.Disabled,
-		Command:  lsp.Command,
-		Args:     append([]string(nil), lsp.Args...),
-		Options:  lsp.Options,
+		Disabled:  lsp.Disabled,
+		Command:   lsp.Command,
+		Args:      append([]string(nil), lsp.Args...),
+		Options:   lsp.Options,
+		Languages: append([]string(nil), lsp.Languages...),
+		Filenames: append([]string(nil), lsp.Filenames...),
+		Autostart: lsp.Autostart,
 	}
 	cfg.LSP[language] = newLSP
 

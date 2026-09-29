@@ -141,8 +141,8 @@ Languages = []  # Leave empty to apply to all files; e.g. ['.go']
 Model                 = 'anthropic.claude-sonnet-4-6'
 MaxTokens             = 0      # 0 = Auto (role default: 8192 tokens; override with a positive number)
 ReasoningEffort       = ''     # 'low' | 'medium' | 'high' (OpenAI o-series only)
-AutoCompact           = false
-AutoCompactThreshold  = 0.0    # 0.0 = use global AutoCompact setting
+# AutoCompact         = true   # optional per-agent override; when omitted the global AutoCompact applies
+AutoCompactThreshold  = 0.0    # 0.0 = default threshold (0.85)
 
 # Summariser — condenses long conversations to save tokens.
 [Agents.summarizer]

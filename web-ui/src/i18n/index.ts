@@ -21,6 +21,14 @@ export const SUPPORTED_LANGUAGES = [
 
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number]['value']
 
+function readStoredLanguage(): string {
+  try {
+    return localStorage.getItem('pando_language') || 'en'
+  } catch {
+    return 'en'
+  }
+}
+
 i18n.use(initReactI18next).init({
   resources: {
     en: { translation: en },
@@ -31,7 +39,7 @@ i18n.use(initReactI18next).init({
     ja: { translation: ja },
     zh: { translation: zh },
   },
-  lng: 'en',
+  lng: readStoredLanguage(),
   fallbackLng: 'en',
   interpolation: {
     escapeValue: false,
