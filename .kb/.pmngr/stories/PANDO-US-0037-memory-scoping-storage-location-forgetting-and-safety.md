@@ -2,13 +2,14 @@
 id: PANDO-US-0037
 type: story
 title: Memory scoping, storage location, forgetting and safety
-status: backlog
+status: cancelled
 priority: medium
 parent: PANDO-EP-0008
 labels: [analysis, memory, grok-build]
 estimate: 3
 created: 2026-09-18T08:35:09Z
-updated: 2026-09-18T08:35:09Z
+updated: 2026-09-29T19:09:04Z
+closed: 2026-09-29T19:09:04Z
 ---
 
 ## Description

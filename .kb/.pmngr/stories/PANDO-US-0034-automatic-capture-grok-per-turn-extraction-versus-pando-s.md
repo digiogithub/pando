@@ -2,13 +2,14 @@
 id: PANDO-US-0034
 type: story
 title: "Automatic capture: Grok per-turn extraction versus Pando's unused MemoryAutoCapture"
-status: backlog
+status: cancelled
 priority: medium
 parent: PANDO-EP-0008
 labels: [analysis, memory, grok-build]
 estimate: 5
 created: 2026-09-18T08:35:08Z
-updated: 2026-09-18T08:35:08Z
+updated: 2026-09-29T19:09:04Z
+closed: 2026-09-29T19:09:04Z
 ---
 
 ## Description

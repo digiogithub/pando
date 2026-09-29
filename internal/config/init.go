@@ -437,7 +437,6 @@ MemoryContextMaxItems = 10
 MemoryContextMaxChars = 2000
 MemoryDefaultTTLDays = 180
 MemoryGCInterval = '1h'
-MemoryAutoCapture = true
 
 DocumentEmbeddingProvider = 'ollama'
 DocumentEmbeddingModel    = 'nomic-embed-text'

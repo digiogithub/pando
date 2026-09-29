@@ -573,7 +573,6 @@ type RemembrancesConfig struct {
 	MemoryContextMaxChars          int      `json:"memory_context_max_chars" toml:"MemoryContextMaxChars"`
 	MemoryDefaultTTLDays           int      `json:"memory_default_ttl_days" toml:"MemoryDefaultTTLDays"`
 	MemoryGCInterval               string   `json:"memory_gc_interval" toml:"MemoryGCInterval"`
-	MemoryAutoCapture              bool     `json:"memory_auto_capture" toml:"MemoryAutoCapture"`
 	MemoryPinnedScopes             []string `json:"memory_pinned_scopes" toml:"MemoryPinnedScopes"`
 }
 

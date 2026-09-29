@@ -209,7 +209,9 @@ func getEnvironmentInfo() string {
 	isGit := isGitRepo(cwd)
 	platform := runtime.GOOS
 	now := time.Now()
-	dateStr := now.Format("2006-01-02 15:04:05 MST")
+	// Date only: a clock value would change the prompt on every build and
+	// defeat the provider's prompt cache.
+	dateStr := now.Format("2006-01-02")
 	ls := tools.NewLsTool()
 	r, _ := ls.Run(context.Background(), tools.ToolCall{
 		Input: `{"path":"."}`,
@@ -227,7 +229,7 @@ func getEnvironmentInfo() string {
 Working directory: %s
 Is directory a git repo: %s%s
 Platform: %s
-Current date and time: %s
+Current date: %s
 </env>
 <project>
 %s

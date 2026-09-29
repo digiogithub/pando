@@ -2,13 +2,14 @@
 id: PANDO-US-0038
 type: story
 title: Memory rollout stages, quality evaluation and user controls
-status: backlog
+status: cancelled
 priority: medium
 parent: PANDO-EP-0008
 labels: [analysis, memory, grok-build]
 estimate: 3
 created: 2026-09-18T08:35:09Z
-updated: 2026-09-18T08:35:09Z
+updated: 2026-09-29T19:09:04Z
+closed: 2026-09-29T19:09:04Z
 ---
 
 ## Description

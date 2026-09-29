@@ -2691,12 +2691,6 @@ func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Se
 			Type:  settings.FieldText,
 			Value: rem.MemoryGCInterval,
 		},
-		settings.Field{
-			Label: "Auto-capture memories",
-			Key:   "remembrances.memory_auto_capture",
-			Type:  settings.FieldToggle,
-			Value: boolString(rem.MemoryAutoCapture),
-		},
 	)
 
 	validationMessage := "Configuration looks valid."
@@ -4899,12 +4893,6 @@ func saveRemembrances(field settings.Field) error {
 		remCfg.MemoryDefaultTTLDays = n
 	case "remembrances.memory_gc_interval":
 		remCfg.MemoryGCInterval = strings.TrimSpace(field.Value)
-	case "remembrances.memory_auto_capture":
-		v, err := parseBoolValue(field.Value)
-		if err != nil {
-			return fmt.Errorf("invalid memory auto-capture value: %w", err)
-		}
-		remCfg.MemoryAutoCapture = v
 	default:
 		return fmt.Errorf("unsupported Remembrances setting %q", field.Key)
 	}

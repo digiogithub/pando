@@ -7,7 +7,7 @@ Is directory a git repo: {{if .IsGitRepo}}Yes{{else}}No{{end}}
 Current git branch: {{.GitBranch}}
 {{- end}}
 Platform: {{.Platform}}
-Current date and time: {{.Date}}
+Current date: {{.Date}}
 </env>
 {{- if .ProjectListing }}
 <project>

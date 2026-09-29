@@ -2,13 +2,14 @@
 id: PANDO-US-0033
 type: story
 title: Grok Build memory architecture reference (legacy and v2)
-status: backlog
+status: cancelled
 priority: medium
 parent: PANDO-EP-0008
 labels: [analysis, memory, grok-build]
 estimate: 5
 created: 2026-09-18T08:35:07Z
-updated: 2026-09-18T08:35:07Z
+updated: 2026-09-29T19:09:04Z
+closed: 2026-09-29T19:09:04Z
 ---
 
 ## Description

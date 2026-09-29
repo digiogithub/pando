@@ -136,7 +136,6 @@ func TestDefaultConfigTemplateEnablesPandoPreferredDefaults(t *testing.T) {
 		{"Mesnada.Delegation", "Enabled", "true"},
 		{"Remembrances", "ContextEnrichmentEnabled", "true"},
 		{"Remembrances", "MemoryEnabled", "true"},
-		{"Remembrances", "MemoryAutoCapture", "true"},
 		{"Remembrances", "KBWikiLinks", "true"},
 		{"LLMCache", "Enabled", "true"},
 		{"ToolDiscovery", "Enabled", "true"},

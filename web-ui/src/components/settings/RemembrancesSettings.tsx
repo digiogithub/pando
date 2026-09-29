@@ -668,13 +668,6 @@ export default function RemembrancesSettings() {
             <Input value={rem.memory_gc_interval ?? '1h'} onChange={(e) => updateRemembrances('memory_gc_interval', e.target.value)} placeholder="1h" />
           </Field>
         </div>
-        <SettingsRow
-          label="Auto-capture memories"
-          description="Automatically extract and store key facts from conversations"
-          htmlFor="rem-mem-auto-capture"
-        >
-          <Switch id="rem-mem-auto-capture" checked={rem.memory_auto_capture ?? false} onCheckedChange={(v) => updateRemembrances('memory_auto_capture', v)} />
-        </SettingsRow>
       </SettingsSection>
 
       {error && <div className="settings-banner settings-banner--danger" role="alert">{error}</div>}

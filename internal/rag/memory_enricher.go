@@ -58,15 +58,19 @@ func BuildMemoryBlock(ctx context.Context, kbStore *kb.KBStore, query string, cf
 	return sb.String()
 }
 
+// memoryLineMaxRunes caps how much of a memory is inlined into the system prompt.
+const memoryLineMaxRunes = 200
+
 // formatMemoryLine formats a single memory for injection.
-// Format: [key: <key>] <content[:200]> (scope: <scope>[, importance: <fmt %.2f>])
+// Format: [key: <key>] <content> (scope: <scope>[, importance: <fmt %.2f>])
+// Content longer than memoryLineMaxRunes is cut on a rune boundary and followed by
+// a pointer to the full text, so the line works as an index entry the model can
+// follow instead of a dead fragment.
 func formatMemoryLine(m kb.MemoryResult) string {
-	content := m.Document.Content
-	if len(content) > 200 {
-		content = content[:200]
+	content := strings.TrimSpace(strings.ReplaceAll(m.Document.Content, "\n", " "))
+	if runes := []rune(content); len(runes) > memoryLineMaxRunes {
+		content = strings.TrimSpace(string(runes[:memoryLineMaxRunes])) + "… " + fullMemoryPointer(m.Document)
 	}
-	content = strings.ReplaceAll(content, "\n", " ")
-	content = strings.TrimSpace(content)
 
 	var sb strings.Builder
 	if m.Document.MemoryKey != "" {
@@ -87,4 +91,10 @@ func formatMemoryLine(m kb.MemoryResult) string {
 	}
 
 	return sb.String()
+}
+
+// fullMemoryPointer tells the model how to read a truncated memory in full. Every
+// memory is a KB document, so its path always resolves; recall only searches.
+func fullMemoryPointer(doc kb.Document) string {
+	return fmt.Sprintf("[truncated; full text: kb_get_document file_path=%q]", doc.FilePath)
 }

@@ -113,7 +113,8 @@ func SetContextTrimmer(ct ContextTrimmer) {
 	globalContextTrimmer = ct
 }
 
-// MemoryInjector injects a <memories> block into the system prompt before each turn.
+// MemoryInjector builds the <memories> block prepended to the system prompt. The
+// agent builds it once per session and freezes it (see sessionMemoryBlock).
 // It is a separate interface from ContextEnricher so memory enrichment can be enabled
 // independently of the main context-enrichment pipeline.
 type MemoryInjector interface {
@@ -1113,6 +1114,7 @@ func summarizeToolResults(msg *message.Message) any {
 
 func (a *agent) processGeneration(ctx context.Context, sessionID, content string, attachmentParts []message.ContentPart, eventCh chan<- AgentEvent) AgentEvent {
 	cfg := config.Get()
+	memoryQuery := content
 	// List existing messages; if none, start title generation asynchronously.
 	msgs, err := a.messages.List(ctx, sessionID)
 	if err != nil {
@@ -1175,6 +1177,9 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 	// overrides (model, persona, inference settings) resolve correctly even for
 	// concurrent sessions sharing this process.
 	promptCtx := context.WithValue(ctx, prompt.SessionIDKey, sessionID)
+	// Seed the session's memory search with what the user actually typed, before
+	// hooks or context enrichment append to it.
+	promptCtx = withMemoryQuery(promptCtx, memoryQuery)
 
 	// Resolve persona content to inject into the system prompt.
 	// This is done before creating the user message so the content (user query)
@@ -2322,6 +2327,9 @@ func (a *agent) generateAndPersistSummary(ctx context.Context, sessionID string,
 		}
 		return nil, fmt.Errorf("failed to save session: %w", err)
 	}
+	// The summary replaces the history the frozen memory block was cached with;
+	// rebuild it on the next turn, as Grok Build re-injects memory after compaction.
+	invalidateSessionMemoryBlock(sessionID)
 
 	return &summaryResult{message: summaryMsg, text: summary, model: model, usage: usage, usedFallback: usedFallback}, nil
 }
@@ -2829,7 +2837,10 @@ func buildSystemMessage(
 	}
 
 	systemMessage, err := prompt.BuildPrompt(buildCtx, agentName, modelProvider, globalLuaManager,
-		prompt.WithEnvironment(cfg.WorkingDir, isGitRepo(cfg.WorkingDir), goruntime.GOOS, time.Now().Format("2006-01-02 15:04:05 MST")),
+		// Date only: the system prompt is rebuilt every turn, and a clock
+		// value in it would change the prompt prefix on every turn and defeat
+		// the provider's prompt cache for the whole history.
+		prompt.WithEnvironment(cfg.WorkingDir, isGitRepo(cfg.WorkingDir), goruntime.GOOS, time.Now().Format("2006-01-02")),
 		prompt.WithGitInfo(getGitBranch(cfg.WorkingDir), "", ""),
 		prompt.WithMCPServers(promptMCPServerNames(cfg)),
 		prompt.WithTools(promptToolNames(agentTools)),
@@ -2863,12 +2874,11 @@ func buildSystemMessage(
 
 	// Memories block is prepended before the main system prompt so the model treats
 	// stored memories as pre-loaded knowledge rather than appended context.
+	// The block is frozen per session (see sessionMemoryBlock) so it does not
+	// change the prompt prefix between turns.
 	finalPrompt := systemMessage
-	if globalMemoryInjector != nil {
-		memBlock := globalMemoryInjector.BuildMemoryBlock(ctx, "")
-		if memBlock != "" {
-			finalPrompt = memBlock + "\n\n" + finalPrompt
-		}
+	if memBlock := sessionMemoryBlock(ctx); memBlock != "" {
+		finalPrompt = memBlock + "\n\n" + finalPrompt
 	}
 	if len(sections) > 0 {
 		finalPrompt += "\n\n" + strings.Join(sections, "\n\n")
