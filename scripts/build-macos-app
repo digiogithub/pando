@@ -34,7 +34,9 @@
 #   pando-darwin-<arch>.zip                 Signed & notarized CLI binary (submit-only)
 #   Pando-<arch>.app                       Signed .app bundle (arch = arm64|x64)
 #   pando-<VERSION>-darwin-<arch>.pkg       Signed & notarized flat-package installer
-#   pando-<VERSION>-darwin-<arch>.pkg.zip   Compressed installer
+#
+# The .pkg is not zipped: a flat package is already xar-compressed, so a zip
+# of it is the same size and only duplicates the release asset.
 
 set -euo pipefail
 
@@ -523,9 +525,6 @@ XML
     else
         echo "Skipping .pkg notarization & verification because the installer is unsigned."
     fi
-
-    echo "Compressing dist/$(basename "$final_pkg").zip..."
-    ( cd "$DIST_DIR" && zip -q "$(basename "$final_pkg").zip" "$(basename "$final_pkg")" )
 
     echo "  → $final_pkg"
 }
