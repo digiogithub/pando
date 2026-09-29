@@ -26,6 +26,7 @@ interface ProjectStore {
   addProject: (path: string, name?: string) => Promise<void>
   activateProject: (id: string) => Promise<'ok' | 'needs_init'>
   stopProject: (id: string) => Promise<void>
+  openProjectDesktop: (id: string) => Promise<void>
   deactivateProject: () => Promise<void>
   initProject: (id: string) => Promise<void>
   removeProject: (id: string) => Promise<void>
@@ -150,6 +151,33 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         }
         useToastStore.getState().addToast(e.message || 'Failed to stop project', 'error')
       }
+    }
+  },
+
+  // Desktop app only: open the project in its own Pando desktop window (a
+  // separate `pando desktop --cwd <path>` process).
+  openProjectDesktop: async (id: string) => {
+    try {
+      const resp = await api.post<{ status?: string }>(`/api/v1/projects/${id}/open-desktop`, {})
+      const toasts = useToastStore.getState()
+      switch (resp?.status) {
+        case 'current':
+          toasts.addToast('This window already works in that project', 'info')
+          break
+        case 'already_open':
+          toasts.addToast('That project is already open in another Pando window', 'info')
+          break
+        default:
+          toasts.addToast('Opening project in a new window…', 'success')
+      }
+    } catch (e) {
+      let message = e instanceof Error ? e.message : ''
+      try {
+        message = (JSON.parse(message) as { error?: string }).error ?? message
+      } catch {
+        // Not JSON — keep the raw message.
+      }
+      useToastStore.getState().addToast(message || 'Failed to open project window', 'error')
     }
   },
 

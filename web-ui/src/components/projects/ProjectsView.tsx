@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, X, FolderOpen, Folder, Lock, Bot, LoaderCircle, Play, CircleStop } from '@/components/ui/icons'
+import { Plus, X, FolderOpen, Folder, Lock, Bot, LoaderCircle, Play, CircleStop, ExternalLink } from '@/components/ui/icons'
 import { Badge, Button, IconButton, Input, Spinner, type BadgeTone } from '@/components/ui'
 import { useProjectStore } from '@pando/client/stores/projectStore'
 import type { Project } from '@pando/client/types'
 import ProjectInitWizard from './ProjectInitWizard'
 import DirBrowserDialog from '@/components/shared/DirBrowserDialog'
 import EmptyState from '@/components/shared/EmptyState'
+import { isDesktop } from '@/services/desktop'
 
 /** Replace leading /home/<user> or /Users/<user> with ~. */
 function shortenPath(path: string): string {
@@ -46,6 +47,7 @@ export default function ProjectsView() {
     addProject,
     activateProject,
     stopProject,
+    openProjectDesktop,
     deactivateProject,
     initProject,
     removeProject,
@@ -95,6 +97,16 @@ export default function ProjectsView() {
       return
     }
     await activateProject(proj.id)
+  }
+
+  // In the desktop app a row click opens the project in its own Pando window;
+  // elsewhere it toggles the project's background instance.
+  const handleRowClick = (proj: Project) => {
+    if (isDesktop) {
+      void openProjectDesktop(proj.id)
+      return
+    }
+    void handleToggle(proj)
   }
 
   const handleDelete = async (id: string) => {
@@ -177,14 +189,16 @@ export default function ProjectsView() {
                   <th>Name</th>
                   <th>Path</th>
                   <th>Status</th>
-                  <th style={{ width: 90 }} className="is-numeric">Actions</th>
+                  <th style={{ width: isDesktop ? 120 : 90 }} className="is-numeric">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {projects.map((proj) => {
                   const isActive = proj.id === activeProjectId
                   const isRunning = proj.status === 'running'
-                  const rowTitle = proj.external
+                  const rowTitle = isDesktop
+                    ? 'Click to open this project in a new Pando window'
+                    : proj.external
                     ? 'Launched externally — close it from the application that started it'
                     : isRunning
                       ? 'Click to stop this instance'
@@ -193,7 +207,7 @@ export default function ProjectsView() {
                     <tr
                       key={proj.id}
                       title={rowTitle}
-                      onClick={() => void handleToggle(proj)}
+                      onClick={() => handleRowClick(proj)}
                       data-clickable="true"
                       data-selected={isActive || undefined}
                     >
@@ -225,6 +239,15 @@ export default function ProjectsView() {
                       </td>
                       <td className="is-numeric" onClick={(e) => e.stopPropagation()}>
                         <div className="flex justify-end gap-1.5">
+                          {isDesktop && (
+                            <IconButton
+                              aria-label="Open in new window"
+                              tooltip
+                              icon={<ExternalLink size={13} />}
+                              size="sm"
+                              onClick={() => void openProjectDesktop(proj.id)}
+                            />
+                          )}
                           <IconButton
                             aria-label={proj.external ? 'Launched externally — cannot be stopped here' : isRunning ? 'Stop instance' : 'Start instance'}
                             tooltip
