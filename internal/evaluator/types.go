@@ -54,6 +54,8 @@ type RewardResult struct {
 	CompletionTokens int64
 	MessageCount     int64
 	UserCorrections  int
+	// Breakdown is the explainable decomposition persisted with the score.
+	Breakdown Breakdown
 }
 
 // JudgeOutput is the structured response from the LLM judge model.
@@ -97,6 +99,10 @@ type EvaluateOptions struct {
 	Force bool
 	// SkipJudge disables the LLM judge for this evaluation.
 	SkipJudge bool
+	// Rescore replaces an existing session score in place instead of skipping
+	// the session as already evaluated (used after explicit feedback). The
+	// judge never runs on a re-score.
+	Rescore bool
 }
 
 // Result is the outcome of one evaluation.
@@ -124,7 +130,7 @@ func (r *Result) Summary() string {
 	}
 	rw := r.Reward
 	return fmt.Sprintf(
-		"session %s evaluated: reward %.3f (success %.2f, efficiency %.2f), corrections %d, messages %d, tokens %d prompt / %d completion, judge %s",
-		r.SessionID, rw.Total, rw.SuccessScore, rw.EfficiencyScore, rw.UserCorrections, rw.MessageCount, rw.PromptTokens, rw.CompletionTokens, judge,
+		"session %s evaluated: reward %.3f (success %.2f, efficiency %.2f), corrections %d, messages %d, tokens %d prompt / %d completion, judge %s%s",
+		r.SessionID, rw.Total, rw.SuccessScore, rw.EfficiencyScore, rw.UserCorrections, rw.MessageCount, rw.PromptTokens, rw.CompletionTokens, judge, rw.Breakdown.componentSummary(),
 	)
 }

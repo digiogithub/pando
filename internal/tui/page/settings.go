@@ -5517,6 +5517,7 @@ func saveEvaluator(field settings.Field) error {
 			return fmt.Errorf("alpha weight must be between 0.0 and 1.0")
 		}
 		evalCfg.AlphaWeight = v
+		evalCfg.Weights.Success = v // alpha is the legacy name of the success weight
 	case "evaluator.betaWeight":
 		v, err := strconv.ParseFloat(strings.TrimSpace(field.Value), 64)
 		if err != nil {
@@ -5526,6 +5527,7 @@ func saveEvaluator(field settings.Field) error {
 			return fmt.Errorf("beta weight must be between 0.0 and 1.0")
 		}
 		evalCfg.BetaWeight = v
+		evalCfg.Weights.Tokens = v // beta is the legacy name of the tokens weight
 	case "evaluator.explorationC":
 		v, err := strconv.ParseFloat(strings.TrimSpace(field.Value), 64)
 		if err != nil {

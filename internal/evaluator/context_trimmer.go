@@ -62,9 +62,9 @@ type trimmerOutput struct {
 // It complements the post-session Judge: instead of "what went wrong?", it asks
 // "what is needed for this task?".
 type ContextTrimmer struct {
-	judge  *Judge
-	cfg    config.EvaluatorConfig
-	cache  map[string]*ContextProfile
+	judge   *Judge
+	cfg     config.EvaluatorConfig
+	cache   map[string]*ContextProfile
 	cacheMu sync.Mutex
 }
 
@@ -79,6 +79,14 @@ func NewContextTrimmer(cfg config.EvaluatorConfig, j *Judge) *ContextTrimmer {
 		cfg:   cfg,
 		cache: make(map[string]*ContextProfile),
 	}
+}
+
+// MinConfidence returns the confidence below which callers must ignore a profile.
+func (ct *ContextTrimmer) MinConfidence() float64 {
+	if ct == nil || ct.cfg.ContextTrimmer.MinConfidence <= 0 {
+		return 0.7
+	}
+	return ct.cfg.ContextTrimmer.MinConfidence
 }
 
 // ProfileTask analyzes the user's first message and returns a ContextProfile
@@ -126,6 +134,14 @@ func (ct *ContextTrimmer) ProfileTask(
 		slog.Debug("context_trimmer: LLM call failed, using defaults", "err", err)
 		return nil, nil //nolint:nilerr // intentional fallback
 	}
+
+	// Stable key so the trimmer's evaluator-side cost can be grepped/aggregated.
+	slog.Info("evaluator: context_trimmer usage",
+		"input_tokens", resp.Usage.InputTokens,
+		"output_tokens", resp.Usage.OutputTokens,
+		"cache_read_tokens", resp.Usage.CacheReadTokens,
+		"cost_category", "evaluator",
+	)
 
 	out, err := parseTrimmerOutput(resp.Content)
 	if err != nil || out == nil {

@@ -199,6 +199,28 @@ func dispatchWrite(ctx context.Context, q db.Querier, req WriteRequest) (json.Ra
 		}
 		return marshalResult(r, nil)
 
+	case "UpdateSessionScore":
+		var p db.UpdateSessionScoreParams
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return nil, invalidParamsErr(req.Method, err)
+		}
+		r, err := q.UpdateSessionScore(ctx, p)
+		if err != nil {
+			return nil, mapToWriteError(req.Method, err)
+		}
+		return marshalResult(r, nil)
+
+	case "InsertSessionFeedbackEvent":
+		var p db.InsertSessionFeedbackEventParams
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return nil, invalidParamsErr(req.Method, err)
+		}
+		r, err := q.InsertSessionFeedbackEvent(ctx, p)
+		if err != nil {
+			return nil, mapToWriteError(req.Method, err)
+		}
+		return marshalResult(r, nil)
+
 	case "InsertSkill":
 		var p db.InsertSkillParams
 		if err := json.Unmarshal(req.Params, &p); err != nil {

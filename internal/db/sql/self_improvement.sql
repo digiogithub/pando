@@ -32,9 +32,9 @@ SELECT COUNT(*) FROM prompt_templates WHERE is_active = 1;
 INSERT INTO session_scores (
     id, session_id, template_id, reward, success_score, efficiency_score,
     judge_analysis, judge_model, prompt_tokens, completion_tokens,
-    message_count, user_corrections, evaluated_at, created_at
+    message_count, user_corrections, components, evaluated_at, created_at
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
 RETURNING *;
 
 -- name: GetSessionScore :one
@@ -46,10 +46,54 @@ SELECT COUNT(*) FROM session_scores;
 -- name: ListSessionScores :many
 SELECT id, session_id, template_id, reward, success_score, efficiency_score,
        judge_analysis, judge_model, prompt_tokens, completion_tokens,
-       message_count, user_corrections, evaluated_at, created_at
+       message_count, user_corrections, evaluated_at, created_at, components
 FROM session_scores
 ORDER BY created_at DESC
 LIMIT ?;
+
+-- Re-scores a session in place (explicit feedback). The row is UPDATEd, never
+-- re-inserted, so the insert-only UCB trigger cannot double count it; the
+-- update_ucb_after_rescore trigger applies just the reward delta.
+-- name: UpdateSessionScore :one
+UPDATE session_scores
+SET reward = ?,
+    success_score = ?,
+    efficiency_score = ?,
+    prompt_tokens = ?,
+    completion_tokens = ?,
+    message_count = ?,
+    user_corrections = ?,
+    components = ?,
+    evaluated_at = strftime('%s', 'now')
+WHERE session_id = ?
+RETURNING *;
+
+-- Token baseline from the sessions table itself (not session_scores), so it is
+-- available before any session has been scored: mean prompt+completion tokens
+-- of the most recent root sessions with at least 4 messages (>= 2 user turns
+-- and their replies), excluding the session being evaluated.
+-- name: GetSessionsTokenBaseline :one
+SELECT COALESCE(AVG(prompt_tokens + completion_tokens), 0) as baseline
+FROM (
+    SELECT prompt_tokens, completion_tokens
+    FROM sessions
+    WHERE id != ?
+      AND parent_session_id IS NULL
+      AND message_count >= 4
+      AND prompt_tokens + completion_tokens > 0
+    ORDER BY created_at DESC
+    LIMIT ?
+);
+
+-- Explicit user feedback (/feedback good|bad) is stored as an event whose
+-- subject is "session_feedback:<session id>"; the payload lives in metadata.
+-- name: InsertSessionFeedbackEvent :one
+INSERT INTO events (subject, content, metadata)
+VALUES (?, ?, ?)
+RETURNING id;
+
+-- name: GetLatestSessionFeedback :one
+SELECT metadata FROM events WHERE subject = ? ORDER BY id DESC LIMIT 1;
 
 -- name: GetTokenBaseline :one
 SELECT COALESCE(AVG(prompt_tokens + completion_tokens), 0) as baseline

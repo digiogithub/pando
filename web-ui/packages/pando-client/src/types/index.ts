@@ -264,6 +264,47 @@ export interface Skill {
   uses: number
 }
 
+// Reward decomposition persisted in session_scores.components (JSON).
+export interface EvaluatorPatternHit {
+  index: number
+  pattern: string
+  weight: number
+  afterAssistant: boolean
+  snippet: string
+}
+
+export interface EvaluatorScoreComponents {
+  /** score in [0,1] per available component (success, tokens, toolErrors, ...) */
+  components?: Record<string, number>
+  /** weight applied to each available component */
+  weights?: Record<string, number>
+  patternHits?: EvaluatorPatternHit[]
+  /** explicit user rating ("good" | "bad") that overrode the total */
+  feedback?: 'good' | 'bad'
+  feedbackNote?: string
+  userTurns?: number
+  toolCalls?: number
+  toolErrors?: number
+  cancels?: number
+  repeats?: number
+  baseline?: number
+  /** total before the explicit-feedback override */
+  weightedTotal?: number
+}
+
+// One row of GET /api/v1/evaluator/sessions.
+export interface EvaluatorSessionScore {
+  id: string
+  session_id: string
+  template_id?: string
+  reward: number
+  success_score: number
+  efficiency_score: number
+  message_count: number
+  evaluated_at: number
+  components: EvaluatorScoreComponents
+}
+
 export interface EvaluatorMetrics {
   total_sessions: number
   total_templates: number
@@ -494,13 +535,27 @@ export interface ExtensionsConfig {
   lua: LuaConfig
 }
 
+// Relative reward-component weights (matches backend EvaluatorWeights)
+export interface EvaluatorWeights {
+  success: number
+  tokens: number
+  toolErrors: number
+  cancels: number
+  repetition: number
+  turns: number
+  endState: number
+}
+
 // Evaluator config types (matches backend EvaluatorConfig)
 export interface EvaluatorSettingsConfig {
   enabled: boolean
   model: string
   provider: string
+  /** legacy: only used when `weights` is unset */
   alphaWeight: number
+  /** legacy: only used when `weights` is unset */
   betaWeight: number
+  weights?: EvaluatorWeights
   explorationC: number
   minSessionsForUCB: number
   correctionsPatterns: string[]
@@ -512,6 +567,10 @@ export interface EvaluatorSettingsConfig {
   backfillLimit?: number
   backfillJudge?: boolean
   includeSubagents?: boolean
+  contextTrimmer?: {
+    enabled: boolean
+    minConfidence?: number
+  }
 }
 
 // Skills catalog item (from GET /api/v1/skills/catalog?q=... → skills.sh CatalogSkill)

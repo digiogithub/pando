@@ -252,3 +252,35 @@ func TestEvaluateNow_ForceBypassesGuards(t *testing.T) {
 		t.Fatalf("forced evaluation must persist a score, res=%+v err=%v", res, err)
 	}
 }
+
+func TestContextTrimmer_OptInOnly(t *testing.T) {
+	_, q := setupTestDB(t)
+	svc := newSvc(t, q, twoTurns(), nil)
+	fake := &fakeJudgeProvider{}
+	evaluator.SetJudgeProvider(svc, fake)
+
+	// Default config: evaluator enabled, trimmer flag off => no trimmer, no LLM calls.
+	if ct := svc.NewContextTrimmer(); ct != nil {
+		t.Fatal("trimmer must not be created unless evaluator.contextTrimmer.enabled")
+	}
+	if got := fake.calls.Load(); got != 0 {
+		t.Fatalf("expected zero trimmer LLM calls by default, got %d", got)
+	}
+
+	// Flag on => trimmer exists and invokes the provider.
+	on := newSvc(t, q, twoTurns(), func(c *config.EvaluatorConfig) { c.ContextTrimmer.Enabled = true })
+	evaluator.SetJudgeProvider(on, fake)
+	ct := on.NewContextTrimmer()
+	if ct == nil {
+		t.Fatal("trimmer must be created when the flag is on")
+	}
+	if _, err := ct.ProfileTask(context.Background(), "fix the bug", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := fake.calls.Load(); got != 1 {
+		t.Fatalf("expected one trimmer LLM call, got %d", got)
+	}
+	if ct.MinConfidence() != 0.7 {
+		t.Fatalf("default min confidence = %v", ct.MinConfidence())
+	}
+}

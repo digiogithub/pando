@@ -48,6 +48,7 @@ type SessionScore struct {
 	UserCorrections  int64          `json:"user_corrections"`
 	EvaluatedAt      int64          `json:"evaluated_at"`
 	CreatedAt        int64          `json:"created_at"`
+	Components       string         `json:"components"`
 }
 
 type PromptUcbStat struct {

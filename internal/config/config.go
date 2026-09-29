@@ -857,6 +857,75 @@ type TaskPatternConfig struct {
 	TaskType string `toml:"taskType" json:"taskType"`
 }
 
+// ContextTrimmerConfig controls the optional per-session tool-filtering LLM call.
+// It is opt-in and additionally requires evaluator.enabled.
+type ContextTrimmerConfig struct {
+	// Enabled makes one cheap LLM call on the first message of a session to pick
+	// the relevant tools. Default: false (it adds latency and cost per session).
+	Enabled bool `toml:"enabled" json:"enabled"`
+	// MinConfidence is the confidence below which the profile is ignored and all
+	// tools are kept. Default: 0.7.
+	MinConfidence float64 `toml:"minConfidence" json:"minConfidence,omitempty"`
+}
+
+// EvaluatorWeights are the relative weights of the reward components. The total
+// reward is the weighted mean of the components available for a session, so
+// weights only need to be proportional. All-zero means "unset": the legacy
+// alphaWeight/betaWeight keys are then used for success/tokens and the
+// remaining components take DefaultEvaluatorWeights (see ResolvedWeights).
+type EvaluatorWeights struct {
+	// Success weighs the (correction-derived) task success score.
+	Success float64 `toml:"success" json:"success"`
+	// Tokens weighs token efficiency against the recent-sessions baseline.
+	Tokens float64 `toml:"tokens" json:"tokens"`
+	// ToolErrors weighs the share of tool calls that did not return an error.
+	ToolErrors float64 `toml:"toolErrors" json:"toolErrors"`
+	// Cancels weighs the absence of cancelled runs.
+	Cancels float64 `toml:"cancels" json:"cancels"`
+	// Repetition weighs the absence of repeated identical tool calls.
+	Repetition float64 `toml:"repetition" json:"repetition"`
+	// Turns weighs the number of user turns needed to finish.
+	Turns float64 `toml:"turns" json:"turns"`
+	// EndState weighs whether the session did not end right after an error.
+	EndState float64 `toml:"endState" json:"endState"`
+}
+
+// IsZero reports whether no weight is set.
+func (w EvaluatorWeights) IsZero() bool { return w == EvaluatorWeights{} }
+
+// DefaultEvaluatorWeights are the weights used for the components a user has
+// not configured explicitly.
+func DefaultEvaluatorWeights() EvaluatorWeights {
+	return EvaluatorWeights{
+		Success:    0.5,
+		Tokens:     0.15,
+		ToolErrors: 0.1,
+		Cancels:    0.05,
+		Repetition: 0.05,
+		Turns:      0.05,
+		EndState:   0.1,
+	}
+}
+
+// ResolvedWeights returns the effective reward weights. When Weights is unset
+// the legacy AlphaWeight/BetaWeight keys become the success/tokens weights
+// (defaults 0.8/0.2) and the other components use their defaults, so existing
+// configs migrate without edits.
+func (c EvaluatorConfig) ResolvedWeights() EvaluatorWeights {
+	if !c.Weights.IsZero() {
+		return c.Weights
+	}
+	w := DefaultEvaluatorWeights()
+	w.Success, w.Tokens = 0.8, 0.2
+	if c.AlphaWeight != 0 {
+		w.Success = c.AlphaWeight
+	}
+	if c.BetaWeight != 0 {
+		w.Tokens = c.BetaWeight
+	}
+	return w
+}
+
 // EvaluatorConfig controls the self-improvement evaluation loop.
 type EvaluatorConfig struct {
 	// Enabled activates the evaluation loop. Default: false (opt-in).
@@ -865,11 +934,14 @@ type EvaluatorConfig struct {
 	Model models.ModelID `toml:"model"`
 	// Provider specifies which LLM provider to use for the judge model.
 	Provider string `toml:"provider"`
-	// AlphaWeight is the importance of task success in reward. Default: 0.8.
-	// Reward formula: R = AlphaWeight * S_success + BetaWeight * S_tokens
+	// AlphaWeight is the legacy weight of task success. Only used when Weights
+	// is unset (then it becomes Weights.Success). Default: 0.8.
 	AlphaWeight float64 `toml:"alphaWeight"`
-	// BetaWeight is the importance of token efficiency in reward. Default: 0.2.
+	// BetaWeight is the legacy weight of token efficiency. Only used when Weights
+	// is unset (then it becomes Weights.Tokens). Default: 0.2.
 	BetaWeight float64 `toml:"betaWeight"`
+	// Weights are the per-component reward weights (see EvaluatorWeights).
+	Weights EvaluatorWeights `toml:"weights" json:"weights"`
 	// ExplorationC is the UCB1 exploration factor. Default: 1.41 (sqrt(2)).
 	ExplorationC float64 `toml:"explorationC"`
 	// MinSessionsForUCB is the min evaluated sessions before UCB activates. Default: 5.
@@ -897,6 +969,8 @@ type EvaluatorConfig struct {
 	// TaskPatterns maps regex patterns to task type labels for ClassifyTask.
 	// Evaluated in order; first match wins. Falls back to "general" if none match.
 	TaskPatterns []TaskPatternConfig `toml:"taskPatterns" json:"taskPatterns,omitempty"`
+	// ContextTrimmer configures the opt-in pre-session tool filter. Default: off.
+	ContextTrimmer ContextTrimmerConfig `toml:"contextTrimmer" json:"contextTrimmer"`
 }
 
 // ACPConfig defines the configuration for the ACP (Agent Client Protocol) stdio server.
@@ -2482,43 +2556,9 @@ func setDefaults(debug bool) {
 	viper.SetDefault("evaluator.backfillLimit", 50)
 	viper.SetDefault("evaluator.backfillJudge", false)
 	viper.SetDefault("evaluator.includeSubagents", false)
-	viper.SetDefault("evaluator.correctionsPatterns", []string{
-		// English — generic negation / correction signals
-		`(?i)\bwrong\b`,
-		`(?i)\bincorrect\b`,
-		`(?i)that'?s not`,
-		`(?i)not what i`,
-		`(?i)\bmistake\b`,
-		`(?i)\bfix that\b`,
-		`(?i)\bdon'?t do that\b`,
-		`(?i)\bstop doing\b`,
-		`(?i)\bthat'?s not right\b`,
-		`(?i)\bnot what i asked\b`,
-		`(?i)\byou'?re wrong\b`,
-		`(?i)\byou missed\b`,
-		`(?i)\bthat'?s wrong\b`,
-		// English — scope/constraint violation signals
-		`(?i)\bdo it directly\b`,
-		`(?i)\bno script\b`,
-		`(?i)\bdon'?t generate\b`,
-		`(?i)\bi said don'?t\b`,
-		// Spanish — generic correction signals
-		`(?i)\barréglalo\b`,
-		`(?i)\bno era eso\b`,
-		`(?i)\bno lo hagas\b`,
-		`(?i)\basí no\b`,
-		`(?i)\bestá mal\b`,
-		`(?i)\beso no es\b`,
-		`(?i)\bte equivocaste\b`,
-		`(?i)\bvuelve a\b`,
-		`(?i)\bno hagas\b`,
-		`(?i)\beso no era\b`,
-		`(?i)\bno es correcto\b`,
-		// Spanish — scope/constraint violation signals
-		`(?i)\bhazlo directamente\b`,
-		`(?i)\bno hagas ningún script\b`,
-		`(?i)\bno intentes\b`,
-	})
+	viper.SetDefault("evaluator.contextTrimmer.enabled", false)
+	viper.SetDefault("evaluator.contextTrimmer.minConfidence", 0.7)
+	viper.SetDefault("evaluator.correctionsPatterns", DefaultCorrectionsPatterns())
 
 	// ACP (Agent Client Protocol) stdio server defaults
 	viper.SetDefault("acp.enabled", true)
@@ -5809,6 +5849,45 @@ func UpdateCronJobs(cronJobs CronJobsConfig) error {
 	return nil
 }
 
+// DefaultCorrectionsPatterns returns the default regexes that flag a user turn
+// as a correction of the assistant. They are deliberately specific: bare
+// negations ("no", "no problem", "no, that's fine", "no pasa nada") and
+// re-requests ("vuelve a ...") are NOT corrections and must not match.
+func DefaultCorrectionsPatterns() []string {
+	return []string{
+		// English: explicit rejection
+		`(?i)\bthat'?s (not right|wrong|incorrect)\b`,
+		`(?i)\b(you'?re|this is|it'?s) (wrong|incorrect)\b`,
+		`(?i)\bthat'?s not (what|how|it|correct)\b`,
+		`(?i)\bnot what i (asked|wanted|meant|said)\b`,
+		`(?i)\bthat (didn'?t|doesn'?t|did not|does not) work\b`,
+		`(?i)\byou (missed|forgot|broke|misunderstood)\b`,
+		`(?i)\b(undo|revert) (that|this|it|the last)\b`,
+		`(?i)^\s*(undo|revert)\b`,
+		`(?i)\bstill (failing|broken|not working|wrong|fails|the same)\b`,
+		`(?i)\b(don'?t|do not) do that\b`,
+		`(?i)\bi said (don'?t|not to|do not)\b`,
+		`(?i)\bstop doing\b`,
+		`(?i)\bfix that\b`,
+		`(?i)\bmistake\b`,
+		// Spanish: explicit rejection
+		`(?i)\beso no es lo que\b`,
+		`(?i)\bno era eso\b`,
+		`(?i)\beso no era\b`,
+		`(?i)\bno es (lo que|correcto)\b`,
+		`(?i)\b(está|esta) (mal|incorrecto)\b`,
+		`(?i)\bte equivocaste\b`,
+		`(?i)\basí no\b`,
+		`(?i)\bno lo hagas\b`,
+		`(?i)\bdeshaz(lo)?\b`,
+		`(?i)\brevierte\b`,
+		`(?i)\bsigue (fallando|roto|sin funcionar)\b`,
+		`(?i)\bsigue (igual|mal)\b`,
+		`(?i)\barréglalo\b`,
+		`(?i)\bte (olvidaste|dejaste)\b`,
+	}
+}
+
 // EvaluatorWithDefaults returns a copy of eval with zero/empty values replaced
 // by the recommended defaults. This ensures the TUI and Web-UI always display
 // sensible values even when the user has not explicitly configured the evaluator.
@@ -5824,6 +5903,9 @@ func EvaluatorWithDefaults(eval EvaluatorConfig) EvaluatorConfig {
 	}
 	if eval.BetaWeight == 0 {
 		eval.BetaWeight = 0.2
+	}
+	if len(eval.CorrectionsPatterns) == 0 {
+		eval.CorrectionsPatterns = DefaultCorrectionsPatterns()
 	}
 	if eval.ExplorationC == 0 {
 		eval.ExplorationC = 1.41
@@ -5843,6 +5925,11 @@ func EvaluatorWithDefaults(eval EvaluatorConfig) EvaluatorConfig {
 	if eval.BackfillLimit == 0 {
 		eval.BackfillLimit = 50
 	}
+	if eval.ContextTrimmer.MinConfidence == 0 {
+		eval.ContextTrimmer.MinConfidence = 0.7
+	}
+	// Legacy alpha/beta migrate transparently into the weights table.
+	eval.Weights = eval.ResolvedWeights()
 	// Async defaults to true but bool zero-value is false; only apply the default
 	// when the struct is fully unset so we don't override a deliberate false.
 	if fullyUnset {

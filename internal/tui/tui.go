@@ -48,6 +48,9 @@ type startCompactSessionMsg struct{}
 // evaluateSessionMsg asks the model to evaluate the currently selected session.
 type evaluateSessionMsg struct{}
 
+// feedbackSessionMsg records explicit good/bad feedback for the selected session.
+type feedbackSessionMsg struct{ rating string }
+
 type originalWindowTitleMsg struct {
 	title string
 }
@@ -830,6 +833,24 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return util.InfoMsg{Type: util.InfoTypeError, Msg: err.Error()}
 			}
 			return util.InfoMsg{Type: util.InfoTypeInfo, Msg: res.Summary()}
+		}
+
+	case feedbackSessionMsg:
+		id, svc := a.selectedSession.ID, a.app.Evaluator
+		if svc == nil || !svc.IsEnabled() {
+			return a, util.ReportWarn("Evaluator is not enabled")
+		}
+		if id == "" {
+			return a, util.ReportWarn("No session selected")
+		}
+		return a, func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			res, err := svc.RecordFeedback(ctx, id, msg.rating, "")
+			if err != nil {
+				return util.InfoMsg{Type: util.InfoTypeError, Msg: err.Error()}
+			}
+			return util.InfoMsg{Type: util.InfoTypeInfo, Msg: "Feedback recorded. " + res.Summary()}
 		}
 
 	case chat.SessionClearedMsg:
@@ -2633,6 +2654,18 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 			return util.CmdHandler(evaluateSessionMsg{})
 		},
 	})
+	for _, rating := range []string{"good", "bad"} {
+		rating := rating
+		model.RegisterCommand(dialog.Command{
+			ID:          "feedback-" + rating,
+			Title:       "Session Feedback: " + rating,
+			Description: "Rate the current session " + rating + " (re-scores it with the self-improvement evaluator)",
+			Category:    dialog.CommandCategorySessions,
+			Handler: func(cmd dialog.Command) tea.Cmd {
+				return util.CmdHandler(feedbackSessionMsg{rating: rating})
+			},
+		})
+	}
 	model.RegisterCommand(dialog.Command{
 		ID:          "switch-session",
 		Title:       "Switch Session",

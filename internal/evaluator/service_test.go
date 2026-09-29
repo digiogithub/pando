@@ -75,7 +75,18 @@ CREATE TABLE IF NOT EXISTS session_scores (
     message_count INTEGER NOT NULL DEFAULT 0,
     user_corrections INTEGER NOT NULL DEFAULT 0,
     evaluated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    components TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS events (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject    TEXT    NOT NULL DEFAULT '',
+    content    TEXT    NOT NULL,
+    metadata   TEXT    NOT NULL DEFAULT '{}',
+    embedding  BLOB,
+    event_at   DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    created_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
 CREATE TABLE IF NOT EXISTS prompt_ucb_stats (
@@ -114,6 +125,18 @@ BEGIN
         avg_reward = (total_reward + NEW.reward) / (times_used + 1),
         ucb_score = (total_reward + NEW.reward) / (times_used + 1),
         updated_at = unixepoch();
+END;
+
+CREATE TRIGGER IF NOT EXISTS update_ucb_after_rescore
+AFTER UPDATE OF reward ON session_scores
+WHEN NEW.template_id IS NOT NULL AND NEW.reward != OLD.reward
+BEGIN
+    UPDATE prompt_ucb_stats SET
+        total_reward = total_reward + NEW.reward - OLD.reward,
+        avg_reward = (total_reward + NEW.reward - OLD.reward) / MAX(times_used, 1),
+        ucb_score = (total_reward + NEW.reward - OLD.reward) / MAX(times_used, 1),
+        updated_at = unixepoch()
+    WHERE template_id = NEW.template_id;
 END;
 `
 

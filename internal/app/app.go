@@ -527,7 +527,11 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 			// Wire evaluator into prompt builder via adapter (UCB template selection + skill injection).
 			prompt.SetGlobalEvaluator(&evaluatorPromptAdapter{svc: evalSvc})
 			// Wire ContextTrimmer into agent for pre-session tool filtering (Phase 3).
-			if ct := evalSvc.NewContextTrimmer(); ct != nil {
+			// Opt-in only (evaluator.contextTrimmer.enabled, default off): the
+			// trimmer adds an LLM call to every new session.
+			if !cfg.Evaluator.ContextTrimmer.Enabled {
+				logging.Debug("evaluator: context trimmer disabled")
+			} else if ct := evalSvc.NewContextTrimmer(); ct != nil {
 				agent.SetContextTrimmer(&agentContextTrimmerAdapter{trimmer: ct})
 				logging.Info("evaluator: context trimmer initialized")
 			}
@@ -1475,7 +1479,7 @@ func (a *agentContextTrimmerAdapter) ProfileTask(ctx context.Context, firstMessa
 		infos[i] = evaluator.ToolInfo{Name: t.Name, Description: t.Description}
 	}
 	profile, err := a.trimmer.ProfileTask(ctx, firstMessage, infos)
-	if err != nil || profile == nil || profile.Confidence < 0.5 {
+	if err != nil || profile == nil || profile.Confidence < a.trimmer.MinConfidence() {
 		return nil, err //nolint:nilerr // intentional fallback: low confidence → use all tools
 	}
 	return profile.RelevantToolNames, nil

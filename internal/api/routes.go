@@ -203,6 +203,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/evaluator/skills", s.handleGetEvaluatorSkills)
 	mux.HandleFunc("GET /api/v1/evaluator/sessions", s.handleGetEvaluatorSessions)
 	mux.HandleFunc("POST /api/v1/evaluator/sessions/{id}/evaluate", s.handleEvaluateSession)
+	mux.HandleFunc("POST /api/v1/evaluator/sessions/{id}/feedback", s.handleSessionFeedback)
 	// Models
 	mux.HandleFunc("GET /api/v1/models", s.handleListModels)
 	mux.HandleFunc("PUT /api/v1/models/active", s.handleSetActiveModel)

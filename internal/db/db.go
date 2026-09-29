@@ -87,6 +87,18 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listNewFilesStmt, err = db.PrepareContext(ctx, listNewFiles); err != nil {
 		return nil, fmt.Errorf("error preparing query ListNewFiles: %w", err)
 	}
+	if q.updateSessionScoreStmt, err = db.PrepareContext(ctx, updateSessionScore); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateSessionScore: %w", err)
+	}
+	if q.getSessionsTokenBaselineStmt, err = db.PrepareContext(ctx, getSessionsTokenBaseline); err != nil {
+		return nil, fmt.Errorf("error preparing query GetSessionsTokenBaseline: %w", err)
+	}
+	if q.insertSessionFeedbackEventStmt, err = db.PrepareContext(ctx, insertSessionFeedbackEvent); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertSessionFeedbackEvent: %w", err)
+	}
+	if q.getLatestSessionFeedbackStmt, err = db.PrepareContext(ctx, getLatestSessionFeedback); err != nil {
+		return nil, fmt.Errorf("error preparing query GetLatestSessionFeedback: %w", err)
+	}
 	if q.listUnscoredSessionsStmt, err = db.PrepareContext(ctx, listUnscoredSessions); err != nil {
 		return nil, fmt.Errorf("error preparing query ListUnscoredSessions: %w", err)
 	}
@@ -294,6 +306,26 @@ func (q *Queries) Close() error {
 	if q.listNewFilesStmt != nil {
 		if cerr := q.listNewFilesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listNewFilesStmt: %w", cerr)
+		}
+	}
+	if q.updateSessionScoreStmt != nil {
+		if cerr := q.updateSessionScoreStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateSessionScoreStmt: %w", cerr)
+		}
+	}
+	if q.getSessionsTokenBaselineStmt != nil {
+		if cerr := q.getSessionsTokenBaselineStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getSessionsTokenBaselineStmt: %w", cerr)
+		}
+	}
+	if q.insertSessionFeedbackEventStmt != nil {
+		if cerr := q.insertSessionFeedbackEventStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertSessionFeedbackEventStmt: %w", cerr)
+		}
+	}
+	if q.getLatestSessionFeedbackStmt != nil {
+		if cerr := q.getLatestSessionFeedbackStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getLatestSessionFeedbackStmt: %w", cerr)
 		}
 	}
 	if q.listUnscoredSessionsStmt != nil {
@@ -523,6 +555,10 @@ type Queries struct {
 	listNewFilesStmt                 *sql.Stmt
 	listSessionsStmt                 *sql.Stmt
 	listUnscoredSessionsStmt         *sql.Stmt
+	updateSessionScoreStmt           *sql.Stmt
+	getSessionsTokenBaselineStmt     *sql.Stmt
+	insertSessionFeedbackEventStmt   *sql.Stmt
+	getLatestSessionFeedbackStmt     *sql.Stmt
 	updateFileStmt                   *sql.Stmt
 	updateGoalProgressStmt           *sql.Stmt
 	updateGoalStatusStmt             *sql.Stmt
@@ -583,6 +619,10 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listNewFilesStmt:                 q.listNewFilesStmt,
 		listSessionsStmt:                 q.listSessionsStmt,
 		listUnscoredSessionsStmt:         q.listUnscoredSessionsStmt,
+		updateSessionScoreStmt:           q.updateSessionScoreStmt,
+		getSessionsTokenBaselineStmt:     q.getSessionsTokenBaselineStmt,
+		insertSessionFeedbackEventStmt:   q.insertSessionFeedbackEventStmt,
+		getLatestSessionFeedbackStmt:     q.getLatestSessionFeedbackStmt,
 		updateFileStmt:                   q.updateFileStmt,
 		updateGoalProgressStmt:           q.updateGoalProgressStmt,
 		updateGoalStatusStmt:             q.updateGoalStatusStmt,

@@ -158,10 +158,10 @@ const insertSessionScore = `-- name: InsertSessionScore :one
 INSERT INTO session_scores (
     id, session_id, template_id, reward, success_score, efficiency_score,
     judge_analysis, judge_model, prompt_tokens, completion_tokens,
-    message_count, user_corrections, evaluated_at, created_at
+    message_count, user_corrections, components, evaluated_at, created_at
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
-RETURNING id, session_id, template_id, reward, success_score, efficiency_score, judge_analysis, judge_model, prompt_tokens, completion_tokens, message_count, user_corrections, evaluated_at, created_at
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
+RETURNING id, session_id, template_id, reward, success_score, efficiency_score, judge_analysis, judge_model, prompt_tokens, completion_tokens, message_count, user_corrections, evaluated_at, created_at, components
 `
 
 type InsertSessionScoreParams struct {
@@ -177,6 +177,7 @@ type InsertSessionScoreParams struct {
 	CompletionTokens int64          `json:"completion_tokens"`
 	MessageCount     int64          `json:"message_count"`
 	UserCorrections  int64          `json:"user_corrections"`
+	Components       string         `json:"components"`
 }
 
 func (q *Queries) InsertSessionScore(ctx context.Context, arg InsertSessionScoreParams) (SessionScore, error) {
@@ -193,6 +194,7 @@ func (q *Queries) InsertSessionScore(ctx context.Context, arg InsertSessionScore
 		arg.CompletionTokens,
 		arg.MessageCount,
 		arg.UserCorrections,
+		arg.Components,
 	)
 	var i SessionScore
 	err := row.Scan(
@@ -210,12 +212,13 @@ func (q *Queries) InsertSessionScore(ctx context.Context, arg InsertSessionScore
 		&i.UserCorrections,
 		&i.EvaluatedAt,
 		&i.CreatedAt,
+		&i.Components,
 	)
 	return i, err
 }
 
 const getSessionScore = `-- name: GetSessionScore :one
-SELECT id, session_id, template_id, reward, success_score, efficiency_score, judge_analysis, judge_model, prompt_tokens, completion_tokens, message_count, user_corrections, evaluated_at, created_at FROM session_scores WHERE session_id = ? LIMIT 1
+SELECT id, session_id, template_id, reward, success_score, efficiency_score, judge_analysis, judge_model, prompt_tokens, completion_tokens, message_count, user_corrections, evaluated_at, created_at, components FROM session_scores WHERE session_id = ? LIMIT 1
 `
 
 func (q *Queries) GetSessionScore(ctx context.Context, sessionID string) (SessionScore, error) {
@@ -236,6 +239,7 @@ func (q *Queries) GetSessionScore(ctx context.Context, sessionID string) (Sessio
 		&i.UserCorrections,
 		&i.EvaluatedAt,
 		&i.CreatedAt,
+		&i.Components,
 	)
 	return i, err
 }
@@ -254,7 +258,7 @@ func (q *Queries) CountSessionScores(ctx context.Context) (int64, error) {
 const listSessionScores = `-- name: ListSessionScores :many
 SELECT id, session_id, template_id, reward, success_score, efficiency_score,
        judge_analysis, judge_model, prompt_tokens, completion_tokens,
-       message_count, user_corrections, evaluated_at, created_at
+       message_count, user_corrections, evaluated_at, created_at, components
 FROM session_scores
 ORDER BY created_at DESC
 LIMIT ?
@@ -284,6 +288,7 @@ func (q *Queries) ListSessionScores(ctx context.Context, limit int64) ([]Session
 			&i.UserCorrections,
 			&i.EvaluatedAt,
 			&i.CreatedAt,
+			&i.Components,
 		); err != nil {
 			return nil, err
 		}
@@ -296,6 +301,131 @@ func (q *Queries) ListSessionScores(ctx context.Context, limit int64) ([]Session
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateSessionScore = `-- name: UpdateSessionScore :one
+UPDATE session_scores
+SET reward = ?,
+    success_score = ?,
+    efficiency_score = ?,
+    prompt_tokens = ?,
+    completion_tokens = ?,
+    message_count = ?,
+    user_corrections = ?,
+    components = ?,
+    evaluated_at = strftime('%s', 'now')
+WHERE session_id = ?
+RETURNING id, session_id, template_id, reward, success_score, efficiency_score, judge_analysis, judge_model, prompt_tokens, completion_tokens, message_count, user_corrections, evaluated_at, created_at, components
+`
+
+type UpdateSessionScoreParams struct {
+	Reward           float64 `json:"reward"`
+	SuccessScore     float64 `json:"success_score"`
+	EfficiencyScore  float64 `json:"efficiency_score"`
+	PromptTokens     int64   `json:"prompt_tokens"`
+	CompletionTokens int64   `json:"completion_tokens"`
+	MessageCount     int64   `json:"message_count"`
+	UserCorrections  int64   `json:"user_corrections"`
+	Components       string  `json:"components"`
+	SessionID        string  `json:"session_id"`
+}
+
+// Re-scores a session in place (explicit feedback). The row is UPDATEd, never
+// re-inserted, so the insert-only UCB trigger cannot double count it; the
+// update_ucb_after_rescore trigger applies just the reward delta.
+func (q *Queries) UpdateSessionScore(ctx context.Context, arg UpdateSessionScoreParams) (SessionScore, error) {
+	row := q.queryRow(ctx, q.updateSessionScoreStmt, updateSessionScore,
+		arg.Reward,
+		arg.SuccessScore,
+		arg.EfficiencyScore,
+		arg.PromptTokens,
+		arg.CompletionTokens,
+		arg.MessageCount,
+		arg.UserCorrections,
+		arg.Components,
+		arg.SessionID,
+	)
+	var i SessionScore
+	err := row.Scan(
+		&i.ID,
+		&i.SessionID,
+		&i.TemplateID,
+		&i.Reward,
+		&i.SuccessScore,
+		&i.EfficiencyScore,
+		&i.JudgeAnalysis,
+		&i.JudgeModel,
+		&i.PromptTokens,
+		&i.CompletionTokens,
+		&i.MessageCount,
+		&i.UserCorrections,
+		&i.EvaluatedAt,
+		&i.CreatedAt,
+		&i.Components,
+	)
+	return i, err
+}
+
+const getSessionsTokenBaseline = `-- name: GetSessionsTokenBaseline :one
+SELECT COALESCE(AVG(prompt_tokens + completion_tokens), 0) as baseline
+FROM (
+    SELECT prompt_tokens, completion_tokens
+    FROM sessions
+    WHERE id != ?
+      AND parent_session_id IS NULL
+      AND message_count >= 4
+      AND prompt_tokens + completion_tokens > 0
+    ORDER BY created_at DESC
+    LIMIT ?
+)
+`
+
+type GetSessionsTokenBaselineParams struct {
+	ID    string `json:"id"`
+	Limit int64  `json:"limit"`
+}
+
+// Token baseline from the sessions table itself (not session_scores), so it is
+// available before any session has been scored: mean prompt+completion tokens
+// of the most recent root sessions with at least 4 messages (>= 2 user turns
+// and their replies), excluding the session being evaluated.
+func (q *Queries) GetSessionsTokenBaseline(ctx context.Context, arg GetSessionsTokenBaselineParams) (float64, error) {
+	row := q.queryRow(ctx, q.getSessionsTokenBaselineStmt, getSessionsTokenBaseline, arg.ID, arg.Limit)
+	var baseline float64
+	err := row.Scan(&baseline)
+	return baseline, err
+}
+
+const insertSessionFeedbackEvent = `-- name: InsertSessionFeedbackEvent :one
+INSERT INTO events (subject, content, metadata)
+VALUES (?, ?, ?)
+RETURNING id
+`
+
+type InsertSessionFeedbackEventParams struct {
+	Subject  string `json:"subject"`
+	Content  string `json:"content"`
+	Metadata string `json:"metadata"`
+}
+
+// Explicit user feedback (/feedback good|bad) is stored as an event whose
+// subject is "session_feedback:<session id>"; the payload lives in metadata.
+func (q *Queries) InsertSessionFeedbackEvent(ctx context.Context, arg InsertSessionFeedbackEventParams) (int64, error) {
+	row := q.queryRow(ctx, q.insertSessionFeedbackEventStmt, insertSessionFeedbackEvent, arg.Subject, arg.Content, arg.Metadata)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getLatestSessionFeedback = `-- name: GetLatestSessionFeedback :one
+SELECT metadata FROM events WHERE subject = ? ORDER BY id DESC LIMIT 1
+`
+
+func (q *Queries) GetLatestSessionFeedback(ctx context.Context, subject string) (string, error) {
+	row := q.queryRow(ctx, q.getLatestSessionFeedbackStmt, getLatestSessionFeedback, subject)
+	var metadata string
+	err := row.Scan(&metadata)
+	return metadata, err
 }
 
 const getTokenBaseline = `-- name: GetTokenBaseline :one

@@ -2,14 +2,16 @@
 id: PANDO-US-0071
 type: story
 title: "Honest, cheap reward: saner correction patterns, persisted-data signals and explicit user feedback"
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0014
 author: mcp
 labels: [evaluator, reward]
 estimate: 5
 created: 2026-09-29T20:33:19Z
-updated: 2026-09-29T20:33:19Z
+updated: 2026-09-29T21:13:25Z
+started: 2026-09-29T21:04:41Z
+closed: 2026-09-29T21:13:25Z
 ---
 
 ## Description

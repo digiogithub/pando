@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useExtensionsStore } from '@pando/client/stores/extensionsStore'
+import type { EvaluatorWeights } from '@pando/client/types'
 import { useUnsavedChangesGuard } from './unsavedChanges'
 import ModelCombobox from '@/components/shared/ModelCombobox'
 import TagListEditor from '@/components/shared/TagListEditor'
@@ -151,8 +152,17 @@ export default function SelfImprovementSettings() {
     fetchEvaluator()
   }, [fetchEvaluator])
 
-  const weightSum = evaluator.alphaWeight + evaluator.betaWeight
-  const weightWarning = Math.abs(weightSum - 1.0) > 0.01
+  const weights: EvaluatorWeights = evaluator.weights ?? {
+    success: evaluator.alphaWeight,
+    tokens: evaluator.betaWeight,
+    toolErrors: 0.1,
+    cancels: 0.05,
+    repetition: 0.05,
+    turns: 0.05,
+    endState: 0.1,
+  }
+  const setWeight = (key: keyof EvaluatorWeights, v: number) =>
+    updateEvaluator({ weights: { ...weights, [key]: v } })
 
   if (evaluatorLoading) {
     return <div className="settings-loading">Loading evaluator settings…</div>
@@ -178,15 +188,19 @@ export default function SelfImprovementSettings() {
       </SettingsSection>
 
       <SettingsSection title="Reward weights">
-        <SliderInput label="Alpha — accuracy weight" value={evaluator.alphaWeight} onChange={(v) => updateEvaluator({ alphaWeight: v })} />
-        <SliderInput label="Beta — efficiency weight" value={evaluator.betaWeight} onChange={(v) => updateEvaluator({ betaWeight: v })} />
-        {weightWarning && (
-          <div className="p-4">
-            <div className="settings-banner settings-banner--warning">
-              Alpha + Beta = {weightSum.toFixed(2)} (ideally should sum to 1.0)
-            </div>
+        <SliderInput label="Success (corrections)" value={weights.success} onChange={(v) => setWeight('success', v)} />
+        <SliderInput label="Token efficiency" value={weights.tokens} onChange={(v) => setWeight('tokens', v)} />
+        <SliderInput label="Tool errors" value={weights.toolErrors} onChange={(v) => setWeight('toolErrors', v)} />
+        <SliderInput label="Cancelled runs" value={weights.cancels} onChange={(v) => setWeight('cancels', v)} />
+        <SliderInput label="Repeated tool calls" value={weights.repetition} onChange={(v) => setWeight('repetition', v)} />
+        <SliderInput label="Turns to completion" value={weights.turns} onChange={(v) => setWeight('turns', v)} />
+        <SliderInput label="Ended right after an error" value={weights.endState} onChange={(v) => setWeight('endState', v)} />
+        <div className="p-4">
+          <div className="settings-banner">
+            Weights are relative: the reward is the weighted mean of the signals measured for each session.
+            Explicit /feedback overrides the total (bad below 0.3, good above 0.8).
           </div>
-        )}
+        </div>
       </SettingsSection>
 
       <SettingsSection title="UCB settings">

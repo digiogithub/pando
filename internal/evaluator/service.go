@@ -3,6 +3,7 @@ package evaluator
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -217,11 +218,85 @@ func (s *EvaluatorService) EvaluateNow(ctx context.Context, sessionID string, op
 	return s.runEvaluation(ctx, sessionID, opts)
 }
 
+// feedbackSubject is the events.subject under which explicit feedback of a
+// session is stored.
+func feedbackSubject(sessionID string) string { return "session_feedback:" + sessionID }
+
+// feedbackMeta is the JSON payload stored in the event metadata.
+type feedbackMeta struct {
+	SessionID string `json:"session_id"`
+	Rating    string `json:"rating"`
+	Note      string `json:"note,omitempty"`
+}
+
+// loadFeedback returns the latest explicit feedback of a session, or nil.
+func (s *EvaluatorService) loadFeedback(ctx context.Context, sessionID string) *Feedback {
+	raw, err := s.db.GetLatestSessionFeedback(ctx, feedbackSubject(sessionID))
+	if err != nil {
+		return nil
+	}
+	var m feedbackMeta
+	if json.Unmarshal([]byte(raw), &m) != nil {
+		return nil
+	}
+	if m.Rating != FeedbackGood && m.Rating != FeedbackBad {
+		return nil
+	}
+	return &Feedback{Rating: m.Rating, Note: m.Note}
+}
+
+// ParseFeedbackRating normalises user input ("good", "bad", "+", "up", ...).
+func ParseFeedbackRating(s string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "good", "+", "+1", "up", "thumbsup", "positive":
+		return FeedbackGood, true
+	case "bad", "-", "-1", "down", "thumbsdown", "negative":
+		return FeedbackBad, true
+	}
+	return "", false
+}
+
+// RecordFeedback stores explicit feedback for a session as an event and
+// re-scores the session so the feedback dominates: bad gives a total below
+// 0.3, good above 0.8. An already scored session has its score row replaced
+// in place; an unscored one is scored now. Later feedback supersedes earlier.
+func (s *EvaluatorService) RecordFeedback(ctx context.Context, sessionID, rating, note string) (*Result, error) {
+	if s == nil || !s.cfg.Enabled {
+		return nil, fmt.Errorf("evaluator is not enabled")
+	}
+	rating, ok := ParseFeedbackRating(rating)
+	if !ok {
+		return nil, fmt.Errorf("rating must be good or bad")
+	}
+	if sessionID == "" {
+		return nil, fmt.Errorf("no session to rate")
+	}
+	if _, err := s.db.GetSessionByID(ctx, sessionID); err != nil {
+		return nil, fmt.Errorf("session %s not found: %w", sessionID, err)
+	}
+	note = strings.TrimSpace(note)
+	meta, _ := json.Marshal(feedbackMeta{SessionID: sessionID, Rating: rating, Note: note})
+	content := "Session feedback: " + rating
+	if note != "" {
+		content += " - " + note
+	}
+	if _, err := s.db.InsertSessionFeedbackEvent(ctx, db.InsertSessionFeedbackEventParams{
+		Subject:  feedbackSubject(sessionID),
+		Content:  content,
+		Metadata: string(meta),
+	}); err != nil {
+		return nil, fmt.Errorf("store feedback: %w", err)
+	}
+	return s.EvaluateNow(ctx, sessionID, EvaluateOptions{Force: true, Rescore: true, SkipJudge: true})
+}
+
 // runEvaluation performs the actual evaluation logic.
 func (s *EvaluatorService) runEvaluation(ctx context.Context, sessionID string, opts EvaluateOptions) (*Result, error) {
 	res := &Result{SessionID: sessionID}
-	// Idempotency: skip if already evaluated
-	if _, err := s.db.GetSessionScore(ctx, sessionID); err == nil {
+	// Idempotency: skip if already evaluated, unless explicitly re-scoring.
+	existing, scoreErr := s.db.GetSessionScore(ctx, sessionID)
+	rescoring := scoreErr == nil && opts.Rescore
+	if scoreErr == nil && !rescoring {
 		slog.Debug("evaluator: session already evaluated, skipping", "session_id", sessionID)
 		res.Skipped = "already evaluated"
 		return res, nil
@@ -245,24 +320,59 @@ func (s *EvaluatorService) runEvaluation(ctx context.Context, sessionID string, 
 		return res, nil
 	}
 
-	// Convert to messageInfo for reward calculation (text + correction detection)
+	// Convert to messageInfo for reward calculation (text, tool calls/results, finish reasons).
 	msgInfos := messagesToInfo(msgs)
 
-	// Get session-level token totals (stored at session level, not per-message)
+	// Session-level token totals (stored at session level, not per message).
+	var promptTokens, completionTokens int64
 	if sessErr == nil {
-		// Append a synthetic entry carrying the full token counts
-		msgInfos = append(msgInfos, messageInfo{
-			promptTokens:     sess.PromptTokens,
-			completionTokens: sess.CompletionTokens,
-		})
+		promptTokens, completionTokens = sess.PromptTokens, sess.CompletionTokens
 	}
 
-	// Get rolling token baseline
-	baseline, _ := s.db.GetTokenBaseline(ctx, int64(s.cfg.MaxTokensBaseline))
+	// Token baseline from the sessions table (works before any score exists).
+	// It is global: the task classifier needs the first user message of each
+	// past session, which would cost one message load per baseline session.
+	baseline, _ := s.db.GetSessionsTokenBaseline(ctx, db.GetSessionsTokenBaselineParams{
+		ID:    sessionID,
+		Limit: int64(s.cfg.MaxTokensBaseline),
+	})
 
-	// Calculate reward
-	reward := calculateReward(msgInfos, s.patterns, baseline, s.cfg.AlphaWeight, s.cfg.BetaWeight)
+	reward := calculateReward(rewardInput{
+		Messages:         msgInfos,
+		Patterns:         s.patterns,
+		Baseline:         baseline,
+		PromptTokens:     promptTokens,
+		CompletionTokens: completionTokens,
+		Weights:          s.cfg.ResolvedWeights(),
+		Feedback:         s.loadFeedback(ctx, sessionID),
+	})
 	res.Reward = reward
+
+	if rescoring {
+		// Replace the score in place. The insert-only UCB trigger does not fire
+		// for an UPDATE; update_ucb_after_rescore applies just the reward delta.
+		_, err = s.db.UpdateSessionScore(ctx, db.UpdateSessionScoreParams{
+			Reward:           reward.Total,
+			SuccessScore:     reward.SuccessScore,
+			EfficiencyScore:  reward.EfficiencyScore,
+			PromptTokens:     reward.PromptTokens,
+			CompletionTokens: reward.CompletionTokens,
+			MessageCount:     reward.MessageCount,
+			UserCorrections:  int64(reward.UserCorrections),
+			Components:       reward.Breakdown.JSON(),
+			SessionID:        sessionID,
+		})
+		if err != nil {
+			return res, fmt.Errorf("evaluator: update session score: %w", err)
+		}
+		slog.Info("evaluator: session re-scored",
+			"session_id", sessionID,
+			"previous_reward", existing.Reward,
+			"reward", reward.Total,
+			"feedback", reward.Breakdown.Feedback,
+		)
+		return res, nil
+	}
 
 	// Get template used for this session
 	var templateID sql.NullString
@@ -286,6 +396,7 @@ func (s *EvaluatorService) runEvaluation(ctx context.Context, sessionID string, 
 		CompletionTokens: reward.CompletionTokens,
 		MessageCount:     reward.MessageCount,
 		UserCorrections:  int64(reward.UserCorrections),
+		Components:       reward.Breakdown.JSON(),
 	})
 	if err != nil {
 		return res, fmt.Errorf("evaluator: insert session score: %w", err)
@@ -512,8 +623,18 @@ func messagesToInfo(msgs []message.Message) []messageInfo {
 	infos := make([]messageInfo, 0, len(msgs))
 	for _, m := range msgs {
 		info := messageInfo{
+			role:   m.Role,
 			isUser: m.Role == message.User,
 			text:   m.Content().Text,
+			finish: m.FinishReason(),
+		}
+		for _, tc := range m.ToolCalls() {
+			info.toolCalls = append(info.toolCalls, toolCallInfo{name: tc.Name, input: tc.Input})
+		}
+		for _, tr := range m.ToolResults() {
+			if tr.IsError {
+				info.toolErrors++
+			}
 		}
 		infos = append(infos, info)
 	}
@@ -551,9 +672,10 @@ func buildTranscript(msgs []message.Message) string {
 }
 
 // NewContextTrimmer creates a ContextTrimmer backed by this service's judge infrastructure.
-// Returns nil if the evaluator has no judge configured or if the evaluator itself is nil.
+// Returns nil if the evaluator has no judge configured, if the evaluator itself is
+// nil, or unless evaluator.contextTrimmer.enabled is set (opt-in, default off).
 func (s *EvaluatorService) NewContextTrimmer() *ContextTrimmer {
-	if s == nil || s.judge == nil {
+	if s == nil || s.judge == nil || !s.cfg.ContextTrimmer.Enabled {
 		return nil
 	}
 	return NewContextTrimmer(s.cfg, s.judge)

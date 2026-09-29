@@ -356,6 +356,18 @@ func (p *DBProxy) InsertSessionScore(ctx context.Context, arg db.InsertSessionSc
 		"InsertSessionScore", arg, DefaultWriteTimeouts.Default)
 }
 
+func (p *DBProxy) UpdateSessionScore(ctx context.Context, arg db.UpdateSessionScoreParams) (db.SessionScore, error) {
+	return directOrProxy(ctx, p,
+		func() (db.SessionScore, error) { return p.Querier.UpdateSessionScore(ctx, arg) },
+		"UpdateSessionScore", arg, DefaultWriteTimeouts.Default)
+}
+
+func (p *DBProxy) InsertSessionFeedbackEvent(ctx context.Context, arg db.InsertSessionFeedbackEventParams) (int64, error) {
+	return directOrProxy(ctx, p,
+		func() (int64, error) { return p.Querier.InsertSessionFeedbackEvent(ctx, arg) },
+		"InsertSessionFeedbackEvent", arg, DefaultWriteTimeouts.Default)
+}
+
 func (p *DBProxy) InsertSkill(ctx context.Context, arg db.InsertSkillParams) (db.SkillLibrary, error) {
 	return directOrProxy(ctx, p,
 		func() (db.SkillLibrary, error) { return p.Querier.InsertSkill(ctx, arg) },

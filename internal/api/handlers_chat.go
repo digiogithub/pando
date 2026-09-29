@@ -877,6 +877,22 @@ func (s *Server) handleSlashCommandStream(w http.ResponseWriter, flusher http.Fl
 		} else {
 			writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": res.Summary()})
 		}
+	case "feedback":
+		if s.app.Evaluator == nil || !s.app.Evaluator.IsEnabled() {
+			writeSSEEvent(w, flusher, "error", map[string]string{"error": "evaluator is not enabled"})
+			break
+		}
+		rating, note, _ := strings.Cut(strings.TrimSpace(cmdArgs), " ")
+		if _, ok := evaluator.ParseFeedbackRating(rating); !ok {
+			writeSSEEvent(w, flusher, "error", map[string]string{"error": "usage: /feedback good|bad [note]"})
+			break
+		}
+		res, err := s.app.Evaluator.RecordFeedback(ctx, sessionID, rating, note)
+		if err != nil {
+			writeSSEEvent(w, flusher, "error", map[string]string{"error": "feedback failed: " + err.Error()})
+		} else {
+			writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": "Feedback recorded. " + res.Summary()})
+		}
 	case "ponytail":
 		arg := strings.TrimSpace(cmdArgs)
 		if arg == "" {

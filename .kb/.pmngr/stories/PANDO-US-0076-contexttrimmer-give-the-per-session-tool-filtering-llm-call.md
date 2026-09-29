@@ -2,14 +2,16 @@
 id: PANDO-US-0076
 type: story
 title: "ContextTrimmer: give the per-session tool-filtering LLM call its own flag (default off) or remove it"
-status: backlog
+status: done
 priority: low
 parent: PANDO-EP-0014
 author: mcp
 labels: [evaluator, config, cost]
 estimate: 2
 created: 2026-09-29T20:33:19Z
-updated: 2026-09-29T20:33:19Z
+updated: 2026-09-29T21:06:45Z
+started: 2026-09-29T21:04:41Z
+closed: 2026-09-29T21:06:45Z
 ---
 
 ## Description

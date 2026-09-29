@@ -32,6 +32,7 @@ const EVALUATOR_DEFAULTS: EvaluatorSettingsConfig = {
   provider: '',
   alphaWeight: 0.8,
   betaWeight: 0.2,
+  weights: { success: 0.5, tokens: 0.15, toolErrors: 0.1, cancels: 0.05, repetition: 0.05, turns: 0.05, endState: 0.1 },
   explorationC: 1.41,
   minSessionsForUCB: 5,
   correctionsPatterns: [],

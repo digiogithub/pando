@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/digiogithub/pando/internal/db"
@@ -47,6 +48,9 @@ type EvaluatorSessionResponse struct {
 	EfficiencyScore float64 `json:"efficiency_score"`
 	MessageCount    int64   `json:"message_count"`
 	EvaluatedAt     int64   `json:"evaluated_at"`
+	// Components is the persisted reward decomposition (per-signal scores,
+	// weights, correction pattern hits, explicit feedback).
+	Components json.RawMessage `json:"components"`
 }
 
 // handleGetEvaluatorMetrics handles GET /api/v1/evaluator/metrics.
@@ -194,6 +198,7 @@ func (s *Server) handleGetEvaluatorSessions(w http.ResponseWriter, r *http.Reque
 			EfficiencyScore: row.EfficiencyScore,
 			MessageCount:    row.MessageCount,
 			EvaluatedAt:     row.EvaluatedAt,
+			Components:      componentsJSON(row.Components),
 		})
 	}
 
@@ -233,5 +238,51 @@ func (s *Server) handleEvaluateSession(w http.ResponseWriter, r *http.Request) {
 		UserCorrections: res.Reward.UserCorrections,
 		MessageCount:    res.Reward.MessageCount,
 		Judged:          res.Judged,
+	})
+}
+
+// componentsJSON returns the stored decomposition as raw JSON, falling back to
+// an empty object for legacy rows or invalid content.
+func componentsJSON(raw string) json.RawMessage {
+	if raw == "" || !json.Valid([]byte(raw)) {
+		return json.RawMessage("{}")
+	}
+	return json.RawMessage(raw)
+}
+
+// SessionFeedbackRequest is the body of POST /api/v1/evaluator/sessions/{id}/feedback.
+type SessionFeedbackRequest struct {
+	Rating string `json:"rating"` // "good" | "bad"
+	Note   string `json:"note,omitempty"`
+}
+
+// handleSessionFeedback records explicit feedback for a session and re-scores it.
+func (s *Server) handleSessionFeedback(w http.ResponseWriter, r *http.Request) {
+	if s.app.Evaluator == nil || !s.app.Evaluator.IsEnabled() {
+		writeError(w, http.StatusConflict, "evaluator is not enabled")
+		return
+	}
+	var req SessionFeedbackRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if _, ok := evaluator.ParseFeedbackRating(req.Rating); !ok {
+		writeError(w, http.StatusBadRequest, "rating must be good or bad")
+		return
+	}
+	res, err := s.app.Evaluator.RecordFeedback(r.Context(), r.PathValue("id"), req.Rating, req.Note)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, EvaluateSessionResponse{
+		SessionID:       res.SessionID,
+		Skipped:         res.Skipped,
+		Reward:          res.Reward.Total,
+		SuccessScore:    res.Reward.SuccessScore,
+		EfficiencyScore: res.Reward.EfficiencyScore,
+		UserCorrections: res.Reward.UserCorrections,
+		MessageCount:    res.Reward.MessageCount,
 	})
 }
