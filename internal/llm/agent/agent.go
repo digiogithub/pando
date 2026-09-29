@@ -362,6 +362,13 @@ type agent struct {
 	// increments it, Run resets it to 0, and Cancel clears the entry.
 	resurrectMu    sync.Mutex
 	resurrectCount map[string]int
+
+	// runs counts the run goroutines started by runInternal that have not yet
+	// returned. Cancel only signals a run; a cancelled run keeps executing (and
+	// reading process-global configuration) until processGeneration observes the
+	// cancellation. Code that must not overlap any run (test teardown in
+	// particular) waits on it through waitForRuns.
+	runs sync.WaitGroup
 }
 
 // steeringKind classifies a queued out-of-band message. The same inbox carries
@@ -634,6 +641,12 @@ func (a *agent) Resume(ctx context.Context, sessionID string, content string) er
 		}
 	}()
 	return nil
+}
+
+// waitForRuns blocks until every run goroutine started by runInternal has
+// returned. It does not cancel anything: callers cancel the sessions first.
+func (a *agent) waitForRuns() {
+	a.runs.Wait()
 }
 
 // ResurrectionCount reports how many times the session has been resurrected via
@@ -943,7 +956,16 @@ func (a *agent) runInternal(ctx context.Context, sessionID string, content strin
 	genCtx, cancel := context.WithCancel(ctx)
 
 	a.activeRequests.Store(sessionID, cancel)
+	a.runs.Add(1)
 	go func() {
+		// Registered first so it runs last: the run is only counted as finished
+		// once every other deferred cleanup (including the panic recovery) is done.
+		defer a.runs.Done()
+		// Registered before RecoverPanic so it runs after it: the channel is
+		// closed on the panic path too (after the recovered error is sent).
+		// Without this a panicking run left every consumer ranging over events —
+		// Resume's drain loop included — blocked forever.
+		defer close(events)
 		logging.Debug("Request started", "sessionID", sessionID)
 		defer logging.RecoverPanic("agent.Run", func() {
 			events <- a.err(fmt.Errorf("panic while running the agent"))
@@ -983,7 +1005,6 @@ func (a *agent) runInternal(ctx context.Context, sessionID string, content strin
 		cancel()
 		a.publishEvent(result)
 		events <- result
-		close(events)
 	}()
 	return events, nil
 }

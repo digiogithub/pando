@@ -2,7 +2,7 @@
 id: PANDO-US-0032
 type: story
 title: internal/llm/agent leaks a live agent goroutine between tests, so the package cannot run under -race
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0004
 milestone: PANDO-M-0001
@@ -10,7 +10,8 @@ author: claude
 labels: [testing, agent, race]
 estimate: 3
 created: 2026-09-16T16:01:10Z
-updated: 2026-09-16T16:01:10Z
+updated: 2026-09-29T18:45:06Z
+closed: 2026-09-29T18:45:06Z
 ---
 
 ## Description

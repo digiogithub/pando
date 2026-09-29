@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -70,16 +72,64 @@ func (s *resumeStubSessions) EndSession(ctx context.Context, id string) error { 
 
 // newResumeTestAgent extends the steering test agent with a stub provider and
 // sessions so Resume can start (and the run goroutine can fail-and-recover).
-func newResumeTestAgent() *agent {
+// Teardown waits for every run the test started: a run outliving its test keeps
+// reading process-global configuration and races with whatever test runs next.
+func newResumeTestAgent(t *testing.T) *agent {
+	t.Helper()
 	a := newSteeringTestAgent()
 	a.provider = resumeStubProvider{}
 	a.sessions = newResumeStubSessions()
 	a.resurrectCount = make(map[string]int)
+	t.Cleanup(func() { waitForRunsOrFail(t, a) })
 	return a
 }
 
+// waitForRunsOrFail joins the agent's run goroutines, failing the test instead of
+// hanging when one never terminates. It then checks the goroutine dump directly,
+// so a run that escapes the WaitGroup (a lost Add/Done) is reported as a leak.
+func waitForRunsOrFail(t *testing.T, a *agent) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		a.waitForRuns()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("agent run goroutine still alive after the test finished")
+	}
+	// A joined goroutine may still be unwinding its final frame; give it a moment.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		leaked := leakedRunGoroutines()
+		if leaked == "" {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("agent run goroutine leaked past the test:\n%s", leaked)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// leakedRunGoroutines returns the stacks of live goroutines started by
+// runInternal or by Resume's drain loop, or "" when there are none. The package's
+// tests do not run in parallel, so any such goroutine belongs to a finished test.
+func leakedRunGoroutines() string {
+	buf := make([]byte, 1<<20)
+	buf = buf[:runtime.Stack(buf, true)]
+	var leaked []string
+	for _, g := range strings.Split(string(buf), "\n\n") {
+		if strings.Contains(g, "(*agent).runInternal.func") || strings.Contains(g, "(*agent).Resume.func") {
+			leaked = append(leaked, g)
+		}
+	}
+	return strings.Join(leaked, "\n\n")
+}
+
 func TestResumeRejectsEmptyContent(t *testing.T) {
-	a := newResumeTestAgent()
+	a := newResumeTestAgent(t)
 	if err := a.Resume(context.Background(), "s1", "   "); err == nil {
 		t.Fatal("expected error for empty content")
 	}
@@ -89,7 +139,7 @@ func TestResumeRejectsEmptyContent(t *testing.T) {
 }
 
 func TestResumeRejectsWhenBusy(t *testing.T) {
-	a := newResumeTestAgent()
+	a := newResumeTestAgent(t)
 	a.markBusy("s1")
 	if err := a.Resume(context.Background(), "s1", "resume content"); err != ErrSessionBusy {
 		t.Fatalf("expected ErrSessionBusy, got %v", err)
@@ -100,7 +150,7 @@ func TestResumeRejectsWhenBusy(t *testing.T) {
 }
 
 func TestResumeIncrementsCountAndEmitsResurrectedEvent(t *testing.T) {
-	a := newResumeTestAgent()
+	a := newResumeTestAgent(t)
 	sub := a.Subscribe(context.Background())
 
 	if err := a.Resume(context.Background(), "s1", "you are resuming"); err != nil {
@@ -128,7 +178,7 @@ func TestResumeIncrementsCountAndEmitsResurrectedEvent(t *testing.T) {
 }
 
 func TestRunResetsResurrectionCount(t *testing.T) {
-	a := newResumeTestAgent()
+	a := newResumeTestAgent(t)
 	// Seed a non-zero count as if the session had been resurrected.
 	a.incrementResurrectionCount("s1")
 	a.incrementResurrectionCount("s1")
@@ -154,7 +204,7 @@ func TestRunResetsResurrectionCount(t *testing.T) {
 }
 
 func TestCancelClearsResurrectionCount(t *testing.T) {
-	a := newResumeTestAgent()
+	a := newResumeTestAgent(t)
 	a.incrementResurrectionCount("s1")
 	if a.ResurrectionCount("s1") != 1 {
 		t.Fatalf("setup: expected count 1, got %d", a.ResurrectionCount("s1"))
@@ -162,5 +212,21 @@ func TestCancelClearsResurrectionCount(t *testing.T) {
 	a.Cancel("s1")
 	if a.ResurrectionCount("s1") != 0 {
 		t.Fatalf("expected count cleared by Cancel, got %d", a.ResurrectionCount("s1"))
+	}
+}
+
+// TestCancelledRunGoroutineTerminates asserts the run lifecycle directly: after
+// Cancel, the goroutine Resume started must return, and the session must no
+// longer be busy. A regression shows up here instead of as a data race in an
+// unrelated test that happens to run next.
+func TestCancelledRunGoroutineTerminates(t *testing.T) {
+	a := newResumeTestAgent(t)
+	if err := a.Resume(context.Background(), "s1", "you are resuming"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	a.Cancel("s1")
+	waitForRunsOrFail(t, a)
+	if a.IsSessionBusy("s1") {
+		t.Fatal("session still busy after its run goroutine returned")
 	}
 }
