@@ -233,3 +233,64 @@ SET total_reward = total_reward + ?,
     avg_reward = (total_reward + ?) / MAX(times_used, 1),
     updated_at = unixepoch()
 WHERE variant_id IN (SELECT variant_id FROM session_template_selections WHERE session_id = ?);
+
+-- Reviewable learned skills: files under .pando/skills/learned are the source
+-- of truth; skill_library mirrors their status and keeps the statistics.
+
+-- Mirrors a skill file. Statistics columns are never touched by the mirror.
+-- name: UpsertSkillMirror :exec
+INSERT INTO skill_library (
+    id, title, content, source_session_id, task_type, is_active,
+    status, confidence, judge_model, created_at, updated_at
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
+ON CONFLICT(id) DO UPDATE SET
+    title = excluded.title,
+    content = excluded.content,
+    source_session_id = excluded.source_session_id,
+    task_type = excluded.task_type,
+    is_active = excluded.is_active,
+    status = excluded.status,
+    confidence = excluded.confidence,
+    judge_model = excluded.judge_model,
+    updated_at = strftime('%s', 'now');
+
+-- name: SetSkillMirrorState :exec
+UPDATE skill_library SET status = ?, is_active = ?, updated_at = strftime('%s', 'now') WHERE id = ?;
+
+-- name: ListAllSkills :many
+SELECT * FROM skill_library ORDER BY created_at DESC, id;
+
+-- name: GetSkill :one
+SELECT * FROM skill_library WHERE id = ?;
+
+-- First writer wins so concurrent processes agree on the frozen set.
+-- name: InsertSessionSkillInjection :exec
+INSERT OR IGNORE INTO session_skill_injections (session_id, skill_id, position, injected_at)
+VALUES (?, ?, ?, strftime('%s', 'now'));
+
+-- name: CountSessionSkillInjections :one
+SELECT COUNT(*) FROM session_skill_injections WHERE session_id = ?;
+
+-- name: ListSessionInjectedSkills :many
+SELECT s.* FROM session_skill_injections i
+JOIN skill_library s ON s.id = i.skill_id
+WHERE i.session_id = ?
+ORDER BY i.position, s.id;
+
+-- Adds an evaluated session's reward to every skill injected into it.
+-- name: ApplySessionRewardToSkillStats :exec
+UPDATE skill_library
+SET eval_count = eval_count + 1,
+    reward_total = reward_total + ?,
+    success_rate = (reward_total + ?) / (eval_count + 1),
+    updated_at = strftime('%s', 'now')
+WHERE id IN (SELECT skill_id FROM session_skill_injections WHERE session_id = ?);
+
+-- A re-score applies only the reward delta and never touches eval_count.
+-- name: ApplyRewardDeltaToSkillStats :exec
+UPDATE skill_library
+SET reward_total = reward_total + ?,
+    success_rate = (reward_total + ?) / MAX(eval_count, 1),
+    updated_at = strftime('%s', 'now')
+WHERE id IN (SELECT skill_id FROM session_skill_injections WHERE session_id = ?);

@@ -11,12 +11,21 @@ import (
 
 // Skill represents a learned optimization rule from the Skill Library.
 type Skill struct {
-	ID          string
-	Title       string
-	Content     string
-	TaskType    string
+	ID       string
+	Title    string
+	Content  string
+	TaskType string
+	// SuccessRate is the mean reward of the evaluated sessions the skill was
+	// injected in (EvalCount of them); UsageCount counts sessions it was injected in.
 	SuccessRate float64
 	UsageCount  int
+	EvalCount   int
+	// Status is the review state: pending, approved or rejected.
+	Status        string
+	Confidence    float64
+	JudgeModel    string
+	SourceSession string
+	Created       time.Time
 }
 
 // TemplateStats holds the UCB statistics of one prompt variant (for UI display).

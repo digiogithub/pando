@@ -25,7 +25,11 @@ type PromptEvaluator interface {
 	// made once per (session, section), persisted and frozen. It returns the
 	// default id when the feature is off or there is nothing to choose from.
 	SelectVariant(ctx context.Context, sessionID, section string, candidates []string) (string, error)
-	GetActiveSkills(ctx context.Context, taskType string) ([]PromptEvaluatorSkill, error)
+	// SessionSkills returns the approved learned skills injected into a session.
+	// The set is chosen on the session's first build and frozen (persisted), so
+	// every later turn gets identical skills; a skill approved mid-session only
+	// reaches the next session.
+	SessionSkills(ctx context.Context, sessionID, taskType string) ([]PromptEvaluatorSkill, error)
 	// ClassifyTask returns a task type label from the user's first message.
 	// Returns "general" if no pattern matches.
 	ClassifyTask(text string) string
@@ -195,7 +199,8 @@ func (b *PromptBuilder) Build(ctx context.Context) (string, error) {
 		if taskType == "" {
 			taskType = classifyTaskType(b.data.UserRequest)
 		}
-		if learnedSkills, err := b.evaluator.GetActiveSkills(ctx, taskType); err == nil && len(learnedSkills) > 0 {
+		sessionID, _ := ctx.Value(SessionIDKey).(string)
+		if learnedSkills, err := b.evaluator.SessionSkills(ctx, sessionID, taskType); err == nil && len(learnedSkills) > 0 {
 			var skillsText strings.Builder
 			skillsText.WriteString("## Learned Optimization Rules\n")
 			for _, sk := range learnedSkills {

@@ -483,7 +483,7 @@ INSERT INTO skill_library (
     task_type, usage_count, success_rate, is_active, created_at, updated_at
 )
 VALUES (?, ?, ?, ?, ?, ?, 0, 0.0, 1, strftime('%s', 'now'), strftime('%s', 'now'))
-RETURNING id, title, content, source_session_id, source_template_id, task_type, usage_count, success_rate, is_active, created_at, updated_at
+RETURNING id, title, content, source_session_id, source_template_id, task_type, usage_count, success_rate, is_active, created_at, updated_at, status, confidence, judge_model, eval_count, reward_total
 `
 
 type InsertSkillParams struct {
@@ -517,12 +517,17 @@ func (q *Queries) InsertSkill(ctx context.Context, arg InsertSkillParams) (Skill
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Status,
+		&i.Confidence,
+		&i.JudgeModel,
+		&i.EvalCount,
+		&i.RewardTotal,
 	)
 	return i, err
 }
 
 const listActiveSkillsByType = `-- name: ListActiveSkillsByType :many
-SELECT id, title, content, source_session_id, source_template_id, task_type, usage_count, success_rate, is_active, created_at, updated_at FROM skill_library
+SELECT id, title, content, source_session_id, source_template_id, task_type, usage_count, success_rate, is_active, created_at, updated_at, status, confidence, judge_model, eval_count, reward_total FROM skill_library
 WHERE is_active = 1 AND (task_type = ? OR task_type = 'general')
 ORDER BY success_rate DESC, usage_count DESC
 LIMIT ?
@@ -554,6 +559,11 @@ func (q *Queries) ListActiveSkillsByType(ctx context.Context, arg ListActiveSkil
 			&i.IsActive,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Status,
+			&i.Confidence,
+			&i.JudgeModel,
+			&i.EvalCount,
+			&i.RewardTotal,
 		); err != nil {
 			return nil, err
 		}
@@ -569,7 +579,7 @@ func (q *Queries) ListActiveSkillsByType(ctx context.Context, arg ListActiveSkil
 }
 
 const listAllActiveSkills = `-- name: ListAllActiveSkills :many
-SELECT id, title, content, source_session_id, source_template_id, task_type, usage_count, success_rate, is_active, created_at, updated_at FROM skill_library
+SELECT id, title, content, source_session_id, source_template_id, task_type, usage_count, success_rate, is_active, created_at, updated_at, status, confidence, judge_model, eval_count, reward_total FROM skill_library
 WHERE is_active = 1
 ORDER BY success_rate DESC, usage_count DESC
 `
@@ -595,6 +605,11 @@ func (q *Queries) ListAllActiveSkills(ctx context.Context) ([]SkillLibrary, erro
 			&i.IsActive,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Status,
+			&i.Confidence,
+			&i.JudgeModel,
+			&i.EvalCount,
+			&i.RewardTotal,
 		); err != nil {
 			return nil, err
 		}

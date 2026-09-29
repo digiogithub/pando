@@ -71,6 +71,16 @@ type Querier interface {
 	// high usage, indicating they do not improve outcomes despite being frequently selected.
 	DeactivateUnderperformingSkills(ctx context.Context) error
 	IncrementSkillUsage(ctx context.Context, id string) error
+	// Reviewable learned skills (files are the source of truth, the table mirrors them).
+	UpsertSkillMirror(ctx context.Context, arg UpsertSkillMirrorParams) error
+	SetSkillMirrorState(ctx context.Context, arg SetSkillMirrorStateParams) error
+	ListAllSkills(ctx context.Context) ([]SkillLibrary, error)
+	GetSkill(ctx context.Context, id string) (SkillLibrary, error)
+	InsertSessionSkillInjection(ctx context.Context, arg InsertSessionSkillInjectionParams) error
+	CountSessionSkillInjections(ctx context.Context, sessionID string) (int64, error)
+	ListSessionInjectedSkills(ctx context.Context, sessionID string) ([]SkillLibrary, error)
+	ApplySessionRewardToSkillStats(ctx context.Context, arg ApplySessionRewardToSkillStatsParams) error
+	ApplyRewardDeltaToSkillStats(ctx context.Context, arg ApplyRewardDeltaToSkillStatsParams) error
 	ListUCBRanking(ctx context.Context) ([]ListUCBRankingRow, error)
 	GetEvaluatorStats(ctx context.Context) (GetEvaluatorStatsRow, error)
 	// Project queries

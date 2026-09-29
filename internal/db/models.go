@@ -75,6 +75,15 @@ type SkillLibrary struct {
 	IsActive         int64          `json:"is_active"`
 	CreatedAt        int64          `json:"created_at"`
 	UpdatedAt        int64          `json:"updated_at"`
+	// Status mirrors the review state of the skill file: pending, approved,
+	// rejected, or legacy (a pre-review row not yet exported to a file).
+	Status     string  `json:"status"`
+	Confidence float64 `json:"confidence"`
+	JudgeModel string  `json:"judge_model"`
+	// EvalCount and RewardTotal accumulate the reward of the evaluated sessions
+	// the skill was injected in; SuccessRate = RewardTotal / EvalCount.
+	EvalCount   int64   `json:"eval_count"`
+	RewardTotal float64 `json:"reward_total"`
 }
 
 type File struct {

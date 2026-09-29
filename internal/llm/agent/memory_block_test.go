@@ -158,7 +158,7 @@ type variantEvaluatorAdapter struct{ svc *evaluator.EvaluatorService }
 func (a variantEvaluatorAdapter) SelectVariant(ctx context.Context, sessionID, section string, c []string) (string, error) {
 	return a.svc.SelectVariant(ctx, sessionID, section, c)
 }
-func (a variantEvaluatorAdapter) GetActiveSkills(context.Context, string) ([]prompt.PromptEvaluatorSkill, error) {
+func (a variantEvaluatorAdapter) SessionSkills(context.Context, string, string) ([]prompt.PromptEvaluatorSkill, error) {
 	return nil, nil
 }
 func (a variantEvaluatorAdapter) ClassifyTask(string) string { return "general" }
@@ -229,5 +229,92 @@ INSERT INTO session_template_selections VALUES ('s1', 'base/workflow', 'base/wor
 	b := buildSystemMessage(sessionPromptCtx("s2", "q2"), config.AgentCoder, models.ProviderAnthropic, nil, nil, nil, "")
 	if a != b {
 		t.Fatalf("new session prompt not stable across turns")
+	}
+}
+
+// skillEvaluatorAdapter exposes SessionSkills of an *evaluator.EvaluatorService
+// to the prompt package the way internal/app does.
+type skillEvaluatorAdapter struct{ svc *evaluator.EvaluatorService }
+
+func (a skillEvaluatorAdapter) SelectVariant(_ context.Context, _, _ string, c []string) (string, error) {
+	return c[0], nil
+}
+func (a skillEvaluatorAdapter) SessionSkills(ctx context.Context, sessionID, taskType string) ([]prompt.PromptEvaluatorSkill, error) {
+	skills, err := a.svc.SessionSkills(ctx, sessionID, taskType)
+	out := make([]prompt.PromptEvaluatorSkill, len(skills))
+	for i, sk := range skills {
+		out[i] = prompt.PromptEvaluatorSkill{Content: sk.Content}
+	}
+	return out, err
+}
+func (a skillEvaluatorAdapter) ClassifyTask(string) string { return "general" }
+
+func writeLearnedSkill(t *testing.T, wd, id, status, rule string) {
+	t.Helper()
+	f := evaluator.SkillFile{ID: id, Title: rule, Status: status, TaskType: "general", Confidence: 0.9, Created: time.Now(), Content: rule}
+	dir := evaluator.LearnedSkillsDir(wd)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, id+".md"), f.Marshal(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestSystemPromptWithLearnedSkillsIsByteStableWhenSkillApprovedMidSession
+// guards the prompt-cache contract for learned skills: the set injected into a
+// session is frozen on its first build, so approving a skill mid-session does
+// not change the prompt; only the next session gets it.
+func TestSystemPromptWithLearnedSkillsIsByteStableWhenSkillApprovedMidSession(t *testing.T) {
+	installCountingMemoryInjector(t)
+	wd := t.TempDir()
+	prevCfg := config.Get()
+	config.SetForTests(&config.Config{WorkingDir: wd})
+	t.Cleanup(func() { config.SetForTests(prevCfg) })
+	t.Setenv("HOME", t.TempDir())
+
+	conn, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	if _, err := conn.Exec(`
+CREATE TABLE skill_library (id TEXT PRIMARY KEY, title TEXT NOT NULL, content TEXT NOT NULL, source_session_id TEXT, source_template_id TEXT, task_type TEXT NOT NULL DEFAULT 'general', usage_count INTEGER NOT NULL DEFAULT 0, success_rate REAL NOT NULL DEFAULT 0.0, is_active INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'legacy', confidence REAL NOT NULL DEFAULT 0.0, judge_model TEXT NOT NULL DEFAULT '', eval_count INTEGER NOT NULL DEFAULT 0, reward_total REAL NOT NULL DEFAULT 0.0);
+CREATE TABLE session_skill_injections (session_id TEXT NOT NULL, skill_id TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0, injected_at INTEGER NOT NULL, PRIMARY KEY (session_id, skill_id));`); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := evaluator.New(config.EvaluatorConfig{Enabled: true, MaxSkills: 10}, db.New(conn), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt.SetGlobalEvaluator(skillEvaluatorAdapter{svc: svc})
+	t.Cleanup(func() { prompt.SetGlobalEvaluator(nil) })
+
+	writeLearnedSkill(t, wd, "rule-a", "approved", "RULE-A-ALWAYS-RUN-TESTS")
+	writeLearnedSkill(t, wd, "rule-b", "pending", "RULE-B-KEEP-DIFFS-SMALL")
+
+	build := func(session, q string) string {
+		return buildSystemMessage(sessionPromptCtx(session, q), config.AgentCoder, models.ProviderAnthropic, nil, nil, nil, "")
+	}
+	first := build("skill-s1", "turn one")
+	if !strings.Contains(first, "RULE-A-ALWAYS-RUN-TESTS") || strings.Contains(first, "RULE-B") {
+		t.Fatalf("only the approved skill must be injected:\n%s", first)
+	}
+
+	// Approve B mid-session: the running session keeps its bytes.
+	writeLearnedSkill(t, wd, "rule-b", "approved", "RULE-B-KEEP-DIFFS-SMALL")
+	time.Sleep(1100 * time.Millisecond)
+	second := build("skill-s1", "turn two")
+	if first != second {
+		t.Fatalf("system prompt changed after a skill was approved mid-session:\n--- first\n%s\n--- second\n%s", first, second)
+	}
+
+	// The next new session gets both skills.
+	next := build("skill-s2", "turn one")
+	if !strings.Contains(next, "RULE-A-ALWAYS-RUN-TESTS") || !strings.Contains(next, "RULE-B-KEEP-DIFFS-SMALL") {
+		t.Fatalf("new session should see both approved skills:\n%s", next)
+	}
+	if again := build("skill-s2", "turn two"); again != next {
+		t.Fatal("new session prompt not stable across turns")
 	}
 }

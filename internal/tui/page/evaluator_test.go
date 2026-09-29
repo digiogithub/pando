@@ -22,6 +22,12 @@ func (s stubEvaluatorService) SelectVariant(_ context.Context, _, _ string, c []
 func (s stubEvaluatorService) GetActiveSkills(_ context.Context, _ string) ([]evaluator.Skill, error) {
 	return nil, nil
 }
+func (s stubEvaluatorService) ListSkills(_ context.Context, _, _ string) ([]evaluator.Skill, error) {
+	return nil, nil
+}
+func (s stubEvaluatorService) ReviewSkill(_ context.Context, _, _ string) (*evaluator.Skill, error) {
+	return nil, nil
+}
 func (s stubEvaluatorService) GetStats(_ context.Context) (*evaluator.Stats, error) {
 	return s.stats, nil
 }

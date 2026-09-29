@@ -265,12 +265,25 @@ export interface TemplateSection {
   variants: TemplateVariant[]
 }
 
+export type SkillStatus = 'pending' | 'approved' | 'rejected'
+
 export interface Skill {
   id: string
   name: string
   description: string
+  task_type?: string
+  /** Judge confidence when the skill was proposed. */
   confidence: number
+  /** Sessions the skill was injected in. */
   uses: number
+  /** Review state; only approved skills are injected into prompts. */
+  status: SkillStatus
+  /** Mean reward of the evaluated sessions the skill was injected in. */
+  success_rate: number
+  eval_count: number
+  judge_model?: string
+  source_session?: string
+  created?: number
 }
 
 // Reward decomposition persisted in session_scores.components (JSON).

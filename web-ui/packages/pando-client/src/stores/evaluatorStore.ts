@@ -8,9 +8,11 @@ interface EvaluatorStore {
   skills: Skill[]
   loading: boolean
   fetchAll: () => Promise<void>
+  /** Approves or rejects a learned skill; approval reaches the next new session. */
+  reviewSkill: (id: string, decision: 'approve' | 'reject') => Promise<void>
 }
 
-export const useEvaluatorStore = create<EvaluatorStore>((set) => ({
+export const useEvaluatorStore = create<EvaluatorStore>((set, get) => ({
   metrics: null,
   sections: [],
   skills: [],
@@ -28,5 +30,10 @@ export const useEvaluatorStore = create<EvaluatorStore>((set) => ({
     } finally {
       set({ loading: false })
     }
+  },
+
+  reviewSkill: async (id, decision) => {
+    await api.post(`/api/v1/evaluator/skills/${encodeURIComponent(id)}/${decision}`, {})
+    await get().fetchAll()
   },
 }))

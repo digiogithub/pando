@@ -2,14 +2,16 @@
 id: PANDO-US-0074
 type: story
 title: "Learned skills as reviewable proposals: file-backed, approved-only injection, frozen per session, success_rate fed by rewards"
-status: backlog
+status: done
 priority: medium
 parent: PANDO-EP-0014
 author: mcp
 labels: [evaluator, skills, prompt-cache]
 estimate: 8
 created: 2026-09-29T20:33:19Z
-updated: 2026-09-29T20:33:19Z
+updated: 2026-09-29T21:39:22Z
+started: 2026-09-29T21:29:01Z
+closed: 2026-09-29T21:39:22Z
 ---
 
 ## Description

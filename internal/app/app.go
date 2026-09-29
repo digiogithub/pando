@@ -1378,8 +1378,8 @@ func (a *evaluatorPromptAdapter) SelectVariant(ctx context.Context, sessionID, s
 	return a.svc.SelectVariant(ctx, sessionID, section, candidates)
 }
 
-func (a *evaluatorPromptAdapter) GetActiveSkills(ctx context.Context, taskType string) ([]prompt.PromptEvaluatorSkill, error) {
-	skills, err := a.svc.GetActiveSkills(ctx, taskType)
+func (a *evaluatorPromptAdapter) SessionSkills(ctx context.Context, sessionID, taskType string) ([]prompt.PromptEvaluatorSkill, error) {
+	skills, err := a.svc.SessionSkills(ctx, sessionID, taskType)
 	if err != nil || len(skills) == 0 {
 		return nil, err
 	}

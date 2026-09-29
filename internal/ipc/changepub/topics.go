@@ -32,7 +32,7 @@ func MethodToTopic(method string) string {
 		return "db.project.deleted"
 	case "InsertSkill":
 		return "db.skill.created"
-	case "IncrementSkillUsage", "DeactivateLowestSkill":
+	case "IncrementSkillUsage", "DeactivateLowestSkill", "UpsertSkillMirror", "SetSkillMirrorState":
 		return "db.skill.updated"
 	default:
 		return ""

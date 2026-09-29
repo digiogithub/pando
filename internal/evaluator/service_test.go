@@ -112,7 +112,20 @@ CREATE TABLE IF NOT EXISTS skill_library (
     success_rate REAL NOT NULL DEFAULT 0.0,
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'legacy',
+    confidence REAL NOT NULL DEFAULT 0.0,
+    judge_model TEXT NOT NULL DEFAULT '',
+    eval_count INTEGER NOT NULL DEFAULT 0,
+    reward_total REAL NOT NULL DEFAULT 0.0
+);
+
+CREATE TABLE IF NOT EXISTS session_skill_injections (
+    session_id TEXT NOT NULL,
+    skill_id TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
+    injected_at INTEGER NOT NULL,
+    PRIMARY KEY (session_id, skill_id)
 );
 
 CREATE TABLE IF NOT EXISTS session_template_selections (

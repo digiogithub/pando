@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/digiogithub/pando/internal/evaluator"
 	"github.com/digiogithub/pando/internal/llm/tools"
@@ -59,6 +60,9 @@ func (t *evaluatorStatsTool) Run(ctx context.Context, _ tools.ToolCall) (tools.T
 
 type evaluatorSkillsParams struct {
 	TaskType string `json:"task_type"`
+	// Status filters by review state: pending, approved (default) or rejected;
+	// "all" returns every skill.
+	Status string `json:"status"`
 }
 
 type evaluatorSkillsTool struct {
@@ -74,13 +78,18 @@ func NewEvaluatorSkillsTool(svc evaluator.Service) tools.BaseTool {
 func (t *evaluatorSkillsTool) Info() tools.ToolInfo {
 	return tools.ToolInfo{
 		Name:        "pando_evaluator_skills",
-		Description: "Lists active skills from the self-improvement skill library. Optionally filter by task_type (e.g. 'coding', 'debugging'). Returns skill title, content, success_rate, and usage_count.",
+		Description: "Lists learned skills of the self-improvement library. Skills are reviewable files under .pando/skills/learned; only approved ones are injected into prompts. Optionally filter by task_type (e.g. 'coding', 'debugging') and status (pending, approved, rejected, all; default approved). Returns skill title, content, status, success_rate (mean reward of sessions it was injected in), and usage_count.",
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"task_type": map[string]interface{}{
 					"type":        "string",
-					"description": "Optional task type filter (e.g. 'coding', 'debugging'). Leave empty to return all active skills.",
+					"description": "Optional task type filter (e.g. 'coding', 'debugging'). Leave empty to return all task types.",
+				},
+				"status": map[string]interface{}{
+					"type":        "string",
+					"enum":        []string{"pending", "approved", "rejected", "all"},
+					"description": "Review status filter. Defaults to approved.",
 				},
 			},
 			"required": []string{},
@@ -100,7 +109,14 @@ func (t *evaluatorSkillsTool) Run(ctx context.Context, call tools.ToolCall) (too
 		}
 	}
 
-	skills, err := t.svc.GetActiveSkills(ctx, params.TaskType)
+	status := strings.ToLower(strings.TrimSpace(params.Status))
+	switch status {
+	case "":
+		status = evaluator.SkillStatusApproved
+	case "all":
+		status = ""
+	}
+	skills, err := t.svc.ListSkills(ctx, status, params.TaskType)
 	if err != nil {
 		return tools.NewTextErrorResponse(fmt.Sprintf("failed to get skills: %v", err)), nil
 	}

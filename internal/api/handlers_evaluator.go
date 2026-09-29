@@ -44,12 +44,36 @@ type TemplateSectionResponse struct {
 
 // SkillResponse is the JSON representation of a skill library entry.
 type SkillResponse struct {
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`
-	Description string  `json:"description"`
-	TaskType    string  `json:"task_type"`
-	Confidence  float64 `json:"confidence"`
-	Uses        int64   `json:"uses"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	TaskType    string `json:"task_type"`
+	// Confidence is the judge's confidence when it proposed the skill.
+	Confidence float64 `json:"confidence"`
+	Uses       int64   `json:"uses"`
+	// Status is the review state: pending, approved or rejected. Only approved
+	// skills are injected into prompts.
+	Status string `json:"status"`
+	// SuccessRate is the mean reward of the EvalCount evaluated sessions the
+	// skill was injected in.
+	SuccessRate   float64 `json:"success_rate"`
+	EvalCount     int64   `json:"eval_count"`
+	JudgeModel    string  `json:"judge_model,omitempty"`
+	SourceSession string  `json:"source_session,omitempty"`
+	Created       int64   `json:"created,omitempty"`
+}
+
+func skillResponseFrom(sk evaluator.Skill) SkillResponse {
+	r := SkillResponse{
+		ID: sk.ID, Name: sk.Title, Description: sk.Content, TaskType: sk.TaskType,
+		Confidence: sk.Confidence, Uses: int64(sk.UsageCount), Status: sk.Status,
+		SuccessRate: sk.SuccessRate, EvalCount: int64(sk.EvalCount),
+		JudgeModel: sk.JudgeModel, SourceSession: sk.SourceSession,
+	}
+	if !sk.Created.IsZero() {
+		r.Created = sk.Created.Unix()
+	}
+	return r
 }
 
 // EvaluatorSessionResponse is the JSON representation of a evaluated session score.
@@ -195,40 +219,53 @@ func buildTemplateSections(files []prompt.VariantFile, stats []db.PromptVariantS
 	return out
 }
 
-// handleGetEvaluatorSkills handles GET /api/v1/evaluator/skills.
+// handleGetEvaluatorSkills handles GET /api/v1/evaluator/skills[?status=pending|approved|rejected].
+// It lists the learned skills (reviewable files plus statistics); without a
+// status filter every status is returned.
 func (s *Server) handleGetEvaluatorSkills(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-
-	if s.config.DB == nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"skills": []interface{}{}})
+	status := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("status")))
+	if status != "" && !evaluator.ValidSkillStatus(status) {
+		writeError(w, http.StatusBadRequest, "status must be pending, approved or rejected")
 		return
 	}
 
-	q := db.New(s.config.DB)
-
-	rows, err := q.ListAllActiveSkills(r.Context())
-	if err != nil {
-		// TODO: implement when DB queries are ready
-		writeJSON(w, http.StatusOK, map[string]interface{}{"skills": []interface{}{}})
-		return
+	skills := make([]SkillResponse, 0)
+	if s.app != nil && s.app.Evaluator != nil && s.app.Evaluator.IsEnabled() {
+		list, err := s.app.Evaluator.ListSkills(r.Context(), status, "")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		for _, sk := range list {
+			skills = append(skills, skillResponseFrom(sk))
+		}
 	}
-
-	skills := make([]SkillResponse, 0, len(rows))
-	for _, row := range rows {
-		skills = append(skills, SkillResponse{
-			ID:          row.ID,
-			Name:        row.Title,
-			Description: row.Content,
-			TaskType:    row.TaskType,
-			Confidence:  row.SuccessRate,
-			Uses:        row.UsageCount,
-		})
-	}
-
 	writeJSON(w, http.StatusOK, map[string]interface{}{"skills": skills})
+}
+
+// handleReviewEvaluatorSkill handles POST /api/v1/evaluator/skills/{id}/approve
+// and /reject. Approving takes effect on the next new session only.
+func (s *Server) handleReviewEvaluatorSkill(status string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.app == nil || s.app.Evaluator == nil || !s.app.Evaluator.IsEnabled() {
+			writeError(w, http.StatusConflict, "evaluator is not enabled")
+			return
+		}
+		sk, err := s.app.Evaluator.ReviewSkill(r.Context(), r.PathValue("id"), status)
+		if err != nil {
+			code := http.StatusInternalServerError
+			if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "ambiguous") {
+				code = http.StatusNotFound
+			}
+			writeError(w, code, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, skillResponseFrom(*sk))
+	}
 }
 
 // handleGetEvaluatorSessions handles GET /api/v1/evaluator/sessions.

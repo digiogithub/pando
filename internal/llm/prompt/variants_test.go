@@ -26,7 +26,7 @@ func (f *fakeVariantEvaluator) SelectVariant(_ context.Context, _, section strin
 	}
 	return candidates[0], nil
 }
-func (f *fakeVariantEvaluator) GetActiveSkills(context.Context, string) ([]PromptEvaluatorSkill, error) {
+func (f *fakeVariantEvaluator) SessionSkills(context.Context, string, string) ([]PromptEvaluatorSkill, error) {
 	return nil, nil
 }
 func (f *fakeVariantEvaluator) ClassifyTask(string) string { return "general" }

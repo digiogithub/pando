@@ -7,6 +7,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/design/preview"
+	"github.com/digiogithub/pando/internal/evaluator"
 	"github.com/digiogithub/pando/internal/extensions"
 	"github.com/digiogithub/pando/internal/logging"
 )
@@ -201,6 +202,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/evaluator/metrics", s.handleGetEvaluatorMetrics)
 	mux.HandleFunc("GET /api/v1/evaluator/templates", s.handleGetEvaluatorTemplates)
 	mux.HandleFunc("GET /api/v1/evaluator/skills", s.handleGetEvaluatorSkills)
+	mux.HandleFunc("POST /api/v1/evaluator/skills/{id}/approve", s.handleReviewEvaluatorSkill(evaluator.SkillStatusApproved))
+	mux.HandleFunc("POST /api/v1/evaluator/skills/{id}/reject", s.handleReviewEvaluatorSkill(evaluator.SkillStatusRejected))
 	mux.HandleFunc("GET /api/v1/evaluator/sessions", s.handleGetEvaluatorSessions)
 	mux.HandleFunc("POST /api/v1/evaluator/sessions/{id}/evaluate", s.handleEvaluateSession)
 	mux.HandleFunc("POST /api/v1/evaluator/sessions/{id}/feedback", s.handleSessionFeedback)

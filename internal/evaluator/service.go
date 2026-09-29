@@ -39,8 +39,15 @@ type Service interface {
 	// default when the feature is off or there is nothing to choose from.
 	SelectVariant(ctx context.Context, sessionID, section string, candidates []string) (string, error)
 
-	// GetActiveSkills returns skills to inject into prompts for a given task type.
+	// GetActiveSkills returns the approved skills for a task type.
 	GetActiveSkills(ctx context.Context, taskType string) ([]Skill, error)
+
+	// ListSkills returns the learned skills (files + statistics), optionally
+	// filtered by status (pending|approved|rejected) and task type.
+	ListSkills(ctx context.Context, status, taskType string) ([]Skill, error)
+
+	// ReviewSkill approves or rejects a learned skill by id.
+	ReviewSkill(ctx context.Context, id, status string) (*Skill, error)
 
 	// GetStats returns current UCB rankings and skill library summary.
 	GetStats(ctx context.Context) (*Stats, error)
@@ -73,6 +80,15 @@ type EvaluatorService struct {
 	// query the DB for every section on every turn.
 	selMu      sync.Mutex
 	selections map[string]map[string]string
+	// skillFileMu serialises access to the learned-skill files and their mirror.
+	skillFileMu sync.Mutex
+	// skillSelMu guards skillSel and serialises the first-build selection so a
+	// session's usage counts are incremented once. skillSel caches the frozen
+	// per-session skill set (mirror of session_skill_injections).
+	skillSelMu sync.Mutex
+	skillSel   map[string][]Skill
+	// workDirOverride, when set, replaces the configured working directory.
+	workDirOverride string
 	// judgeMu serialises judge calls so the daily budget check and the call
 	// that spends it cannot interleave.
 	judgeMu sync.Mutex
@@ -134,6 +150,7 @@ func New(cfg config.EvaluatorConfig, q db.Querier, msgs message.Service) (*Evalu
 		msgs:         msgs,
 		inflight:     make(map[string]struct{}),
 		selections:   make(map[string]map[string]string),
+		skillSel:     make(map[string][]Skill),
 		patterns:     patterns,
 		taskPatterns: compileTaskPatterns(cfg.TaskPatterns),
 	}
@@ -529,7 +546,7 @@ func (s *EvaluatorService) maybeJudge(ctx context.Context, res *Result, msgs []m
 	}); err != nil {
 		slog.Warn("evaluator: persist judge output failed", "session_id", res.SessionID, "err", err)
 	}
-	if err := s.saveSkillFromJudge(ctx, out, res.SessionID); err != nil {
+	if err := s.saveSkillFromJudge(ctx, out, res.SessionID, model); err != nil {
 		slog.Warn("evaluator: save skill failed", "session_id", res.SessionID, "err", err)
 	}
 }
@@ -704,6 +721,12 @@ func (s *EvaluatorService) pickVariant(ctx context.Context, section string, cand
 // it was served (per section) and drops the in-memory selections of the session.
 func (s *EvaluatorService) applySessionReward(ctx context.Context, sessionID string, reward float64) {
 	defer s.forgetSelections(sessionID)
+	defer s.forgetSkills(sessionID)
+	if err := s.db.ApplySessionRewardToSkillStats(ctx, db.ApplySessionRewardToSkillStatsParams{
+		Reward: reward, Reward2: reward, SessionID: sessionID,
+	}); err != nil {
+		slog.Warn("evaluator: update skill stats failed", "session_id", sessionID, "err", err)
+	}
 	if err := s.db.ApplySessionRewardToVariantStats(ctx, db.ApplySessionRewardToVariantStatsParams{
 		TotalReward: reward, AvgReward: reward, SessionID: sessionID,
 	}); err != nil {
@@ -716,6 +739,11 @@ func (s *EvaluatorService) applyRewardDelta(ctx context.Context, sessionID strin
 	if delta == 0 {
 		return
 	}
+	if err := s.db.ApplyRewardDeltaToSkillStats(ctx, db.ApplyRewardDeltaToSkillStatsParams{
+		Delta: delta, Delta2: delta, SessionID: sessionID,
+	}); err != nil {
+		slog.Warn("evaluator: update skill stats delta failed", "session_id", sessionID, "err", err)
+	}
 	if err := s.db.ApplyRewardDeltaToVariantStats(ctx, db.ApplyRewardDeltaToVariantStatsParams{
 		Delta: delta, Delta2: delta, SessionID: sessionID,
 	}); err != nil {
@@ -723,7 +751,9 @@ func (s *EvaluatorService) applyRewardDelta(ctx context.Context, sessionID strin
 	}
 }
 
-// GetActiveSkills returns active skills for a task type.
+// GetActiveSkills returns the approved skills for a task type, best ranked
+// first (success_rate, then usage). It has no side effects: injection
+// accounting happens once per session in SessionSkills.
 func (s *EvaluatorService) GetActiveSkills(ctx context.Context, taskType string) ([]Skill, error) {
 	if s == nil || !s.cfg.Enabled || s.db == nil {
 		return nil, nil
@@ -735,7 +765,7 @@ func (s *EvaluatorService) GetActiveSkills(ctx context.Context, taskType string)
 
 	rows, err := s.db.ListActiveSkillsByType(ctx, db.ListActiveSkillsByTypeParams{
 		TaskType: taskType,
-		Limit:    10,
+		Limit:    maxInjectedSkills,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("evaluator: list active skills: %w", err)
@@ -744,32 +774,87 @@ func (s *EvaluatorService) GetActiveSkills(ctx context.Context, taskType string)
 
 	skills := make([]Skill, 0, len(rows))
 	for _, r := range rows {
-		skills = append(skills, Skill{
-			ID:          r.ID,
-			Title:       r.Title,
-			Content:     r.Content,
-			TaskType:    r.TaskType,
-			SuccessRate: r.SuccessRate,
-			UsageCount:  int(r.UsageCount),
-		})
+		skills = append(skills, skillFromRow(r))
+	}
+	return skills, nil
+}
+
+// maxCachedSkillSets bounds the in-memory frozen skill sets.
+const maxCachedSkillSets = 512
+
+// SessionSkills returns the learned skills injected into a session's system
+// prompt. The set is chosen once, on the session's first prompt build, and
+// persisted in session_skill_injections: later turns and later processes get
+// the same skills in the same order, even when a skill is approved
+// mid-session (it is picked up by the next session). usage_count is incremented
+// once per skill when the set is persisted. Without a session id the current
+// approved skills are returned unfrozen and without accounting.
+func (s *EvaluatorService) SessionSkills(ctx context.Context, sessionID, taskType string) ([]Skill, error) {
+	if s == nil || !s.cfg.Enabled || s.db == nil {
+		return nil, nil
+	}
+	if sessionID == "" {
+		return s.GetActiveSkills(ctx, taskType)
 	}
 
-	// Increment usage for retrieved skills (fire-and-forget, non-blocking).
-	go func(ids []string) {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		for _, id := range ids {
-			_ = s.db.IncrementSkillUsage(bgCtx, id)
-		}
-	}(func() []string {
-		ids := make([]string, len(rows))
-		for i, r := range rows {
-			ids[i] = r.ID
-		}
-		return ids
-	}())
+	s.skillSelMu.Lock()
+	defer s.skillSelMu.Unlock()
+	if sk, ok := s.skillSel[sessionID]; ok {
+		return sk, nil
+	}
 
+	n, err := s.db.CountSessionSkillInjections(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("evaluator: read skill injections: %w", err)
+	}
+	if n == 0 {
+		if err := s.SyncLearnedSkills(ctx); err != nil {
+			slog.Debug("evaluator: skill sync failed", "err", err)
+		}
+		chosen, err := s.GetActiveSkills(ctx, taskType)
+		if err != nil {
+			return nil, err
+		}
+		if len(chosen) == 0 {
+			// Empty-set marker: a skill approved later must not appear mid-session.
+			if err := s.db.InsertSessionSkillInjection(ctx, db.InsertSessionSkillInjectionParams{SessionID: sessionID}); err != nil {
+				return nil, fmt.Errorf("evaluator: persist skill injections: %w", err)
+			}
+		}
+		for i, sk := range chosen {
+			if err := s.db.InsertSessionSkillInjection(ctx, db.InsertSessionSkillInjectionParams{
+				SessionID: sessionID, SkillID: sk.ID, Position: int64(i),
+			}); err != nil {
+				return nil, fmt.Errorf("evaluator: persist skill injections: %w", err)
+			}
+		}
+		for _, sk := range chosen {
+			if err := s.db.IncrementSkillUsage(ctx, sk.ID); err != nil {
+				slog.Debug("evaluator: increment skill usage failed", "id", sk.ID, "err", err)
+			}
+		}
+		slog.Debug("evaluator: skills frozen for session", "session_id", sessionID, "count", len(chosen))
+	}
+
+	rows, err := s.db.ListSessionInjectedSkills(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("evaluator: load injected skills: %w", err)
+	}
+	skills := make([]Skill, 0, len(rows))
+	for _, r := range rows {
+		skills = append(skills, skillFromRow(r))
+	}
+	if len(s.skillSel) >= maxCachedSkillSets {
+		s.skillSel = make(map[string][]Skill)
+	}
+	s.skillSel[sessionID] = skills
 	return skills, nil
+}
+
+func (s *EvaluatorService) forgetSkills(sessionID string) {
+	s.skillSelMu.Lock()
+	delete(s.skillSel, sessionID)
+	s.skillSelMu.Unlock()
 }
 
 // GetStats returns system statistics for TUI display.
@@ -787,21 +872,11 @@ func (s *EvaluatorService) GetStats(ctx context.Context) (*Stats, error) {
 	}
 
 	ranking, _ := s.db.ListAllVariantStats(ctx)
-	allSkills, _ := s.db.ListAllActiveSkills(ctx)
+	allSkills, _ := s.ListSkills(ctx, "", "")
 
 	templateStats := VariantStatsFromRows(ranking, s.cfg.ExplorationC)
 
-	topSkills := make([]Skill, 0, len(allSkills))
-	for _, sk := range allSkills {
-		topSkills = append(topSkills, Skill{
-			ID:          sk.ID,
-			Title:       sk.Title,
-			Content:     sk.Content,
-			TaskType:    sk.TaskType,
-			SuccessRate: sk.SuccessRate,
-			UsageCount:  int(sk.UsageCount),
-		})
-	}
+	topSkills := allSkills
 
 	var lastEval time.Time
 	if aggr.LastEvaluation.Valid {
@@ -954,71 +1029,43 @@ func (s *EvaluatorService) NewContextTrimmer() *ContextTrimmer {
 	return NewContextTrimmer(s.cfg, s.judge)
 }
 
-// saveSkillFromJudge persists a new skill from judge output if confidence is high enough.
-// It enforces MaxSkills, deduplicates against existing skills, and prunes underperformers.
-func (s *EvaluatorService) saveSkillFromJudge(ctx context.Context, out *JudgeOutput, sessionID string) error {
-	if out == nil || out.NewSkill == "" || out.Confidence < 0.7 {
+// saveSkillFromJudge turns a confident judge proposal into a pending skill
+// file for human review. Nothing is injected until the skill is approved.
+// Proposals similar to any existing file (pending, approved or rejected) are
+// dropped, so a rejected rule is not proposed again.
+func (s *EvaluatorService) saveSkillFromJudge(ctx context.Context, out *JudgeOutput, sessionID, model string) error {
+	if out == nil || strings.TrimSpace(out.NewSkill) == "" || out.Confidence < skillProposalMinConfidence {
 		return nil
 	}
-
-	taskType := out.TaskType
-	if taskType == "" {
-		taskType = "general"
+	wd := s.workDir()
+	if wd == "" {
+		return errors.New("no project directory for learned skills")
 	}
 
-	// Prune underperforming skills (low success rate despite high usage) before inserting.
-	// This runs asynchronously to avoid blocking the save path.
-	go func() {
-		pruneCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := s.db.DeactivateUnderperformingSkills(pruneCtx); err != nil {
-			slog.Debug("evaluator: skill pruning failed", "err", err)
-		}
-	}()
+	s.skillFileMu.Lock()
+	s.pruneUnderperformingLocked(ctx, wd)
+	s.skillFileMu.Unlock()
 
-	// Deduplication: load existing skills of the same task type and skip insertion
-	// if the new skill's content is substantially similar to an existing one.
-	existing, listErr := s.db.ListAllActiveSkills(ctx)
-	if listErr == nil && isDuplicateSkill(out.NewSkill, existing) {
-		slog.Debug("evaluator: skill deduplicated (near-duplicate already exists)", "task_type", taskType)
-		return nil
-	}
-
-	// Enforce MaxSkills limit.
-	count, err := s.db.CountActiveSkills(ctx)
-	if err == nil && int(count) >= s.cfg.MaxSkills {
-		if err := s.db.DeactivateLowestSkill(ctx); err != nil {
-			slog.Warn("evaluator: deactivate lowest skill failed", "err", err)
-		}
-	}
-
-	srcSession := sql.NullString{String: sessionID, Valid: sessionID != ""}
-	_, err = s.db.InsertSkill(ctx, db.InsertSkillParams{
-		ID:              uuid.New().String(),
-		Title:           taskType + " skill",
-		Content:         out.NewSkill,
-		SourceSessionID: srcSession,
-		TaskType:        taskType,
-	})
+	added, err := s.proposeSkill(ctx, wd, out, sessionID, model)
 	if err != nil {
-		return fmt.Errorf("evaluator: insert skill: %w", err)
+		return fmt.Errorf("evaluator: propose skill: %w", err)
 	}
-
-	slog.Info("evaluator: new skill saved", "task_type", taskType, "confidence", out.Confidence)
+	if !added {
+		slog.Debug("evaluator: skill deduplicated (similar rule already exists)", "task_type", out.TaskType)
+	}
 	return nil
 }
 
-// isDuplicateSkill reports whether newContent is substantially similar to any existing skill.
+// isDuplicateSkillText reports whether newContent is substantially similar to any existing rule.
 // It uses a word-overlap ratio: if more than 70% of the significant words in newContent
-// already appear in an existing skill's content, it is considered a duplicate.
-func isDuplicateSkill(newContent string, existing []db.SkillLibrary) bool {
+// already appear in an existing rule, it is considered a duplicate.
+func isDuplicateSkillText(newContent string, existing []string) bool {
 	newWords := tokenizeSkill(newContent)
 	if len(newWords) == 0 {
 		return false
 	}
-	for _, sk := range existing {
-		existingWords := tokenizeSkill(sk.Content)
-		if skillWordOverlap(newWords, existingWords) > 0.70 {
+	for _, content := range existing {
+		if skillWordOverlap(newWords, tokenizeSkill(content)) > 0.70 {
 			return true
 		}
 	}

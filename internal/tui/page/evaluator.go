@@ -22,6 +22,7 @@ type EvaluatorPageModel interface {
 
 type evaluatorLoadedMsg struct{ stats *evaluator.Stats }
 type evaluatorErrMsg struct{ err error }
+type skillReviewedMsg struct{ err error }
 
 type evaluatorPage struct {
 	evaluatorSvc evaluator.Service
@@ -53,6 +54,14 @@ func (p *evaluatorPage) load() tea.Cmd {
 	}
 }
 
+func (p *evaluatorPage) review(id, status string) tea.Cmd {
+	svc := p.evaluatorSvc
+	return func() tea.Msg {
+		_, err := svc.ReviewSkill(context.Background(), id, status)
+		return skillReviewedMsg{err: err}
+	}
+}
+
 func (p *evaluatorPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -66,6 +75,17 @@ func (p *evaluatorPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if p.evaluatorSvc != nil {
 				p.loading = true
 				return p, p.load()
+			}
+		case "a", "x":
+			// Review the selected learned skill (skills panel): a approves, x rejects.
+			if p.evaluatorSvc != nil && p.activePanel == 1 && p.skills != nil {
+				if sk := p.skills.Selected(); sk != nil && sk.ID != "" {
+					status := evaluator.SkillStatusApproved
+					if msg.String() == "x" {
+						status = evaluator.SkillStatusRejected
+					}
+					return p, p.review(sk.ID, status)
+				}
 			}
 		case "tab", "shift+tab":
 			p.activePanel = (p.activePanel + 1) % 2
@@ -90,6 +110,11 @@ func (p *evaluatorPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		p.metrics = evaluatorcomp.NewMetricsCmp(msg.stats)
 		if err := p.resizeComponents(); err != nil {
 			_ = err
+		}
+
+	case skillReviewedMsg:
+		if p.evaluatorSvc != nil {
+			return p, p.load()
 		}
 
 	case evaluatorErrMsg:
@@ -242,7 +267,7 @@ func renderEvaluatorHelp() string {
 	return lipgloss.NewStyle().
 		Foreground(t.TextMuted()).
 		Background(t.Background()).
-		Render("[r] Refresh  [tab] Switch panel  [↑↓] Navigate  [esc/q] Back")
+		Render("[r] Refresh  [tab] Panel  [↑↓] Move  [a] Approve  [x] Reject  [esc] Back")
 }
 
 // NewEvaluatorPage creates and returns a new self-improvement evaluator page.

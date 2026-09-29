@@ -410,6 +410,36 @@ func (p *DBProxy) IncrementSkillUsage(ctx context.Context, id string) error {
 		"IncrementSkillUsage", id, DefaultWriteTimeouts.Default)
 }
 
+func (p *DBProxy) UpsertSkillMirror(ctx context.Context, arg db.UpsertSkillMirrorParams) error {
+	return directOrProxyVoid(ctx, p,
+		func() error { return p.Querier.UpsertSkillMirror(ctx, arg) },
+		"UpsertSkillMirror", arg, DefaultWriteTimeouts.Default)
+}
+
+func (p *DBProxy) SetSkillMirrorState(ctx context.Context, arg db.SetSkillMirrorStateParams) error {
+	return directOrProxyVoid(ctx, p,
+		func() error { return p.Querier.SetSkillMirrorState(ctx, arg) },
+		"SetSkillMirrorState", arg, DefaultWriteTimeouts.Default)
+}
+
+func (p *DBProxy) InsertSessionSkillInjection(ctx context.Context, arg db.InsertSessionSkillInjectionParams) error {
+	return directOrProxyVoid(ctx, p,
+		func() error { return p.Querier.InsertSessionSkillInjection(ctx, arg) },
+		"InsertSessionSkillInjection", arg, DefaultWriteTimeouts.Default)
+}
+
+func (p *DBProxy) ApplySessionRewardToSkillStats(ctx context.Context, arg db.ApplySessionRewardToSkillStatsParams) error {
+	return directOrProxyVoid(ctx, p,
+		func() error { return p.Querier.ApplySessionRewardToSkillStats(ctx, arg) },
+		"ApplySessionRewardToSkillStats", arg, DefaultWriteTimeouts.Default)
+}
+
+func (p *DBProxy) ApplyRewardDeltaToSkillStats(ctx context.Context, arg db.ApplyRewardDeltaToSkillStatsParams) error {
+	return directOrProxyVoid(ctx, p,
+		func() error { return p.Querier.ApplyRewardDeltaToSkillStats(ctx, arg) },
+		"ApplyRewardDeltaToSkillStats", arg, DefaultWriteTimeouts.Default)
+}
+
 func (p *DBProxy) CreateProject(ctx context.Context, arg db.CreateProjectParams) (db.Project, error) {
 	return directOrProxy(ctx, p,
 		func() (db.Project, error) { return p.Querier.CreateProject(ctx, arg) },

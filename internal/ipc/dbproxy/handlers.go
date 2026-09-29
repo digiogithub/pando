@@ -261,6 +261,56 @@ func dispatchWrite(ctx context.Context, q db.Querier, req WriteRequest) (json.Ra
 		}
 		return marshalResult(r, nil)
 
+	case "UpsertSkillMirror":
+		var p db.UpsertSkillMirrorParams
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return nil, invalidParamsErr(req.Method, err)
+		}
+		if err := q.UpsertSkillMirror(ctx, p); err != nil {
+			return nil, mapToWriteError(req.Method, err)
+		}
+		return marshalResult(nil, nil)
+
+	case "SetSkillMirrorState":
+		var p db.SetSkillMirrorStateParams
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return nil, invalidParamsErr(req.Method, err)
+		}
+		if err := q.SetSkillMirrorState(ctx, p); err != nil {
+			return nil, mapToWriteError(req.Method, err)
+		}
+		return marshalResult(nil, nil)
+
+	case "InsertSessionSkillInjection":
+		var p db.InsertSessionSkillInjectionParams
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return nil, invalidParamsErr(req.Method, err)
+		}
+		if err := q.InsertSessionSkillInjection(ctx, p); err != nil {
+			return nil, mapToWriteError(req.Method, err)
+		}
+		return marshalResult(nil, nil)
+
+	case "ApplySessionRewardToSkillStats":
+		var p db.ApplySessionRewardToSkillStatsParams
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return nil, invalidParamsErr(req.Method, err)
+		}
+		if err := q.ApplySessionRewardToSkillStats(ctx, p); err != nil {
+			return nil, mapToWriteError(req.Method, err)
+		}
+		return marshalResult(nil, nil)
+
+	case "ApplyRewardDeltaToSkillStats":
+		var p db.ApplyRewardDeltaToSkillStatsParams
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return nil, invalidParamsErr(req.Method, err)
+		}
+		if err := q.ApplyRewardDeltaToSkillStats(ctx, p); err != nil {
+			return nil, mapToWriteError(req.Method, err)
+		}
+		return marshalResult(nil, nil)
+
 	case "InsertSkill":
 		var p db.InsertSkillParams
 		if err := json.Unmarshal(req.Params, &p); err != nil {

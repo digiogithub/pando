@@ -18,6 +18,8 @@ type SkillsComponent interface {
 	tea.Model
 	layout.Sizeable
 	layout.Bindings
+	// Selected returns the skill under the cursor, or nil when the list is empty.
+	Selected() *evaluator.Skill
 }
 
 type skillsCmp struct {
@@ -25,6 +27,15 @@ type skillsCmp struct {
 	cursor int
 	width  int
 	height int
+}
+
+// Selected returns the skill under the cursor, or nil when the list is empty.
+func (c *skillsCmp) Selected() *evaluator.Skill {
+	if c.cursor < 0 || c.cursor >= len(c.skills) {
+		return nil
+	}
+	sk := c.skills[c.cursor]
+	return &sk
 }
 
 func (c *skillsCmp) Init() tea.Cmd {
@@ -103,7 +114,11 @@ func (c *skillsCmp) View() string {
 		tag := tagStyle.Render(fmt.Sprintf("[%s]", sk.TaskType))
 		usage := mutedStyle.Render(fmt.Sprintf("%d×", sk.UsageCount))
 
-		line := fmt.Sprintf("%-12s %s  %-4s  %s", tag, rateRendered, usage, content)
+		status := sk.Status
+		if status == "" {
+			status = evaluator.SkillStatusApproved
+		}
+		line := fmt.Sprintf("%-9s %-12s %s  %-4s  %s", status, tag, rateRendered, usage, content)
 
 		if i == c.cursor {
 			line = selectedStyle.Render(line)
@@ -129,6 +144,8 @@ func (c *skillsCmp) BindingKeys() []key.Binding {
 	return []key.Binding{
 		key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "move up")),
 		key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "move down")),
+		key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "approve skill")),
+		key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "reject skill")),
 	}
 }
 
