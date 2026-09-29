@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,6 +33,10 @@ const globalSetupConfigHeader = `# Pando global profile configuration.
 # Created by the first-run setup assistant. These settings apply to every
 # directory that has no project-local .pando.toml of its own.
 `
+
+// ErrConfigNotLoaded is returned while no configuration is in effect, which
+// happens transiently during Reload. Callers may retry.
+var ErrConfigNotLoaded = errors.New("config not loaded")
 
 // SetupStatus describes what the first-run assistant needs to know about the
 // current working directory and the configuration that applies to it.
@@ -66,7 +71,7 @@ type SetupStatus struct {
 // working directory.
 func GetSetupStatus() (SetupStatus, error) {
 	if cfg == nil {
-		return SetupStatus{}, fmt.Errorf("config not loaded")
+		return SetupStatus{}, ErrConfigNotLoaded
 	}
 
 	status := SetupStatus{
@@ -188,16 +193,29 @@ func defaultGlobalSetupConfigPath() (string, error) {
 // It returns the path of the file that will receive the settings.
 func PrepareSetupScope(scope string) (string, error) {
 	if cfg == nil {
-		return "", fmt.Errorf("config not loaded")
+		return "", ErrConfigNotLoaded
 	}
+
+	// createdFiles are the config files this call brought into existence, so a
+	// failed reload can take them back out (never a pre-existing file).
+	var createdFiles []string
 
 	switch scope {
 	case SetupScopeProject:
 		if IsHomeDirectory(cfg.WorkingDir) {
 			return "", fmt.Errorf("project settings cannot be created in the home directory; use global settings instead")
 		}
+		projectFile := filepath.Join(cfg.WorkingDir, localConfigFilename)
+		_, statErr := os.Stat(projectFile)
+		existed := statErr == nil
 		if err := InitializeProjectAt(cfg.WorkingDir); err != nil {
+			if !existed {
+				rollbackSetupScope([]string{projectFile})
+			}
 			return "", err
+		}
+		if !existed {
+			createdFiles = append(createdFiles, projectFile)
 		}
 	case SetupScopeGlobal:
 		if local := FindLocalConfigFile(cfg.WorkingDir); local != "" {
@@ -218,6 +236,7 @@ func PrepareSetupScope(scope string) (string, error) {
 			if err := os.WriteFile(path, []byte(globalSetupConfigHeader), 0o644); err != nil {
 				return "", fmt.Errorf("write global config file: %w", err)
 			}
+			createdFiles = append(createdFiles, path)
 		}
 	default:
 		return "", fmt.Errorf("unknown setup scope %q (expected %q or %q)", scope, SetupScopeGlobal, SetupScopeProject)
@@ -226,9 +245,21 @@ func PrepareSetupScope(scope string) (string, error) {
 	// Reload so viper registers the (possibly new) global file as the one in
 	// use and the project file, if created, is merged on top.
 	if err := Reload(); err != nil {
+		rollbackSetupScope(createdFiles)
 		return "", fmt.Errorf("reload configuration: %w", err)
 	}
 	return ResolveConfigFilePath()
+}
+
+// rollbackSetupScope removes the config files a failed PrepareSetupScope
+// created and reloads, so viper and the configuration go back to the file set
+// that applied before the call. A reload failure here is ignored: the caller
+// already has the original error to report.
+func rollbackSetupScope(createdFiles []string) {
+	for _, path := range createdFiles {
+		_ = os.Remove(path)
+	}
+	_ = Reload()
 }
 
 // SuggestSetupModels proposes a main (coder) model and a fast, cheap

@@ -783,7 +783,8 @@
       "remembrances": "Remembrances",
       "unchanged": "sin cambios",
       "skipped": "omitido",
-      "settingsHint": "Puedes cambiar todo esto más adelante en Ajustes."
+      "settingsHint": "Puedes cambiar todo esto más adelante en Ajustes.",
+      "completeFailed": "No se pudo guardar el asistente como finalizado. Revisa la conexión y pulsa Terminar de nuevo."
     }
   }
 }

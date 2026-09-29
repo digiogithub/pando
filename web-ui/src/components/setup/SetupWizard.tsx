@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
 import api from '@pando/client/services/api'
@@ -51,7 +51,7 @@ function StepIndicator({ current }: { current: StepId }) {
  */
 export default function SetupWizard() {
   const { t } = useTranslation()
-  const { status, open, fetchStatus, cancel, complete } = useSetupWizardStore()
+  const { status, open, completeError, fetchStatus, setStatus, cancel, complete } = useSetupWizardStore()
   const refreshConfigInit = useConfigInitStore((s) => s.fetchStatus)
   const fetchSettings = useSettingsStore((s) => s.fetchSettings)
 
@@ -62,13 +62,37 @@ export default function SetupWizard() {
   const [providerBusy, setProviderBusy] = useState(false)
   const [summary, setSummary] = useState<Summary>({})
 
+  // Load the status, retrying with backoff (about 30s in total) while the API
+  // is not ready yet; stops as soon as one arrives or the component unmounts.
   useEffect(() => {
-    void fetchStatus()
+    let stopped = false
+    let timer: number | undefined
+    const delaysMs = [1000, 2000, 4000, 8000, 15000]
+    const attempt = async (n: number) => {
+      const got = await fetchStatus()
+      if (stopped || got || useSetupWizardStore.getState().status) return
+      if (n >= delaysMs.length) return
+      timer = window.setTimeout(() => void attempt(n + 1), delaysMs[n])
+    }
+    void attempt(0)
+    return () => {
+      stopped = true
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
   }, [fetchStatus])
 
-  // Each time the assistant opens, start from the first step that applies.
+  // Each time the assistant opens, start from the first step that applies. It
+  // runs once per open, as soon as both the open flag and the status exist
+  // (the banner can open it before the status has loaded).
+  const initialisedRef = useRef(false)
   useEffect(() => {
-    if (!open || !status) return
+    if (!open) {
+      initialisedRef.current = false
+      return
+    }
+    if (!status || initialisedRef.current) return
+    initialisedRef.current = true
+    setProviderBusy(false)
     setSummary({})
     setScopeError(null)
     if (status.hasLocalConfig) {
@@ -79,9 +103,7 @@ export default function SetupWizard() {
       setScope('global')
       setStep('scope')
     }
-    // Only on open: later status refreshes must not reset the flow.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
+  }, [open, status])
 
   const go = useCallback((next: StepId) => setStep(next), [])
 
@@ -91,6 +113,9 @@ export default function SetupWizard() {
     try {
       const r = await api.post<{ configPath: string; status: SetupStatus }>('/api/v1/setup/scope', { scope })
       setSummary((s) => ({ ...s, scope, configPath: r.configPath }))
+      // A project scope now has a local config: the scope step must not offer
+      // the impossible "global" choice again (firstStep becomes 'provider').
+      if (r.status) setStatus(r.status)
       void refreshConfigInit()
       go('provider')
     } catch (e) {
@@ -101,7 +126,7 @@ export default function SetupWizard() {
   }
 
   const finish = async () => {
-    await complete()
+    if (!(await complete())) return
     void refreshConfigInit()
     void fetchSettings()
   }
@@ -232,6 +257,7 @@ export default function SetupWizard() {
       {step === 'done' && (
         <div className="flex flex-col gap-3">
           <Notice tone="success">{t('setup.done.intro')}</Notice>
+          {completeError && <Notice tone="danger">{t('setup.done.completeFailed')}</Notice>}
           <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
             <dt className="text-muted">{t('setup.done.scope')}</dt>
             <dd className="m-0 text-fg">

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -48,6 +49,11 @@ type setupOllamaStatusResponse struct {
 func (s *Server) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
 	status, err := config.GetSetupStatus()
 	if err != nil {
+		if errors.Is(err, config.ErrConfigNotLoaded) {
+			// Transient while a reload swaps the configuration: retryable.
+			writeError(w, http.StatusServiceUnavailable, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -126,15 +132,55 @@ func (s *Server) handleSetupModels(w http.ResponseWriter, r *http.Request) {
 		fastID = string(resolved)
 	}
 
+	// Validate every write up front so a bad model cannot leave the coder and
+	// only some secondary agents changed.
+	if err := config.ValidateAgentModel(config.AgentCoder, models.ModelID(mainID)); err != nil {
+		writeConfigError(w, http.StatusBadRequest, "main model: "+err.Error(), err)
+		return
+	}
+	secondary := config.SecondaryAgentNames()
+	for _, name := range secondary {
+		if err := config.ValidateAgentModel(name, models.ModelID(fastID)); err != nil {
+			writeConfigError(w, http.StatusBadRequest, "fast model ("+string(name)+"): "+err.Error(), err)
+			return
+		}
+	}
+
+	// Capture the current models so a write failing midway can be undone.
+	previous := map[config.AgentName]models.ModelID{}
+	if cfg := config.Get(); cfg != nil {
+		for name, agent := range cfg.Agents {
+			previous[name] = agent.Model
+		}
+	}
+	changed := make([]config.AgentName, 0, len(secondary)+1)
+	rollback := func() {
+		for i := len(changed) - 1; i >= 0; i-- {
+			name := changed[i]
+			prev := previous[name]
+			if prev == "" {
+				continue
+			}
+			if name == config.AgentCoder {
+				_ = s.setCoderModel(prev)
+			} else {
+				_ = config.UpdateAgentModel(name, prev)
+			}
+		}
+	}
+
 	if err := s.setCoderModel(models.ModelID(mainID)); err != nil {
 		writeConfigError(w, http.StatusBadRequest, "main model: "+err.Error(), err)
 		return
 	}
-	for _, name := range config.SecondaryAgentNames() {
+	changed = append(changed, config.AgentCoder)
+	for _, name := range secondary {
 		if err := config.UpdateAgentModel(name, models.ModelID(fastID)); err != nil {
+			rollback()
 			writeConfigError(w, http.StatusBadRequest, "fast model ("+string(name)+"): "+err.Error(), err)
 			return
 		}
+		changed = append(changed, name)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"mainModel": mainID, "fastModel": fastID})
 }

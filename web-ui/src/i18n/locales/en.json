@@ -783,7 +783,8 @@
       "remembrances": "Remembrances",
       "unchanged": "unchanged",
       "skipped": "skipped",
-      "settingsHint": "You can change all of this later in Settings."
+      "settingsHint": "You can change all of this later in Settings.",
+      "completeFailed": "Could not save the setup as finished. Check the connection and press Finish again."
     }
   }
 }

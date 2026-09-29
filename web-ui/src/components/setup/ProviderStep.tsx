@@ -113,6 +113,10 @@ export default function ProviderStep({ onConfigured, onKeepExisting, setBusy }: 
     setBusy(saving || copilot !== null)
   }, [saving, copilot, setBusy])
 
+  // The step can unmount (Copilot login succeeded) before the effect above
+  // re-runs with the cleared state, so release the parent's busy flag here.
+  useEffect(() => () => setBusy(false), [setBusy])
+
   const copilotAuthenticated = async (): Promise<boolean> => {
     try {
       const status = await api.get<{ authenticated: boolean }>('/api/v1/auth/providers/copilot/status')

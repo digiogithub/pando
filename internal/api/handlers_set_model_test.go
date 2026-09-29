@@ -73,3 +73,24 @@ func TestSetCoderModelFallsBackToConfig(t *testing.T) {
 		t.Fatalf("persisted coder model = %q, want copilot.gpt-5.4-fallback", got)
 	}
 }
+
+// TestHandleSetupModelsRejectsBadFastModelBeforeWriting guards the up-front
+// validation: an unknown fast model must fail without touching the coder.
+func TestHandleSetupModelsRejectsBadFastModelBeforeWriting(t *testing.T) {
+	resetProviderAccountsTestConfig(t)
+
+	mock := &modelUpdateMockAgent{steerMockAgent: newSteerMockAgent()}
+	s := &Server{app: &app.App{CoderAgent: mock}}
+
+	body := `{"mainModel":"copilot.gpt-5.4","fastModel":"nope.does-not-exist"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/setup/models", bytes.NewBufferString(body))
+	rec := httptest.NewRecorder()
+	s.handleSetupModels(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if len(mock.updateCalls) != 0 {
+		t.Fatalf("coder was updated %d times despite an invalid fast model", len(mock.updateCalls))
+	}
+}

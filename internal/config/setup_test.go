@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -145,5 +146,43 @@ func TestAutoDetectedLocalRuntimeIsNotAnExplicitAccount(t *testing.T) {
 	)
 	if n := countExplicitProviderAccounts(accounts); n != 2 {
 		t.Fatalf("explicit accounts = %d, want 2", n)
+	}
+}
+
+func TestRollbackSetupScopeRemovesOnlyCreatedFiles(t *testing.T) {
+	_, workDir := loadSetupTestConfig(t)
+
+	created := filepath.Join(workDir, ".pando.toml")
+	if err := os.WriteFile(created, []byte(DefaultConfigTemplate), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	preExisting := filepath.Join(workDir, "keep.txt")
+	if err := os.WriteFile(preExisting, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rollbackSetupScope([]string{created})
+
+	if _, err := os.Stat(created); !os.IsNotExist(err) {
+		t.Fatalf("created config file was not removed (stat err %v)", err)
+	}
+	if _, err := os.Stat(preExisting); err != nil {
+		t.Fatalf("unrelated file was touched: %v", err)
+	}
+	if Get() == nil {
+		t.Fatal("configuration not restored after rollback")
+	}
+	if FindLocalConfigFile(workDir) != "" {
+		t.Fatal("project config still applies after rollback")
+	}
+}
+
+func TestGetSetupStatusNotLoadedIsRetryable(t *testing.T) {
+	isolateGlobalConfig(t)
+	prev := cfg
+	cfg = nil
+	t.Cleanup(func() { cfg = prev })
+	if _, err := GetSetupStatus(); !errors.Is(err, ErrConfigNotLoaded) {
+		t.Fatalf("err = %v, want ErrConfigNotLoaded", err)
 	}
 }

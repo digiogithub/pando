@@ -4436,6 +4436,20 @@ func UpdateAgentModel(agentName AgentName, modelID models.ModelID) error {
 	return setAgentModel(agentName, models.NormalizeModelID(string(modelID)), true)
 }
 
+// ValidateAgentModel runs the pre-write checks UpdateAgentModel enforces (lock
+// and registered model) without changing anything, so a caller updating
+// several agents can reject the whole batch before writing the first one.
+func ValidateAgentModel(agentName AgentName, modelID models.ModelID) error {
+	modelID = models.NormalizeModelID(string(modelID))
+	if err := ErrIfLocked("agents." + string(agentName) + ".model"); err != nil {
+		return err
+	}
+	if _, ok := models.SupportedModels()[modelID]; !ok {
+		return fmt.Errorf("model %s not supported", modelID)
+	}
+	return nil
+}
+
 // OverrideAgentModel updates the selected agent model only for the current
 // process. The change is kept in memory and is not persisted to the config file.
 func OverrideAgentModel(agentName AgentName, modelID models.ModelID) error {
