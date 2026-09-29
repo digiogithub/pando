@@ -63,7 +63,7 @@ func newSteeringTestAgent() *agent {
 // markBusy registers a no-op active request so IsSessionBusy reports true.
 func (a *agent) markBusy(sessionID string) {
 	_, cancel := context.WithCancel(context.Background())
-	a.activeRequests.Store(sessionID, cancel)
+	_, _ = a.acquireRun(context.Background(), sessionID, cancel)
 }
 
 func TestSteerRejectsWhenNotBusy(t *testing.T) {

@@ -2,13 +2,15 @@
 id: PANDO-US-0069
 type: story
 title: Cancel frees the session before its run goroutine exits, so a new run can overlap and lose its busy marker
-status: backlog
+status: done
 priority: medium
 author: mcp
 labels: [agent, concurrency, race]
 estimate: 3
 created: 2026-09-29T18:52:06Z
-updated: 2026-09-29T18:52:06Z
+updated: 2026-09-29T19:24:18Z
+started: 2026-09-29T19:16:05Z
+closed: 2026-09-29T19:24:18Z
 ---
 
 ## Description

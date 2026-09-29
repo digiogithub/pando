@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/digiogithub/pando/internal/caveman"
@@ -516,6 +517,94 @@ func (a *agent) SetLuaManager(fm *luaengine.FilterManager) {
 	globalLuaManagerForTools = fm
 }
 
+// cancelledRunWait bounds how long a new Run/Resume/Summarize waits for a
+// cancelled run of the same session to finish unwinding. Overridable in tests.
+var cancelledRunWait = 10 * time.Second
+
+// activeRun is the activeRequests value of one run. Cancel funcs are not
+// comparable, so the pointer identity of this struct is what lets a finishing
+// run remove only the entry it registered (sync.Map.CompareAndDelete).
+type activeRun struct {
+	cancel    context.CancelFunc
+	cancelled atomic.Bool
+	// done is closed once the run goroutine has exited, after its entry was removed.
+	done     chan struct{}
+	doneOnce sync.Once
+}
+
+func (r *activeRun) markDone() { r.doneOnce.Do(func() { close(r.done) }) }
+
+// acquireRun atomically registers a new run under key. If a cancelled run is
+// still unwinding it waits (bounded by cancelledRunWait and ctx) for it to exit
+// and retries, so runs never overlap and the caller's request is not lost. A
+// live, non-cancelled run yields ErrSessionBusy.
+func (a *agent) acquireRun(ctx context.Context, key string, cancel context.CancelFunc) (*activeRun, error) {
+	run := &activeRun{cancel: cancel, done: make(chan struct{})}
+	timeout := time.NewTimer(cancelledRunWait)
+	defer timeout.Stop()
+	for {
+		existing, loaded := a.activeRequests.LoadOrStore(key, run)
+		if !loaded {
+			return run, nil
+		}
+		old, ok := existing.(*activeRun)
+		if !ok || !old.cancelled.Load() {
+			return nil, ErrSessionBusy
+		}
+		select {
+		case <-old.done:
+			// Entry is normally gone by now; make sure a stale one cannot spin us.
+			a.activeRequests.CompareAndDelete(key, old)
+		case <-timeout.C:
+			return nil, ErrSessionBusy
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+}
+
+// waitCancelledRun blocks while key holds a cancelled run, up to
+// cancelledRunWait or ctx cancellation. It returns immediately otherwise.
+func (a *agent) waitCancelledRun(ctx context.Context, key string) {
+	v, ok := a.activeRequests.Load(key)
+	if !ok {
+		return
+	}
+	if old, ok := v.(*activeRun); ok && old.cancelled.Load() {
+		select {
+		case <-old.done:
+		case <-time.After(cancelledRunWait):
+		case <-ctx.Done():
+		}
+	}
+}
+
+// unregisterRun removes the entry for key only if it is still run's own. It
+// reports whether the entry was removed.
+func (a *agent) unregisterRun(key string, run *activeRun) bool {
+	return a.activeRequests.CompareAndDelete(key, run)
+}
+
+// finishRun removes the run's own activeRequests entry and, only if it was
+// still registered, drops the session's queued steering. A run that lost its
+// entry never clears steering that may now belong to a newer run.
+func (a *agent) finishRun(sessionID string, run *activeRun) {
+	if a.unregisterRun(sessionID, run) {
+		a.clearSteering(sessionID)
+	}
+}
+
+// Cancel aborts the in-flight run (and summarize request) of a session.
+//
+// Cancel signals and marks the run cancelled but leaves its entry registered
+// until the goroutine has actually unwound and removed it. From the moment of
+// Cancel the session is no longer "busy" for frontends: IsSessionBusy is false
+// and Steer returns ErrSessionNotBusy, so a follow-up message goes to Run. That
+// Run (or Resume/SummarizeStream) waits up to cancelledRunWait for the cancelled
+// run to exit before registering itself, so two runs never write to the same
+// session concurrently and the new message is never lost; on timeout it returns
+// ErrSessionBusy. IsBusy keeps counting the unwinding run so model switches stay
+// blocked until it is really gone.
 func (a *agent) Cancel(sessionID string) {
 	// Drop any queued steering messages for this session; the run is being aborted.
 	a.clearSteering(sessionID)
@@ -523,18 +612,20 @@ func (a *agent) Cancel(sessionID string) {
 	a.clearResurrectionCount(sessionID)
 
 	// Cancel regular requests
-	if cancelFunc, exists := a.activeRequests.LoadAndDelete(sessionID); exists {
-		if cancel, ok := cancelFunc.(context.CancelFunc); ok {
+	if v, exists := a.activeRequests.Load(sessionID); exists {
+		if run, ok := v.(*activeRun); ok && run.cancel != nil {
+			run.cancelled.Store(true)
 			logging.InfoPersist(fmt.Sprintf("Request cancellation initiated for session: %s", sessionID))
-			cancel()
+			run.cancel()
 		}
 	}
 
 	// Also check for summarize requests
-	if cancelFunc, exists := a.activeRequests.LoadAndDelete(sessionID + "-summarize"); exists {
-		if cancel, ok := cancelFunc.(context.CancelFunc); ok {
+	if v, exists := a.activeRequests.Load(sessionID + "-summarize"); exists {
+		if run, ok := v.(*activeRun); ok && run.cancel != nil {
+			run.cancelled.Store(true)
 			logging.InfoPersist(fmt.Sprintf("Summarize cancellation initiated for session: %s", sessionID))
-			cancel()
+			run.cancel()
 		}
 	}
 }
@@ -766,14 +857,14 @@ func (a *agent) drainSteeringInto(ctx context.Context, sessionID string, msgHist
 	return msgHistory, true
 }
 
+// IsBusy deliberately counts cancelled-but-unwinding runs: it guards model
+// switches, which must wait until the old run has really exited.
 func (a *agent) IsBusy() bool {
 	busy := false
 	a.activeRequests.Range(func(key, value interface{}) bool {
-		if cancelFunc, ok := value.(context.CancelFunc); ok {
-			if cancelFunc != nil {
-				busy = true
-				return false // Stop iterating
-			}
+		if run, ok := value.(*activeRun); ok && run != nil {
+			busy = true
+			return false // Stop iterating
 		}
 		return true // Continue iterating
 	})
@@ -781,8 +872,14 @@ func (a *agent) IsBusy() bool {
 }
 
 func (a *agent) IsSessionBusy(sessionID string) bool {
-	_, busy := a.activeRequests.Load(sessionID)
-	return busy
+	v, ok := a.activeRequests.Load(sessionID)
+	if !ok {
+		return false
+	}
+	// A cancelled run still unwinding is not busy from a caller's view: a new
+	// message must start a run (which waits for the unwind), not be steered.
+	run, ok := v.(*activeRun)
+	return ok && !run.cancelled.Load()
 }
 
 func (a *agent) generateTitle(ctx context.Context, sessionID string, content string) error {
@@ -950,17 +1047,21 @@ func (a *agent) runInternal(ctx context.Context, sessionID string, content strin
 		attachments = nil
 	}
 	events := make(chan AgentEvent, 512)
-	if a.IsSessionBusy(sessionID) {
-		return nil, ErrSessionBusy
-	}
 
 	genCtx, cancel := context.WithCancel(ctx)
 
-	a.activeRequests.Store(sessionID, cancel)
+	run, err := a.acquireRun(ctx, sessionID, cancel)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
 	a.runs.Add(1)
 	go func() {
-		// Registered first so it runs last: the run is only counted as finished
-		// once every other deferred cleanup (including the panic recovery) is done.
+		// Registered first so it runs last: waiters on a cancelled run are only
+		// released once its entry is removed and every other cleanup is done.
+		defer run.markDone()
+		// Runs right before markDone: the run is only counted as finished once
+		// every other deferred cleanup (including the panic recovery) is done.
 		defer a.runs.Done()
 		// Registered before RecoverPanic so it runs after it: the channel is
 		// closed on the panic path too (after the recovered error is sent).
@@ -977,8 +1078,7 @@ func (a *agent) runInternal(ctx context.Context, sessionID string, content strin
 		// every later model switch with "cannot change model while processing
 		// requests" until the process is restarted.
 		defer func() {
-			a.activeRequests.Delete(sessionID)
-			a.clearSteering(sessionID)
+			a.finishRun(sessionID, run)
 			cancel()
 		}()
 		var attachmentParts []message.ContentPart
@@ -1001,8 +1101,7 @@ func (a *agent) runInternal(ctx context.Context, sessionID string, content strin
 		logging.Debug("Request completed", "sessionID", sessionID)
 		// activeRequests/steering cleanup and cancel() happen in the deferred
 		// cleanup above so they also run on the panic path.
-		a.activeRequests.Delete(sessionID)
-		a.clearSteering(sessionID)
+		a.finishRun(sessionID, run)
 		cancel()
 		a.publishEvent(result)
 		events <- result
@@ -2154,6 +2253,8 @@ func (a *agent) Summarize(ctx context.Context, sessionID string) error {
 // wait for real completion instead of returning immediately.
 func (a *agent) SummarizeStream(ctx context.Context, sessionID string) (<-chan AgentEvent, error) {
 	logging.Debug("Summarize started", "sessionID", sessionID)
+	// A cancelled run still unwinding must finish before the summary starts.
+	a.waitCancelledRun(ctx, sessionID)
 	// Check if session is busy
 	if a.IsSessionBusy(sessionID) {
 		return nil, ErrSessionBusy
@@ -2162,13 +2263,18 @@ func (a *agent) SummarizeStream(ctx context.Context, sessionID string) (<-chan A
 	// Create a new context with cancellation
 	summarizeCtx, cancel := context.WithCancel(ctx)
 
-	// Store the cancel function in activeRequests to allow cancellation
-	a.activeRequests.Store(sessionID+"-summarize", cancel)
+	// Register the cancel func in activeRequests to allow cancellation
+	run, err := a.acquireRun(ctx, sessionID+"-summarize", cancel)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
 
 	events := make(chan AgentEvent, 16)
 	go func() {
+		defer run.markDone()
 		defer close(events)
-		defer a.activeRequests.Delete(sessionID + "-summarize")
+		defer a.unregisterRun(sessionID+"-summarize", run)
 		defer cancel()
 
 		// emit broadcasts on pubsub and forwards on the dedicated channel. The
