@@ -4,9 +4,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"sort"
+	"strings"
 
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/evaluator"
+	"github.com/digiogithub/pando/internal/llm/prompt"
 )
 
 // EvaluatorMetrics is the JSON representation of aggregated evaluator statistics.
@@ -18,15 +22,24 @@ type EvaluatorMetrics struct {
 	IsEnabled      bool    `json:"is_enabled"`
 }
 
-// TemplateResponse is the JSON representation of a prompt template with UCB stats.
-type TemplateResponse struct {
-	ID        string  `json:"id"`
-	Name      string  `json:"name"`
-	Section   string  `json:"section"`
+// TemplateVariantResponse is one prompt template variant of a section with its
+// UCB statistics. The embedded template is the variant "default" (no path).
+type TemplateVariantResponse struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Path      string `json:"path,omitempty"`
+	IsDefault bool   `json:"is_default"`
+	// Missing marks a variant that has statistics but no file any more.
+	Missing   bool    `json:"missing,omitempty"`
+	TimesUsed int64   `json:"times_used"`
+	AvgReward float64 `json:"avg_reward"`
 	UCBScore  float64 `json:"ucb_score"`
-	WinRate   float64 `json:"win_rate"`
-	Uses      int64   `json:"uses"`
-	IsDefault bool    `json:"is_default"`
+}
+
+// TemplateSectionResponse groups the variants of one prompt section.
+type TemplateSectionResponse struct {
+	Section  string                    `json:"section"`
+	Variants []TemplateVariantResponse `json:"variants"`
 }
 
 // SkillResponse is the JSON representation of a skill library entry.
@@ -83,9 +96,9 @@ func (s *Server) handleGetEvaluatorMetrics(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	templateCount, err := q.CountPromptTemplates(r.Context())
-	if err != nil {
-		templateCount = 0
+	var templateCount int64
+	if variantStats, err := q.ListAllVariantStats(r.Context()); err == nil {
+		templateCount = int64(len(variantStats))
 	}
 
 	writeJSON(w, http.StatusOK, EvaluatorMetrics{
@@ -97,41 +110,89 @@ func (s *Server) handleGetEvaluatorMetrics(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// handleGetEvaluatorTemplates handles GET /api/v1/evaluator/templates.
+// handleGetEvaluatorTemplates handles GET /api/v1/evaluator/templates. It lists,
+// per prompt section that has variant files or statistics, the default
+// (embedded) variant and the variant files with times used, average reward and
+// UCB score.
 func (s *Server) handleGetEvaluatorTemplates(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
-	if s.config.DB == nil {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"templates": []interface{}{}})
-		return
+	var stats []db.PromptVariantStat
+	if s.config.DB != nil {
+		if rows, err := db.New(s.config.DB).ListAllVariantStats(r.Context()); err == nil {
+			stats = rows
+		}
+	}
+	explorationC := 1.41
+	if cfg := config.Get(); cfg != nil && cfg.Evaluator.ExplorationC > 0 {
+		explorationC = cfg.Evaluator.ExplorationC
 	}
 
-	q := db.New(s.config.DB)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"sections": buildTemplateSections(prompt.DiscoverAllVariants(prompt.VariantRoots(config.WorkingDirectory())), stats, explorationC),
+	})
+}
 
-	rows, err := q.ListUCBRanking(r.Context())
-	if err != nil {
-		// TODO: implement when DB queries are ready
-		writeJSON(w, http.StatusOK, map[string]interface{}{"templates": []interface{}{}})
-		return
+// buildTemplateSections merges the variant files on disk with the persisted
+// statistics into per-section rankings.
+func buildTemplateSections(files []prompt.VariantFile, stats []db.PromptVariantStat, explorationC float64) []TemplateSectionResponse {
+	type entry struct {
+		resp TemplateVariantResponse
+	}
+	sections := make(map[string]map[string]*entry)
+	add := func(section, id, name, path string, isDefault, missing bool) {
+		if sections[section] == nil {
+			sections[section] = make(map[string]*entry)
+		}
+		if _, ok := sections[section][id]; !ok {
+			sections[section][id] = &entry{resp: TemplateVariantResponse{ID: id, Name: name, Path: path, IsDefault: isDefault, Missing: missing}}
+		}
+	}
+	for _, f := range files {
+		add(f.Section, prompt.VariantID(f.Section, prompt.DefaultVariant), prompt.DefaultVariant, "", true, false)
+		add(f.Section, f.ID, f.Name, f.Path, false, false)
+	}
+	for _, st := range stats {
+		name := st.VariantID
+		if i := strings.LastIndex(name, "#"); i >= 0 {
+			name = name[i+1:]
+		}
+		add(st.Section, st.VariantID, name, "", name == prompt.DefaultVariant, name != prompt.DefaultVariant)
 	}
 
-	templates := make([]TemplateResponse, 0, len(rows))
-	for _, row := range rows {
-		templates = append(templates, TemplateResponse{
-			ID:        row.ID,
-			Name:      row.Name,
-			Section:   row.Section,
-			UCBScore:  row.UcbScore,
-			WinRate:   row.AvgReward,
-			Uses:      row.TimesUsed,
-			IsDefault: row.IsDefault == 1,
+	statByID := make(map[string]db.PromptVariantStat, len(stats))
+	totals := make(map[string]int64)
+	for _, st := range stats {
+		statByID[st.VariantID] = st
+		totals[st.Section] += st.TimesUsed
+	}
+
+	out := make([]TemplateSectionResponse, 0, len(sections))
+	for section, variants := range sections {
+		sec := TemplateSectionResponse{Section: section, Variants: make([]TemplateVariantResponse, 0, len(variants))}
+		for id, e := range variants {
+			st := statByID[id]
+			e.resp.TimesUsed = st.TimesUsed
+			e.resp.AvgReward = st.AvgReward
+			e.resp.UCBScore = evaluator.UCBScore(st.AvgReward, int(totals[section]), int(st.TimesUsed), explorationC)
+			if e.resp.TimesUsed == 0 {
+				e.resp.UCBScore = 0 // not-yet-tried is "infinite" in UCB; the UI shows a dash
+			}
+			sec.Variants = append(sec.Variants, e.resp)
+		}
+		sort.Slice(sec.Variants, func(i, j int) bool {
+			if sec.Variants[i].IsDefault != sec.Variants[j].IsDefault {
+				return sec.Variants[i].IsDefault
+			}
+			return sec.Variants[i].Name < sec.Variants[j].Name
 		})
+		out = append(out, sec)
 	}
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{"templates": templates})
+	sort.Slice(out, func(i, j int) bool { return out[i].Section < out[j].Section })
+	return out
 }
 
 // handleGetEvaluatorSkills handles GET /api/v1/evaluator/skills.

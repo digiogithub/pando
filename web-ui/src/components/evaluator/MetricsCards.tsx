@@ -19,7 +19,7 @@ export default function MetricsCards({ metrics }: MetricsCardsProps) {
         label="Prompt Templates"
         value={metrics?.total_templates ?? 0}
         icon={<Layers size={20} />}
-        description="Active templates in the UCB pool"
+        description="Prompt variants with statistics"
       />
       <MetricCard
         label="Avg Reward Score"

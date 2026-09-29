@@ -11,13 +11,6 @@ import (
 	"github.com/digiogithub/pando/internal/luaengine"
 )
 
-// PromptEvaluatorTemplate mirrors evaluator.PromptTemplate to avoid import cycles.
-type PromptEvaluatorTemplate struct {
-	ID      string
-	Content string
-	Version int
-}
-
 // PromptEvaluatorSkill mirrors evaluator.Skill to avoid import cycles.
 type PromptEvaluatorSkill struct {
 	Content string
@@ -27,9 +20,12 @@ type PromptEvaluatorSkill struct {
 // selection and skill injection. It is exported so app.go can implement an adapter
 // without creating an import cycle.
 type PromptEvaluator interface {
-	SelectTemplate(ctx context.Context, sectionName string) (*PromptEvaluatorTemplate, error)
+	// SelectVariant returns the variant id chosen for a section of a session
+	// among candidates (candidates[0] is the default variant). The choice is
+	// made once per (session, section), persisted and frozen. It returns the
+	// default id when the feature is off or there is nothing to choose from.
+	SelectVariant(ctx context.Context, sessionID, section string, candidates []string) (string, error)
 	GetActiveSkills(ctx context.Context, taskType string) ([]PromptEvaluatorSkill, error)
-	RecordTemplateSelection(ctx context.Context, sessionID, templateID string)
 	// ClassifyTask returns a task type label from the user's first message.
 	// Returns "general" if no pattern matches.
 	ClassifyTask(text string) string
@@ -37,9 +33,6 @@ type PromptEvaluator interface {
 
 // promptEvaluator is the internal alias kept for backward-compatibility within this file.
 type promptEvaluator = PromptEvaluator
-
-// evaluatorTemplate is the internal alias for PromptEvaluatorTemplate.
-type evaluatorTemplate = PromptEvaluatorTemplate
 
 // evaluatorSkill is the internal alias for PromptEvaluatorSkill.
 type evaluatorSkill = PromptEvaluatorSkill
@@ -58,6 +51,8 @@ type PromptBuilder struct {
 	luaMgr    *luaengine.FilterManager
 	registry  *TemplateRegistry
 	evaluator promptEvaluator
+	// variantRoots are the directories searched for template variants.
+	variantRoots []string
 }
 
 // SetEvaluator wires an evaluator into the builder for UCB template selection
@@ -77,12 +72,19 @@ func NewPromptBuilder(agentName string, provider string, data *PromptData, luaMg
 		overrideDirs = append(overrideDirs, home+"/.config/pando/templates")
 	}
 
+	workingDir := ""
+	if data != nil {
+		workingDir = data.WorkingDir
+	}
+	variantRoots := VariantRoots(workingDir)
+
 	return &PromptBuilder{
-		agentName: agentName,
-		provider:  provider,
-		data:      data,
-		luaMgr:    luaMgr,
-		registry:  NewTemplateRegistry(overrideDirs...),
+		agentName:    agentName,
+		provider:     provider,
+		data:         data,
+		luaMgr:       luaMgr,
+		registry:     NewTemplateRegistry(overrideDirs...),
+		variantRoots: variantRoots,
 	}
 }
 
@@ -240,23 +242,7 @@ func (b *PromptBuilder) Build(ctx context.Context) (string, error) {
 // renderSection renders a single template section and applies the Lua
 // hook_template_section if available.
 func (b *PromptBuilder) renderSection(ctx context.Context, name string) PromptSection {
-	// Try UCB template selection via the evaluator before falling back to the registry.
-	if b.evaluator != nil {
-		if tmpl, err := b.evaluator.SelectTemplate(ctx, name); err == nil && tmpl != nil {
-			// Record which template was chosen so the evaluator can score it later.
-			if sessionID, ok := ctx.Value(SessionIDKey).(string); ok && sessionID != "" {
-				b.evaluator.RecordTemplateSelection(ctx, sessionID, tmpl.ID)
-				logging.Debug("Self-improvement template selected", "section", name, "template_id", tmpl.ID, "session_id", sessionID, "version", tmpl.Version)
-			} else {
-				logging.Debug("Self-improvement template selected without session context", "section", name, "template_id", tmpl.ID, "version", tmpl.Version)
-			}
-			return PromptSection{Name: name, Content: tmpl.Content}
-		} else if err != nil {
-			logging.Debug("Self-improvement template selection failed", "section", name, "error", err)
-		}
-	}
-
-	content, err := b.registry.Render(name, b.data)
+	content, err := b.renderVariant(ctx, name)
 	if err != nil {
 		logging.Debug("Template section render skipped", "name", name, "error", err)
 		return PromptSection{Name: name}
@@ -282,6 +268,58 @@ func (b *PromptBuilder) renderSection(ctx context.Context, name string) PromptSe
 		Name:    name,
 		Content: content,
 	}
+}
+
+// renderVariant renders the section with the variant the evaluator froze for
+// this session, or with the regular template when there is nothing to choose
+// from or the chosen variant cannot be used. A variant is rendered with the same
+// data and functions as the default; the caller applies hook_template_section.
+func (b *PromptBuilder) renderVariant(ctx context.Context, name string) (string, error) {
+	if b.evaluator != nil {
+		if content, ok := b.renderSelectedVariant(ctx, name); ok {
+			return content, nil
+		}
+	}
+	return b.registry.Render(name, b.data)
+}
+
+func (b *PromptBuilder) renderSelectedVariant(ctx context.Context, name string) (string, bool) {
+	sessionID, _ := ctx.Value(SessionIDKey).(string)
+	if sessionID == "" {
+		return "", false
+	}
+	files := DiscoverVariants(name, b.variantRoots)
+	if len(files) == 0 {
+		return "", false
+	}
+	candidates := make([]string, 0, len(files)+1)
+	candidates = append(candidates, VariantID(name, DefaultVariant))
+	for _, f := range files {
+		candidates = append(candidates, f.ID)
+	}
+	chosen, err := b.evaluator.SelectVariant(ctx, sessionID, name, candidates)
+	if err != nil {
+		logging.Debug("Prompt variant selection failed", "section", name, "error", err)
+		return "", false
+	}
+	for _, f := range files {
+		if f.ID != chosen {
+			continue
+		}
+		src, err := os.ReadFile(f.Path)
+		if err != nil {
+			logging.Warn("Prompt variant unreadable, using default", "variant", f.ID, "path", f.Path, "error", err)
+			return "", false
+		}
+		content, err := b.registry.RenderSource(f.ID, string(src), b.data)
+		if err != nil {
+			logging.Warn("Prompt variant failed to render, using default", "variant", f.ID, "path", f.Path, "error", err)
+			return "", false
+		}
+		logging.Debug("Prompt variant used", "variant", f.ID, "session_id", sessionID)
+		return content, true
+	}
+	return "", false
 }
 
 // checkCapability checks if a capability should be included, potentially

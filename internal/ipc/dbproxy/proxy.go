@@ -368,6 +368,24 @@ func (p *DBProxy) UpdateSessionScoreJudge(ctx context.Context, arg db.UpdateSess
 		"UpdateSessionScoreJudge", arg, DefaultWriteTimeouts.Default)
 }
 
+func (p *DBProxy) InsertSessionTemplateSelection(ctx context.Context, arg db.InsertSessionTemplateSelectionParams) error {
+	return directOrProxyVoid(ctx, p,
+		func() error { return p.Querier.InsertSessionTemplateSelection(ctx, arg) },
+		"InsertSessionTemplateSelection", arg, DefaultWriteTimeouts.Default)
+}
+
+func (p *DBProxy) ApplySessionRewardToVariantStats(ctx context.Context, arg db.ApplySessionRewardToVariantStatsParams) error {
+	return directOrProxyVoid(ctx, p,
+		func() error { return p.Querier.ApplySessionRewardToVariantStats(ctx, arg) },
+		"ApplySessionRewardToVariantStats", arg, DefaultWriteTimeouts.Default)
+}
+
+func (p *DBProxy) ApplyRewardDeltaToVariantStats(ctx context.Context, arg db.ApplyRewardDeltaToVariantStatsParams) error {
+	return directOrProxyVoid(ctx, p,
+		func() error { return p.Querier.ApplyRewardDeltaToVariantStats(ctx, arg) },
+		"ApplyRewardDeltaToVariantStats", arg, DefaultWriteTimeouts.Default)
+}
+
 func (p *DBProxy) InsertSessionFeedbackEvent(ctx context.Context, arg db.InsertSessionFeedbackEventParams) (int64, error) {
 	return directOrProxy(ctx, p,
 		func() (int64, error) { return p.Querier.InsertSessionFeedbackEvent(ctx, arg) },

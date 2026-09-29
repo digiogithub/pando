@@ -1,10 +1,10 @@
 import { create } from 'zustand'
-import type { EvaluatorMetrics, PromptTemplate, Skill } from '../types'
+import type { EvaluatorMetrics, TemplateSection, Skill } from '../types'
 import api from '../services/api'
 
 interface EvaluatorStore {
   metrics: EvaluatorMetrics | null
-  templates: PromptTemplate[]
+  sections: TemplateSection[]
   skills: Skill[]
   loading: boolean
   fetchAll: () => Promise<void>
@@ -12,7 +12,7 @@ interface EvaluatorStore {
 
 export const useEvaluatorStore = create<EvaluatorStore>((set) => ({
   metrics: null,
-  templates: [],
+  sections: [],
   skills: [],
   loading: false,
 
@@ -21,10 +21,10 @@ export const useEvaluatorStore = create<EvaluatorStore>((set) => ({
     try {
       const [metrics, templatesData, skillsData] = await Promise.all([
         api.get<EvaluatorMetrics>('/api/v1/evaluator/metrics').catch(() => null),
-        api.get<{ templates: PromptTemplate[] }>('/api/v1/evaluator/templates').catch(() => ({ templates: [] })),
+        api.get<{ sections: TemplateSection[] }>('/api/v1/evaluator/templates').catch(() => ({ sections: [] })),
         api.get<{ skills: Skill[] }>('/api/v1/evaluator/skills').catch(() => ({ skills: [] })),
       ])
-      set({ metrics, templates: templatesData.templates ?? [], skills: skillsData.skills ?? [] })
+      set({ metrics, sections: templatesData.sections ?? [], skills: skillsData.skills ?? [] })
     } finally {
       set({ loading: false })
     }

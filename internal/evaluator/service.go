@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -32,9 +33,11 @@ type Service interface {
 	// evaluates asynchronously when configured. reason is only used for logging.
 	MarkCompleted(ctx context.Context, sessionID, reason string) error
 
-	// SelectTemplate returns the best prompt template for a section using UCB.
-	// Returns nil if insufficient history or evaluator disabled.
-	SelectTemplate(ctx context.Context, sectionName string) (*PromptTemplate, error)
+	// SelectVariant returns the prompt variant id chosen for a section of a
+	// session among candidates (candidates[0] is the default variant). The choice
+	// is made once per (session, section), persisted and frozen; it is the
+	// default when the feature is off or there is nothing to choose from.
+	SelectVariant(ctx context.Context, sessionID, section string, candidates []string) (string, error)
 
 	// GetActiveSkills returns skills to inject into prompts for a given task type.
 	GetActiveSkills(ctx context.Context, taskType string) ([]Skill, error)
@@ -44,9 +47,6 @@ type Service interface {
 
 	// IsEnabled returns whether the evaluator is active.
 	IsEnabled() bool
-
-	// RecordTemplateSelection records which template was selected for a session.
-	RecordTemplateSelection(ctx context.Context, sessionID, templateID string)
 
 	// ClassifyTask returns a task type label from the user's first message.
 	// Returns "general" if no pattern matches.
@@ -68,8 +68,11 @@ type EvaluatorService struct {
 	failed sync.Map
 	// wg tracks async evaluations so Flush can wait for them on shutdown.
 	wg sync.WaitGroup
-	// sessionTemplates maps sessionID -> templateID for the current session
-	sessionTemplates sync.Map
+	// selMu guards selections: sessionID -> section -> frozen variant id, an
+	// in-memory copy of session_template_selections so a prompt build does not
+	// query the DB for every section on every turn.
+	selMu      sync.Mutex
+	selections map[string]map[string]string
 	// judgeMu serialises judge calls so the daily budget check and the call
 	// that spends it cannot interleave.
 	judgeMu sync.Mutex
@@ -130,6 +133,7 @@ func New(cfg config.EvaluatorConfig, q db.Querier, msgs message.Service) (*Evalu
 		db:           q,
 		msgs:         msgs,
 		inflight:     make(map[string]struct{}),
+		selections:   make(map[string]map[string]string),
 		patterns:     patterns,
 		taskPatterns: compileTaskPatterns(cfg.TaskPatterns),
 	}
@@ -154,15 +158,6 @@ func New(cfg config.EvaluatorConfig, q db.Querier, msgs message.Service) (*Evalu
 // IsEnabled returns whether the evaluator is active.
 func (s *EvaluatorService) IsEnabled() bool {
 	return s != nil && s.cfg.Enabled
-}
-
-// RecordTemplateSelection stores the template used in this session for later evaluation.
-func (s *EvaluatorService) RecordTemplateSelection(_ context.Context, sessionID, templateID string) {
-	if s == nil {
-		return
-	}
-	s.sessionTemplates.Store(sessionID, templateID)
-	slog.Debug("evaluator: recorded template selection", "session_id", sessionID, "template_id", templateID)
 }
 
 // EvaluateSession triggers evaluation of a session on explicit request. It does
@@ -386,8 +381,8 @@ func (s *EvaluatorService) runEvaluation(ctx context.Context, sessionID string, 
 	res.Reward = reward
 
 	if rescoring {
-		// Replace the score in place. The insert-only UCB trigger does not fire
-		// for an UPDATE; update_ucb_after_rescore applies just the reward delta.
+		// Replace the score in place and apply just the reward delta to the
+		// variants the session was served (times_used stays untouched).
 		_, err = s.db.UpdateSessionScore(ctx, db.UpdateSessionScoreParams{
 			Reward:           reward.Total,
 			SuccessScore:     reward.SuccessScore,
@@ -402,6 +397,7 @@ func (s *EvaluatorService) runEvaluation(ctx context.Context, sessionID string, 
 		if err != nil {
 			return res, fmt.Errorf("evaluator: update session score: %w", err)
 		}
+		s.applyRewardDelta(ctx, sessionID, reward.Total-existing.Reward)
 		slog.Info("evaluator: session re-scored",
 			"session_id", sessionID,
 			"previous_reward", existing.Reward,
@@ -411,19 +407,11 @@ func (s *EvaluatorService) runEvaluation(ctx context.Context, sessionID string, 
 		return res, nil
 	}
 
-	// Get template used for this session
-	var templateID sql.NullString
-	if tid, ok := s.sessionTemplates.Load(sessionID); ok {
-		templateID = sql.NullString{String: tid.(string), Valid: true}
-	}
-	defer s.sessionTemplates.Delete(sessionID)
-
 	// Persist session score
 	scoreID := uuid.New().String()
 	_, err = s.db.InsertSessionScore(ctx, db.InsertSessionScoreParams{
 		ID:              scoreID,
 		SessionID:       sessionID,
-		TemplateID:      templateID,
 		Reward:          reward.Total,
 		SuccessScore:    reward.SuccessScore,
 		EfficiencyScore: reward.EfficiencyScore,
@@ -440,6 +428,8 @@ func (s *EvaluatorService) runEvaluation(ctx context.Context, sessionID string, 
 		return res, fmt.Errorf("evaluator: insert session score: %w", err)
 	}
 
+	s.applySessionReward(ctx, sessionID, reward.Total)
+
 	slog.Info("evaluator: session evaluated",
 		"session_id", sessionID,
 		"reward", reward.Total,
@@ -448,7 +438,7 @@ func (s *EvaluatorService) runEvaluation(ctx context.Context, sessionID string, 
 		"corrections", reward.UserCorrections,
 	)
 
-	s.maybeJudge(ctx, res, msgs, reward, templateID.String, opts)
+	s.maybeJudge(ctx, res, msgs, reward, opts)
 
 	return res, nil
 }
@@ -483,7 +473,7 @@ func shouldJudge(j config.JudgeConfig, total float64, userTurns int) bool {
 
 // maybeJudge runs the LLM judge for a freshly scored session when it is
 // decisive and the daily budget allows, and persists the judge output.
-func (s *EvaluatorService) maybeJudge(ctx context.Context, res *Result, msgs []message.Message, reward RewardResult, templateID string, opts EvaluateOptions) {
+func (s *EvaluatorService) maybeJudge(ctx context.Context, res *Result, msgs []message.Message, reward RewardResult, opts EvaluateOptions) {
 	if s.judge == nil || opts.SkipJudge {
 		return
 	}
@@ -501,12 +491,8 @@ func (s *EvaluatorService) maybeJudge(ctx context.Context, res *Result, msgs []m
 		return
 	}
 
-	templateName := "default"
-	if templateID != "" {
-		templateName = templateID
-	}
 	meta := JudgeMeta{
-		TemplateName:    templateName,
+		TemplateName:    "default",
 		TemplateVersion: 1,
 		Corrections:     reward.UserCorrections,
 		Tokens:          reward.PromptTokens + reward.CompletionTokens,
@@ -543,7 +529,7 @@ func (s *EvaluatorService) maybeJudge(ctx context.Context, res *Result, msgs []m
 	}); err != nil {
 		slog.Warn("evaluator: persist judge output failed", "session_id", res.SessionID, "err", err)
 	}
-	if err := s.saveSkillFromJudge(ctx, out, res.SessionID, templateID); err != nil {
+	if err := s.saveSkillFromJudge(ctx, out, res.SessionID); err != nil {
 		slog.Warn("evaluator: save skill failed", "session_id", res.SessionID, "err", err)
 	}
 }
@@ -584,58 +570,157 @@ func (s *EvaluatorService) judgeBudgetExhausted(ctx context.Context, js config.J
 	return true
 }
 
-// SelectTemplate returns the best template for a section using UCB.
-func (s *EvaluatorService) SelectTemplate(ctx context.Context, sectionName string) (*PromptTemplate, error) {
-	if s == nil || !s.cfg.Enabled || s.db == nil {
-		return nil, nil
-	}
+// TemplatesEnabled reports whether prompt variant selection is active: the
+// evaluator is enabled and evaluator.templates.enabled is not switched off.
+func (s *EvaluatorService) TemplatesEnabled() bool {
+	return s != nil && s.cfg.Enabled && s.cfg.Templates.Enabled && s.db != nil
+}
 
-	total, err := s.db.CountSessionScores(ctx)
-	if err != nil || int(total) < s.cfg.MinSessionsForUCB {
-		if err != nil {
-			slog.Debug("evaluator: template selection skipped", "section", sectionName, "error", err)
-		} else {
-			slog.Debug("evaluator: template selection skipped below threshold", "section", sectionName, "session_scores", total, "min_sessions", s.cfg.MinSessionsForUCB)
+// SelectVariant returns the variant id to use for a section of a session.
+// candidates[0] is the default variant (the embedded template); the rest are
+// variant files. The first call for a (session, section) chooses and persists
+// the variant in session_template_selections; later calls, also from another
+// process after a restart, return the persisted choice so the prompt bytes and
+// the reward attribution stay stable for the whole session.
+func (s *EvaluatorService) SelectVariant(ctx context.Context, sessionID, section string, candidates []string) (string, error) {
+	if len(candidates) == 0 {
+		return "", nil
+	}
+	def := candidates[0]
+	if !s.TemplatesEnabled() || sessionID == "" || len(candidates) < 2 {
+		return def, nil
+	}
+	usable := func(id string) string {
+		for _, c := range candidates {
+			if c == id {
+				return id
+			}
 		}
-		return nil, nil // not enough history yet
+		return def // the frozen variant no longer exists on disk
 	}
 
-	templates, err := s.db.ListActiveTemplatesBySection(ctx, sectionName)
-	if err != nil || len(templates) == 0 {
+	if id, ok := s.cachedSelection(sessionID, section); ok {
+		return usable(id), nil
+	}
+
+	id, err := s.db.GetSessionTemplateSelection(ctx, db.GetSessionTemplateSelectionParams{SessionID: sessionID, Section: section})
+	if err == nil {
+		s.cacheSelection(sessionID, section, id)
+		return usable(id), nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return def, fmt.Errorf("evaluator: read template selection: %w", err)
+	}
+
+	chosen, err := s.pickVariant(ctx, section, candidates)
+	if err != nil {
+		return def, err
+	}
+	if err := s.db.InsertSessionTemplateSelection(ctx, db.InsertSessionTemplateSelectionParams{
+		SessionID: sessionID, Section: section, VariantID: chosen,
+	}); err != nil {
+		return def, fmt.Errorf("evaluator: persist template selection: %w", err)
+	}
+	// Read back: another process may have won the insert race.
+	if winner, err := s.db.GetSessionTemplateSelection(ctx, db.GetSessionTemplateSelectionParams{SessionID: sessionID, Section: section}); err == nil {
+		chosen = winner
+	}
+	s.cacheSelection(sessionID, section, chosen)
+	slog.Debug("evaluator: prompt variant selected", "session_id", sessionID, "section", section, "variant", chosen)
+	return usable(chosen), nil
+}
+
+func (s *EvaluatorService) cachedSelection(sessionID, section string) (string, bool) {
+	s.selMu.Lock()
+	defer s.selMu.Unlock()
+	id, ok := s.selections[sessionID][section]
+	return id, ok
+}
+
+func (s *EvaluatorService) cacheSelection(sessionID, section, id string) {
+	s.selMu.Lock()
+	defer s.selMu.Unlock()
+	if s.selections[sessionID] == nil {
+		s.selections[sessionID] = make(map[string]string)
+	}
+	s.selections[sessionID][section] = id
+}
+
+func (s *EvaluatorService) forgetSelections(sessionID string) {
+	s.selMu.Lock()
+	delete(s.selections, sessionID)
+	s.selMu.Unlock()
+}
+
+// pickVariant chooses a variant among candidates for a new session. Until the
+// section has minSessionsForUCB evaluated sessions it balances exploration by
+// picking the least selected variant (ties in candidate order); after that it
+// uses UCB1 over the persisted per-variant statistics.
+func (s *EvaluatorService) pickVariant(ctx context.Context, section string, candidates []string) (string, error) {
+	stats, err := s.db.ListVariantStatsBySection(ctx, section)
+	if err != nil {
+		return "", fmt.Errorf("evaluator: list variant stats: %w", err)
+	}
+	byID := make(map[string]db.PromptVariantStat, len(stats))
+	total := 0
+	for _, st := range stats {
+		byID[st.VariantID] = st
+	}
+	for _, c := range candidates {
+		total += int(byID[c].TimesUsed)
+	}
+
+	if total < s.cfg.MinSessionsForUCB {
+		counts, err := s.db.ListVariantSelectionCounts(ctx, section)
 		if err != nil {
-			slog.Debug("evaluator: template selection unavailable", "section", sectionName, "error", err)
-		} else {
-			slog.Debug("evaluator: no active templates for section", "section", sectionName)
+			return "", fmt.Errorf("evaluator: count variant selections: %w", err)
 		}
-		return nil, nil
+		selected := make(map[string]int64, len(counts))
+		for _, c := range counts {
+			selected[c.VariantID] = c.Selections
+		}
+		best := candidates[0]
+		for _, c := range candidates[1:] {
+			if selected[c] < selected[best] {
+				best = c
+			}
+		}
+		return best, nil
 	}
 
-	var best *db.ListActiveTemplatesBySectionRow
+	best := candidates[0]
 	bestScore := -1.0
-
-	for i, t := range templates {
-		score := UCBScore(t.AvgReward, int(total), int(t.TimesUsed), s.cfg.ExplorationC)
+	for _, c := range candidates {
+		st := byID[c]
+		score := UCBScore(st.AvgReward, total, int(st.TimesUsed), s.cfg.ExplorationC)
 		if score > bestScore {
-			bestScore = score
-			tmp := templates[i]
-			best = &tmp
+			best, bestScore = c, score
 		}
 	}
+	return best, nil
+}
 
-	if best == nil {
-		return nil, nil
+// applySessionReward counts a freshly evaluated session once for every variant
+// it was served (per section) and drops the in-memory selections of the session.
+func (s *EvaluatorService) applySessionReward(ctx context.Context, sessionID string, reward float64) {
+	defer s.forgetSelections(sessionID)
+	if err := s.db.ApplySessionRewardToVariantStats(ctx, db.ApplySessionRewardToVariantStatsParams{
+		TotalReward: reward, AvgReward: reward, SessionID: sessionID,
+	}); err != nil {
+		slog.Warn("evaluator: update variant stats failed", "session_id", sessionID, "err", err)
 	}
+}
 
-	slog.Debug("evaluator: selected template", "section", sectionName, "template_id", best.ID, "template_name", best.Name, "times_used", best.TimesUsed, "avg_reward", best.AvgReward)
-
-	return &PromptTemplate{
-		ID:        best.ID,
-		Name:      best.Name,
-		Section:   best.Section,
-		Content:   best.Content,
-		Version:   int(best.Version),
-		IsDefault: best.IsDefault == 1,
-	}, nil
+// applyRewardDelta applies a re-score's reward change to the session's variants.
+func (s *EvaluatorService) applyRewardDelta(ctx context.Context, sessionID string, delta float64) {
+	if delta == 0 {
+		return
+	}
+	if err := s.db.ApplyRewardDeltaToVariantStats(ctx, db.ApplyRewardDeltaToVariantStatsParams{
+		Delta: delta, Delta2: delta, SessionID: sessionID,
+	}); err != nil {
+		slog.Warn("evaluator: update variant stats delta failed", "session_id", sessionID, "err", err)
+	}
 }
 
 // GetActiveSkills returns active skills for a task type.
@@ -701,25 +786,10 @@ func (s *EvaluatorService) GetStats(ctx context.Context) (*Stats, error) {
 		return &Stats{IsEnabled: true}, fmt.Errorf("evaluator: get stats: %w", err)
 	}
 
-	ranking, _ := s.db.ListUCBRanking(ctx)
+	ranking, _ := s.db.ListAllVariantStats(ctx)
 	allSkills, _ := s.db.ListAllActiveSkills(ctx)
 
-	templateStats := make([]TemplateStats, 0, len(ranking))
-	for i, r := range ranking {
-		score := UCBScore(r.AvgReward, int(aggr.TotalEvaluations), int(r.TimesUsed), s.cfg.ExplorationC)
-		templateStats = append(templateStats, TemplateStats{
-			Template: PromptTemplate{
-				ID:      r.ID,
-				Name:    r.Name,
-				Section: r.Section,
-				Version: int(r.Version),
-			},
-			TimesUsed: int(r.TimesUsed),
-			AvgReward: r.AvgReward,
-			UCBScore:  score,
-			Rank:      i + 1,
-		})
-	}
+	templateStats := VariantStatsFromRows(ranking, s.cfg.ExplorationC)
 
 	topSkills := make([]Skill, 0, len(allSkills))
 	for _, sk := range allSkills {
@@ -886,7 +956,7 @@ func (s *EvaluatorService) NewContextTrimmer() *ContextTrimmer {
 
 // saveSkillFromJudge persists a new skill from judge output if confidence is high enough.
 // It enforces MaxSkills, deduplicates against existing skills, and prunes underperformers.
-func (s *EvaluatorService) saveSkillFromJudge(ctx context.Context, out *JudgeOutput, sessionID, templateID string) error {
+func (s *EvaluatorService) saveSkillFromJudge(ctx context.Context, out *JudgeOutput, sessionID string) error {
 	if out == nil || out.NewSkill == "" || out.Confidence < 0.7 {
 		return nil
 	}
@@ -923,15 +993,12 @@ func (s *EvaluatorService) saveSkillFromJudge(ctx context.Context, out *JudgeOut
 	}
 
 	srcSession := sql.NullString{String: sessionID, Valid: sessionID != ""}
-	srcTemplate := sql.NullString{String: templateID, Valid: templateID != ""}
-
 	_, err = s.db.InsertSkill(ctx, db.InsertSkillParams{
-		ID:               uuid.New().String(),
-		Title:            taskType + " skill",
-		Content:          out.NewSkill,
-		SourceSessionID:  srcSession,
-		SourceTemplateID: srcTemplate,
-		TaskType:         taskType,
+		ID:              uuid.New().String(),
+		Title:           taskType + " skill",
+		Content:         out.NewSkill,
+		SourceSessionID: srcSession,
+		TaskType:        taskType,
 	})
 	if err != nil {
 		return fmt.Errorf("evaluator: insert skill: %w", err)

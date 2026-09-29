@@ -69,9 +69,8 @@ func (c *tableCmp) syncRows() {
 	for _, ts := range c.templates {
 		rows = append(rows, table.Row{
 			fmt.Sprintf("%d", ts.Rank),
-			ts.Template.Name,
-			ts.Template.Section,
-			fmt.Sprintf("%d", ts.Template.Version),
+			ts.Section,
+			ts.Variant,
 			fmt.Sprintf("%d", ts.TimesUsed),
 			fmt.Sprintf("%.2f", ts.AvgReward),
 			fmt.Sprintf("%.2f", ts.UCBScore),
@@ -84,9 +83,8 @@ func (c *tableCmp) syncRows() {
 func NewTableCmp(templates []evaluator.TemplateStats) TableComponent {
 	columns := []table.Column{
 		{Title: "#", Width: 4},
-		{Title: "Name", Width: 20},
-		{Title: "Section", Width: 14},
-		{Title: "Ver", Width: 4},
+		{Title: "Section", Width: 20},
+		{Title: "Variant", Width: 16},
 		{Title: "Used", Width: 6},
 		{Title: "Avg R", Width: 7},
 		{Title: "UCB", Width: 7},

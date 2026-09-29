@@ -129,3 +129,19 @@ type SessionGoal struct {
 	BlockedReason      sql.NullString `json:"blocked_reason"`
 	CreatedAt          int64          `json:"created_at"`
 }
+
+type PromptVariantStat struct {
+	VariantID   string  `json:"variant_id"`
+	Section     string  `json:"section"`
+	TimesUsed   int64   `json:"times_used"`
+	TotalReward float64 `json:"total_reward"`
+	AvgReward   float64 `json:"avg_reward"`
+	UpdatedAt   int64   `json:"updated_at"`
+}
+
+type SessionTemplateSelection struct {
+	SessionID  string `json:"session_id"`
+	Section    string `json:"section"`
+	VariantID  string `json:"variant_id"`
+	SelectedAt int64  `json:"selected_at"`
+}

@@ -786,3 +786,176 @@ func (q *Queries) GetJudgeUsageSince(ctx context.Context, createdAt int64) (GetJ
 	err := row.Scan(&i.Calls, &i.Tokens)
 	return i, err
 }
+
+const insertSessionTemplateSelection = `-- name: InsertSessionTemplateSelection :exec
+INSERT OR IGNORE INTO session_template_selections (session_id, section, variant_id, selected_at)
+VALUES (?, ?, ?, strftime('%s', 'now'))
+`
+
+type InsertSessionTemplateSelectionParams struct {
+	SessionID string `json:"session_id"`
+	Section   string `json:"section"`
+	VariantID string `json:"variant_id"`
+}
+
+// Prompt template variants: the DB holds selections and statistics only; the
+// variant sources are files. variant_id is "<section>#<variant>".
+// First writer wins, so concurrent processes agree on the frozen choice.
+func (q *Queries) InsertSessionTemplateSelection(ctx context.Context, arg InsertSessionTemplateSelectionParams) error {
+	_, err := q.exec(ctx, q.insertSessionTemplateSelectionStmt, insertSessionTemplateSelection, arg.SessionID, arg.Section, arg.VariantID)
+	return err
+}
+
+const getSessionTemplateSelection = `-- name: GetSessionTemplateSelection :one
+SELECT variant_id FROM session_template_selections WHERE session_id = ? AND section = ?
+`
+
+type GetSessionTemplateSelectionParams struct {
+	SessionID string `json:"session_id"`
+	Section   string `json:"section"`
+}
+
+func (q *Queries) GetSessionTemplateSelection(ctx context.Context, arg GetSessionTemplateSelectionParams) (string, error) {
+	row := q.queryRow(ctx, q.getSessionTemplateSelectionStmt, getSessionTemplateSelection, arg.SessionID, arg.Section)
+	var variant_id string
+	err := row.Scan(&variant_id)
+	return variant_id, err
+}
+
+const listVariantSelectionCounts = `-- name: ListVariantSelectionCounts :many
+SELECT variant_id, COUNT(*) as selections
+FROM session_template_selections
+WHERE section = ?
+GROUP BY variant_id
+`
+
+type ListVariantSelectionCountsRow struct {
+	VariantID  string `json:"variant_id"`
+	Selections int64  `json:"selections"`
+}
+
+func (q *Queries) ListVariantSelectionCounts(ctx context.Context, section string) ([]ListVariantSelectionCountsRow, error) {
+	rows, err := q.query(ctx, q.listVariantSelectionCountsStmt, listVariantSelectionCounts, section)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListVariantSelectionCountsRow{}
+	for rows.Next() {
+		var i ListVariantSelectionCountsRow
+		if err := rows.Scan(&i.VariantID, &i.Selections); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listVariantStatsBySection = `-- name: ListVariantStatsBySection :many
+SELECT variant_id, section, times_used, total_reward, avg_reward, updated_at
+FROM prompt_variant_stats
+WHERE section = ?
+`
+
+func (q *Queries) ListVariantStatsBySection(ctx context.Context, section string) ([]PromptVariantStat, error) {
+	rows, err := q.query(ctx, q.listVariantStatsBySectionStmt, listVariantStatsBySection, section)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PromptVariantStat{}
+	for rows.Next() {
+		var i PromptVariantStat
+		if err := rows.Scan(&i.VariantID, &i.Section, &i.TimesUsed, &i.TotalReward, &i.AvgReward, &i.UpdatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllVariantStats = `-- name: ListAllVariantStats :many
+SELECT variant_id, section, times_used, total_reward, avg_reward, updated_at
+FROM prompt_variant_stats
+ORDER BY section, variant_id
+`
+
+func (q *Queries) ListAllVariantStats(ctx context.Context) ([]PromptVariantStat, error) {
+	rows, err := q.query(ctx, q.listAllVariantStatsStmt, listAllVariantStats)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PromptVariantStat{}
+	for rows.Next() {
+		var i PromptVariantStat
+		if err := rows.Scan(&i.VariantID, &i.Section, &i.TimesUsed, &i.TotalReward, &i.AvgReward, &i.UpdatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const applySessionRewardToVariantStats = `-- name: ApplySessionRewardToVariantStats :exec
+INSERT INTO prompt_variant_stats (variant_id, section, times_used, total_reward, avg_reward, updated_at)
+SELECT variant_id, section, 1, ?, ?, unixepoch()
+FROM session_template_selections
+WHERE session_id = ?
+ON CONFLICT(variant_id) DO UPDATE SET
+    times_used = times_used + 1,
+    total_reward = total_reward + excluded.total_reward,
+    avg_reward = (total_reward + excluded.total_reward) / (times_used + 1),
+    updated_at = unixepoch()
+`
+
+type ApplySessionRewardToVariantStatsParams struct {
+	TotalReward float64 `json:"total_reward"`
+	AvgReward   float64 `json:"avg_reward"`
+	SessionID   string  `json:"session_id"`
+}
+
+// Counts an evaluated session once for every variant it was served: one
+// statement, joined to the session's selections.
+func (q *Queries) ApplySessionRewardToVariantStats(ctx context.Context, arg ApplySessionRewardToVariantStatsParams) error {
+	_, err := q.exec(ctx, q.applySessionRewardToVariantStatsStmt, applySessionRewardToVariantStats, arg.TotalReward, arg.AvgReward, arg.SessionID)
+	return err
+}
+
+const applyRewardDeltaToVariantStats = `-- name: ApplyRewardDeltaToVariantStats :exec
+UPDATE prompt_variant_stats
+SET total_reward = total_reward + ?,
+    avg_reward = (total_reward + ?) / MAX(times_used, 1),
+    updated_at = unixepoch()
+WHERE variant_id IN (SELECT variant_id FROM session_template_selections WHERE session_id = ?)
+`
+
+type ApplyRewardDeltaToVariantStatsParams struct {
+	Delta     float64 `json:"delta"`
+	Delta2    float64 `json:"delta_2"`
+	SessionID string  `json:"session_id"`
+}
+
+// A re-score applies only the reward delta and never touches times_used.
+func (q *Queries) ApplyRewardDeltaToVariantStats(ctx context.Context, arg ApplyRewardDeltaToVariantStatsParams) error {
+	_, err := q.exec(ctx, q.applyRewardDeltaToVariantStatsStmt, applyRewardDeltaToVariantStats, arg.Delta, arg.Delta2, arg.SessionID)
+	return err
+}

@@ -97,6 +97,28 @@ func (r *TemplateRegistry) Render(name string, data *PromptData) (string, error)
 	return buf.String(), nil
 }
 
+// RenderSource parses and renders template source that is not registered by
+// name (a variant file), with the same functions and data as a registered
+// template. name is only used in error messages.
+func (r *TemplateRegistry) RenderSource(name, source string, data *PromptData) (string, error) {
+	r.mu.RLock()
+	funcs := make(template.FuncMap, len(r.customFuncs))
+	for k, v := range r.customFuncs {
+		funcs[k] = v
+	}
+	r.mu.RUnlock()
+
+	tmpl, err := template.New(name).Funcs(r.defaultFuncs()).Funcs(funcs).Parse(source)
+	if err != nil {
+		return "", fmt.Errorf("template %q parse error: %w", name, err)
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("template %q render error: %w", name, err)
+	}
+	return buf.String(), nil
+}
+
 // Exists checks whether a template exists (either embedded or overridden).
 func (r *TemplateRegistry) Exists(name string) bool {
 	// Check external overrides first

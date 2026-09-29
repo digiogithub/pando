@@ -48,6 +48,13 @@ type Querier interface {
 	UpdateSessionScore(ctx context.Context, arg UpdateSessionScoreParams) (SessionScore, error)
 	UpdateSessionScoreJudge(ctx context.Context, arg UpdateSessionScoreJudgeParams) error
 	GetJudgeUsageSince(ctx context.Context, createdAt int64) (GetJudgeUsageSinceRow, error)
+	InsertSessionTemplateSelection(ctx context.Context, arg InsertSessionTemplateSelectionParams) error
+	GetSessionTemplateSelection(ctx context.Context, arg GetSessionTemplateSelectionParams) (string, error)
+	ListVariantSelectionCounts(ctx context.Context, section string) ([]ListVariantSelectionCountsRow, error)
+	ListVariantStatsBySection(ctx context.Context, section string) ([]PromptVariantStat, error)
+	ListAllVariantStats(ctx context.Context) ([]PromptVariantStat, error)
+	ApplySessionRewardToVariantStats(ctx context.Context, arg ApplySessionRewardToVariantStatsParams) error
+	ApplyRewardDeltaToVariantStats(ctx context.Context, arg ApplyRewardDeltaToVariantStatsParams) error
 	GetSessionsTokenBaseline(ctx context.Context, arg GetSessionsTokenBaselineParams) (float64, error)
 	InsertSessionFeedbackEvent(ctx context.Context, arg InsertSessionFeedbackEventParams) (int64, error)
 	GetLatestSessionFeedback(ctx context.Context, subject string) (string, error)

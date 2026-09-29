@@ -185,3 +185,51 @@ SELECT
     CAST(COALESCE(SUM(judge_prompt_tokens + judge_completion_tokens), 0) AS INTEGER) as tokens
 FROM session_scores
 WHERE judge_model IS NOT NULL AND created_at >= ?;
+
+-- Prompt template variants: the DB holds selections and statistics only; the
+-- variant sources are files. variant_id is "<section>#<variant>".
+
+-- First writer wins, so concurrent processes agree on the frozen choice.
+-- name: InsertSessionTemplateSelection :exec
+INSERT OR IGNORE INTO session_template_selections (session_id, section, variant_id, selected_at)
+VALUES (?, ?, ?, strftime('%s', 'now'));
+
+-- name: GetSessionTemplateSelection :one
+SELECT variant_id FROM session_template_selections WHERE session_id = ? AND section = ?;
+
+-- name: ListVariantSelectionCounts :many
+SELECT variant_id, COUNT(*) as selections
+FROM session_template_selections
+WHERE section = ?
+GROUP BY variant_id;
+
+-- name: ListVariantStatsBySection :many
+SELECT variant_id, section, times_used, total_reward, avg_reward, updated_at
+FROM prompt_variant_stats
+WHERE section = ?;
+
+-- name: ListAllVariantStats :many
+SELECT variant_id, section, times_used, total_reward, avg_reward, updated_at
+FROM prompt_variant_stats
+ORDER BY section, variant_id;
+
+-- Counts an evaluated session once for every variant it was served: one
+-- statement, joined to the session's selections.
+-- name: ApplySessionRewardToVariantStats :exec
+INSERT INTO prompt_variant_stats (variant_id, section, times_used, total_reward, avg_reward, updated_at)
+SELECT variant_id, section, 1, ?, ?, unixepoch()
+FROM session_template_selections
+WHERE session_id = ?
+ON CONFLICT(variant_id) DO UPDATE SET
+    times_used = times_used + 1,
+    total_reward = total_reward + excluded.total_reward,
+    avg_reward = (total_reward + excluded.total_reward) / (times_used + 1),
+    updated_at = unixepoch();
+
+-- A re-score applies only the reward delta and never touches times_used.
+-- name: ApplyRewardDeltaToVariantStats :exec
+UPDATE prompt_variant_stats
+SET total_reward = total_reward + ?,
+    avg_reward = (total_reward + ?) / MAX(times_used, 1),
+    updated_at = unixepoch()
+WHERE variant_id IN (SELECT variant_id FROM session_template_selections WHERE session_id = ?);

@@ -14,12 +14,11 @@ import (
 func TestFeedback_RescoresInPlaceWithoutDoubleCountingUCB(t *testing.T) {
 	conn, q := setupTestDB(t)
 	addSession(t, conn, "fb1", "", 2, time.Hour)
-	if _, err := conn.Exec(`INSERT INTO prompt_templates(id,name,section,content,created_at,updated_at) VALUES ('t1','tpl','s','c',1,1)`); err != nil {
-		t.Fatal(err)
-	}
 	svc := newSvc(t, q, twoTurns(), nil)
-	svc.RecordTemplateSelection(context.Background(), "fb1", "t1")
 	ctx := context.Background()
+	if v, err := svc.SelectVariant(ctx, "fb1", "s", []string{"s#default", "s#alt"}); err != nil || v != "s#default" {
+		t.Fatalf("SelectVariant = %q, %v", v, err)
+	}
 
 	res, err := svc.EvaluateNow(ctx, "fb1", evaluator.EvaluateOptions{Force: true, SkipJudge: true})
 	if err != nil || res.Skipped != "" {
@@ -57,7 +56,7 @@ func TestFeedback_RescoresInPlaceWithoutDoubleCountingUCB(t *testing.T) {
 	// UCB stats: still one use, total follows the new reward.
 	var times int64
 	var total, avg float64
-	if err := conn.QueryRow(`SELECT times_used, total_reward, avg_reward FROM prompt_ucb_stats WHERE template_id='t1'`).Scan(&times, &total, &avg); err != nil {
+	if err := conn.QueryRow(`SELECT times_used, total_reward, avg_reward FROM prompt_variant_stats WHERE variant_id='s#default'`).Scan(&times, &total, &avg); err != nil {
 		t.Fatal(err)
 	}
 	if times != 1 || abs(total-score.Reward) > 1e-9 || abs(avg-score.Reward) > 1e-9 {
@@ -72,7 +71,7 @@ func TestFeedback_RescoresInPlaceWithoutDoubleCountingUCB(t *testing.T) {
 	if res.Reward.Total <= 0.8 {
 		t.Errorf("good feedback total = %f, want > 0.8", res.Reward.Total)
 	}
-	if err := conn.QueryRow(`SELECT times_used FROM prompt_ucb_stats WHERE template_id='t1'`).Scan(&times); err != nil || times != 1 {
+	if err := conn.QueryRow(`SELECT times_used FROM prompt_variant_stats WHERE variant_id='s#default'`).Scan(&times); err != nil || times != 1 {
 		t.Errorf("times_used = %d after second re-score, want 1", times)
 	}
 }

@@ -6,7 +6,7 @@ import UCBRankingTable from './UCBRankingTable'
 import SkillsList from './SkillsList'
 
 export default function SelfImprovementView() {
-  const { metrics, templates, skills, loading, fetchAll } = useEvaluatorStore()
+  const { metrics, sections, skills, loading, fetchAll } = useEvaluatorStore()
 
   useEffect(() => {
     fetchAll()
@@ -19,7 +19,7 @@ export default function SelfImprovementView() {
         <h2 className="view-title">Self-Improvement</h2>
       </div>
 
-      {loading && !metrics && templates.length === 0 ? (
+      {loading && !metrics && sections.length === 0 ? (
         <div className="flex flex-1 items-center justify-center">
           <Spinner size={26} />
         </div>
@@ -33,7 +33,7 @@ export default function SelfImprovementView() {
 
           {/* UCB table + skills list */}
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-6 pt-4 md:flex-row md:overflow-hidden md:px-6">
-            <UCBRankingTable templates={templates} />
+            <UCBRankingTable sections={sections} />
             <SkillsList skills={skills} />
           </div>
         </>

@@ -1,43 +1,53 @@
-import type { PromptTemplate } from '@pando/client/types'
+import type { TemplateSection } from '@pando/client/types'
 import EmptyState from '@/components/shared/EmptyState'
 
 interface UCBRankingTableProps {
-  templates: PromptTemplate[]
+  sections: TemplateSection[]
 }
 
-export default function UCBRankingTable({ templates }: UCBRankingTableProps) {
-  const sorted = [...templates].sort((a, b) => b.ucb_score - a.ucb_score)
-
+export default function UCBRankingTable({ sections }: UCBRankingTableProps) {
   return (
     <div className="flex min-w-0 flex-[2] flex-col overflow-hidden rounded-md border border-border">
       <div className="border-b border-border bg-shell px-4 py-2.5 text-sm font-semibold text-fg">
-        Prompt Templates — UCB Ranking
+        Prompt Variants — UCB Ranking
       </div>
 
-      {sorted.length === 0 ? (
-        <EmptyState title="No prompt templates yet" description="Templates will appear here once self-improvement has evaluated sessions." />
+      {sections.length === 0 ? (
+        <EmptyState
+          title="No prompt variants yet"
+          description="Add files under .pando/prompts/variants/<section>/<variant>.md.tpl to A/B test a prompt section."
+        />
       ) : (
         <div className="view-table-wrap flex-1">
           <table className="view-table">
             <thead>
               <tr>
-                <th className="text-center" style={{ width: 40 }}>#</th>
-                <th>Template Name</th>
+                <th>Section</th>
+                <th>Variant</th>
                 <th>UCB Score</th>
-                <th>Win Rate</th>
+                <th>Avg Reward</th>
                 <th>Uses</th>
+                <th>File</th>
               </tr>
             </thead>
             <tbody>
-              {sorted.map((tpl, idx) => (
-                <tr key={tpl.id}>
-                  <td className="text-center is-muted" style={{ width: 40 }}>{idx + 1}</td>
-                  <td className="is-mono">{tpl.name}</td>
-                  <td className="font-semibold text-fg">{tpl.ucb_score.toFixed(2)}</td>
-                  <td>{(tpl.win_rate * 100).toFixed(0)}%</td>
-                  <td className="is-muted">{tpl.uses}</td>
-                </tr>
-              ))}
+              {sections.flatMap((sec) =>
+                [...sec.variants]
+                  .sort((a, b) => b.ucb_score - a.ucb_score)
+                  .map((v) => (
+                    <tr key={v.id}>
+                      <td className="is-mono">{sec.section}</td>
+                      <td className="is-mono">
+                        {v.name}
+                        {v.missing ? ' (file removed)' : ''}
+                      </td>
+                      <td className="font-semibold text-fg">{v.times_used > 0 ? v.ucb_score.toFixed(2) : '-'}</td>
+                      <td>{v.times_used > 0 ? `${(v.avg_reward * 100).toFixed(0)}%` : '-'}</td>
+                      <td className="is-muted">{v.times_used}</td>
+                      <td className="is-mono is-muted">{v.is_default ? 'embedded' : v.path}</td>
+                    </tr>
+                  )),
+              )}
             </tbody>
           </table>
         </div>

@@ -115,31 +115,22 @@ CREATE TABLE IF NOT EXISTS skill_library (
     updated_at INTEGER NOT NULL
 );
 
-CREATE TRIGGER IF NOT EXISTS update_ucb_after_score
-AFTER INSERT ON session_scores
-WHEN NEW.template_id IS NOT NULL
-BEGIN
-    INSERT INTO prompt_ucb_stats (template_id, times_used, total_reward, avg_reward, ucb_score, updated_at)
-    VALUES (NEW.template_id, 1, NEW.reward, NEW.reward, NEW.reward, unixepoch())
-    ON CONFLICT(template_id) DO UPDATE SET
-        times_used = times_used + 1,
-        total_reward = total_reward + NEW.reward,
-        avg_reward = (total_reward + NEW.reward) / (times_used + 1),
-        ucb_score = (total_reward + NEW.reward) / (times_used + 1),
-        updated_at = unixepoch();
-END;
+CREATE TABLE IF NOT EXISTS session_template_selections (
+    session_id TEXT NOT NULL,
+    section TEXT NOT NULL,
+    variant_id TEXT NOT NULL,
+    selected_at INTEGER NOT NULL,
+    PRIMARY KEY (session_id, section)
+);
 
-CREATE TRIGGER IF NOT EXISTS update_ucb_after_rescore
-AFTER UPDATE OF reward ON session_scores
-WHEN NEW.template_id IS NOT NULL AND NEW.reward != OLD.reward
-BEGIN
-    UPDATE prompt_ucb_stats SET
-        total_reward = total_reward + NEW.reward - OLD.reward,
-        avg_reward = (total_reward + NEW.reward - OLD.reward) / MAX(times_used, 1),
-        ucb_score = (total_reward + NEW.reward - OLD.reward) / MAX(times_used, 1),
-        updated_at = unixepoch()
-    WHERE template_id = NEW.template_id;
-END;
+CREATE TABLE IF NOT EXISTS prompt_variant_stats (
+    variant_id TEXT PRIMARY KEY,
+    section TEXT NOT NULL,
+    times_used INTEGER NOT NULL DEFAULT 0,
+    total_reward REAL NOT NULL DEFAULT 0.0,
+    avg_reward REAL NOT NULL DEFAULT 0.0,
+    updated_at INTEGER NOT NULL
+);
 `
 
 // setupTestDB creates an in-memory SQLite DB with the self-improvement schema.
@@ -217,6 +208,7 @@ func defaultEvalConfig() config.EvaluatorConfig {
 		MaxTokensBaseline: 50,
 		MaxSkills:         10,
 		Async:             false,
+		Templates:         config.TemplatesConfig{Enabled: true},
 	}
 }
 
@@ -265,26 +257,6 @@ func TestEvaluateSession_Idempotent(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("expected 1 score row (idempotent), got %d", count)
-	}
-}
-
-func TestSelectTemplate_BelowThreshold(t *testing.T) {
-	_, q := setupTestDB(t)
-
-	cfg := defaultEvalConfig()
-	cfg.MinSessionsForUCB = 5
-	svc, err := evaluator.New(cfg, q, &stubMessageService{})
-	if err != nil {
-		t.Fatalf("evaluator.New: %v", err)
-	}
-
-	ctx := context.Background()
-	tmpl, err := svc.SelectTemplate(ctx, "base")
-	if err != nil {
-		t.Fatalf("SelectTemplate: %v", err)
-	}
-	if tmpl != nil {
-		t.Errorf("expected nil template below UCB threshold, got %+v", tmpl)
 	}
 }
 

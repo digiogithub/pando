@@ -220,6 +220,36 @@ func dispatchWrite(ctx context.Context, q db.Querier, req WriteRequest) (json.Ra
 		}
 		return marshalResult(nil, nil)
 
+	case "InsertSessionTemplateSelection":
+		var p db.InsertSessionTemplateSelectionParams
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return nil, invalidParamsErr(req.Method, err)
+		}
+		if err := q.InsertSessionTemplateSelection(ctx, p); err != nil {
+			return nil, mapToWriteError(req.Method, err)
+		}
+		return marshalResult(nil, nil)
+
+	case "ApplySessionRewardToVariantStats":
+		var p db.ApplySessionRewardToVariantStatsParams
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return nil, invalidParamsErr(req.Method, err)
+		}
+		if err := q.ApplySessionRewardToVariantStats(ctx, p); err != nil {
+			return nil, mapToWriteError(req.Method, err)
+		}
+		return marshalResult(nil, nil)
+
+	case "ApplyRewardDeltaToVariantStats":
+		var p db.ApplyRewardDeltaToVariantStatsParams
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return nil, invalidParamsErr(req.Method, err)
+		}
+		if err := q.ApplyRewardDeltaToVariantStats(ctx, p); err != nil {
+			return nil, mapToWriteError(req.Method, err)
+		}
+		return marshalResult(nil, nil)
+
 	case "InsertSessionFeedbackEvent":
 		var p db.InsertSessionFeedbackEventParams
 		if err := json.Unmarshal(req.Params, &p); err != nil {

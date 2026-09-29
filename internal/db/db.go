@@ -96,6 +96,27 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.getJudgeUsageSinceStmt, err = db.PrepareContext(ctx, getJudgeUsageSince); err != nil {
 		return nil, fmt.Errorf("error preparing query GetJudgeUsageSince: %w", err)
 	}
+	if q.insertSessionTemplateSelectionStmt, err = db.PrepareContext(ctx, insertSessionTemplateSelection); err != nil {
+		return nil, fmt.Errorf("error preparing query InsertSessionTemplateSelection: %w", err)
+	}
+	if q.getSessionTemplateSelectionStmt, err = db.PrepareContext(ctx, getSessionTemplateSelection); err != nil {
+		return nil, fmt.Errorf("error preparing query GetSessionTemplateSelection: %w", err)
+	}
+	if q.listVariantSelectionCountsStmt, err = db.PrepareContext(ctx, listVariantSelectionCounts); err != nil {
+		return nil, fmt.Errorf("error preparing query ListVariantSelectionCounts: %w", err)
+	}
+	if q.listVariantStatsBySectionStmt, err = db.PrepareContext(ctx, listVariantStatsBySection); err != nil {
+		return nil, fmt.Errorf("error preparing query ListVariantStatsBySection: %w", err)
+	}
+	if q.listAllVariantStatsStmt, err = db.PrepareContext(ctx, listAllVariantStats); err != nil {
+		return nil, fmt.Errorf("error preparing query ListAllVariantStats: %w", err)
+	}
+	if q.applySessionRewardToVariantStatsStmt, err = db.PrepareContext(ctx, applySessionRewardToVariantStats); err != nil {
+		return nil, fmt.Errorf("error preparing query ApplySessionRewardToVariantStats: %w", err)
+	}
+	if q.applyRewardDeltaToVariantStatsStmt, err = db.PrepareContext(ctx, applyRewardDeltaToVariantStats); err != nil {
+		return nil, fmt.Errorf("error preparing query ApplyRewardDeltaToVariantStats: %w", err)
+	}
 	if q.getSessionsTokenBaselineStmt, err = db.PrepareContext(ctx, getSessionsTokenBaseline); err != nil {
 		return nil, fmt.Errorf("error preparing query GetSessionsTokenBaseline: %w", err)
 	}
@@ -329,6 +350,41 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing getJudgeUsageSinceStmt: %w", cerr)
 		}
 	}
+	if q.insertSessionTemplateSelectionStmt != nil {
+		if cerr := q.insertSessionTemplateSelectionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing insertSessionTemplateSelectionStmt: %w", cerr)
+		}
+	}
+	if q.getSessionTemplateSelectionStmt != nil {
+		if cerr := q.getSessionTemplateSelectionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getSessionTemplateSelectionStmt: %w", cerr)
+		}
+	}
+	if q.listVariantSelectionCountsStmt != nil {
+		if cerr := q.listVariantSelectionCountsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listVariantSelectionCountsStmt: %w", cerr)
+		}
+	}
+	if q.listVariantStatsBySectionStmt != nil {
+		if cerr := q.listVariantStatsBySectionStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listVariantStatsBySectionStmt: %w", cerr)
+		}
+	}
+	if q.listAllVariantStatsStmt != nil {
+		if cerr := q.listAllVariantStatsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listAllVariantStatsStmt: %w", cerr)
+		}
+	}
+	if q.applySessionRewardToVariantStatsStmt != nil {
+		if cerr := q.applySessionRewardToVariantStatsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing applySessionRewardToVariantStatsStmt: %w", cerr)
+		}
+	}
+	if q.applyRewardDeltaToVariantStatsStmt != nil {
+		if cerr := q.applyRewardDeltaToVariantStatsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing applyRewardDeltaToVariantStatsStmt: %w", cerr)
+		}
+	}
 	if q.getSessionsTokenBaselineStmt != nil {
 		if cerr := q.getSessionsTokenBaselineStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing getSessionsTokenBaselineStmt: %w", cerr)
@@ -546,133 +602,147 @@ func (q *Queries) queryRow(ctx context.Context, stmt *sql.Stmt, query string, ar
 }
 
 type Queries struct {
-	db                               DBTX
-	tx                               *sql.Tx
-	createFileStmt                   *sql.Stmt
-	createGoalStmt                   *sql.Stmt
-	createMessageStmt                *sql.Stmt
-	createSessionStmt                *sql.Stmt
-	deleteFileStmt                   *sql.Stmt
-	deleteGoalsBySessionStmt         *sql.Stmt
-	deleteMessageStmt                *sql.Stmt
-	deleteSessionStmt                *sql.Stmt
-	deleteSessionFilesStmt           *sql.Stmt
-	deleteSessionMessagesStmt        *sql.Stmt
-	getFileStmt                      *sql.Stmt
-	getFileByPathAndSessionStmt      *sql.Stmt
-	getActiveGoalStmt                *sql.Stmt
-	getGoalBySessionStmt             *sql.Stmt
-	getMessageStmt                   *sql.Stmt
-	getSessionByIDStmt               *sql.Stmt
-	listFilesByPathStmt              *sql.Stmt
-	listFilesBySessionStmt           *sql.Stmt
-	listLatestSessionFilesStmt       *sql.Stmt
-	listMessagesBySessionStmt        *sql.Stmt
-	listNewFilesStmt                 *sql.Stmt
-	listSessionsStmt                 *sql.Stmt
-	listUnscoredSessionsStmt         *sql.Stmt
-	updateSessionScoreStmt           *sql.Stmt
-	updateSessionScoreJudgeStmt      *sql.Stmt
-	getJudgeUsageSinceStmt           *sql.Stmt
-	getSessionsTokenBaselineStmt     *sql.Stmt
-	insertSessionFeedbackEventStmt   *sql.Stmt
-	getLatestSessionFeedbackStmt     *sql.Stmt
-	updateFileStmt                   *sql.Stmt
-	updateGoalProgressStmt           *sql.Stmt
-	updateGoalStatusStmt             *sql.Stmt
-	updateMessageStmt                *sql.Stmt
-	updateSessionStmt                *sql.Stmt
-	insertPromptTemplateStmt         *sql.Stmt
-	getPromptTemplateStmt            *sql.Stmt
-	listActiveTemplatesBySectionStmt *sql.Stmt
-	countPromptTemplatesStmt         *sql.Stmt
-	insertSessionScoreStmt           *sql.Stmt
-	getSessionScoreStmt              *sql.Stmt
-	countSessionScoresStmt           *sql.Stmt
-	listSessionScoresStmt            *sql.Stmt
-	getTokenBaselineStmt             *sql.Stmt
-	getUCBStatsStmt                  *sql.Stmt
-	insertSkillStmt                  *sql.Stmt
-	listActiveSkillsByTypeStmt       *sql.Stmt
-	listAllActiveSkillsStmt          *sql.Stmt
-	countActiveSkillsStmt            *sql.Stmt
-	deactivateLowestSkillStmt        *sql.Stmt
-	incrementSkillUsageStmt          *sql.Stmt
-	listUCBRankingStmt               *sql.Stmt
-	getEvaluatorStatsStmt            *sql.Stmt
-	createProjectStmt                *sql.Stmt
-	getProjectStmt                   *sql.Stmt
-	getProjectByPathStmt             *sql.Stmt
-	listProjectsStmt                 *sql.Stmt
-	updateProjectStatusStmt          *sql.Stmt
-	updateProjectLastOpenedStmt      *sql.Stmt
-	markProjectInitializedStmt       *sql.Stmt
-	deleteProjectStmt                *sql.Stmt
+	db                                   DBTX
+	tx                                   *sql.Tx
+	createFileStmt                       *sql.Stmt
+	createGoalStmt                       *sql.Stmt
+	createMessageStmt                    *sql.Stmt
+	createSessionStmt                    *sql.Stmt
+	deleteFileStmt                       *sql.Stmt
+	deleteGoalsBySessionStmt             *sql.Stmt
+	deleteMessageStmt                    *sql.Stmt
+	deleteSessionStmt                    *sql.Stmt
+	deleteSessionFilesStmt               *sql.Stmt
+	deleteSessionMessagesStmt            *sql.Stmt
+	getFileStmt                          *sql.Stmt
+	getFileByPathAndSessionStmt          *sql.Stmt
+	getActiveGoalStmt                    *sql.Stmt
+	getGoalBySessionStmt                 *sql.Stmt
+	getMessageStmt                       *sql.Stmt
+	getSessionByIDStmt                   *sql.Stmt
+	listFilesByPathStmt                  *sql.Stmt
+	listFilesBySessionStmt               *sql.Stmt
+	listLatestSessionFilesStmt           *sql.Stmt
+	listMessagesBySessionStmt            *sql.Stmt
+	listNewFilesStmt                     *sql.Stmt
+	listSessionsStmt                     *sql.Stmt
+	listUnscoredSessionsStmt             *sql.Stmt
+	updateSessionScoreStmt               *sql.Stmt
+	updateSessionScoreJudgeStmt          *sql.Stmt
+	getJudgeUsageSinceStmt               *sql.Stmt
+	insertSessionTemplateSelectionStmt   *sql.Stmt
+	getSessionTemplateSelectionStmt      *sql.Stmt
+	listVariantSelectionCountsStmt       *sql.Stmt
+	listVariantStatsBySectionStmt        *sql.Stmt
+	listAllVariantStatsStmt              *sql.Stmt
+	applySessionRewardToVariantStatsStmt *sql.Stmt
+	applyRewardDeltaToVariantStatsStmt   *sql.Stmt
+	getSessionsTokenBaselineStmt         *sql.Stmt
+	insertSessionFeedbackEventStmt       *sql.Stmt
+	getLatestSessionFeedbackStmt         *sql.Stmt
+	updateFileStmt                       *sql.Stmt
+	updateGoalProgressStmt               *sql.Stmt
+	updateGoalStatusStmt                 *sql.Stmt
+	updateMessageStmt                    *sql.Stmt
+	updateSessionStmt                    *sql.Stmt
+	insertPromptTemplateStmt             *sql.Stmt
+	getPromptTemplateStmt                *sql.Stmt
+	listActiveTemplatesBySectionStmt     *sql.Stmt
+	countPromptTemplatesStmt             *sql.Stmt
+	insertSessionScoreStmt               *sql.Stmt
+	getSessionScoreStmt                  *sql.Stmt
+	countSessionScoresStmt               *sql.Stmt
+	listSessionScoresStmt                *sql.Stmt
+	getTokenBaselineStmt                 *sql.Stmt
+	getUCBStatsStmt                      *sql.Stmt
+	insertSkillStmt                      *sql.Stmt
+	listActiveSkillsByTypeStmt           *sql.Stmt
+	listAllActiveSkillsStmt              *sql.Stmt
+	countActiveSkillsStmt                *sql.Stmt
+	deactivateLowestSkillStmt            *sql.Stmt
+	incrementSkillUsageStmt              *sql.Stmt
+	listUCBRankingStmt                   *sql.Stmt
+	getEvaluatorStatsStmt                *sql.Stmt
+	createProjectStmt                    *sql.Stmt
+	getProjectStmt                       *sql.Stmt
+	getProjectByPathStmt                 *sql.Stmt
+	listProjectsStmt                     *sql.Stmt
+	updateProjectStatusStmt              *sql.Stmt
+	updateProjectLastOpenedStmt          *sql.Stmt
+	markProjectInitializedStmt           *sql.Stmt
+	deleteProjectStmt                    *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 	return &Queries{
-		db:                               tx,
-		tx:                               tx,
-		createFileStmt:                   q.createFileStmt,
-		createGoalStmt:                   q.createGoalStmt,
-		createMessageStmt:                q.createMessageStmt,
-		createSessionStmt:                q.createSessionStmt,
-		deleteFileStmt:                   q.deleteFileStmt,
-		deleteGoalsBySessionStmt:         q.deleteGoalsBySessionStmt,
-		deleteMessageStmt:                q.deleteMessageStmt,
-		deleteSessionStmt:                q.deleteSessionStmt,
-		deleteSessionFilesStmt:           q.deleteSessionFilesStmt,
-		deleteSessionMessagesStmt:        q.deleteSessionMessagesStmt,
-		getFileStmt:                      q.getFileStmt,
-		getFileByPathAndSessionStmt:      q.getFileByPathAndSessionStmt,
-		getActiveGoalStmt:                q.getActiveGoalStmt,
-		getGoalBySessionStmt:             q.getGoalBySessionStmt,
-		getMessageStmt:                   q.getMessageStmt,
-		getSessionByIDStmt:               q.getSessionByIDStmt,
-		listFilesByPathStmt:              q.listFilesByPathStmt,
-		listFilesBySessionStmt:           q.listFilesBySessionStmt,
-		listLatestSessionFilesStmt:       q.listLatestSessionFilesStmt,
-		listMessagesBySessionStmt:        q.listMessagesBySessionStmt,
-		listNewFilesStmt:                 q.listNewFilesStmt,
-		listSessionsStmt:                 q.listSessionsStmt,
-		listUnscoredSessionsStmt:         q.listUnscoredSessionsStmt,
-		updateSessionScoreStmt:           q.updateSessionScoreStmt,
-		updateSessionScoreJudgeStmt:      q.updateSessionScoreJudgeStmt,
-		getJudgeUsageSinceStmt:           q.getJudgeUsageSinceStmt,
-		getSessionsTokenBaselineStmt:     q.getSessionsTokenBaselineStmt,
-		insertSessionFeedbackEventStmt:   q.insertSessionFeedbackEventStmt,
-		getLatestSessionFeedbackStmt:     q.getLatestSessionFeedbackStmt,
-		updateFileStmt:                   q.updateFileStmt,
-		updateGoalProgressStmt:           q.updateGoalProgressStmt,
-		updateGoalStatusStmt:             q.updateGoalStatusStmt,
-		updateMessageStmt:                q.updateMessageStmt,
-		updateSessionStmt:                q.updateSessionStmt,
-		insertPromptTemplateStmt:         q.insertPromptTemplateStmt,
-		getPromptTemplateStmt:            q.getPromptTemplateStmt,
-		listActiveTemplatesBySectionStmt: q.listActiveTemplatesBySectionStmt,
-		countPromptTemplatesStmt:         q.countPromptTemplatesStmt,
-		insertSessionScoreStmt:           q.insertSessionScoreStmt,
-		getSessionScoreStmt:              q.getSessionScoreStmt,
-		countSessionScoresStmt:           q.countSessionScoresStmt,
-		listSessionScoresStmt:            q.listSessionScoresStmt,
-		getTokenBaselineStmt:             q.getTokenBaselineStmt,
-		getUCBStatsStmt:                  q.getUCBStatsStmt,
-		insertSkillStmt:                  q.insertSkillStmt,
-		listActiveSkillsByTypeStmt:       q.listActiveSkillsByTypeStmt,
-		listAllActiveSkillsStmt:          q.listAllActiveSkillsStmt,
-		countActiveSkillsStmt:            q.countActiveSkillsStmt,
-		deactivateLowestSkillStmt:        q.deactivateLowestSkillStmt,
-		incrementSkillUsageStmt:          q.incrementSkillUsageStmt,
-		listUCBRankingStmt:               q.listUCBRankingStmt,
-		getEvaluatorStatsStmt:            q.getEvaluatorStatsStmt,
-		createProjectStmt:                q.createProjectStmt,
-		getProjectStmt:                   q.getProjectStmt,
-		getProjectByPathStmt:             q.getProjectByPathStmt,
-		listProjectsStmt:                 q.listProjectsStmt,
-		updateProjectStatusStmt:          q.updateProjectStatusStmt,
-		updateProjectLastOpenedStmt:      q.updateProjectLastOpenedStmt,
-		markProjectInitializedStmt:       q.markProjectInitializedStmt,
-		deleteProjectStmt:                q.deleteProjectStmt,
+		db:                                   tx,
+		tx:                                   tx,
+		createFileStmt:                       q.createFileStmt,
+		createGoalStmt:                       q.createGoalStmt,
+		createMessageStmt:                    q.createMessageStmt,
+		createSessionStmt:                    q.createSessionStmt,
+		deleteFileStmt:                       q.deleteFileStmt,
+		deleteGoalsBySessionStmt:             q.deleteGoalsBySessionStmt,
+		deleteMessageStmt:                    q.deleteMessageStmt,
+		deleteSessionStmt:                    q.deleteSessionStmt,
+		deleteSessionFilesStmt:               q.deleteSessionFilesStmt,
+		deleteSessionMessagesStmt:            q.deleteSessionMessagesStmt,
+		getFileStmt:                          q.getFileStmt,
+		getFileByPathAndSessionStmt:          q.getFileByPathAndSessionStmt,
+		getActiveGoalStmt:                    q.getActiveGoalStmt,
+		getGoalBySessionStmt:                 q.getGoalBySessionStmt,
+		getMessageStmt:                       q.getMessageStmt,
+		getSessionByIDStmt:                   q.getSessionByIDStmt,
+		listFilesByPathStmt:                  q.listFilesByPathStmt,
+		listFilesBySessionStmt:               q.listFilesBySessionStmt,
+		listLatestSessionFilesStmt:           q.listLatestSessionFilesStmt,
+		listMessagesBySessionStmt:            q.listMessagesBySessionStmt,
+		listNewFilesStmt:                     q.listNewFilesStmt,
+		listSessionsStmt:                     q.listSessionsStmt,
+		listUnscoredSessionsStmt:             q.listUnscoredSessionsStmt,
+		updateSessionScoreStmt:               q.updateSessionScoreStmt,
+		updateSessionScoreJudgeStmt:          q.updateSessionScoreJudgeStmt,
+		getJudgeUsageSinceStmt:               q.getJudgeUsageSinceStmt,
+		insertSessionTemplateSelectionStmt:   q.insertSessionTemplateSelectionStmt,
+		getSessionTemplateSelectionStmt:      q.getSessionTemplateSelectionStmt,
+		listVariantSelectionCountsStmt:       q.listVariantSelectionCountsStmt,
+		listVariantStatsBySectionStmt:        q.listVariantStatsBySectionStmt,
+		listAllVariantStatsStmt:              q.listAllVariantStatsStmt,
+		applySessionRewardToVariantStatsStmt: q.applySessionRewardToVariantStatsStmt,
+		applyRewardDeltaToVariantStatsStmt:   q.applyRewardDeltaToVariantStatsStmt,
+		getSessionsTokenBaselineStmt:         q.getSessionsTokenBaselineStmt,
+		insertSessionFeedbackEventStmt:       q.insertSessionFeedbackEventStmt,
+		getLatestSessionFeedbackStmt:         q.getLatestSessionFeedbackStmt,
+		updateFileStmt:                       q.updateFileStmt,
+		updateGoalProgressStmt:               q.updateGoalProgressStmt,
+		updateGoalStatusStmt:                 q.updateGoalStatusStmt,
+		updateMessageStmt:                    q.updateMessageStmt,
+		updateSessionStmt:                    q.updateSessionStmt,
+		insertPromptTemplateStmt:             q.insertPromptTemplateStmt,
+		getPromptTemplateStmt:                q.getPromptTemplateStmt,
+		listActiveTemplatesBySectionStmt:     q.listActiveTemplatesBySectionStmt,
+		countPromptTemplatesStmt:             q.countPromptTemplatesStmt,
+		insertSessionScoreStmt:               q.insertSessionScoreStmt,
+		getSessionScoreStmt:                  q.getSessionScoreStmt,
+		countSessionScoresStmt:               q.countSessionScoresStmt,
+		listSessionScoresStmt:                q.listSessionScoresStmt,
+		getTokenBaselineStmt:                 q.getTokenBaselineStmt,
+		getUCBStatsStmt:                      q.getUCBStatsStmt,
+		insertSkillStmt:                      q.insertSkillStmt,
+		listActiveSkillsByTypeStmt:           q.listActiveSkillsByTypeStmt,
+		listAllActiveSkillsStmt:              q.listAllActiveSkillsStmt,
+		countActiveSkillsStmt:                q.countActiveSkillsStmt,
+		deactivateLowestSkillStmt:            q.deactivateLowestSkillStmt,
+		incrementSkillUsageStmt:              q.incrementSkillUsageStmt,
+		listUCBRankingStmt:                   q.listUCBRankingStmt,
+		getEvaluatorStatsStmt:                q.getEvaluatorStatsStmt,
+		createProjectStmt:                    q.createProjectStmt,
+		getProjectStmt:                       q.getProjectStmt,
+		getProjectByPathStmt:                 q.getProjectByPathStmt,
+		listProjectsStmt:                     q.listProjectsStmt,
+		updateProjectStatusStmt:              q.updateProjectStatusStmt,
+		updateProjectLastOpenedStmt:          q.updateProjectLastOpenedStmt,
+		markProjectInitializedStmt:           q.markProjectInitializedStmt,
+		deleteProjectStmt:                    q.deleteProjectStmt,
 	}
 }

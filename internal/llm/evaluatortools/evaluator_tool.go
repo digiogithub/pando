@@ -29,7 +29,7 @@ func NewEvaluatorStatsTool(svc evaluator.Service) tools.BaseTool {
 func (t *evaluatorStatsTool) Info() tools.ToolInfo {
 	return tools.ToolInfo{
 		Name:        "pando_evaluator_stats",
-		Description: "Returns the current self-improvement evaluator statistics: total session evaluations, UCB-ranked prompt templates, skill library count, top skills, and average reward score.",
+		Description: "Returns the current self-improvement evaluator statistics: total session evaluations, UCB-ranked prompt template variants (per section), skill library count, top skills, and average reward score.",
 		Parameters: map[string]interface{}{
 			"type":       "object",
 			"properties": map[string]interface{}{},

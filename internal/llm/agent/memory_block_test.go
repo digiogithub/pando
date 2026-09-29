@@ -2,13 +2,21 @@ package agent
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	_ "github.com/ncruces/go-sqlite3/driver"
+	_ "github.com/ncruces/go-sqlite3/embed"
+
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/evaluator"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/prompt"
 )
@@ -140,5 +148,86 @@ func TestSystemPromptIsByteStableAcrossTurns(t *testing.T) {
 	}
 	if !strings.HasPrefix(first, "<memories>build 1</memories>") {
 		t.Fatalf("frozen memory block not prepended: %.80q", first)
+	}
+}
+
+// variantEvaluatorAdapter exposes an *evaluator.EvaluatorService to the prompt
+// package the way internal/app does.
+type variantEvaluatorAdapter struct{ svc *evaluator.EvaluatorService }
+
+func (a variantEvaluatorAdapter) SelectVariant(ctx context.Context, sessionID, section string, c []string) (string, error) {
+	return a.svc.SelectVariant(ctx, sessionID, section, c)
+}
+func (a variantEvaluatorAdapter) GetActiveSkills(context.Context, string) ([]prompt.PromptEvaluatorSkill, error) {
+	return nil, nil
+}
+func (a variantEvaluatorAdapter) ClassifyTask(string) string { return "general" }
+
+// TestSystemPromptWithVariantsIsByteStableAcrossTurnsAndRestarts extends the
+// prompt-cache contract to template variants: the variant frozen for a session
+// is served on every turn and by a fresh evaluator on the same database.
+func TestSystemPromptWithVariantsIsByteStableAcrossTurnsAndRestarts(t *testing.T) {
+	installCountingMemoryInjector(t)
+	wd := t.TempDir()
+	prevCfg := config.Get()
+	config.SetForTests(&config.Config{WorkingDir: wd})
+	t.Cleanup(func() { config.SetForTests(prevCfg) })
+	t.Setenv("HOME", t.TempDir())
+
+	dir := filepath.Join(wd, ".pando", "prompts", "variants", "base", "workflow")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "terse.md.tpl"), []byte("TERSE-WORKFLOW-VARIANT"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	conn, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	if _, err := conn.Exec(`
+CREATE TABLE session_template_selections (session_id TEXT NOT NULL, section TEXT NOT NULL, variant_id TEXT NOT NULL, selected_at INTEGER NOT NULL, PRIMARY KEY (session_id, section));
+CREATE TABLE prompt_variant_stats (variant_id TEXT PRIMARY KEY, section TEXT NOT NULL, times_used INTEGER NOT NULL DEFAULT 0, total_reward REAL NOT NULL DEFAULT 0.0, avg_reward REAL NOT NULL DEFAULT 0.0, updated_at INTEGER NOT NULL);
+INSERT INTO session_template_selections VALUES ('s1', 'base/workflow', 'base/workflow#terse', 1);`); err != nil {
+		t.Fatal(err)
+	}
+
+	newSvc := func() *evaluator.EvaluatorService {
+		svc, err := evaluator.New(config.EvaluatorConfig{
+			Enabled: true, ExplorationC: 1.41, MinSessionsForUCB: 5,
+			Templates: config.TemplatesConfig{Enabled: true},
+		}, db.New(conn), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return svc
+	}
+	prompt.SetGlobalEvaluator(variantEvaluatorAdapter{svc: newSvc()})
+	t.Cleanup(func() { prompt.SetGlobalEvaluator(nil) })
+
+	first := buildSystemMessage(sessionPromptCtx("s1", "turn one"), config.AgentCoder, models.ProviderAnthropic, nil, nil, nil, "")
+	time.Sleep(1100 * time.Millisecond)
+	second := buildSystemMessage(sessionPromptCtx("s1", "turn two"), config.AgentCoder, models.ProviderAnthropic, nil, nil, nil, "")
+	if first != second {
+		t.Fatalf("system prompt with variants changed between turns:\n--- first\n%s\n--- second\n%s", first, second)
+	}
+	if !strings.Contains(first, "TERSE-WORKFLOW-VARIANT") {
+		t.Fatalf("frozen variant not rendered:\n%s", first)
+	}
+
+	// Restart: a fresh evaluator on the same DB serves the same bytes.
+	prompt.SetGlobalEvaluator(variantEvaluatorAdapter{svc: newSvc()})
+	third := buildSystemMessage(sessionPromptCtx("s1", "turn three"), config.AgentCoder, models.ProviderAnthropic, nil, nil, nil, "")
+	if first != third {
+		t.Fatalf("system prompt changed across an evaluator restart")
+	}
+
+	// A new session with no persisted choice is frozen on its first build.
+	a := buildSystemMessage(sessionPromptCtx("s2", "q"), config.AgentCoder, models.ProviderAnthropic, nil, nil, nil, "")
+	b := buildSystemMessage(sessionPromptCtx("s2", "q2"), config.AgentCoder, models.ProviderAnthropic, nil, nil, nil, "")
+	if a != b {
+		t.Fatalf("new session prompt not stable across turns")
 	}
 }

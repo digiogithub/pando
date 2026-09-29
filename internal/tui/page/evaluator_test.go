@@ -16,8 +16,8 @@ type stubEvaluatorService struct {
 
 func (s stubEvaluatorService) EvaluateSession(_ context.Context, _ string) error  { return nil }
 func (s stubEvaluatorService) MarkCompleted(_ context.Context, _, _ string) error { return nil }
-func (s stubEvaluatorService) SelectTemplate(_ context.Context, _ string) (*evaluator.PromptTemplate, error) {
-	return nil, nil
+func (s stubEvaluatorService) SelectVariant(_ context.Context, _, _ string, c []string) (string, error) {
+	return c[0], nil
 }
 func (s stubEvaluatorService) GetActiveSkills(_ context.Context, _ string) ([]evaluator.Skill, error) {
 	return nil, nil
@@ -25,9 +25,8 @@ func (s stubEvaluatorService) GetActiveSkills(_ context.Context, _ string) ([]ev
 func (s stubEvaluatorService) GetStats(_ context.Context) (*evaluator.Stats, error) {
 	return s.stats, nil
 }
-func (s stubEvaluatorService) IsEnabled() bool                                        { return true }
-func (s stubEvaluatorService) RecordTemplateSelection(_ context.Context, _, _ string) {}
-func (s stubEvaluatorService) ClassifyTask(_ string) string                           { return "general" }
+func (s stubEvaluatorService) IsEnabled() bool              { return true }
+func (s stubEvaluatorService) ClassifyTask(_ string) string { return "general" }
 
 func TestEvaluatorViewStaysWithinTerminalHeight(t *testing.T) {
 	stats := &evaluator.Stats{
@@ -44,11 +43,9 @@ func TestEvaluatorViewStaysWithinTerminalHeight(t *testing.T) {
 			TimesUsed: 10 + i,
 			AvgReward: 0.5,
 			UCBScore:  1.2,
-			Template: evaluator.PromptTemplate{
-				Name:    "template",
-				Section: "base",
-				Version: 1,
-			},
+			VariantID: "base/workflow#terse",
+			Section:   "base/workflow",
+			Variant:   "terse",
 		})
 	}
 	for i := 0; i < 30; i++ {

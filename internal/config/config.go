@@ -1000,6 +1000,17 @@ type EvaluatorConfig struct {
 	// Judge gates and bounds the LLM judge (decisive sessions only, transcript
 	// cap, daily budget).
 	Judge JudgeConfig `toml:"judge" json:"judge"`
+	// Templates configures prompt template variant selection.
+	Templates TemplatesConfig `toml:"templates" json:"templates"`
+}
+
+// TemplatesConfig configures the A/B selection of human-authored prompt
+// template variants (.pando/prompts/variants/<section>/<variant>.md.tpl).
+type TemplatesConfig struct {
+	// Enabled is the kill switch for variant selection. Default: true; it is
+	// inert unless a variants directory with variant files exists, and it also
+	// requires evaluator.enabled.
+	Enabled bool `toml:"enabled" json:"enabled"`
 }
 
 // ACPConfig defines the configuration for the ACP (Agent Client Protocol) stdio server.
@@ -2591,6 +2602,7 @@ func setDefaults(debug bool) {
 	viper.SetDefault("evaluator.judge.maxTranscriptTokens", 6000)
 	viper.SetDefault("evaluator.judge.dailyCalls", 20)
 	viper.SetDefault("evaluator.judge.dailyTokens", 200000)
+	viper.SetDefault("evaluator.templates.enabled", true)
 	viper.SetDefault("evaluator.contextTrimmer.enabled", false)
 	viper.SetDefault("evaluator.contextTrimmer.minConfidence", 0.7)
 	viper.SetDefault("evaluator.correctionsPatterns", DefaultCorrectionsPatterns())
@@ -5993,6 +6005,7 @@ func EvaluatorWithDefaults(eval EvaluatorConfig) EvaluatorConfig {
 	// when the struct is fully unset so we don't override a deliberate false.
 	if fullyUnset {
 		eval.Async = true
+		eval.Templates.Enabled = true
 	}
 	if len(eval.TaskPatterns) == 0 {
 		eval.TaskPatterns = []TaskPatternConfig{

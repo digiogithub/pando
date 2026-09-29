@@ -2,14 +2,16 @@
 id: PANDO-US-0072
 type: story
 title: Template variants as versioned files, correct section identity and persisted per-section attribution
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0014
 author: mcp
 labels: [evaluator, prompt, ucb]
 estimate: 8
 created: 2026-09-29T20:33:19Z
-updated: 2026-09-29T20:33:19Z
+updated: 2026-09-29T21:28:43Z
+started: 2026-09-29T21:19:24Z
+closed: 2026-09-29T21:28:43Z
 ---
 
 ## Description

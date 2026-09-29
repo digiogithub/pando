@@ -2,18 +2,12 @@ package evaluator
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 	"time"
-)
 
-// PromptTemplate represents a versioned prompt template variant.
-type PromptTemplate struct {
-	ID        string
-	Name      string
-	Section   string
-	Content   string
-	Version   int
-	IsDefault bool
-}
+	"github.com/digiogithub/pando/internal/db"
+)
 
 // Skill represents a learned optimization rule from the Skill Library.
 type Skill struct {
@@ -25,13 +19,56 @@ type Skill struct {
 	UsageCount  int
 }
 
-// TemplateStats holds UCB statistics for a template (for TUI display).
+// TemplateStats holds the UCB statistics of one prompt variant (for UI display).
 type TemplateStats struct {
-	Template  PromptTemplate
+	// VariantID is "<section>#<variant>"; "<section>#default" is the embedded template.
+	VariantID string
+	Section   string
+	Variant   string
 	TimesUsed int
 	AvgReward float64
 	UCBScore  float64
 	Rank      int
+}
+
+// VariantStatsFromRows converts persisted per-variant stats into ranked
+// TemplateStats: UCB1 within each section, sections in alphabetical order.
+func VariantStatsFromRows(rows []db.PromptVariantStat, explorationC float64) []TemplateStats {
+	totals := make(map[string]int)
+	for _, r := range rows {
+		totals[r.Section] += int(r.TimesUsed)
+	}
+	out := make([]TemplateStats, 0, len(rows))
+	for _, r := range rows {
+		variant := r.VariantID
+		if i := strings.LastIndex(variant, "#"); i >= 0 {
+			variant = variant[i+1:]
+		}
+		out = append(out, TemplateStats{
+			VariantID: r.VariantID,
+			Section:   r.Section,
+			Variant:   variant,
+			TimesUsed: int(r.TimesUsed),
+			AvgReward: r.AvgReward,
+			UCBScore:  UCBScore(r.AvgReward, totals[r.Section], int(r.TimesUsed), explorationC),
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Section != out[j].Section {
+			return out[i].Section < out[j].Section
+		}
+		return out[i].UCBScore > out[j].UCBScore
+	})
+	rank := 0
+	prev := ""
+	for i := range out {
+		if out[i].Section != prev {
+			rank, prev = 0, out[i].Section
+		}
+		rank++
+		out[i].Rank = rank
+	}
+	return out
 }
 
 // Stats is the overall self-improvement system statistics.
@@ -69,9 +106,6 @@ type JudgeOutput struct {
 
 // contextKey is used for context values.
 type contextKey string
-
-// SelectedTemplateKey is used to store the selected template ID in context.
-const SelectedTemplateKey contextKey = "selected_template_id"
 
 // ContextProfileKey is used to store a ContextProfile in the request context.
 const ContextProfileKey contextKey = "context_profile"

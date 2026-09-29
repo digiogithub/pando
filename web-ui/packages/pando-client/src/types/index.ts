@@ -247,13 +247,22 @@ export interface Snapshot {
 }
 
 // Evaluator / self-improvement types
-export interface PromptTemplate {
+export interface TemplateVariant {
   id: string
   name: string
-  content: string
+  /** File path of the variant; empty for the embedded "default" variant. */
+  path?: string
+  is_default: boolean
+  /** Statistics exist but the variant file was removed. */
+  missing?: boolean
+  times_used: number
+  avg_reward: number
   ucb_score: number
-  win_rate: number
-  uses: number
+}
+
+export interface TemplateSection {
+  section: string
+  variants: TemplateVariant[]
 }
 
 export interface Skill {
