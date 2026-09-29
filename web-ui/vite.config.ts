@@ -52,6 +52,11 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+        // Navigations the Go server answers itself must reach the network.
+        // Without this the worker's index.html fallback swallows them and the
+        // SPA renders its 404: design previews and the canvas (iframes and
+        // pop-out windows under /preview/) and API downloads.
+        navigateFallbackDenylist: [/^\/preview\//, /^\/api\//, /^\/health$/],
         runtimeCaching: [
           {
             urlPattern: /^\/api\/v1\/(sessions|config|models)/,

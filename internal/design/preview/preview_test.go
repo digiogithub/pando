@@ -374,3 +374,43 @@ func TestFrameAncestorsIsConfigurable(t *testing.T) {
 		t.Fatalf("override ignored: %s", wrec.Header().Get("Content-Security-Policy"))
 	}
 }
+
+func TestSystemDirectoryIsServedWithoutAToken(t *testing.T) {
+	system := t.TempDir()
+	if err := os.WriteFile(filepath.Join(system, "system.css"), []byte(":root{--c:red}"), 0o644); err != nil {
+		t.Fatalf("write system css: %v", err)
+	}
+	secret := filepath.Join(filepath.Dir(system), "secret.txt")
+	if err := os.WriteFile(secret, []byte("token"), 0o644); err != nil {
+		t.Fatalf("write secret: %v", err)
+	}
+	server, grant, _ := newPublishedServer(t, Options{
+		System: func() (string, string) { return "_system", system },
+	})
+
+	// The href an artifact links resolves against its own URL.
+	css := get(t, server, Prefix+"_system/system.css")
+	if css.Code != http.StatusOK || css.Body.String() != ":root{--c:red}" {
+		t.Fatalf("system css: got %d %q", css.Code, css.Body.String())
+	}
+	if ctype := css.Header().Get("Content-Type"); !strings.Contains(ctype, "css") {
+		t.Fatalf("system css content type %q", ctype)
+	}
+	if rec := get(t, server, Prefix+"_system/../secret.txt"); rec.Code == http.StatusOK && strings.Contains(rec.Body.String(), "token") {
+		t.Fatal("system route escaped its directory")
+	}
+	if rec := get(t, server, Prefix+"_system/"); rec.Code != http.StatusNotFound {
+		t.Fatalf("system directory listing: got %d", rec.Code)
+	}
+	// Artifacts keep resolving through their token.
+	if rec := get(t, server, Prefix+grant.Token+"/"); rec.Code != http.StatusOK {
+		t.Fatalf("artifact after system route: got %d", rec.Code)
+	}
+}
+
+func TestSystemRouteIsOffWithoutAResolver(t *testing.T) {
+	server, _, _ := newPublishedServer(t, Options{})
+	if rec := get(t, server, Prefix+"_system/system.css"); rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}

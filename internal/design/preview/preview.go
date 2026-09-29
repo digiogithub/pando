@@ -105,6 +105,14 @@ type Options struct {
 	// design model and this package must not depend on it. A nil provider
 	// leaves the canvas served but empty.
 	Artboards func(sessionID string) ([]Artboard, error)
+	// System resolves the shared design-system directory: its name inside the
+	// output root (the URL segment, "_system" by default) and its absolute
+	// path. Artifacts link the system stylesheet with a relative href that
+	// climbs out of their own directory ("../_system/system.css"), which under
+	// /preview/<token>/ lands on /preview/<segment>/ with no token, so the
+	// server answers that directory for every grant. A nil resolver or an
+	// empty path leaves the route off.
+	System func() (segment, dir string)
 }
 
 // Server is the grant registry and the HTTP handler over it.
@@ -415,6 +423,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if dir, ok := s.systemDir(token); ok {
+		s.serveSystem(w, r, dir, rest)
+		return
+	}
 	grant, ok := s.resolve(token)
 	if !ok {
 		// Deliberately indistinguishable from a missing file: a wrong token must
@@ -474,6 +486,48 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
+	http.ServeContent(w, r, filepath.Base(target), info.ModTime(), file)
+}
+
+// systemDir reports whether a first path segment names the shared
+// design-system directory, and returns that directory.
+func (s *Server) systemDir(segment string) (string, bool) {
+	if s.opts.System == nil {
+		return "", false
+	}
+	name, dir := s.opts.System()
+	if name == "" || dir == "" || name != segment {
+		return "", false
+	}
+	return dir, true
+}
+
+// serveSystem serves a file of the shared design system. It holds the tokens
+// and the stylesheet every artifact links, nothing an artifact token guards,
+// and is confined to its own directory the same way an artifact is.
+func (s *Server) serveSystem(w http.ResponseWriter, r *http.Request, dir, rest string) {
+	target, err := safeJoin(dir, rest)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	info, err := os.Stat(target)
+	if err != nil || info.IsDir() {
+		http.NotFound(w, r)
+		return
+	}
+	file, err := os.Open(target)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer file.Close()
+	s.writeSecurityHeaders(w)
+	if ctype := mime.TypeByExtension(strings.ToLower(path.Ext(rest))); ctype != "" {
+		w.Header().Set("Content-Type", ctype)
+	}
+	// Edited by design_system while an artifact is open: never cache it.
+	w.Header().Set("Cache-Control", "no-store, must-revalidate")
 	http.ServeContent(w, r, filepath.Base(target), info.ModTime(), file)
 }
 

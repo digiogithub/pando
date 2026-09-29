@@ -71,7 +71,19 @@ func PreviewOptions(baseURL func() string, access func() error) preview.Options 
 		// preview package must stay ignorant of the design model, so the model
 		// reaches it as a function instead of an import.
 		Artboards: CanvasArtboards,
+		System:    previewSystemDir,
 	}
+}
+
+// previewSystemDir resolves the design-system directory of the current
+// project for the preview server's shared /preview/<system>/ route.
+func previewSystemDir() (string, string) {
+	svc, err := ServiceFor("")
+	if err != nil {
+		return "", ""
+	}
+	layout := svc.Layout()
+	return layout.SystemDir, layout.SystemPath()
 }
 
 // PublishPreview registers an artifact with the preview server and returns the
