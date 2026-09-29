@@ -955,33 +955,33 @@ func (j JudgeConfig) IsZero() bool { return j == JudgeConfig{} }
 // EvaluatorConfig controls the self-improvement evaluation loop.
 type EvaluatorConfig struct {
 	// Enabled activates the evaluation loop. Default: false (opt-in).
-	Enabled bool `toml:"enabled"`
+	Enabled bool `toml:"enabled" json:"enabled"`
 	// Model is the cheap/fast model used for LLM-as-Judge evaluation.
-	Model models.ModelID `toml:"model"`
+	Model models.ModelID `toml:"model" json:"model"`
 	// Provider specifies which LLM provider to use for the judge model.
-	Provider string `toml:"provider"`
+	Provider string `toml:"provider" json:"provider"`
 	// AlphaWeight is the legacy weight of task success. Only used when Weights
 	// is unset (then it becomes Weights.Success). Default: 0.8.
-	AlphaWeight float64 `toml:"alphaWeight"`
+	AlphaWeight float64 `toml:"alphaWeight" json:"alphaWeight"`
 	// BetaWeight is the legacy weight of token efficiency. Only used when Weights
 	// is unset (then it becomes Weights.Tokens). Default: 0.2.
-	BetaWeight float64 `toml:"betaWeight"`
+	BetaWeight float64 `toml:"betaWeight" json:"betaWeight"`
 	// Weights are the per-component reward weights (see EvaluatorWeights).
 	Weights EvaluatorWeights `toml:"weights" json:"weights"`
 	// ExplorationC is the UCB1 exploration factor. Default: 1.41 (sqrt(2)).
-	ExplorationC float64 `toml:"explorationC"`
+	ExplorationC float64 `toml:"explorationC" json:"explorationC"`
 	// MinSessionsForUCB is the min evaluated sessions before UCB activates. Default: 5.
-	MinSessionsForUCB int `toml:"minSessionsForUCB"`
+	MinSessionsForUCB int `toml:"minSessionsForUCB" json:"minSessionsForUCB"`
 	// CorrectionsPatterns are regex patterns that indicate user corrections.
-	CorrectionsPatterns []string `toml:"correctionsPatterns"`
+	CorrectionsPatterns []string `toml:"correctionsPatterns" json:"correctionsPatterns"`
 	// MaxTokensBaseline is the rolling window size for token efficiency. Default: 50.
-	MaxTokensBaseline int `toml:"maxTokensBaseline"`
+	MaxTokensBaseline int `toml:"maxTokensBaseline" json:"maxTokensBaseline"`
 	// MaxSkills is the max active skills in the library. Default: 100.
-	MaxSkills int `toml:"maxSkills"`
+	MaxSkills int `toml:"maxSkills" json:"maxSkills"`
 	// JudgePromptTemplate is optional path to a custom judge prompt template.
-	JudgePromptTemplate string `toml:"judgePromptTemplate"`
+	JudgePromptTemplate string `toml:"judgePromptTemplate" json:"judgePromptTemplate"`
 	// Async runs evaluation in background after session end. Default: true.
-	Async bool `toml:"async"`
+	Async bool `toml:"async" json:"async"`
 	// IdleTimeout is how long a session must be idle (no new message) before the
 	// idle sweeper evaluates it, as a Go duration string. Default: "30m".
 	IdleTimeout string `toml:"idleTimeout" json:"idleTimeout,omitempty"`
