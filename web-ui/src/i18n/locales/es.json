@@ -84,7 +84,9 @@
   "header": {
     "toggleSidebar": "Mostrar/ocultar barra lateral (Ctrl+B)",
     "toggleTheme": "Cambiar tema",
-    "simpleChat": "Chat simple"
+    "simpleChat": "Chat simple",
+    "fullView": "Vista completa",
+    "fullViewHint": "Volver a la vista completa"
   },
   "settings": {
     "categories": {

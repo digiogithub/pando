@@ -142,7 +142,7 @@ export function useDesktopNavigation(navigate: (path: string) => void): void {
 /* ── Which surface draws the title bar ─────────────────────────────────── */
 
 // MainLayout's header carries the window controls itself. Routes outside it
-// (simple chat, editor) and the splash/login screens get a slim standalone bar
+// (the editor) and the splash/login screens get a slim standalone bar
 // instead; this counter tells the two apart.
 let shellHeaders = 0
 const headerListeners = new Set<() => void>()

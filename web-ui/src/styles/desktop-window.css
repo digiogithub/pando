@@ -64,7 +64,6 @@
 :root { --desktop-frame-h: 32px; }
 
 html[data-desktop-frame] body { padding-top: var(--desktop-frame-h); }
-html[data-desktop-frame] .chat-simple,
 html[data-desktop-frame] .editor-shell {
   height: calc(100vh - var(--desktop-frame-h));
   height: calc(100dvh - var(--desktop-frame-h));

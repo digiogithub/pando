@@ -84,7 +84,9 @@
   "header": {
     "toggleSidebar": "サイドバーの切り替え (Ctrl+B)",
     "toggleTheme": "テーマの切り替え",
-    "simpleChat": "シンプルチャット"
+    "simpleChat": "シンプルチャット",
+    "fullView": "フルビュー",
+    "fullViewHint": "フルビューに戻る"
   },
   "settings": {
     "categories": {

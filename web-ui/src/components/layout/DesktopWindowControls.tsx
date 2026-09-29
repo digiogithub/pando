@@ -50,7 +50,7 @@ export default function DesktopWindowControls() {
 
 /**
  * Slim title bar for the desktop window when no layout header is on screen:
- * the simple chat, the editor, the splash and the login dialog. Without it the
+ * the editor, the splash and the login dialog. Without it the
  * frameless window could not be moved or closed there.
  */
 export function DesktopFrameBar() {

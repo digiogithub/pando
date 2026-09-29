@@ -204,7 +204,9 @@ func (a *App) navigate(path string) {
 // toggleMode switches between simple and advanced mode and reloads the URL.
 func (a *App) toggleMode(simple bool) {
 	a.simpleMode.Store(simple)
-	target := a.pandoURL
+	// The WebUI persists the chosen mode and reopens it from "/", so leaving
+	// simple mode has to say so explicitly.
+	target := a.pandoURL + "/?mode=advanced"
 	if simple {
 		target = a.pandoURL + "/chat/simple"
 	}

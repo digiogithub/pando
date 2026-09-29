@@ -40,7 +40,12 @@ function writeSections(s: SectionState) {
 
 interface NavItem { path: string; label: string; icon: LucideIcon; end?: boolean }
 
-export default function Sidebar({ variant = 'full' }: { variant?: SidebarVariant }) {
+/**
+ * App sidebar. `simple` is the simple chat mode: no navigation section, only
+ * new session, session search/list and settings, and chat actions stay on the
+ * simple chat route.
+ */
+export default function Sidebar({ variant = 'full', simple = false }: { variant?: SidebarVariant; simple?: boolean }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
@@ -76,11 +81,16 @@ export default function Sidebar({ variant = 'full' }: { variant?: SidebarVariant
     }
   }
 
+  // The route that shows the chat in the current mode.
+  const chatPath = simple ? '/chat/simple' : '/'
+  const onChatRoute = simple
+    ? location.pathname === '/chat/simple'
+    : location.pathname === '/' || location.pathname === '/chat'
+
   const newSession = () => {
     useSessionStore.setState({ activeSessionId: null })
     setMessages([])
-    const p = location.pathname
-    if (p !== '/' && p !== '/chat') navigate('/')
+    if (!onChatRoute) navigate(chatPath)
     closeSidebarOnMobile()
   }
 
@@ -150,7 +160,7 @@ export default function Sidebar({ variant = 'full' }: { variant?: SidebarVariant
 
   return (
     <aside
-      className={`shell-sidebar${rail ? ' is-rail' : ''}${variant === 'drawer' ? ' is-drawer' : ''}`}
+      className={`shell-sidebar${rail ? ' is-rail' : ''}${variant === 'drawer' ? ' is-drawer' : ''}${simple ? ' is-simple' : ''}`}
       aria-label={t('shell.sidebar', 'Sidebar')}
     >
       {variant === 'drawer' && (
@@ -204,14 +214,16 @@ export default function Sidebar({ variant = 'full' }: { variant?: SidebarVariant
           </div>
         ) : (
           <>
-            <Section
-              label={t('nav.sections.navigate')}
-              open={sections.nav}
-              onToggle={() => toggleSection('nav')}
-            >
-              {NAV_ITEMS.map(renderNavItem)}
-              {EXT_ITEMS.map(renderNavItem)}
-            </Section>
+            {!simple && (
+              <Section
+                label={t('nav.sections.navigate')}
+                open={sections.nav}
+                onToggle={() => toggleSection('nav')}
+              >
+                {NAV_ITEMS.map(renderNavItem)}
+                {EXT_ITEMS.map(renderNavItem)}
+              </Section>
+            )}
 
             <Section
               label={t('nav.sections.sessions')}
@@ -230,6 +242,7 @@ export default function Sidebar({ variant = 'full' }: { variant?: SidebarVariant
                     title={s.prompt_preview || s.title || t('nav.untitledSession')}
                     onClick={() => {
                       setActiveSession(s.id)
+                      if (simple && !onChatRoute) navigate(chatPath)
                       closeSidebarOnMobile()
                     }}
                   >

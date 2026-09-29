@@ -84,7 +84,9 @@
   "header": {
     "toggleSidebar": "Toggle sidebar (Ctrl+B)",
     "toggleTheme": "Toggle theme",
-    "simpleChat": "Simple Chat"
+    "simpleChat": "Simple Chat",
+    "fullView": "Full view",
+    "fullViewHint": "Switch back to the full view"
   },
   "settings": {
     "categories": {

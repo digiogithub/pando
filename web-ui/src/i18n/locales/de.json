@@ -84,7 +84,9 @@
   "header": {
     "toggleSidebar": "Seitenleiste ein-/ausblenden (Ctrl+B)",
     "toggleTheme": "Design wechseln",
-    "simpleChat": "Einfacher Chat"
+    "simpleChat": "Einfacher Chat",
+    "fullView": "Vollansicht",
+    "fullViewHint": "Zur Vollansicht zurückkehren"
   },
   "settings": {
     "categories": {

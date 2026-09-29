@@ -140,6 +140,7 @@ export {
   Keyboard,
   Languages,
   Layers,
+  LayoutDashboard,
   LayoutGrid,
   Lightbulb,
   Link as LinkIcon,

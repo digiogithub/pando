@@ -21,6 +21,9 @@ import '@/styles/shell.css'
 
 export default function MainLayout() {
   const { sidebarOpen, quickMenuOpen, modelSwitcherOpen, setSidebarOpen } = useLayoutStore()
+  // Simple chat mode keeps this shell but trims it to sessions + settings.
+  const simple = useLayoutStore((s) => s.chatMode === 'simple')
+  const hydrateChatMode = useLayoutStore((s) => s.hydrateChatMode)
   const fetchSessions = useSessionStore((s) => s.fetchSessions)
   const fetchSettings = useSettingsStore((s) => s.fetchSettings)
   const startHealthCheck = useServerStore((s) => s.startHealthCheck)
@@ -37,12 +40,13 @@ export default function MainLayout() {
     void authenticate().then(() => {
       fetchSessions()
       fetchSettings()
+      void hydrateChatMode()
       setConnected(true)
     }).catch(() => setConnected(false))
 
     const stop = startHealthCheck()
     return stop
-  }, [fetchSessions, fetchSettings, setConnected, startHealthCheck])
+  }, [fetchSessions, fetchSettings, hydrateChatMode, setConnected, startHealthCheck])
 
   // Keyboard shortcuts (the theme toggle Ctrl/Cmd+Shift+L is global, in App).
   useEffect(() => {
@@ -115,7 +119,7 @@ export default function MainLayout() {
 
   return (
     <div className="shell" data-mac-inset={macInset || undefined}>
-      <Header isMobile={isMobile} />
+      <Header isMobile={isMobile} simple={simple} />
       <NetworkErrorBanner />
       <ConfigInitBanner />
 
@@ -124,9 +128,13 @@ export default function MainLayout() {
           sidebarOpen && (
             <>
               <div className="shell-scrim" onClick={() => setSidebarOpen(false)} aria-hidden="true" />
-              <Sidebar variant="drawer" />
+              <Sidebar variant="drawer" simple={simple} />
             </>
           )
+        ) : simple ? (
+          // No rail in simple mode: collapsed means hidden, the title bar
+          // toggle brings the sessions panel back.
+          sidebarOpen && <Sidebar variant="full" simple />
         ) : (
           <Sidebar variant={sidebarVariant} />
         )}
@@ -138,7 +146,7 @@ export default function MainLayout() {
         </main>
       </div>
 
-      <StatusBar />
+      {!simple && <StatusBar />}
 
       {/* Overlays */}
       {quickMenuOpen && <QuickMenu />}

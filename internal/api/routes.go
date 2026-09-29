@@ -105,6 +105,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Sibling of the line above: what the settings surfaces should hide or draw
 	// read-only, as declared by the loaded extensions.
 	mux.HandleFunc("/api/v1/config/ui-policy", s.handleConfigUIPolicy)
+	// User-level WebUI preferences (chat mode) that outlive the origin/port.
+	mux.HandleFunc("/api/v1/ui/preferences", s.handleUIPrefs)
 	// Distinct from the line above: this one is the UI manifest of compiled-in
 	// extension modules, not the skills/Lua settings section.
 	mux.HandleFunc("/api/v1/extensions/ui", s.handleExtensionsUI)

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import api from '../services/api'
 
 const CHAT_MODE_KEY = 'pando_chat_mode'
 const INFO_SIDEBAR_KEY = 'pando_info_sidebar_open'
@@ -19,6 +20,28 @@ interface LayoutStore {
   setQuickMenuOpen: (open: boolean) => void
   setModelSwitcherOpen: (open: boolean) => void
   setChatMode: (mode: ChatMode) => void
+  /** Adopts the chat mode stored server-side (user-level, port independent). */
+  hydrateChatMode: () => Promise<void>
+}
+
+function readStoredChatMode(): ChatMode {
+  try {
+    return localStorage.getItem(CHAT_MODE_KEY) === 'simple' ? 'simple' : 'advanced'
+  } catch {
+    return 'advanced'
+  }
+}
+
+// Set once the user picks a mode in this page load, so a slower server read
+// never overrides that fresher choice.
+let chatModeChosen = false
+
+function writeStoredChatMode(mode: ChatMode) {
+  try {
+    localStorage.setItem(CHAT_MODE_KEY, mode)
+  } catch {
+    // ignore unavailable storage
+  }
 }
 
 // The info panel defaults to open on wide viewports only; the stored preference
@@ -32,7 +55,7 @@ export const useLayoutStore = create<LayoutStore>((set) => ({
   infoSidebarOpen: initialInfoSidebarOpen,
   quickMenuOpen: false,
   modelSwitcherOpen: false,
-  chatMode: (localStorage.getItem(CHAT_MODE_KEY) as ChatMode) || 'advanced',
+  chatMode: readStoredChatMode(),
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   toggleInfoSidebar: () =>
@@ -48,7 +71,23 @@ export const useLayoutStore = create<LayoutStore>((set) => ({
   setQuickMenuOpen: (open) => set({ quickMenuOpen: open }),
   setModelSwitcherOpen: (open) => set({ modelSwitcherOpen: open }),
   setChatMode: (mode) => {
-    localStorage.setItem(CHAT_MODE_KEY, mode)
+    chatModeChosen = true
+    writeStoredChatMode(mode)
     set({ chatMode: mode })
+    // localStorage is per origin and the desktop app / project instances can
+    // come up on another port, so the choice is also kept user-level.
+    void api.put('/api/v1/ui/preferences', { chatMode: mode }).catch(() => {})
+  },
+  hydrateChatMode: async () => {
+    try {
+      const prefs = await api.get<{ chatMode?: string }>('/api/v1/ui/preferences')
+      if (chatModeChosen) return
+      if (prefs.chatMode === 'simple' || prefs.chatMode === 'advanced') {
+        writeStoredChatMode(prefs.chatMode)
+        set({ chatMode: prefs.chatMode })
+      }
+    } catch {
+      // keep the local value when the server cannot answer
+    }
   },
 }))

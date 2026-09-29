@@ -63,7 +63,14 @@ function useThemeToggleShortcut() {
 function InitialModeRedirect() {
   const navigate = useNavigate()
   const chatMode = useLayoutStore((s) => s.chatMode)
+  // `/?mode=advanced` (desktop menu "Simple Mode" off) leaves the simple mode
+  // instead of bouncing straight back into it.
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('mode') === 'advanced') {
+      useLayoutStore.getState().setChatMode('advanced')
+      navigate('/', { replace: true })
+      return
+    }
     if (chatMode === 'simple') {
       navigate('/chat/simple', { replace: true })
     }
@@ -110,13 +117,13 @@ const router = createBrowserRouter(
   createRoutesFromElements(
     <Route element={<RootLayout />}>
       {/* Standalone — no layout */}
-      <Route path="/chat/simple" element={<SimpleChatView />} />
       <Route path="/editor" element={<CodeEditorView />} />
 
       {/* Main layout */}
       <Route path="/" element={<MainLayout />}>
         <Route index element={<InitialModeRedirect />} />
         <Route path="chat" element={<ChatView />} />
+        <Route path="chat/simple" element={<SimpleChatView />} />
         <Route path="orchestrator" element={<OrchestratorView />} />
         <Route path="logs" element={<LogsView />} />
         <Route path="snapshots" element={<AgentVcsView />} />

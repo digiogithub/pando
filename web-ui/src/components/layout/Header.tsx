@@ -10,7 +10,7 @@ import { BrandMark } from '@/components/brand'
 import PersonaSelector from '@/components/shared/PersonaSelector'
 import { IconButton, Tooltip } from '@/components/ui'
 import {
-  CircleQuestionMark, MessageSquare, Moon, PanelLeft, PanelLeftClose, Settings, Sun,
+  CircleQuestionMark, LayoutDashboard, MessageSquare, Moon, PanelLeft, PanelLeftClose, Settings, Sun,
 } from '@/components/ui/icons'
 import { isMacPlatform } from './shellHooks'
 import DesktopWindowControls from './DesktopWindowControls'
@@ -34,7 +34,13 @@ const SECTION_KEYS: Record<string, string> = {
   instances: 'nav.instances',
 }
 
-export default function Header({ isMobile = false }: { isMobile?: boolean }) {
+/**
+ * App title bar. In the simple chat mode (`simple`) it keeps the same chrome
+ * (sidebar toggle, brand, title, window controls) but drops every advanced
+ * action: only the way back to the full view and the theme toggle remain;
+ * settings live in the sidebar.
+ */
+export default function Header({ isMobile = false, simple = false }: { isMobile?: boolean; simple?: boolean }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
@@ -102,9 +108,9 @@ export default function Header({ isMobile = false }: { isMobile?: boolean }) {
       <div className="shell-title" aria-live="polite">
         {sessionTitle ? (
           <>
-            <span className="shell-title-section">{section}</span>
-            <span className="shell-title-sep" aria-hidden="true">/</span>
-            <span className="shell-title-text shell-title-strong">{sessionTitle}</span>
+              <span className="shell-title-section">{section}</span>
+              <span className="shell-title-sep" aria-hidden="true">/</span>
+              <span className="shell-title-text shell-title-strong">{sessionTitle}</span>
           </>
         ) : (
           section && <span className="shell-title-text">{section}</span>
@@ -112,39 +118,57 @@ export default function Header({ isMobile = false }: { isMobile?: boolean }) {
       </div>
 
       <div className="shell-titlebar-actions">
-        <span className="shell-hide-mobile">
-          <PersonaSelector />
-        </span>
-        <span className="shell-titlebar-divider shell-hide-mobile" aria-hidden="true" />
-        <IconButton
-          className="shell-hide-mobile"
-          aria-label={t('header.simpleChat', 'Simple Chat')}
-          tooltip
-          icon={<MessageSquare />}
-          onClick={() => { setChatMode('simple'); navigate('/chat/simple') }}
-        />
-        <Tooltip content={t('shell.documentation', 'Documentation')}>
-          <a
-            className="ui-btn ui-btn--ghost ui-btn--icon shell-hide-mobile"
-            href={DOCS_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={t('shell.documentation', 'Documentation')}
-          >
-            <CircleQuestionMark />
-          </a>
-        </Tooltip>
+        {simple ? (
+          <Tooltip content={t('header.fullViewHint', 'Switch back to the full view')}>
+            <button
+              type="button"
+              className="ui-btn ui-btn--ghost ui-btn--sm shell-fullview-btn"
+              aria-label={t('header.fullViewHint', 'Switch back to the full view')}
+              onClick={() => { setChatMode('advanced'); navigate('/') }}
+            >
+              <LayoutDashboard size={16} aria-hidden="true" />
+              <span className="shell-hide-mobile">{t('header.fullView', 'Full view')}</span>
+            </button>
+          </Tooltip>
+        ) : (
+          <>
+          <span className="shell-hide-mobile">
+            <PersonaSelector />
+          </span>
+          <span className="shell-titlebar-divider shell-hide-mobile" aria-hidden="true" />
+          <IconButton
+            className="shell-hide-mobile"
+            aria-label={t('header.simpleChat', 'Simple Chat')}
+            tooltip
+            icon={<MessageSquare />}
+            onClick={() => { setChatMode('simple'); navigate('/chat/simple') }}
+          />
+          <Tooltip content={t('shell.documentation', 'Documentation')}>
+            <a
+              className="ui-btn ui-btn--ghost ui-btn--icon shell-hide-mobile"
+              href={DOCS_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={t('shell.documentation', 'Documentation')}
+            >
+              <CircleQuestionMark />
+            </a>
+          </Tooltip>
+          </>
+        )}
         <IconButton
           aria-label={themeLabel}
           tooltip={themeTooltip}
           icon={resolvedMode === 'dark' ? <Sun /> : <Moon />}
           onClick={toggleMode}
         />
-        <Tooltip content={t('nav.settings')}>
-          <NavLink to="/settings" className="shell-icon-link" aria-label={t('nav.settings')}>
-            <Settings />
-          </NavLink>
-        </Tooltip>
+        {!simple && (
+          <Tooltip content={t('nav.settings')}>
+            <NavLink to="/settings" className="shell-icon-link" aria-label={t('nav.settings')}>
+              <Settings />
+            </NavLink>
+          </Tooltip>
+        )}
         <DesktopWindowControls />
       </div>
     </header>

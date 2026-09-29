@@ -84,7 +84,9 @@
   "header": {
     "toggleSidebar": "切换侧栏 (Ctrl+B)",
     "toggleTheme": "切换主题",
-    "simpleChat": "简易聊天"
+    "simpleChat": "简易聊天",
+    "fullView": "完整视图",
+    "fullViewHint": "返回完整视图"
   },
   "settings": {
     "categories": {
