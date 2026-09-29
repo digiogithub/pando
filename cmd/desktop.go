@@ -60,7 +60,8 @@ or use the browser UI instead: pando app`,
   # Start in simple mode
   pando desktop --simple
 
-  # Use a specific working directory
+  # Use a specific working directory (default: current directory, or the home
+  # directory when opened from the app icon)
   pando desktop --cwd /path/to/project
   pando desktop -c /path/to/project`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -102,11 +103,15 @@ func runDesktopMode(cmd *cobra.Command) error {
 			return fmt.Errorf("invalid --cwd path: %w", err)
 		}
 	} else {
-		cwd, err = os.Getwd()
+		// Opened from the macOS app icon (or otherwise without a usable
+		// directory): work from the home directory as a general workspace.
+		cwd, err = desktop.DefaultWorkingDir()
 		if err != nil {
-			return fmt.Errorf("failed to get current working directory: %w", err)
+			return err
 		}
+		_ = os.Chdir(cwd)
 	}
+	desktop.ImportLoginShellPath()
 
 	_, err = config.Load(cwd, debug, "")
 	if err != nil {

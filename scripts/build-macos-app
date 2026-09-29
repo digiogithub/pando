@@ -388,11 +388,17 @@ build_arch_package() {
     chmod +x "$macos_dir/pando-desktop"
 
     # CFBundleExecutable wrapper — invoked when the user opens the .app.
+    # Finder/Dock start app executables with cwd "/" (read-only, not a
+    # workspace) and launchd's minimal PATH, so open Pando in the home directory
+    # as its general workspace. PANDO_LAUNCHED_FROM_APP makes pando-bin import
+    # the login shell PATH (see internal/desktop/workdir.go).
     cat > "$macos_dir/pando" <<'WRAPPER'
 #!/bin/bash
 # Launch Pando in desktop mode when opened as a macOS application.
 SELF="$(cd "$(dirname "$0")" && pwd)"
-exec "$SELF/pando-bin" desktop
+cd "$HOME" || cd /tmp
+export PANDO_LAUNCHED_FROM_APP=1
+exec "$SELF/pando-bin" desktop --cwd "$HOME"
 WRAPPER
     chmod +x "$macos_dir/pando"
 
