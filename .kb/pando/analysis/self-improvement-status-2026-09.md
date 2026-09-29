@@ -1,6 +1,6 @@
 ---
-created_at: 2026-09-29T20:31:46.961816492Z
-updated_at: 2026-09-29T20:31:46.961816492Z
+created_at: 2026-09-29T20:31:46.96184707Z
+updated_at: 2026-09-29T21:52:40.190248932Z
 tags:
     - analysis
     - evaluator
@@ -38,3 +38,19 @@ What does work in isolation: `calculateReward`, `UCBScore`, `renderJudgePrompt`/
 5. **Learned skills as reviewable proposals** (medium): files with status pending/approved/rejected + provenance; inject approved only; frozen block per session; `success_rate` from later rewards; usage once per session; approve/reject in TUI/WebUI/CLI.
 6. **Observability** (medium): pages with real data, `pando evaluator doctor`, startup diagnostic, docs refresh.
 7. **ContextTrimmer decision** (low): own flag default off, or remove.
+
+## Status: resolved by PANDO-EP-0014
+
+All findings above were addressed on 2026-09-29. Where each one went:
+
+| Finding | Resolution |
+|---|---|
+| 1 Trigger | [[pando/changes/evaluator-session-triggers.md]] (session switch/exit, ACP close, shutdown flush, idle sweeper, startup backfill, `pando evaluate`, `/evaluate`) |
+| 5 Reward | [[pando/changes/evaluator-honest-reward.md]] (correction defaults, persisted signals, explicit feedback, stored components) |
+| 6 Judge | [[pando/changes/evaluator-judge-gating.md]] (decisive-only, transcript cap, daily budget, persisted output) |
+| 2, 3, 4 Templates | [[pando/changes/evaluator-template-variants.md]] (variant files, frozen per-session selection, per-variant stats) |
+| 7 Skills | [[pando/changes/evaluator-reviewable-skills.md]] (reviewable files, approved-only frozen injection, success_rate) |
+| 8 ContextTrimmer | [[pando/changes/evaluator-context-trimmer-flag]] (own opt-in flag, default off) |
+| 9 Tests, 10 Surfaces | [[pando/changes/evaluator-observability-doctor.md]] (`pando evaluator doctor`, startup diagnostic, real data in TUI/WebUI/API, settings, dead-query cleanup, docs) |
+
+Current design: [[pando/docs/self-improvement-system-analysis.md]]. Reproducible validation: [[pando/docs/self-improvement-manual-validation.md]].

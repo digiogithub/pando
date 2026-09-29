@@ -1,4 +1,4 @@
-import { FlaskConical, Layers, Trophy } from '@/components/ui/icons'
+import { Cpu, FlaskConical, Layers, Trophy } from '@/components/ui/icons'
 import type { EvaluatorMetrics } from '@pando/client/types'
 import MetricCard from '@/components/shared/MetricCard'
 
@@ -26,6 +26,12 @@ export default function MetricsCards({ metrics }: MetricsCardsProps) {
         value={metrics ? metrics.avg_reward.toFixed(2) : '0.00'}
         icon={<Trophy size={20} />}
         description="Mean reward across all evaluated sessions"
+      />
+      <MetricCard
+        label="Judge Usage (14d)"
+        value={metrics?.judge_calls ?? 0}
+        icon={<Cpu size={20} />}
+        description={`${(((metrics?.judge_prompt_tokens ?? 0) + (metrics?.judge_completion_tokens ?? 0)) / 1000).toFixed(1)}k tokens in judge calls`}
       />
     </div>
   )

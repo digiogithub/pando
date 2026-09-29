@@ -344,12 +344,6 @@ func (p *DBProxy) DeleteSessionFiles(ctx context.Context, sessionID string) erro
 		"DeleteSessionFiles", sessionID, DefaultWriteTimeouts.Default)
 }
 
-func (p *DBProxy) InsertPromptTemplate(ctx context.Context, arg db.InsertPromptTemplateParams) (db.PromptTemplate, error) {
-	return directOrProxy(ctx, p,
-		func() (db.PromptTemplate, error) { return p.Querier.InsertPromptTemplate(ctx, arg) },
-		"InsertPromptTemplate", arg, DefaultWriteTimeouts.Default)
-}
-
 func (p *DBProxy) InsertSessionScore(ctx context.Context, arg db.InsertSessionScoreParams) (db.SessionScore, error) {
 	return directOrProxy(ctx, p,
 		func() (db.SessionScore, error) { return p.Querier.InsertSessionScore(ctx, arg) },
@@ -396,12 +390,6 @@ func (p *DBProxy) InsertSkill(ctx context.Context, arg db.InsertSkillParams) (db
 	return directOrProxy(ctx, p,
 		func() (db.SkillLibrary, error) { return p.Querier.InsertSkill(ctx, arg) },
 		"InsertSkill", arg, DefaultWriteTimeouts.Default)
-}
-
-func (p *DBProxy) DeactivateLowestSkill(ctx context.Context) error {
-	return directOrProxyVoid(ctx, p,
-		func() error { return p.Querier.DeactivateLowestSkill(ctx) },
-		"DeactivateLowestSkill", nil, DefaultWriteTimeouts.Default)
 }
 
 func (p *DBProxy) IncrementSkillUsage(ctx context.Context, id string) error {

@@ -98,6 +98,49 @@ func (s *EvaluatorService) failedCount() int64 {
 	return n
 }
 
+// BackgroundState describes the idle sweeper / startup backfill of this process.
+type BackgroundState struct {
+	// Started is true once RunBackground was called (the goroutine exists).
+	Started bool `json:"started"`
+	// Primary is whether this instance owned the DB writer at the last tick.
+	Primary bool `json:"primary"`
+	// BackfillDone is true once the one-shot startup backfill ran.
+	BackfillDone bool `json:"backfill_done"`
+	// BackfillEvaluated is how many sessions the startup backfill scored.
+	BackfillEvaluated int `json:"backfill_evaluated"`
+	// LastSweepAt is the unix time of the last idle sweep (0 = none yet).
+	LastSweepAt int64 `json:"last_sweep_at"`
+	// LastSweepEvaluated is how many sessions the last idle sweep scored.
+	LastSweepEvaluated int `json:"last_sweep_evaluated"`
+}
+
+// BackgroundState returns a snapshot of the background worker state.
+func (s *EvaluatorService) BackgroundState() BackgroundState {
+	if s == nil {
+		return BackgroundState{}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bg
+}
+
+// SetFirstPassHook registers fn to run once, after the first background pass on
+// the primary instance (startup backfill + idle sweep). Call before RunBackground.
+func (s *EvaluatorService) SetFirstPassHook(fn func(ctx context.Context)) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.onFirstPass = fn
+	s.mu.Unlock()
+}
+
+func (s *EvaluatorService) updateBackground(fn func(*BackgroundState)) {
+	s.mu.Lock()
+	fn(&s.bg)
+	s.mu.Unlock()
+}
+
 // RunBackground starts the idle sweeper and the one-shot startup backfill. It
 // blocks until ctx is done, so call it in a goroutine. isPrimary is consulted
 // before every action so the work only runs on the instance that owns the
@@ -115,6 +158,7 @@ func (s *EvaluatorService) RunBackground(ctx context.Context, isPrimary func() b
 		interval = maxSweepInterval
 	}
 
+	s.updateBackground(func(b *BackgroundState) { b.Started = true })
 	select {
 	case <-ctx.Done():
 		return
@@ -122,10 +166,13 @@ func (s *EvaluatorService) RunBackground(ctx context.Context, isPrimary func() b
 	}
 
 	backfilled := s.cfg.BackfillLimit < 0
+	diagnosed := false
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		if isPrimary() {
+		primary := isPrimary()
+		s.updateBackground(func(b *BackgroundState) { b.Primary = primary })
+		if primary {
 			if !backfilled {
 				backfilled = true
 				limit := s.cfg.BackfillLimit
@@ -139,11 +186,25 @@ func (s *EvaluatorService) RunBackground(ctx context.Context, isPrimary func() b
 					Pause:     backfillPause,
 				})
 				slog.Info("evaluator: startup backfill finished", "evaluated", n, "err", err)
+				s.updateBackground(func(b *BackgroundState) { b.BackfillDone, b.BackfillEvaluated = true, n })
 			}
 			if n, err := s.Sweep(ctx, SweepOptions{IdleFor: idle, Limit: idleSweepLimit, Pause: backfillPause}); err != nil {
 				slog.Warn("evaluator: idle sweep failed", "err", err)
-			} else if n > 0 {
-				slog.Info("evaluator: idle sweep evaluated sessions", "evaluated", n)
+				s.recordEvalError(err)
+			} else {
+				s.updateBackground(func(b *BackgroundState) { b.LastSweepAt, b.LastSweepEvaluated = time.Now().Unix(), n })
+				if n > 0 {
+					slog.Info("evaluator: idle sweep evaluated sessions", "evaluated", n)
+				}
+			}
+			if !diagnosed {
+				diagnosed = true
+				s.mu.Lock()
+				hook := s.onFirstPass
+				s.mu.Unlock()
+				if hook != nil {
+					hook(ctx)
+				}
 			}
 		} else {
 			slog.Debug("evaluator: background sweep skipped, not primary")

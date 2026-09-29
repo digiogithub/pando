@@ -63,8 +63,24 @@ func TestEvaluatorViewStaysWithinTerminalHeight(t *testing.T) {
 		})
 	}
 
+	stats.Problem = "Evaluator is enabled but none of the last 20 eligible sessions was evaluated. Run `pando evaluator doctor`."
+	for i := 0; i < 14; i++ {
+		stats.Daily = append(stats.Daily, evaluator.DailyMetric{Day: "2026-09-01", Evaluations: int64(i), JudgeCalls: 1, JudgePromptTokens: 100})
+	}
+	for i := 0; i < 20; i++ {
+		stats.RecentSessions = append(stats.RecentSessions, evaluator.SessionDetail{
+			SessionID: "session-with-a-rather-long-identifier", Reward: 0.5, UserCorrections: 1,
+			Breakdown: evaluator.Breakdown{
+				Components: map[string]float64{"success": 0.6, "tokens": 0.4},
+				Weights:    map[string]float64{"success": 0.7, "tokens": 0.3},
+			},
+		})
+	}
+
 	p := NewEvaluatorPage(stubEvaluatorService{stats: stats}).(*evaluatorPage)
 	p.stats = stats
+	p.loading = false
+	p.sessions = evaluatorcomp.NewSessionsTableCmp(stats.RecentSessions)
 	p.table = evaluatorcomp.NewTableCmp(stats.Templates)
 	p.skills = evaluatorcomp.NewSkillsCmp(stats.TopSkills)
 	p.metrics = evaluatorcomp.NewMetricsCmp(stats)
@@ -73,5 +89,18 @@ func TestEvaluatorViewStaysWithinTerminalHeight(t *testing.T) {
 	view := p.View()
 	if got := lipgloss.Height(view); got > 18 {
 		t.Fatalf("view height = %d, want <= 18\n%s", got, view)
+	}
+	if !strings.Contains(view, "pando evaluator doctor") {
+		t.Errorf("problem banner missing from view:\n%s", view)
+	}
+
+	// The sessions panel shows reward and top components and also fits.
+	p.showSessions = true
+	view = p.View()
+	if got := lipgloss.Height(view); got > 18 {
+		t.Fatalf("sessions view height = %d, want <= 18\n%s", got, view)
+	}
+	if !strings.Contains(view, "success 0.60") || !strings.Contains(view, "0.50") {
+		t.Errorf("sessions panel does not show reward/components:\n%s", view)
 	}
 }

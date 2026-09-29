@@ -177,17 +177,6 @@ func dispatchWrite(ctx context.Context, q db.Querier, req WriteRequest) (json.Ra
 		return nil, nil
 
 	// ---- Self-improvement writes ----
-	case "InsertPromptTemplate":
-		var p db.InsertPromptTemplateParams
-		if err := json.Unmarshal(req.Params, &p); err != nil {
-			return nil, invalidParamsErr(req.Method, err)
-		}
-		r, err := q.InsertPromptTemplate(ctx, p)
-		if err != nil {
-			return nil, mapToWriteError(req.Method, err)
-		}
-		return marshalResult(r, nil)
-
 	case "InsertSessionScore":
 		var p db.InsertSessionScoreParams
 		if err := json.Unmarshal(req.Params, &p); err != nil {
@@ -321,12 +310,6 @@ func dispatchWrite(ctx context.Context, q db.Querier, req WriteRequest) (json.Ra
 			return nil, mapToWriteError(req.Method, err)
 		}
 		return marshalResult(r, nil)
-
-	case "DeactivateLowestSkill":
-		if err := q.DeactivateLowestSkill(ctx); err != nil {
-			return nil, mapToWriteError(req.Method, err)
-		}
-		return nil, nil
 
 	case "IncrementSkillUsage":
 		var id string

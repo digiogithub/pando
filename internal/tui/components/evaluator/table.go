@@ -22,6 +22,9 @@ type TableComponent interface {
 type tableCmp struct {
 	table     table.Model
 	templates []evaluator.TemplateStats
+	// weights, when set, are the relative column widths used by SetSize
+	// instead of equal columns.
+	weights []int
 }
 
 func (c *tableCmp) Init() tea.Cmd {
@@ -50,7 +53,21 @@ func (c *tableCmp) SetSize(width int, height int) tea.Cmd {
 	c.table.SetWidth(width)
 	c.table.SetHeight(height)
 	columns := c.table.Columns()
-	if len(columns) > 0 {
+	if len(columns) > 0 && len(c.weights) == len(columns) {
+		sum := 0
+		for _, w := range c.weights {
+			sum += w
+		}
+		usable := width - 2*len(columns)
+		for i, col := range columns {
+			col.Width = usable * c.weights[i] / sum
+			if col.Width < 3 {
+				col.Width = 3
+			}
+			columns[i] = col
+		}
+		c.table.SetColumns(columns)
+	} else if len(columns) > 0 {
 		for i, col := range columns {
 			col.Width = (width / len(columns)) - 2
 			columns[i] = col

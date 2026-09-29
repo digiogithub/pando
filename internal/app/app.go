@@ -537,6 +537,18 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 			logging.Info("evaluator: self-improvement system initialized", "model", cfg.Evaluator.Model)
 			// Idle sweeper + startup backfill; they only act while this instance
 			// owns the DB writer (primary or standalone), including after failover.
+			// Startup diagnostic: log the doctor summary once, after the first
+			// background pass on the primary, so backfill results are included.
+			evalSvc.SetFirstPassHook(func(hctx context.Context) {
+				rep, err := evalSvc.Diagnose(hctx)
+				if err != nil || rep == nil {
+					return
+				}
+				logging.Info("evaluator doctor: " + rep.Summary())
+				for _, w := range rep.Warnings {
+					logging.Warn("evaluator doctor: " + w)
+				}
+			})
 			bgCtx, bgCancel := context.WithCancel(ctx)
 			app.cancelFuncsMutex.Lock()
 			app.watcherCancelFuncs = append(app.watcherCancelFuncs, bgCancel)

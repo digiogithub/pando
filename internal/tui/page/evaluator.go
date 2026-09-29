@@ -28,6 +28,8 @@ type evaluatorPage struct {
 	evaluatorSvc evaluator.Service
 	stats        *evaluator.Stats
 	table        evaluatorcomp.TableComponent
+	sessions     evaluatorcomp.TableComponent
+	showSessions bool // left panel shows recent sessions instead of variants
 	skills       evaluatorcomp.SkillsComponent
 	metrics      evaluatorcomp.MetricsComponent
 	activePanel  int // 0=table, 1=skills
@@ -87,11 +89,23 @@ func (p *evaluatorPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return p, p.review(sk.ID, status)
 				}
 			}
+		case "s":
+			// Toggle the left panel between variant ranking and recent sessions.
+			if p.sessions != nil {
+				p.showSessions = !p.showSessions
+				p.activePanel = 0
+				_ = p.resizeComponents()
+			}
 		case "tab", "shift+tab":
 			p.activePanel = (p.activePanel + 1) % 2
 		case "up", "k", "down", "j":
 			if p.table != nil && p.skills != nil {
 				if p.activePanel == 0 {
+					if p.showSessions && p.sessions != nil {
+						m, cmd := p.sessions.Update(msg)
+						p.sessions = m.(evaluatorcomp.TableComponent)
+						return p, cmd
+					}
 					m, cmd := p.table.Update(msg)
 					p.table = m.(evaluatorcomp.TableComponent)
 					return p, cmd
@@ -106,6 +120,7 @@ func (p *evaluatorPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		p.loading = false
 		p.stats = msg.stats
 		p.table = evaluatorcomp.NewTableCmp(msg.stats.Templates)
+		p.sessions = evaluatorcomp.NewSessionsTableCmp(msg.stats.RecentSessions)
 		p.skills = evaluatorcomp.NewSkillsCmp(msg.stats.TopSkills)
 		p.metrics = evaluatorcomp.NewMetricsCmp(msg.stats)
 		if err := p.resizeComponents(); err != nil {
@@ -125,6 +140,9 @@ func (p *evaluatorPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (p *evaluatorPage) resizeComponents() error {
+	if p.metrics != nil {
+		p.metrics.SetWidth(p.width)
+	}
 	if p.table != nil {
 		halfW := p.width / 2
 		panelH := p.panelHeight()
@@ -132,6 +150,10 @@ func (p *evaluatorPage) resizeComponents() error {
 			panelH = 1
 		}
 		_ = p.table.SetSize(halfW, panelH)
+		if p.sessions != nil {
+			// The sessions table needs the full width to show its components.
+			_ = p.sessions.SetSize(p.width-2, panelH)
+		}
 		_ = p.skills.SetSize(p.width-halfW, panelH)
 	}
 	return nil
@@ -158,6 +180,7 @@ func (p *evaluatorPage) View() string {
 		return baseStyle.Render("")
 	}
 
+	helpBar := lipgloss.NewStyle().MaxWidth(p.width).Render(renderEvaluatorHelp())
 	metricsView := ""
 	if p.metrics != nil {
 		metricsView = p.metrics.View()
@@ -167,6 +190,9 @@ func (p *evaluatorPage) View() string {
 	skillsView := ""
 	if p.table != nil && p.skills != nil {
 		tView := p.table.View()
+		if p.showSessions && p.sessions != nil {
+			tView = p.sessions.View()
+		}
 		sView := p.skills.View()
 
 		// Highlight active panel border
@@ -187,6 +213,18 @@ func (p *evaluatorPage) View() string {
 			panelH = 1
 		}
 
+		// Clamp the panel contents: a component that renders taller or wider than
+		// its panel (many skills, long rows) must not push the page past the
+		// terminal.
+		tView = lipgloss.NewStyle().MaxWidth(halfW - 2).MaxHeight(panelH).Render(tView)
+		sView = lipgloss.NewStyle().MaxWidth(p.width - halfW - 2).MaxHeight(panelH).Render(sView)
+
+		if p.showSessions && p.sessions != nil {
+			sess := lipgloss.NewStyle().MaxWidth(p.width - 2).MaxHeight(panelH).Render(p.sessions.View())
+			return baseStyle.Render(lipgloss.JoinVertical(lipgloss.Left, metricsView,
+				focusedBorder.Width(p.width-2).Height(panelH).Render(sess), helpBar))
+		}
+
 		if p.activePanel == 0 {
 			tableView = focusedBorder.Width(halfW - 2).Height(panelH).Render(tView)
 			skillsView = normalBorder.Width(p.width - halfW - 2).Height(panelH).Render(sView)
@@ -197,8 +235,6 @@ func (p *evaluatorPage) View() string {
 	}
 
 	panels := lipgloss.JoinHorizontal(lipgloss.Top, tableView, skillsView)
-	helpBar := renderEvaluatorHelp()
-
 	content := lipgloss.JoinVertical(lipgloss.Left, metricsView, panels, helpBar)
 	return baseStyle.Render(content)
 }
@@ -219,7 +255,7 @@ func (p *evaluatorPage) panelHeight() int {
 	if p.metrics != nil {
 		metricsHeight = lipgloss.Height(p.metrics.View())
 	}
-	helpHeight := lipgloss.Height(renderEvaluatorHelp())
+	helpHeight := 1 // the help bar is truncated to one line in View
 	available := p.height - metricsHeight - helpHeight
 	if metricsHeight > 0 {
 		available--
@@ -241,6 +277,7 @@ func (p *evaluatorPage) BindingKeys() []key.Binding {
 		key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "move up")),
 		key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "move down")),
 	}
+	bindings = append(bindings, key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "variants/sessions")))
 	if p.activePanel == 0 && p.table != nil {
 		bindings = append(bindings, p.table.BindingKeys()...)
 	} else if p.skills != nil {
@@ -259,7 +296,8 @@ To enable it, add to your config (.pando.toml or ~/.config/pando/config.toml):
   model   = "claude-haiku-4-5-20251001"
   provider = "anthropic"
 
-Restart Pando. The system will begin evaluating sessions automatically.`
+Restart Pando. The system will begin evaluating sessions automatically.
+Run "pando evaluator doctor" at any time to see why it is (or is not) working.`
 }
 
 func renderEvaluatorHelp() string {
@@ -267,7 +305,7 @@ func renderEvaluatorHelp() string {
 	return lipgloss.NewStyle().
 		Foreground(t.TextMuted()).
 		Background(t.Background()).
-		Render("[r] Refresh  [tab] Panel  [↑↓] Move  [a] Approve  [x] Reject  [esc] Back")
+		Render("[r] Refresh  [s] Sessions/Variants  [tab] Panel  [↑↓] Move  [a] Approve  [x] Reject  [esc] Back")
 }
 
 // NewEvaluatorPage creates and returns a new self-improvement evaluator page.

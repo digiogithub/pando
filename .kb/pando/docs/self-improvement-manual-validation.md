@@ -1,274 +1,75 @@
+---
+created_at: 2026-05-12T08:46:05.576838077Z
+updated_at: 2026-09-29T21:52:08.132589725Z
+tags:
+    - docs
+    - evaluator
+    - validation
+---
 # Self-Improvement Manual Validation Guide
 
-## Goal
-Validate manually that Pando's self-improvement loop is working end-to-end through the TUI or WebUI:
-1. the evaluator starts correctly,
-2. the prompt builder consults the evaluator,
-3. selected templates are recorded against the current session,
-4. completed sessions are evaluated,
-5. evaluator metrics/templates/skills become visible in the UI and API.
+Design: [[pando/docs/self-improvement-system-analysis.md]]. Changes: [[pando/changes/evaluator-observability-doctor.md]]. All scenarios below use current commands and can be repeated in a scratch project.
 
-## Preconditions
-Before starting, ensure all of the following are true:
+## Setup
+```toml
+# .pando.toml of the scratch project
+[evaluator]
+enabled = true
+model = "<a cheap model your provider serves>"
+provider = "<its provider>"
+minSessionsForUCB = 1
+idleTimeout = "1m"
+[evaluator.judge]
+dailyCalls = 5
+```
+Use single backslashes in `correctionsPatterns`. Run `pando evaluator doctor` first: it must say `Evaluator: enabled`, list no pattern lint issues and show the eligible/never-evaluated counts.
 
-- `Evaluator.Enabled = true` in your configuration.
-- Debug mode is enabled if you want to inspect detailed runtime traces.
-- The application is running with a valid writable database.
-- The project has the self-improvement migration applied.
-- If you want learned skills to appear, configure an evaluator judge model with `Evaluator.Model`.
+## 1. Startup wiring
+1. Start `pando` (TUI) or `pando serve` with debug logging.
+2. Expect `evaluator: initializing self-improvement system`, `evaluator: self-improvement system initialized`. About 30 s later on the primary: `evaluator: startup backfill finished` and `evaluator doctor: evaluator enabled: ...`.
+3. Expected failure signal: no such lines -> `pando evaluator doctor` explains why (disabled, no model, provider disabled).
 
-## Recommended Configuration Checks
-Verify these configuration points first:
+## 2. Triggers score a session
+1. In the TUI chat send two prompts (at least 2 user turns) in session A, then start a new session (or open another one).
+2. Log shows `evaluator: starting session evaluation ... reason=...` then `evaluator: session evaluated`.
+3. Cross-check: `pando evaluator doctor` shows `evaluated: 1`; `GET /api/v1/evaluator/sessions` returns the row with `components`.
+4. Idle sweeper: leave a 2-turn session idle for `idleTimeout`; within a few minutes it is scored (`evaluator: idle sweep evaluated sessions`).
+5. Backfill / manual: `pando evaluate --all --limit 5` scores old sessions and prints the reward decomposition; `pando evaluate <session-id>` scores one.
 
-- `evaluator.enabled = true`
-- `evaluator.async = true` or `false` depending on whether you want background evaluation
-- `evaluator.minSessionsForUCB` set to a small number for easier testing, for example `1` or `2`
-- `debug = true` to expose detailed debug logs
+## 3. Reward explanation and feedback
+1. Send a correction such as "that is wrong, undo that" as the 3rd turn in a session and evaluate it (`pando evaluate <id>`).
+2. The output lists corrections >= 1 and components. WebUI Self-Improvement > Sessions tab: expand the row to see components, pattern hits and snippets. TUI evaluator page: press `s`.
+3. Feedback: in WebUI chat `/feedback bad not what I asked`. The session is re-scored: reward <= 0.25 and the row shows `feedback: bad`.
 
-For manual validation, it is strongly recommended to temporarily reduce:
+## 4. Prompt variants
+1. Create `.pando/prompts/variants/base/workflow/terse.md.tpl` (copy the embedded section and shorten it). Restart pando.
+2. `pando evaluator doctor` lists the directory and the section as competing.
+3. Start several new sessions and complete/evaluate them. `GET /api/v1/evaluator/templates` shows `times_used` and `avg_reward` for `default` and `terse`; the sessions view shows the variant each session ran with. The choice is frozen per session: it does not change between turns.
 
-- `evaluator.minSessionsForUCB = 1`
+## 4b. Judge and budget
+1. Have a session with >= 4 user turns and a decisive reward (feedback good/bad forces one) and evaluate it with `pando evaluate <id> --judge`, or wait for the sweeper.
+2. Sessions view shows judge reasoning; `GET /api/v1/evaluator/metrics` shows `judge_calls` and tokens; doctor shows `budget today: N/5 calls`.
+3. Exhaust the budget (`dailyCalls = 1`): doctor prints `(EXHAUSTED)` and the log warns once per day.
 
-This allows template selection to happen immediately after the first scored session instead of waiting for a larger history window.
+## 5. Learned skills
+1. A judged session with a proposal (confidence >= 0.7) creates `.pando/skills/learned/<id>.md` with `status: pending`. `pando skills list --status pending` lists it; doctor counts it.
+2. `pando skills approve <id>`. Start a NEW session: the skill is in its system prompt; sessions view shows it under "Skills injected". The session in progress is unchanged.
+3. `pando skills reject <id>` removes it from later sessions.
 
----
+## 6. Doctor and lint
+1. Put `correctionsPatterns = ['(?i)\\bwrong\\b']` in the config: doctor prints a `double_backslash` issue with a fix hint, the WebUI shows a banner and the TUI shows a warning in the evaluator page (and in the status bar ~75 s after start).
+2. Put `(unclosed`: doctor reports a `compile` issue (the evaluator will refuse to start with it).
+3. `GET /api/v1/evaluator/doctor` returns the same report as JSON plus the printable text.
 
-## What You Should Observe
-Once the feature is working, you should be able to confirm these signals:
+## 7. UI checks
+- WebUI: Self-Improvement shows non-zero cards after one evaluated session, the 14-day chart, and Settings > Self-Improvement exposes idle timeout, backfill, subagents, judge bands and budget, variants switch and context trimmer.
+- TUI: evaluator page shows the metrics header with sparkline; `s` toggles sessions/variants; settings page has the same keys with hints.
 
-### Expected startup logs
-On application startup, you should see logs similar to:
+## Failure interpretation
+- Nothing evaluated after switching sessions: fewer than 2 user turns, or child session (see `includeSubagents`); doctor "never evaluated" and log level debug show the skip reason.
+- Sessions evaluated, no judge data: reward in the middle band, too few turns, budget exhausted, or judge init failed (doctor "last judge error").
+- Variants never selected: section has only the default (no files), `templates.enabled = false`, evaluator disabled, or the section name does not match the builder render name.
+- No skills: no judge, no proposals with confidence >= 0.7, or all pending (review them).
 
-- `evaluator: initializing self-improvement system`
-- `evaluator: judge initialized` (only if a judge model is configured)
-- `evaluator: self-improvement system ready`
-- `evaluator: self-improvement system initialized` from app wiring
-
-### Expected prompt-building debug logs
-When sending a prompt in a normal session, debug logs may show:
-
-- `Self-improvement prompt build completed`
-- `evaluator: selected template` or `evaluator: template selection skipped below threshold`
-- `evaluator: recorded template selection`
-- `Self-improvement template selected`
-- `Self-improvement learned skills injected` if skills exist
-
-### Expected evaluation logs when a session ends
-When the session is ended, you should see:
-
-- `evaluator: starting session evaluation`
-- `evaluator: session evaluated`
-- optionally `evaluator: judge output`
-- optionally `evaluator: new skill saved`
-
----
-
-## Manual Validation Through the TUI
-
-### Scenario A — Validate startup wiring
-1. Start Pando in TUI mode with debug enabled.
-2. Watch the startup logs.
-3. Confirm the evaluator startup messages appear.
-4. If they do not appear, the self-improvement system is not initializing.
-
-### Scenario B — Validate prompt builder integration
-1. Start a fresh session in the TUI.
-2. Send a simple coder request, for example:
-   - "Explain the current project structure"
-   - or "Inspect the repository and summarize the architecture"
-3. Watch debug logs while the first response is being prepared.
-4. Confirm one of these happens:
-   - template selection is skipped because threshold is not reached, or
-   - a template is selected and recorded for the current session.
-5. The critical validation point is that the logs mention the current `session_id` when template selection is recorded.
-
-### Scenario C — Validate end-of-session evaluation
-1. Complete one or more interactions in the session.
-2. End the session from the TUI flow you normally use.
-3. Watch logs immediately after ending the session.
-4. Confirm that evaluation starts and completes.
-5. If async mode is enabled, wait a few seconds and check logs again.
-
-### Scenario D — Validate UCB behavior in TUI after enough sessions
-1. Set `evaluator.minSessionsForUCB = 1` for easier testing.
-2. Run at least two separate sessions with the evaluator enabled.
-3. End each session cleanly so scores are written.
-4. Start another session.
-5. Watch logs during prompt construction.
-6. Confirm that template selection now happens instead of only threshold-skipped messages.
-
-### Scenario E — Validate learned skills injection
-1. Configure a judge model.
-2. Run one or more successful sessions with sufficiently rich content.
-3. End the sessions.
-4. Start a new session.
-5. Watch prompt-related debug logs.
-6. Confirm that learned skills are loaded and injected if any skill was generated by the judge.
-
----
-
-## Manual Validation Through the WebUI
-
-### Scenario A — Validate startup and API-backed state
-1. Start the application and open the WebUI.
-2. Open the area where evaluator/self-improvement metrics are exposed, if available.
-3. Confirm that evaluator state does not appear as disabled.
-4. If the UI has no explicit startup badge, use logs as the primary startup validation mechanism.
-
-### Scenario B — Validate session scoring through normal chat usage
-1. Create a new chat/session in the WebUI.
-2. Send one or more prompts.
-3. Finish the interaction.
-4. End or close the session in the usual way that triggers session completion.
-5. Refresh the evaluator-related view if the UI exposes metrics/templates/sessions.
-6. Confirm that the number of evaluated sessions increases.
-
-### Scenario C — Validate template statistics visibility
-1. Open the evaluator/templates view in the WebUI if present.
-2. Confirm that templates are listed.
-3. After enough evaluated sessions, verify that usage counts or ranking values change.
-4. If `minSessionsForUCB` is low, confirm that templates begin to accumulate usage.
-
-### Scenario D — Validate skill visibility
-1. Open the evaluator/skills view in the WebUI if present.
-2. After successful judged sessions, confirm that one or more skills appear.
-3. Start another chat session.
-4. Watch logs to confirm those skills are being loaded into the prompt builder.
-
----
-
-## API-Assisted UI Validation
-Even when validating through TUI or WebUI, you can cross-check state through the API.
-
-Useful endpoints:
-
-- `GET /api/v1/evaluator/metrics`
-- `GET /api/v1/evaluator/templates`
-- `GET /api/v1/evaluator/skills`
-- `GET /api/v1/evaluator/sessions`
-
-### What to confirm in each endpoint
-
-#### Metrics
-Check that:
-- `is_enabled` is `true`
-- `total_sessions` increases after ended sessions
-- `avg_reward` becomes non-zero after evaluations
-
-#### Templates
-Check that:
-- templates are present
-- `uses` increases over time
-- `ucb_score` and `win_rate` become populated
-
-#### Skills
-Check that:
-- skills remain empty if no judge is configured or no qualifying session exists
-- skills appear after successful judged sessions
-
-#### Sessions
-Check that:
-- new evaluated session rows appear
-- `template_id` is populated once template selection is happening with session context
-
-The most important regression check is this:
-
-- before the fix, `template_id` often remained empty
-- after the fix, `template_id` should be present when a template was selected during prompt building
-
----
-
-## Suggested Minimal End-to-End Validation Script (Manual)
-
-### Fast path for a local tester
-1. Enable:
-   - `evaluator.enabled = true`
-   - `debug = true`
-   - `evaluator.minSessionsForUCB = 1`
-2. Start the app.
-3. Confirm evaluator startup logs appear.
-4. Open TUI or WebUI.
-5. Create session A.
-6. Send a prompt and finish/end the session.
-7. Confirm:
-   - evaluation started
-   - evaluation completed
-   - a session score exists
-8. Create session B.
-9. Send another prompt.
-10. Confirm during prompt build:
-   - a template is selected or at least consulted
-   - template selection is recorded with `session_id`
-11. End session B.
-12. Open evaluator metrics/templates/sessions UI or API.
-13. Confirm:
-   - evaluated sessions increased
-   - template usage increased
-   - `template_id` is present in evaluated sessions when selection occurred
-
----
-
-## Failure Interpretation Guide
-
-### Case 1 — No startup logs
-Likely causes:
-- evaluator disabled in config
-- config not loaded as expected
-- evaluator initialization failed before app wiring completed
-
-### Case 2 — Startup logs exist, but no template selection logs
-Likely causes:
-- prompt builder not reached for that agent flow
-- not enough sessions yet for UCB
-- no active templates for the requested section
-
-### Case 3 — Template selection logs appear, but no recorded session linkage
-Likely causes:
-- session context is not reaching the prompt builder
-- the session was generated through a path that still does not pass `prompt.SessionIDKey`
-
-### Case 4 — Evaluation logs never appear when ending a session
-Likely causes:
-- session end action is not being triggered from that UI flow
-- evaluator not wired into session lifecycle
-- async evaluation failed before completion
-
-### Case 5 — Sessions are evaluated, but no skills appear
-Likely causes:
-- no judge model configured
-- sessions do not meet the judge threshold for skill extraction
-- judge returned no high-confidence skill
-
----
-
-## Recommended Manual Test Matrix
-
-### TUI
-- startup logs visible
-- prompt build logs visible
-- session end triggers evaluation
-- evaluator sessions count increases
-
-### WebUI
-- session creation works
-- session completion writes evaluator rows
-- templates page reflects usage/ranking
-- skills page reflects learned skills when judge is enabled
-
-### Regression checks
-- `template_id` is no longer missing for selected templates
-- prompt builder logs include session-aware template recording
-- evaluator logs reflect actual runtime activity instead of silent no-op behavior
-
----
-
-## Success Criteria
-You can consider the fix validated when all of the following are true:
-
-- evaluator startup logs appear on application start
-- prompt-builder debug logs show evaluator participation
-- template selection can be recorded with the active `session_id`
-- ending a session triggers evaluation logs
-- evaluator metrics/sessions reflect newly scored sessions
-- once thresholds are met, template usage and UCB-related behavior become observable
-- if a judge is configured, learned skills can eventually appear and be injected into later prompts
+## Success criteria
+Doctor is healthy (no warnings), evaluated sessions increase after normal use, the sessions view explains each score, variants and skills are attributed per session, and judge usage stays within the configured budget.

@@ -97,6 +97,13 @@ type EvaluatorService struct {
 	budgetWarnedDay string
 	// lastJudgeErr is the most recent judge failure (init or call).
 	lastJudgeErr *JudgeError
+	// lastEvalErr is the most recent evaluation failure since the process started.
+	lastEvalErr *JudgeError
+	// bg is the background (idle sweeper / backfill) state, see BackgroundState.
+	bg BackgroundState
+	// onFirstPass, when set, runs once after the first background pass on the
+	// primary instance (the startup diagnostic).
+	onFirstPass func(ctx context.Context)
 }
 
 // JudgeError is the most recent judge failure, kept in memory for diagnostics.
@@ -118,6 +125,27 @@ func (s *EvaluatorService) LastJudgeError() *JudgeError {
 	}
 	e := *s.lastJudgeErr
 	return &e
+}
+
+// LastEvaluationError returns the most recent evaluation failure since the
+// process started, or nil when there was none.
+func (s *EvaluatorService) LastEvaluationError() *JudgeError {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lastEvalErr == nil {
+		return nil
+	}
+	e := *s.lastEvalErr
+	return &e
+}
+
+func (s *EvaluatorService) recordEvalError(err error) {
+	s.mu.Lock()
+	s.lastEvalErr = &JudgeError{Message: err.Error(), At: time.Now()}
+	s.mu.Unlock()
 }
 
 func (s *EvaluatorService) recordJudgeError(err error) {
@@ -339,8 +367,18 @@ func (s *EvaluatorService) RecordFeedback(ctx context.Context, sessionID, rating
 	return s.EvaluateNow(ctx, sessionID, EvaluateOptions{Force: true, Rescore: true, SkipJudge: true})
 }
 
-// runEvaluation performs the actual evaluation logic.
+// runEvaluation performs the evaluation and remembers the last failure for the
+// doctor report.
 func (s *EvaluatorService) runEvaluation(ctx context.Context, sessionID string, opts EvaluateOptions) (*Result, error) {
+	res, err := s.evaluate(ctx, sessionID, opts)
+	if err != nil {
+		s.recordEvalError(err)
+	}
+	return res, err
+}
+
+// evaluate performs the actual evaluation logic.
+func (s *EvaluatorService) evaluate(ctx context.Context, sessionID string, opts EvaluateOptions) (*Result, error) {
 	res := &Result{SessionID: sessionID}
 	// Idempotency: skip if already evaluated, unless explicitly re-scoring.
 	existing, scoreErr := s.db.GetSessionScore(ctx, sessionID)
@@ -883,7 +921,7 @@ func (s *EvaluatorService) GetStats(ctx context.Context) (*Stats, error) {
 		lastEval = time.Unix(aggr.LastEvaluation.Int64, 0)
 	}
 
-	return &Stats{
+	st := &Stats{
 		TotalEvaluations: int(aggr.TotalEvaluations),
 		Templates:        templateStats,
 		SkillCount:       int(aggr.ActiveSkills),
@@ -891,7 +929,17 @@ func (s *EvaluatorService) GetStats(ctx context.Context) (*Stats, error) {
 		AvgReward:        aggr.AvgReward,
 		LastEvaluation:   lastEval,
 		IsEnabled:        true,
-	}, nil
+	}
+	if recent, err := RecentSessionDetails(ctx, s.db, 20); err == nil {
+		st.RecentSessions = recent
+	}
+	if daily, err := DailyMetrics(ctx, s.db, 14, time.Now()); err == nil {
+		st.Daily = daily
+	}
+	if rep, err := s.Diagnose(ctx); err == nil {
+		st.Problem = rep.ProblemLine()
+	}
+	return st, nil
 }
 
 // minUserTurns is the minimum number of user messages a session needs to be scored.

@@ -1,187 +1,74 @@
-# Self-Improvement System — Complete Architecture Analysis
-
-**Date:** 2026-05-30  
-**Status:** Current implementation  
-**Scope:** `internal/evaluator/`, `internal/llm/prompt/`, `internal/session/`, `internal/app/`, `internal/llm/evaluatortools/`
-
 ---
-
-## Overview
-
-Pando's self-improvement system is an autonomous evaluation loop that:
-1. Scores every conversation using a reward function after session end
-2. Selects the best prompt template variant per section using UCB1 (Multi-Armed Bandit)
-3. Extracts reusable behavioral rules ("skills") from high-quality sessions via an LLM judge
-4. Injects learned skills into future system prompts
-
-The system is **opt-in** (`evaluator.enabled = false` by default) and designed for **zero failure propagation** — all evaluator errors are logged as warnings and never break normal operation.
-
+created_at: 2026-05-30T15:28:21.20920331Z
+updated_at: 2026-09-29T21:52:07.985227228Z
+tags:
+    - docs
+    - evaluator
+    - self-improvement
 ---
+# Self-improvement system (shipped design, PANDO-EP-0014)
 
-## Package Map
+Status: describes what ships after PANDO-EP-0014 (2026-09-29). The pre-epic analysis is in [[pando/analysis/self-improvement-status-2026-09.md]]. Per-story detail: [[pando/changes/evaluator-session-triggers.md]], [[pando/changes/evaluator-honest-reward.md]], [[pando/changes/evaluator-judge-gating.md]], [[pando/changes/evaluator-template-variants.md]], [[pando/changes/evaluator-reviewable-skills.md]], [[pando/changes/evaluator-context-trimmer-flag]], [[pando/changes/evaluator-observability-doctor.md]]. Validation steps: [[pando/docs/self-improvement-manual-validation.md]].
 
-```
-internal/evaluator/
-├── types.go         — Data types: PromptTemplate, Skill, Stats, RewardResult, JudgeOutput
-├── service.go       — EvaluatorService: main orchestrator, implements Service interface
-├── reward.go        — Reward function R = α*S_success + β*S_tokens
-├── ucb.go           — UCB1 score: avg_reward + c * sqrt(ln(N)/n_i)
-└── judge.go         — LLM-as-Judge: renders prompt, calls cheap model, parses JSON output
+Principle (see [[decision_no_user_memory_scope]]): no per-turn LLM calls, no unreviewable automatic prompt mutation. Prompt variants are human-authored files; learned skills are files a human approves.
 
-internal/llm/prompt/
-├── builder.go       — PromptBuilder.Build(): integrates evaluator for template selection + skill injection
-└── prompt.go        — globalEvaluator singleton, SetGlobalEvaluator()
+## Lifecycle
 
-internal/session/session.go
-  — EndSession() calls globalEvaluator.EvaluateSession() (non-blocking)
+1. **Triggers.** A session is scored when the TUI switches away from it or exits, an ACP session closes, the app shuts down (flush), the idle sweeper finds it idle for `idleTimeout`, the startup backfill picks it up, or explicitly (`pando evaluate`, `/evaluate`, `POST /api/v1/evaluator/sessions/{id}/evaluate`, MCP tool). Guards (one place, `EvaluatorService.runEvaluation`): already scored -> skip; child session -> skip unless `includeSubagents`; fewer than 2 user messages -> skip (explicit calls bypass turn/subagent guards, never idempotency). Sweeper and backfill run only on the primary instance (they follow failover promotion).
+2. **Reward (no LLM).** Weighted mean of the components available for the session, weights renormalised: `success` (correction regexes over user turns after the first), `tokens` (vs recent baseline), `toolErrors`, `cancels`, `repetition`, `turns`, `endState`. Explicit `/feedback good|bad` overrides (bad <= 0.25, good >= 0.85) and re-scores in place. The decomposition is stored as JSON in `session_scores.components`.
+3. **Judge gating.** The LLM judge runs only for decisive sessions: reward >= `judge.highReward` or <= `judge.lowReward`, at least `judge.minTurns` user turns, transcript capped to `judge.maxTranscriptTokens` (head + tail), within the daily budget (`dailyCalls`, `dailyTokens`, counted from persisted scores). Never during backfill unless `backfillJudge`, never on re-scores. Output (reasoning, key points, task type, confidence, skill proposal), model and tokens are persisted.
+4. **Variant stats.** Each prompt section with variant files picks one variant per (session, section), frozen in `session_template_selections`. On first evaluation the session reward is added to `prompt_variant_stats` for the variants it ran with; selection uses least-used until `minSessionsForUCB` evaluated sessions, then UCB1.
+5. **Skill proposals and review.** The judge may propose a rule (confidence >= 0.7). It is written as `.pando/skills/learned/<id>.md` with status `pending`. Only `approved` skills are injected, as a block frozen per session (approval reaches the next new session). Each injected skill accrues `success_rate` from the rewards of the sessions it ran in; underperformers are auto-rejected.
 
-internal/app/app.go
-  — Wires everything: creates EvaluatorService, evaluatorPromptAdapter, seeds DB templates
+## Config reference (`[evaluator]`, defaults)
 
-internal/llm/evaluatortools/evaluator_tool.go
-  — MCP tools: pando_evaluator_stats, pando_evaluator_skills, pando_evaluator_evaluate
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled` | false | Master switch. Also disabled at load time when no model resolves. |
+| `model`, `provider` | coder model | Judge model; seeded from the coder agent on first run. |
+| `async` | true | Evaluate in the background. |
+| `weights.*` (`alphaWeight`/`betaWeight` legacy) | success 0.5, tokens 0.15, toolErrors 0.1, cancels/repetition/turns 0.05, endState 0.1 | Relative reward weights. |
+| `correctionsPatterns` | built-in list | Regexes flagging user corrections. Use single backslashes. |
+| `taskPatterns` | built-in list | Regex -> task type for `ClassifyTask`. |
+| `explorationC` | 1.41 | UCB1 exploration. |
+| `minSessionsForUCB` | 5 | Evaluated sessions per section before UCB replaces least-used. |
+| `maxTokensBaseline` | 50 | Recent sessions used as token baseline. |
+| `maxSkills` | 100 | Cap of approved skills. |
+| `idleTimeout` | 30m | Idle time before the sweeper scores a session. |
+| `backfillLimit` | 50 | Old sessions scored at startup (negative disables). |
+| `backfillJudge` | false | Run the judge during backfill. |
+| `includeSubagents` | false | Also score child sessions. |
+| `judge.highReward` / `judge.lowReward` | 0.8 / 0.3 | Decisive bands. |
+| `judge.minTurns` | 4 | Minimum user turns for a judge call. |
+| `judge.maxTranscriptTokens` | 6000 | Transcript cap. |
+| `judge.dailyCalls` / `judge.dailyTokens` | 20 / 200000 | Daily budget, 0 = unlimited. |
+| `templates.enabled` | true | Kill switch for variant selection (inert without variant files). |
+| `contextTrimmer.enabled` / `.minConfidence` | false / 0.7 | Opt-in extra LLM call per new session that filters tools. |
+| `judgePromptTemplate` | built-in | Custom judge prompt path. |
 
-internal/db/self_improvement.sql.go
-  — SQLC queries: InsertSessionScore, ListActiveTemplatesBySection, InsertSkill, etc.
+All keys are editable in WebUI Settings > Self-Improvement and the TUI settings page (with help text).
 
-internal/db/migrations/
-  — Tables: prompt_templates, session_scores, prompt_ucb_stats, skill_library
-```
+## Surfaces
 
----
+- CLI: `pando evaluate [id | --all --limit N] [--judge]`, `pando skills list|approve|reject`, `pando evaluator doctor [--json]`.
+- REST: `/api/v1/evaluator/{metrics,templates,skills,sessions,doctor}`, `POST .../skills/{id}/approve|reject`, `POST .../sessions/{id}/evaluate|feedback`, `/api/v1/config/evaluator`.
+- WebUI Self-Improvement view: doctor banner, metric cards (judge usage), 14-day evaluations chart, variants ranking, skills review, sessions tab (score components, correction hits, variants, skills, judge reasoning, feedback, open in chat).
+- TUI evaluator page: metrics header with 14-day sparkline and doctor warning; `s` toggles variants / recent sessions (reward, corrections, top components, variants/skills, judge); `a`/`x` review skills. A status-bar warning appears ~75s after start when nothing was evaluated recently.
+- Startup: after the first background pass on the primary, the doctor summary is logged at Info (warnings at Warn).
 
-## Data Flow
+## Authoring variants
 
-### 1. Session Start — Prompt Construction
+Create `.pando/prompts/variants/<section>/<name>.md.tpl` (project) or `~/.config/pando/prompts/variants/...` (global; project wins). `<section>` is the exact render name of the prompt section (for example `base/workflow`). The file is a normal Go template using the same data and Lua hooks as the embedded one. `default.md.tpl` is ignored (the embedded template is the implicit `default`). A section with the default plus at least one file is A/B tested. Check with `pando evaluator doctor` (sections listed as competing) and the WebUI ranking.
 
-```
-app.go → agent creates PromptBuilder
-PromptBuilder.Build(ctx)
-  └─ per section (base/identity, capabilities/*, context/*, ...):
-       └─ renderSection(ctx, sectionName)
-            └─ evaluator.SelectTemplate(ctx, sectionName)
-                 ├─ UCB not ready (< MinSessionsForUCB)? → nil, use registry default
-                 └─ UCB ready? → compute UCBScore for each template variant
-                                  → return best template content
-                                  → RecordTemplateSelection(ctx, sessionID, templateID)
-  └─ evaluator.GetActiveSkills(ctx, "general")  ← hardcoded "general"
-       └─ inject as "## Learned Optimization Rules" section at end of prompt
-```
+## Reviewing skills
 
-### 2. Session End — Evaluation
+`pando skills list --status pending`, read the file under `.pando/skills/learned/`, edit if wanted, then `pando skills approve <id>` or `reject <id>` (or the buttons in WebUI/TUI). Approval applies to sessions started afterwards.
 
-```
-session.EndSession(ctx, id)
-  └─ globalEvaluator.EvaluateSession(ctx, sessionID)
-       └─ [async goroutine if cfg.Async=true]
-            └─ runEvaluation(ctx, sessionID)
-                 ├─ Idempotency check: GetSessionScore → skip if already evaluated
-                 ├─ Load messages: msgs.List(ctx, sessionID)
-                 ├─ messagesToInfo: convert to []messageInfo
-                 ├─ GetTokenBaseline: rolling avg of last N sessions' tokens
-                 ├─ calculateReward(msgInfos, patterns, baseline, α, β)
-                 │    ├─ S_success = 1.0 - 0.3 * corrections  (min 0)
-                 │    ├─ S_tokens  = 1.0 - (totalTokens - baseline) / baseline  (clamped 0-1)
-                 │    └─ R = α * S_success + β * S_tokens
-                 ├─ InsertSessionScore (persists reward decomposition)
-                 └─ if judge != nil && reward.Total > 0.5 || S_success == 1.0:
-                      └─ judge.Evaluate(ctx, JudgeMeta{transcript, template, corrections, tokens})
-                           └─ renderJudgePrompt → SendMessages → parseJudgeOutput (JSON)
-                           └─ saveSkillFromJudge if confidence >= 0.7
-                                ├─ Enforce MaxSkills: DeactivateLowestSkill if over limit
-                                └─ InsertSkill(title, content, task_type, source_session)
-```
+## Troubleshooting with the doctor
 
-### 3. UCB Template Selection (detail)
+Run `pando evaluator doctor` (or open the WebUI banner "Show report", or `GET /api/v1/evaluator/doctor`). It reports enablement and why not (disabled, missing model, provider missing/disabled/no key), eligible vs never-evaluated sessions, the last evaluation and its error (in-memory, only in a running instance), judge budget today and last judge error, variant directories and competing sections, skills by status, context trimmer state, sweeper/backfill state, and lints patterns. Typical findings:
 
-```go
-UCBScore(avgReward, totalSessions, timesUsed, explorationC) float64
-  = avgReward + explorationC * sqrt(ln(totalSessions) / timesUsed)
-  // timesUsed == 0 → MaxFloat64 (always try unexplored templates first)
-```
-
-Templates are stored per `section` name (e.g. `"base/identity"`, `"capabilities/code_indexing"`).
-UCB activates only after `MinSessionsForUCB` (default: 5) sessions are evaluated.
-
----
-
-## Configuration (`EvaluatorConfig`)
-
-```toml
-[evaluator]
-enabled = true
-model = "claude-haiku-4-5-20251001"   # cheap judge model
-provider = ""                          # auto-detected from model
-alphaWeight = 0.8                      # weight for S_success
-betaWeight = 0.2                       # weight for S_tokens
-explorationC = 1.41                    # UCB exploration factor (sqrt(2))
-minSessionsForUCB = 5                  # min sessions before UCB activates
-correctionsPatterns = ["arréglalo", "así no", "está mal", "fix", "wrong"]
-maxTokensBaseline = 50                 # rolling window for token baseline
-maxSkills = 100                        # skill library size cap
-judgePromptTemplate = ""              # optional custom judge prompt path
-async = true                           # background evaluation
-```
-
----
-
-## Database Tables
-
-| Table | Purpose |
-|---|---|
-| `prompt_templates` | Template variants per section (id, section, name, content, version, is_default) |
-| `session_scores` | Per-session reward (reward, success_score, efficiency_score, corrections, template_id) |
-| `prompt_ucb_stats` | Materialized UCB state (avg_reward, times_used) — updated by DB trigger |
-| `skill_library` | Learned rules (title, content, task_type, success_rate, usage_count, active) |
-
----
-
-## Anti-Cycle Architecture
-
-To avoid import cycles (`internal/llm/tools ← internal/evaluator ← internal/llm/provider ← internal/llm/tools`):
-
-1. `internal/llm/prompt/builder.go` defines `PromptEvaluator` interface with mirror types
-2. `internal/app/app.go` provides `evaluatorPromptAdapter` that translates between packages
-3. `internal/session/session.go` defines a local `evaluatorService` interface (only `EvaluateSession`)
-4. `internal/llm/evaluatortools/` is a separate package just for MCP tool wrappers
-
----
-
-## Judge Prompt (default)
-
-The judge evaluates sessions on 6 dimensions:
-1. **Scope compliance** — Did the agent respect explicit boundaries (NO, NEVER, only change X)?
-2. **Step-by-step adherence** — Did it follow numbered steps in order?
-3. **Constraint handling** — Did it treat ALL-CAPS instructions as hard constraints?
-4. **Anti-patterns** — Scripts when direct action requested, unrequested features, verbose summaries
-5. **Iterative correction handling** — Did it incorporate user corrections precisely?
-6. **Context utilisation** — Did it use provided file refs, error messages, project context?
-
-Output JSON: `{reasoning, key_points[], new_skill, task_type, confidence}`
-
-Skill is saved only if `confidence >= 0.7`.
-
----
-
-## Wiring in app.go
-
-```go
-// app.go initialization sequence:
-evalSvc, _ := evaluator.New(cfg.Evaluator, q, messages)
-app.Evaluator = evalSvc
-session.SetEvaluator(evalSvc)                                    // trigger on EndSession
-prompt.SetGlobalEvaluator(&evaluatorPromptAdapter{svc: evalSvc}) // UCB + skill injection
-seedEvaluatorTemplates(ctx, q)                                   // seed default templates in DB
-```
-
----
-
-## MCP Tools Available to Agent
-
-| Tool | Description |
-|---|---|
-| `pando_evaluator_stats` | UCB rankings, avg reward, skill count, top skills |
-| `pando_evaluator_skills` | List skills filtered by task_type |
-| `pando_evaluator_evaluate` | Trigger evaluation for a session_id |
-
-These tools allow the agent to introspect its own self-improvement state mid-session.
+- "never evaluated: N, last evaluation never": triggers did not fire; run `pando evaluate --all --limit 20` and check the log.
+- Pattern lint `double_backslash`: a TOML single-quoted `'\\bwrong\\b'` keeps two backslashes and matches a literal backslash. Use `'(?i)\bwrong\b'` or a double-quoted `"(?i)\\bwrong\\b"`.
+- Judge never runs: reward not in a decisive band, fewer than `minTurns`, budget exhausted, or judge init error (see doctor).
+- Task type is not stored with a score (only inside the judge analysis), so metrics show mean reward per day, not per task type.

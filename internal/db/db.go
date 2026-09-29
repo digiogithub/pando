@@ -147,18 +147,6 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.updateSessionStmt, err = db.PrepareContext(ctx, updateSession); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateSession: %w", err)
 	}
-	if q.insertPromptTemplateStmt, err = db.PrepareContext(ctx, insertPromptTemplate); err != nil {
-		return nil, fmt.Errorf("error preparing query InsertPromptTemplate: %w", err)
-	}
-	if q.getPromptTemplateStmt, err = db.PrepareContext(ctx, getPromptTemplate); err != nil {
-		return nil, fmt.Errorf("error preparing query GetPromptTemplate: %w", err)
-	}
-	if q.listActiveTemplatesBySectionStmt, err = db.PrepareContext(ctx, listActiveTemplatesBySection); err != nil {
-		return nil, fmt.Errorf("error preparing query ListActiveTemplatesBySection: %w", err)
-	}
-	if q.countPromptTemplatesStmt, err = db.PrepareContext(ctx, countPromptTemplates); err != nil {
-		return nil, fmt.Errorf("error preparing query CountPromptTemplates: %w", err)
-	}
 	if q.insertSessionScoreStmt, err = db.PrepareContext(ctx, insertSessionScore); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertSessionScore: %w", err)
 	}
@@ -170,12 +158,6 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	}
 	if q.listSessionScoresStmt, err = db.PrepareContext(ctx, listSessionScores); err != nil {
 		return nil, fmt.Errorf("error preparing query ListSessionScores: %w", err)
-	}
-	if q.getTokenBaselineStmt, err = db.PrepareContext(ctx, getTokenBaseline); err != nil {
-		return nil, fmt.Errorf("error preparing query GetTokenBaseline: %w", err)
-	}
-	if q.getUCBStatsStmt, err = db.PrepareContext(ctx, getUCBStats); err != nil {
-		return nil, fmt.Errorf("error preparing query GetUCBStats: %w", err)
 	}
 	if q.insertSkillStmt, err = db.PrepareContext(ctx, insertSkill); err != nil {
 		return nil, fmt.Errorf("error preparing query InsertSkill: %w", err)
@@ -189,14 +171,8 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.countActiveSkillsStmt, err = db.PrepareContext(ctx, countActiveSkills); err != nil {
 		return nil, fmt.Errorf("error preparing query CountActiveSkills: %w", err)
 	}
-	if q.deactivateLowestSkillStmt, err = db.PrepareContext(ctx, deactivateLowestSkill); err != nil {
-		return nil, fmt.Errorf("error preparing query DeactivateLowestSkill: %w", err)
-	}
 	if q.incrementSkillUsageStmt, err = db.PrepareContext(ctx, incrementSkillUsage); err != nil {
 		return nil, fmt.Errorf("error preparing query IncrementSkillUsage: %w", err)
-	}
-	if q.listUCBRankingStmt, err = db.PrepareContext(ctx, listUCBRanking); err != nil {
-		return nil, fmt.Errorf("error preparing query ListUCBRanking: %w", err)
 	}
 	if q.getEvaluatorStatsStmt, err = db.PrepareContext(ctx, getEvaluatorStats); err != nil {
 		return nil, fmt.Errorf("error preparing query GetEvaluatorStats: %w", err)
@@ -435,26 +411,6 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing updateSessionStmt: %w", cerr)
 		}
 	}
-	if q.insertPromptTemplateStmt != nil {
-		if cerr := q.insertPromptTemplateStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing insertPromptTemplateStmt: %w", cerr)
-		}
-	}
-	if q.getPromptTemplateStmt != nil {
-		if cerr := q.getPromptTemplateStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing getPromptTemplateStmt: %w", cerr)
-		}
-	}
-	if q.listActiveTemplatesBySectionStmt != nil {
-		if cerr := q.listActiveTemplatesBySectionStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing listActiveTemplatesBySectionStmt: %w", cerr)
-		}
-	}
-	if q.countPromptTemplatesStmt != nil {
-		if cerr := q.countPromptTemplatesStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing countPromptTemplatesStmt: %w", cerr)
-		}
-	}
 	if q.insertSessionScoreStmt != nil {
 		if cerr := q.insertSessionScoreStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing insertSessionScoreStmt: %w", cerr)
@@ -473,16 +429,6 @@ func (q *Queries) Close() error {
 	if q.listSessionScoresStmt != nil {
 		if cerr := q.listSessionScoresStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listSessionScoresStmt: %w", cerr)
-		}
-	}
-	if q.getTokenBaselineStmt != nil {
-		if cerr := q.getTokenBaselineStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing getTokenBaselineStmt: %w", cerr)
-		}
-	}
-	if q.getUCBStatsStmt != nil {
-		if cerr := q.getUCBStatsStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing getUCBStatsStmt: %w", cerr)
 		}
 	}
 	if q.insertSkillStmt != nil {
@@ -505,19 +451,9 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing countActiveSkillsStmt: %w", cerr)
 		}
 	}
-	if q.deactivateLowestSkillStmt != nil {
-		if cerr := q.deactivateLowestSkillStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing deactivateLowestSkillStmt: %w", cerr)
-		}
-	}
 	if q.incrementSkillUsageStmt != nil {
 		if cerr := q.incrementSkillUsageStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing incrementSkillUsageStmt: %w", cerr)
-		}
-	}
-	if q.listUCBRankingStmt != nil {
-		if cerr := q.listUCBRankingStmt.Close(); cerr != nil {
-			err = fmt.Errorf("error closing listUCBRankingStmt: %w", cerr)
 		}
 	}
 	if q.getEvaluatorStatsStmt != nil {
@@ -645,23 +581,15 @@ type Queries struct {
 	updateGoalStatusStmt                 *sql.Stmt
 	updateMessageStmt                    *sql.Stmt
 	updateSessionStmt                    *sql.Stmt
-	insertPromptTemplateStmt             *sql.Stmt
-	getPromptTemplateStmt                *sql.Stmt
-	listActiveTemplatesBySectionStmt     *sql.Stmt
-	countPromptTemplatesStmt             *sql.Stmt
 	insertSessionScoreStmt               *sql.Stmt
 	getSessionScoreStmt                  *sql.Stmt
 	countSessionScoresStmt               *sql.Stmt
 	listSessionScoresStmt                *sql.Stmt
-	getTokenBaselineStmt                 *sql.Stmt
-	getUCBStatsStmt                      *sql.Stmt
 	insertSkillStmt                      *sql.Stmt
 	listActiveSkillsByTypeStmt           *sql.Stmt
 	listAllActiveSkillsStmt              *sql.Stmt
 	countActiveSkillsStmt                *sql.Stmt
-	deactivateLowestSkillStmt            *sql.Stmt
 	incrementSkillUsageStmt              *sql.Stmt
-	listUCBRankingStmt                   *sql.Stmt
 	getEvaluatorStatsStmt                *sql.Stmt
 	createProjectStmt                    *sql.Stmt
 	getProjectStmt                       *sql.Stmt
@@ -718,23 +646,15 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		updateGoalStatusStmt:                 q.updateGoalStatusStmt,
 		updateMessageStmt:                    q.updateMessageStmt,
 		updateSessionStmt:                    q.updateSessionStmt,
-		insertPromptTemplateStmt:             q.insertPromptTemplateStmt,
-		getPromptTemplateStmt:                q.getPromptTemplateStmt,
-		listActiveTemplatesBySectionStmt:     q.listActiveTemplatesBySectionStmt,
-		countPromptTemplatesStmt:             q.countPromptTemplatesStmt,
 		insertSessionScoreStmt:               q.insertSessionScoreStmt,
 		getSessionScoreStmt:                  q.getSessionScoreStmt,
 		countSessionScoresStmt:               q.countSessionScoresStmt,
 		listSessionScoresStmt:                q.listSessionScoresStmt,
-		getTokenBaselineStmt:                 q.getTokenBaselineStmt,
-		getUCBStatsStmt:                      q.getUCBStatsStmt,
 		insertSkillStmt:                      q.insertSkillStmt,
 		listActiveSkillsByTypeStmt:           q.listActiveSkillsByTypeStmt,
 		listAllActiveSkillsStmt:              q.listAllActiveSkillsStmt,
 		countActiveSkillsStmt:                q.countActiveSkillsStmt,
-		deactivateLowestSkillStmt:            q.deactivateLowestSkillStmt,
 		incrementSkillUsageStmt:              q.incrementSkillUsageStmt,
-		listUCBRankingStmt:                   q.listUCBRankingStmt,
 		getEvaluatorStatsStmt:                q.getEvaluatorStatsStmt,
 		createProjectStmt:                    q.createProjectStmt,
 		getProjectStmt:                       q.getProjectStmt,

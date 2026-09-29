@@ -163,6 +163,10 @@ export default function SelfImprovementSettings() {
   }
   const setWeight = (key: keyof EvaluatorWeights, v: number) =>
     updateEvaluator({ weights: { ...weights, [key]: v } })
+  const judge = evaluator.judge ?? {}
+  const setJudge = (patch: Partial<NonNullable<typeof evaluator.judge>>) =>
+    updateEvaluator({ judge: { ...judge, ...patch } })
+  const trimmer = evaluator.contextTrimmer ?? { enabled: false }
 
   if (evaluatorLoading) {
     return <div className="settings-loading">Loading evaluator settings…</div>
@@ -223,6 +227,79 @@ export default function SelfImprovementSettings() {
         </SettingsRow>
       </SettingsSection>
 
+      <SettingsSection title="When sessions are evaluated">
+        <SettingsRow
+          label="Idle timeout"
+          description="A session with no new message for this long is scored by the idle sweeper (Go duration, e.g. 30m, 2h). Sessions are also scored when you switch away from them and at shutdown."
+          htmlFor="evaluator-idle-timeout"
+        >
+          <Input
+            id="evaluator-idle-timeout"
+            value={evaluator.idleTimeout ?? '30m'}
+            onChange={(e) => updateEvaluator({ idleTimeout: e.target.value })}
+            placeholder="30m"
+          />
+        </SettingsRow>
+        <SettingsRow
+          label="Backfill limit"
+          description="Historical unscored sessions evaluated at startup (primary instance only). 0 uses the default 50; a negative value disables the backfill."
+          htmlFor="evaluator-backfill-limit"
+        >
+          <Input
+            id="evaluator-backfill-limit"
+            type="number"
+            step={1}
+            value={evaluator.backfillLimit ?? 50}
+            onChange={(e) => updateEvaluator({ backfillLimit: parseInt(e.target.value, 10) || 0 })}
+          />
+        </SettingsRow>
+        <SettingsRow label="Judge during backfill" description="Also run the LLM judge on backfilled sessions (costs judge calls; off by default)" htmlFor="evaluator-backfill-judge">
+          <Switch id="evaluator-backfill-judge" checked={evaluator.backfillJudge ?? false} onCheckedChange={(v) => updateEvaluator({ backfillJudge: v })} />
+        </SettingsRow>
+        <SettingsRow label="Include subagent sessions" description="Also evaluate delegated (child) sessions. Off by default: only root sessions are scored." htmlFor="evaluator-include-subagents">
+          <Switch id="evaluator-include-subagents" checked={evaluator.includeSubagents ?? false} onCheckedChange={(v) => updateEvaluator({ includeSubagents: v })} />
+        </SettingsRow>
+      </SettingsSection>
+
+      <SettingsSection title="LLM judge gating and budget">
+        <SliderInput label="High reward band (judge at or above)" value={judge.highReward ?? 0.8} onChange={(v) => setJudge({ highReward: v })} />
+        <SliderInput label="Low reward band (judge at or below)" value={judge.lowReward ?? 0.3} onChange={(v) => setJudge({ lowReward: v })} />
+        <SettingsRow label="Minimum user turns" description="The judge only runs for sessions with at least this many user turns." htmlFor="evaluator-judge-min-turns">
+          <Input id="evaluator-judge-min-turns" type="number" min={1} step={1} value={judge.minTurns ?? 4} onChange={(e) => setJudge({ minTurns: parseInt(e.target.value, 10) || 0 })} />
+        </SettingsRow>
+        <SettingsRow label="Transcript cap (tokens)" description="The judge prompt keeps the head and tail of the transcript within this budget." htmlFor="evaluator-judge-max-transcript">
+          <Input id="evaluator-judge-max-transcript" type="number" min={500} step={500} value={judge.maxTranscriptTokens ?? 6000} onChange={(e) => setJudge({ maxTranscriptTokens: parseInt(e.target.value, 10) || 0 })} />
+        </SettingsRow>
+        <SettingsRow label="Daily judge calls" description="Maximum judge calls per local day. 0 means unlimited." htmlFor="evaluator-judge-daily-calls">
+          <Input id="evaluator-judge-daily-calls" type="number" min={0} step={1} value={judge.dailyCalls ?? 20} onChange={(e) => setJudge({ dailyCalls: parseInt(e.target.value, 10) || 0 })} />
+        </SettingsRow>
+        <SettingsRow label="Daily judge tokens" description="Maximum estimated judge tokens (prompt plus completion) per local day. 0 means unlimited." htmlFor="evaluator-judge-daily-tokens">
+          <Input id="evaluator-judge-daily-tokens" type="number" min={0} step={1000} value={judge.dailyTokens ?? 200000} onChange={(e) => setJudge({ dailyTokens: parseInt(e.target.value, 10) || 0 })} />
+        </SettingsRow>
+      </SettingsSection>
+
+      <SettingsSection title="Prompt variants and context trimming">
+        <SettingsRow
+          label="Prompt variant selection"
+          description="A/B test the variant files under .pando/prompts/variants/<section>/<name>.md.tpl. Inert until such files exist."
+          htmlFor="evaluator-templates-enabled"
+        >
+          <Switch id="evaluator-templates-enabled" checked={evaluator.templates?.enabled ?? true} onCheckedChange={(v) => updateEvaluator({ templates: { enabled: v } })} />
+        </SettingsRow>
+        <SettingsRow
+          label="Context trimmer"
+          description="Experimental: an extra LLM call on every new session that filters the tools shown to the model. Off by default."
+          htmlFor="evaluator-trimmer-enabled"
+        >
+          <Switch id="evaluator-trimmer-enabled" checked={trimmer.enabled} onCheckedChange={(v) => updateEvaluator({ contextTrimmer: { ...trimmer, enabled: v } })} />
+        </SettingsRow>
+        <SliderInput
+          label="Trimmer minimum confidence"
+          value={trimmer.minConfidence ?? 0.7}
+          onChange={(v) => updateEvaluator({ contextTrimmer: { ...trimmer, minConfidence: v } })}
+        />
+      </SettingsSection>
+
       <SettingsSection title="Correction patterns">
         <div className="p-4">
           <TagListEditor
@@ -230,6 +307,10 @@ export default function SelfImprovementSettings() {
             onChange={(v) => updateEvaluator({ correctionsPatterns: v })}
             placeholder="regex pattern…"
           />
+          <div className="settings-banner mt-3">
+            Use single backslashes (for example <code>(?i)\bwrong\b</code>). A doubled backslash matches a literal
+            backslash and never fires. <code>pando evaluator doctor</code> flags these.
+          </div>
         </div>
       </SettingsSection>
 

@@ -38,10 +38,6 @@ type Querier interface {
 	UpdateMessage(ctx context.Context, arg UpdateMessageParams) error
 	UpdateSession(ctx context.Context, arg UpdateSessionParams) (Session, error)
 	// Self-improvement queries
-	InsertPromptTemplate(ctx context.Context, arg InsertPromptTemplateParams) (PromptTemplate, error)
-	GetPromptTemplate(ctx context.Context, id string) (PromptTemplate, error)
-	ListActiveTemplatesBySection(ctx context.Context, section string) ([]ListActiveTemplatesBySectionRow, error)
-	CountPromptTemplates(ctx context.Context) (int64, error)
 	InsertSessionScore(ctx context.Context, arg InsertSessionScoreParams) (SessionScore, error)
 	ListUnscoredSessions(ctx context.Context, arg ListUnscoredSessionsParams) ([]string, error)
 	GetSessionScore(ctx context.Context, sessionID string) (SessionScore, error)
@@ -52,6 +48,14 @@ type Querier interface {
 	GetSessionTemplateSelection(ctx context.Context, arg GetSessionTemplateSelectionParams) (string, error)
 	ListVariantSelectionCounts(ctx context.Context, section string) ([]ListVariantSelectionCountsRow, error)
 	ListVariantStatsBySection(ctx context.Context, section string) ([]PromptVariantStat, error)
+	CountEligibleSessions(ctx context.Context, includeChildren int64) (int64, error)
+	CountUnscoredEligibleSessions(ctx context.Context, includeChildren int64) (int64, error)
+	CountRecentEligibleScored(ctx context.Context, arg CountRecentEligibleScoredParams) (CountRecentEligibleScoredRow, error)
+	GetLastEvaluationAt(ctx context.Context) (int64, error)
+	ListSessionScoresWithTitle(ctx context.Context, limit int64) ([]ListSessionScoresWithTitleRow, error)
+	ListRecentSessionVariants(ctx context.Context, limit int64) ([]ListRecentSessionVariantsRow, error)
+	ListRecentSessionSkills(ctx context.Context, limit int64) ([]ListRecentSessionSkillsRow, error)
+	ListDailyEvaluationMetrics(ctx context.Context, evaluatedAt int64) ([]ListDailyEvaluationMetricsRow, error)
 	ListAllVariantStats(ctx context.Context) ([]PromptVariantStat, error)
 	ApplySessionRewardToVariantStats(ctx context.Context, arg ApplySessionRewardToVariantStatsParams) error
 	ApplyRewardDeltaToVariantStats(ctx context.Context, arg ApplyRewardDeltaToVariantStatsParams) error
@@ -60,13 +64,10 @@ type Querier interface {
 	GetLatestSessionFeedback(ctx context.Context, subject string) (string, error)
 	CountSessionScores(ctx context.Context) (int64, error)
 	ListSessionScores(ctx context.Context, limit int64) ([]SessionScore, error)
-	GetTokenBaseline(ctx context.Context, limit int64) (float64, error)
-	GetUCBStats(ctx context.Context, templateID string) (PromptUcbStat, error)
 	InsertSkill(ctx context.Context, arg InsertSkillParams) (SkillLibrary, error)
 	ListActiveSkillsByType(ctx context.Context, arg ListActiveSkillsByTypeParams) ([]SkillLibrary, error)
 	ListAllActiveSkills(ctx context.Context) ([]SkillLibrary, error)
 	CountActiveSkills(ctx context.Context) (int64, error)
-	DeactivateLowestSkill(ctx context.Context) error
 	// DeactivateUnderperformingSkills deactivates skills that have low success rate and
 	// high usage, indicating they do not improve outcomes despite being frequently selected.
 	DeactivateUnderperformingSkills(ctx context.Context) error
@@ -81,7 +82,6 @@ type Querier interface {
 	ListSessionInjectedSkills(ctx context.Context, sessionID string) ([]SkillLibrary, error)
 	ApplySessionRewardToSkillStats(ctx context.Context, arg ApplySessionRewardToSkillStatsParams) error
 	ApplyRewardDeltaToSkillStats(ctx context.Context, arg ApplyRewardDeltaToSkillStatsParams) error
-	ListUCBRanking(ctx context.Context) ([]ListUCBRankingRow, error)
 	GetEvaluatorStats(ctx context.Context) (GetEvaluatorStatsRow, error)
 	// Project queries
 	CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error)

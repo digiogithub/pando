@@ -2,14 +2,16 @@
 id: PANDO-US-0075
 type: story
 title: "Observability: real data in TUI/WebUI evaluator pages, `pando evaluator doctor`, startup diagnostic and docs refresh"
-status: backlog
+status: done
 priority: medium
 parent: PANDO-EP-0014
 author: mcp
 labels: [evaluator, observability, tui, webui, docs]
 estimate: 5
 created: 2026-09-29T20:33:19Z
-updated: 2026-09-29T20:33:19Z
+updated: 2026-09-29T21:53:24Z
+started: 2026-09-29T21:39:35Z
+closed: 2026-09-29T21:53:24Z
 ---
 
 ## Description

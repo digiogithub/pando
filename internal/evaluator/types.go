@@ -89,6 +89,13 @@ type Stats struct {
 	AvgReward        float64
 	LastEvaluation   time.Time
 	IsEnabled        bool
+	// RecentSessions are the latest evaluated sessions with their reward
+	// components, variants and skills.
+	RecentSessions []SessionDetail
+	// Daily is evaluations and mean reward per day for the last 14 days.
+	Daily []DailyMetric
+	// Problem is the one-line doctor warning ("" when healthy).
+	Problem string
 }
 
 // RewardResult holds the decomposed reward calculation for a session.

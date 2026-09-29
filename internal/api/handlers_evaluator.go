@@ -1,11 +1,12 @@
 package api
 
 import (
-	"database/sql"
+	"context"
 	"encoding/json"
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
@@ -20,6 +21,16 @@ type EvaluatorMetrics struct {
 	AvgReward      float64 `json:"avg_reward"`
 	ActiveSkills   int64   `json:"active_skills"`
 	IsEnabled      bool    `json:"is_enabled"`
+	// Daily is evaluations, mean reward and judge usage per local day for the
+	// last 14 days, oldest first. Task type is not stored with a score, so the
+	// mean reward is per day rather than per task type.
+	Daily []evaluator.DailyMetric `json:"daily"`
+	// JudgeCalls / JudgePromptTokens / JudgeCompletionTokens are totals over Daily.
+	JudgeCalls            int64 `json:"judge_calls"`
+	JudgePromptTokens     int64 `json:"judge_prompt_tokens"`
+	JudgeCompletionTokens int64 `json:"judge_completion_tokens"`
+	// Problem is the one-line doctor warning; empty when healthy.
+	Problem string `json:"problem,omitempty"`
 }
 
 // TemplateVariantResponse is one prompt template variant of a section with its
@@ -89,6 +100,18 @@ type EvaluatorSessionResponse struct {
 	// Components is the persisted reward decomposition (per-signal scores,
 	// weights, correction pattern hits, explicit feedback).
 	Components json.RawMessage `json:"components"`
+	// Title is the session title.
+	Title string `json:"title,omitempty"`
+	// Corrections is the number of user turns flagged as corrections; PatternHits
+	// lists them (pattern, snippet).
+	Corrections  int                    `json:"corrections"`
+	PatternHits  []evaluator.PatternHit `json:"pattern_hits"`
+	Feedback     string                 `json:"feedback,omitempty"`
+	FeedbackNote string                 `json:"feedback_note,omitempty"`
+	// Variants are the prompt variants the session ran with; Skills the learned
+	// skills injected into it.
+	Variants []evaluator.SessionVariant  `json:"variants"`
+	Skills   []evaluator.SessionSkillRef `json:"skills"`
 	// JudgeAnalysis is the stored LLM judge output (reasoning, key points,
 	// skill proposal); null when the judge did not run for this session.
 	JudgeAnalysis         json.RawMessage `json:"judge_analysis"`
@@ -104,10 +127,10 @@ func (s *Server) handleGetEvaluatorMetrics(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	isEnabled := s.app.Evaluator != nil && s.app.Evaluator.IsEnabled()
+	isEnabled := s.app != nil && s.app.Evaluator != nil && s.app.Evaluator.IsEnabled()
 
 	if s.config.DB == nil {
-		writeJSON(w, http.StatusOK, EvaluatorMetrics{IsEnabled: isEnabled})
+		writeJSON(w, http.StatusOK, EvaluatorMetrics{IsEnabled: isEnabled, Daily: []evaluator.DailyMetric{}})
 		return
 	}
 
@@ -116,7 +139,7 @@ func (s *Server) handleGetEvaluatorMetrics(w http.ResponseWriter, r *http.Reques
 	stats, err := q.GetEvaluatorStats(r.Context())
 	if err != nil {
 		// DB might not have data yet; return safe empty metrics.
-		writeJSON(w, http.StatusOK, EvaluatorMetrics{IsEnabled: isEnabled})
+		writeJSON(w, http.StatusOK, EvaluatorMetrics{IsEnabled: isEnabled, Daily: []evaluator.DailyMetric{}})
 		return
 	}
 
@@ -125,12 +148,59 @@ func (s *Server) handleGetEvaluatorMetrics(w http.ResponseWriter, r *http.Reques
 		templateCount = int64(len(variantStats))
 	}
 
-	writeJSON(w, http.StatusOK, EvaluatorMetrics{
+	m := EvaluatorMetrics{
 		TotalSessions:  stats.TotalEvaluations,
 		TotalTemplates: templateCount,
 		AvgReward:      stats.AvgReward,
 		ActiveSkills:   stats.ActiveSkills,
 		IsEnabled:      isEnabled,
+		Daily:          []evaluator.DailyMetric{},
+	}
+	if daily, err := evaluator.DailyMetrics(r.Context(), q, 14, time.Now()); err == nil {
+		m.Daily = daily
+		for _, d := range daily {
+			m.JudgeCalls += d.JudgeCalls
+			m.JudgePromptTokens += d.JudgePromptTokens
+			m.JudgeCompletionTokens += d.JudgeCompletionTokens
+		}
+	}
+	if isEnabled {
+		if rep, err := s.evaluatorDoctor(r.Context()); err == nil {
+			m.Problem = rep.ProblemLine()
+		}
+	}
+	writeJSON(w, http.StatusOK, m)
+}
+
+// evaluatorDoctor runs the doctor against the live service when there is one,
+// or against the loaded config otherwise (evaluator disabled).
+func (s *Server) evaluatorDoctor(ctx context.Context) (*evaluator.Report, error) {
+	if s.app != nil && s.app.Evaluator != nil {
+		return s.app.Evaluator.Diagnose(ctx)
+	}
+	opts := evaluator.DiagnoseOptions{}
+	if cfg := config.Get(); cfg != nil {
+		opts.Config = cfg.Evaluator
+		opts.WorkDir = cfg.WorkingDir
+	}
+	if s.config.DB != nil {
+		opts.DB = db.New(s.config.DB)
+	}
+	return evaluator.Diagnose(ctx, opts)
+}
+
+// handleGetEvaluatorDoctor handles GET /api/v1/evaluator/doctor: the same
+// report as `pando evaluator doctor`.
+func (s *Server) handleGetEvaluatorDoctor(w http.ResponseWriter, r *http.Request) {
+	rep, err := s.evaluatorDoctor(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"report":  rep,
+		"problem": rep.ProblemLine(),
+		"text":    rep.Text(),
 	})
 }
 
@@ -280,35 +350,39 @@ func (s *Server) handleGetEvaluatorSessions(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	q := db.New(s.config.DB)
-
-	rows, err := q.ListSessionScores(r.Context(), 50)
+	details, err := evaluator.RecentSessionDetails(r.Context(), db.New(s.config.DB), 50)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{"sessions": []interface{}{}})
 		return
 	}
 
-	sessions := make([]EvaluatorSessionResponse, 0, len(rows))
-	for _, row := range rows {
-		templateID := ""
-		if row.TemplateID.Valid {
-			templateID = row.TemplateID.String
+	sessions := make([]EvaluatorSessionResponse, 0, len(details))
+	for _, d := range details {
+		hits := d.Breakdown.PatternHits
+		if hits == nil {
+			hits = []evaluator.PatternHit{}
 		}
 		sessions = append(sessions, EvaluatorSessionResponse{
-			ID:              row.ID,
-			SessionID:       row.SessionID,
-			TemplateID:      templateID,
-			Reward:          row.Reward,
-			SuccessScore:    row.SuccessScore,
-			EfficiencyScore: row.EfficiencyScore,
-			MessageCount:    row.MessageCount,
-			EvaluatedAt:     row.EvaluatedAt,
-			Components:      componentsJSON(row.Components),
-			JudgeAnalysis:   judgeAnalysisJSON(row.JudgeAnalysis),
-			JudgeModel:      row.JudgeModel.String,
+			ID:              d.SessionID,
+			SessionID:       d.SessionID,
+			Title:           d.Title,
+			Reward:          d.Reward,
+			SuccessScore:    d.SuccessScore,
+			EfficiencyScore: d.EfficiencyScore,
+			MessageCount:    d.MessageCount,
+			EvaluatedAt:     d.EvaluatedAt,
+			Corrections:     int(d.UserCorrections),
+			PatternHits:     hits,
+			Feedback:        d.Breakdown.Feedback,
+			FeedbackNote:    d.Breakdown.FeedbackNote,
+			Variants:        d.Variants,
+			Skills:          d.Skills,
+			Components:      d.Components,
+			JudgeAnalysis:   d.JudgeAnalysis,
+			JudgeModel:      d.JudgeModel,
 
-			JudgePromptTokens:     row.JudgePromptTokens,
-			JudgeCompletionTokens: row.JudgeCompletionTokens,
+			JudgePromptTokens:     d.JudgePromptTokens,
+			JudgeCompletionTokens: d.JudgeCompletionTokens,
 		})
 	}
 
@@ -349,24 +423,6 @@ func (s *Server) handleEvaluateSession(w http.ResponseWriter, r *http.Request) {
 		MessageCount:    res.Reward.MessageCount,
 		Judged:          res.Judged,
 	})
-}
-
-// judgeAnalysisJSON returns the stored judge output as raw JSON, or JSON null
-// when the judge did not run or the stored value is invalid.
-func judgeAnalysisJSON(raw sql.NullString) json.RawMessage {
-	if !raw.Valid || raw.String == "" || !json.Valid([]byte(raw.String)) {
-		return json.RawMessage("null")
-	}
-	return json.RawMessage(raw.String)
-}
-
-// componentsJSON returns the stored decomposition as raw JSON, falling back to
-// an empty object for legacy rows or invalid content.
-func componentsJSON(raw string) json.RawMessage {
-	if raw == "" || !json.Valid([]byte(raw)) {
-		return json.RawMessage("{}")
-	}
-	return json.RawMessage(raw)
 }
 
 // SessionFeedbackRequest is the body of POST /api/v1/evaluator/sessions/{id}/feedback.

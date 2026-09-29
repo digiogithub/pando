@@ -315,10 +315,30 @@ export interface EvaluatorScoreComponents {
 }
 
 // One row of GET /api/v1/evaluator/sessions.
+export interface EvaluatorSessionVariant {
+  section: string
+  variant: string
+}
+
+export interface EvaluatorSessionSkill {
+  id: string
+  title: string
+}
+
 export interface EvaluatorSessionScore {
   id: string
   session_id: string
   template_id?: string
+  title?: string
+  /** user turns flagged as corrections */
+  corrections: number
+  pattern_hits: EvaluatorPatternHit[]
+  feedback?: 'good' | 'bad'
+  feedback_note?: string
+  /** prompt variants the session ran with */
+  variants: EvaluatorSessionVariant[]
+  /** learned skills injected into the session */
+  skills: EvaluatorSessionSkill[]
   reward: number
   success_score: number
   efficiency_score: number
@@ -340,10 +360,43 @@ export interface EvaluatorJudgeAnalysis {
   confidence: number
 }
 
+export interface EvaluatorDailyMetric {
+  /** local day, YYYY-MM-DD */
+  day: string
+  evaluations: number
+  avg_reward: number
+  judge_calls: number
+  judge_prompt_tokens: number
+  judge_completion_tokens: number
+}
+
 export interface EvaluatorMetrics {
   total_sessions: number
   total_templates: number
   avg_reward: number
+  active_skills?: number
+  is_enabled?: boolean
+  /** last 14 local days, oldest first */
+  daily?: EvaluatorDailyMetric[]
+  judge_calls?: number
+  judge_prompt_tokens?: number
+  judge_completion_tokens?: number
+  /** one-line doctor warning, empty when healthy */
+  problem?: string
+}
+
+// GET /api/v1/evaluator/doctor (the text is what `pando evaluator doctor` prints).
+export interface EvaluatorDoctor {
+  problem: string
+  text: string
+  report: {
+    enabled: boolean
+    disabled_reasons?: string[]
+    warnings?: string[]
+    eligible_sessions: number
+    evaluated_sessions: number
+    never_evaluated: number
+  }
 }
 
 // Orchestrator types
@@ -605,6 +658,9 @@ export interface EvaluatorSettingsConfig {
   contextTrimmer?: {
     enabled: boolean
     minConfidence?: number
+  }
+  templates?: {
+    enabled: boolean
   }
   judge?: {
     highReward?: number

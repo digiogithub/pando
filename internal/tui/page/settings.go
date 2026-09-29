@@ -3354,6 +3354,98 @@ func buildEvaluatorSection(cfg *config.Config) settings.Section {
 			Key:   "evaluator.correctionsPatterns",
 			Type:  settings.FieldText,
 			Value: strings.Join(eval.CorrectionsPatterns, ","),
+			Hint:  "comma-separated regexes; use single backslashes (a doubled \\\\b matches a literal backslash). `pando evaluator doctor` lints them",
+		},
+		{
+			Label: "Idle Timeout",
+			Key:   "evaluator.idleTimeout",
+			Type:  settings.FieldText,
+			Value: eval.IdleTimeout,
+			Hint:  "recommended: 30m (a session idle this long is scored by the sweeper; Go duration)",
+		},
+		{
+			Label: "Backfill Limit",
+			Key:   "evaluator.backfillLimit",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(eval.BackfillLimit),
+			Hint:  "recommended: 50 (old unscored sessions evaluated at startup; negative disables)",
+		},
+		{
+			Label: "Backfill Judge",
+			Key:   "evaluator.backfillJudge",
+			Type:  settings.FieldToggle,
+			Value: boolString(eval.BackfillJudge),
+			Hint:  "default: false (also run the LLM judge on backfilled sessions)",
+		},
+		{
+			Label: "Include Subagents",
+			Key:   "evaluator.includeSubagents",
+			Type:  settings.FieldToggle,
+			Value: boolString(eval.IncludeSubagents),
+			Hint:  "default: false (also evaluate delegated child sessions)",
+		},
+		{
+			Label: "Judge High Reward",
+			Key:   "evaluator.judge.highReward",
+			Type:  settings.FieldText,
+			Value: fmt.Sprintf("%.2f", eval.Judge.HighReward),
+			Hint:  "recommended: 0.80 (judge runs for sessions scoring at or above this)",
+		},
+		{
+			Label: "Judge Low Reward",
+			Key:   "evaluator.judge.lowReward",
+			Type:  settings.FieldText,
+			Value: fmt.Sprintf("%.2f", eval.Judge.LowReward),
+			Hint:  "recommended: 0.30 (judge also runs at or below this; the middle band is skipped)",
+		},
+		{
+			Label: "Judge Min Turns",
+			Key:   "evaluator.judge.minTurns",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(eval.Judge.MinTurns),
+			Hint:  "recommended: 4 (min user turns for a judge call)",
+		},
+		{
+			Label: "Judge Transcript Cap",
+			Key:   "evaluator.judge.maxTranscriptTokens",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(eval.Judge.MaxTranscriptTokens),
+			Hint:  "recommended: 6000 (tokens of transcript sent to the judge)",
+		},
+		{
+			Label: "Judge Daily Calls",
+			Key:   "evaluator.judge.dailyCalls",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(eval.Judge.DailyCalls),
+			Hint:  "recommended: 20 (judge calls per local day; 0 = unlimited)",
+		},
+		{
+			Label: "Judge Daily Tokens",
+			Key:   "evaluator.judge.dailyTokens",
+			Type:  settings.FieldText,
+			Value: fmt.Sprint(eval.Judge.DailyTokens),
+			Hint:  "recommended: 200000 (judge tokens per local day; 0 = unlimited)",
+		},
+		{
+			Label: "Prompt Variants",
+			Key:   "evaluator.templates.enabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(eval.Templates.Enabled),
+			Hint:  "recommended: true (A/B select .pando/prompts/variants files; inert without them)",
+		},
+		{
+			Label: "Context Trimmer",
+			Key:   "evaluator.contextTrimmer.enabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(eval.ContextTrimmer.Enabled),
+			Hint:  "default: false (extra LLM call per new session to filter tools; experimental)",
+		},
+		{
+			Label: "Trimmer Min Confidence",
+			Key:   "evaluator.contextTrimmer.minConfidence",
+			Type:  settings.FieldText,
+			Value: fmt.Sprintf("%.2f", eval.ContextTrimmer.MinConfidence),
+			Hint:  "recommended: 0.70 (profiles below this confidence are ignored)",
 		},
 		{
 			Label:    "Info",
@@ -5581,6 +5673,77 @@ func saveEvaluator(field settings.Field) error {
 			}
 		}
 		evalCfg.CorrectionsPatterns = patterns
+	case "evaluator.idleTimeout":
+		d, err := time.ParseDuration(strings.TrimSpace(field.Value))
+		if err != nil || d <= 0 {
+			return fmt.Errorf("idle timeout must be a positive duration such as 30m")
+		}
+		evalCfg.IdleTimeout = strings.TrimSpace(field.Value)
+	case "evaluator.backfillLimit":
+		v, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid backfill limit: %w", err)
+		}
+		evalCfg.BackfillLimit = v
+	case "evaluator.backfillJudge":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid backfill judge value: %w", err)
+		}
+		evalCfg.BackfillJudge = v
+	case "evaluator.includeSubagents":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid include subagents value: %w", err)
+		}
+		evalCfg.IncludeSubagents = v
+	case "evaluator.templates.enabled":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid templates enabled value: %w", err)
+		}
+		evalCfg.Templates.Enabled = v
+	case "evaluator.contextTrimmer.enabled":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid context trimmer enabled value: %w", err)
+		}
+		evalCfg.ContextTrimmer.Enabled = v
+	case "evaluator.contextTrimmer.minConfidence":
+		v, err := strconv.ParseFloat(strings.TrimSpace(field.Value), 64)
+		if err != nil || v < 0 || v > 1 {
+			return fmt.Errorf("trimmer min confidence must be a number between 0.0 and 1.0")
+		}
+		evalCfg.ContextTrimmer.MinConfidence = v
+	case "evaluator.judge.highReward", "evaluator.judge.lowReward":
+		v, err := strconv.ParseFloat(strings.TrimSpace(field.Value), 64)
+		if err != nil || v < 0 || v > 1 {
+			return fmt.Errorf("judge reward band must be a number between 0.0 and 1.0")
+		}
+		// Seed the defaults first so editing one field does not turn the daily
+		// budget of an untouched judge section into "unlimited".
+		evalCfg.Judge = config.JudgeWithDefaults(evalCfg.Judge)
+		if field.Key == "evaluator.judge.highReward" {
+			evalCfg.Judge.HighReward = v
+		} else {
+			evalCfg.Judge.LowReward = v
+		}
+	case "evaluator.judge.minTurns", "evaluator.judge.maxTranscriptTokens", "evaluator.judge.dailyCalls", "evaluator.judge.dailyTokens":
+		v, err := parseIntValue(field.Value)
+		if err != nil || v < 0 {
+			return fmt.Errorf("%s must be a whole number >= 0", field.Key)
+		}
+		evalCfg.Judge = config.JudgeWithDefaults(evalCfg.Judge)
+		switch field.Key {
+		case "evaluator.judge.minTurns":
+			evalCfg.Judge.MinTurns = v
+		case "evaluator.judge.maxTranscriptTokens":
+			evalCfg.Judge.MaxTranscriptTokens = v
+		case "evaluator.judge.dailyCalls":
+			evalCfg.Judge.DailyCalls = v
+		default:
+			evalCfg.Judge.DailyTokens = int64(v)
+		}
 	case "evaluator.info":
 		// read-only informational field, nothing to save
 		return nil

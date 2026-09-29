@@ -234,6 +234,30 @@ func (a appModel) currentSessionWindowTitle() string {
 	return sessionWindowTitle(a.selectedSession.Title)
 }
 
+// evaluatorHealthCheck warns in the status bar, once, when the evaluator is
+// enabled but nothing was evaluated among the recent sessions or a pattern is
+// broken. It waits for the startup backfill so a fresh start does not warn
+// about work that is about to happen.
+func (a appModel) evaluatorHealthCheck() tea.Cmd {
+	if a.app == nil || a.app.Evaluator == nil || !a.app.Evaluator.IsEnabled() {
+		return nil
+	}
+	svc := a.app.Evaluator
+	return func() tea.Msg {
+		time.Sleep(75 * time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		rep, err := svc.Diagnose(ctx)
+		if err != nil || rep == nil {
+			return nil
+		}
+		if line := rep.ProblemLine(); line != "" {
+			return util.InfoMsg{Type: util.InfoTypeWarn, Msg: line, TTL: 15 * time.Second}
+		}
+		return nil
+	}
+}
+
 func (a appModel) Init() tea.Cmd {
 	var cmds []tea.Cmd
 	cmds = append(cmds, tea.SetWindowTitle(pandoWindowTitleBase))
@@ -273,6 +297,7 @@ func (a appModel) Init() tea.Cmd {
 	cmds = append(cmds, cmd)
 	cmd = a.projectInitDialog.Init()
 	cmds = append(cmds, cmd)
+	cmds = append(cmds, a.evaluatorHealthCheck())
 
 	// Check if we should show the init dialog.
 	// If .pando/ already exists but .pando.toml is missing, skip the dialog and

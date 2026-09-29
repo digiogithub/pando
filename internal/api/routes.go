@@ -200,6 +200,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/agentvcs/commits/{id}/revert-files", s.handleAgentVCSRevertFiles)
 	// Evaluator
 	mux.HandleFunc("GET /api/v1/evaluator/metrics", s.handleGetEvaluatorMetrics)
+	mux.HandleFunc("GET /api/v1/evaluator/doctor", s.handleGetEvaluatorDoctor)
 	mux.HandleFunc("GET /api/v1/evaluator/templates", s.handleGetEvaluatorTemplates)
 	mux.HandleFunc("GET /api/v1/evaluator/skills", s.handleGetEvaluatorSkills)
 	mux.HandleFunc("POST /api/v1/evaluator/skills/{id}/approve", s.handleReviewEvaluatorSkill(evaluator.SkillStatusApproved))
