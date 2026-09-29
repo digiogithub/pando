@@ -14,7 +14,8 @@ type stubEvaluatorService struct {
 	stats *evaluator.Stats
 }
 
-func (s stubEvaluatorService) EvaluateSession(_ context.Context, _ string) error { return nil }
+func (s stubEvaluatorService) EvaluateSession(_ context.Context, _ string) error  { return nil }
+func (s stubEvaluatorService) MarkCompleted(_ context.Context, _, _ string) error { return nil }
 func (s stubEvaluatorService) SelectTemplate(_ context.Context, _ string) (*evaluator.PromptTemplate, error) {
 	return nil, nil
 }

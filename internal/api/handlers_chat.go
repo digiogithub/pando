@@ -16,6 +16,7 @@ import (
 	"github.com/digiogithub/pando/internal/commands"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/evaluator"
 	"github.com/digiogithub/pando/internal/imageopt"
 	"github.com/digiogithub/pando/internal/learning"
 	"github.com/digiogithub/pando/internal/llm/agent"
@@ -860,6 +861,21 @@ func (s *Server) handleSlashCommandStream(w http.ResponseWriter, flusher http.Fl
 			writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": fmt.Sprintf(
 				"\nDatabase compacted (%s). Freed %s (%s → %s).",
 				res.Mode, humanizeBytes(res.Freed), humanizeBytes(res.SizeBefore), humanizeBytes(res.SizeAfter))})
+		}
+	case "evaluate":
+		if s.app.Evaluator == nil || !s.app.Evaluator.IsEnabled() {
+			writeSSEEvent(w, flusher, "error", map[string]string{"error": "evaluator is not enabled"})
+			break
+		}
+		target := strings.TrimSpace(cmdArgs)
+		if target == "" {
+			target = sessionID
+		}
+		res, err := s.app.Evaluator.EvaluateNow(ctx, target, evaluator.EvaluateOptions{Force: true})
+		if err != nil {
+			writeSSEEvent(w, flusher, "error", map[string]string{"error": "evaluation failed: " + err.Error()})
+		} else {
+			writeSSEEvent(w, flusher, "content_delta", map[string]string{"text": res.Summary()})
 		}
 	case "ponytail":
 		arg := strings.TrimSpace(cmdArgs)

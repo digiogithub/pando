@@ -884,6 +884,16 @@ type EvaluatorConfig struct {
 	JudgePromptTemplate string `toml:"judgePromptTemplate"`
 	// Async runs evaluation in background after session end. Default: true.
 	Async bool `toml:"async"`
+	// IdleTimeout is how long a session must be idle (no new message) before the
+	// idle sweeper evaluates it, as a Go duration string. Default: "30m".
+	IdleTimeout string `toml:"idleTimeout" json:"idleTimeout,omitempty"`
+	// BackfillLimit bounds how many unevaluated historical sessions the startup
+	// backfill evaluates per run. Default: 50. Negative disables the backfill.
+	BackfillLimit int `toml:"backfillLimit" json:"backfillLimit,omitempty"`
+	// BackfillJudge runs the LLM judge during startup backfill. Default: false.
+	BackfillJudge bool `toml:"backfillJudge" json:"backfillJudge,omitempty"`
+	// IncludeSubagents also evaluates delegated (child) sessions. Default: false.
+	IncludeSubagents bool `toml:"includeSubagents" json:"includeSubagents,omitempty"`
 	// TaskPatterns maps regex patterns to task type labels for ClassifyTask.
 	// Evaluated in order; first match wins. Falls back to "general" if none match.
 	TaskPatterns []TaskPatternConfig `toml:"taskPatterns" json:"taskPatterns,omitempty"`
@@ -2468,6 +2478,10 @@ func setDefaults(debug bool) {
 	viper.SetDefault("evaluator.maxTokensBaseline", 50)
 	viper.SetDefault("evaluator.maxSkills", 100)
 	viper.SetDefault("evaluator.async", true)
+	viper.SetDefault("evaluator.idleTimeout", "30m")
+	viper.SetDefault("evaluator.backfillLimit", 50)
+	viper.SetDefault("evaluator.backfillJudge", false)
+	viper.SetDefault("evaluator.includeSubagents", false)
 	viper.SetDefault("evaluator.correctionsPatterns", []string{
 		// English — generic negation / correction signals
 		`(?i)\bwrong\b`,
@@ -5822,6 +5836,12 @@ func EvaluatorWithDefaults(eval EvaluatorConfig) EvaluatorConfig {
 	}
 	if eval.MaxSkills == 0 {
 		eval.MaxSkills = 100
+	}
+	if eval.IdleTimeout == "" {
+		eval.IdleTimeout = "30m"
+	}
+	if eval.BackfillLimit == 0 {
+		eval.BackfillLimit = 50
 	}
 	// Async defaults to true but bool zero-value is false; only apply the default
 	// when the struct is fully unset so we don't override a deliberate false.

@@ -532,6 +532,17 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 				logging.Info("evaluator: context trimmer initialized")
 			}
 			logging.Info("evaluator: self-improvement system initialized", "model", cfg.Evaluator.Model)
+			// Idle sweeper + startup backfill; they only act while this instance
+			// owns the DB writer (primary or standalone), including after failover.
+			bgCtx, bgCancel := context.WithCancel(ctx)
+			app.cancelFuncsMutex.Lock()
+			app.watcherCancelFuncs = append(app.watcherCancelFuncs, bgCancel)
+			app.cancelFuncsMutex.Unlock()
+			app.watcherWG.Add(1)
+			go func() {
+				defer app.watcherWG.Done()
+				evalSvc.RunBackground(bgCtx, app.ownsDBWriter)
+			}()
 		}
 	}
 
@@ -2263,6 +2274,13 @@ func (app *App) SetIPCSecondaryContext(
 	}
 }
 
+// ownsDBWriter reports whether this instance owns the SQLite writer: it is the
+// IPC primary, or it runs standalone with no IPC client (a secondary holds one
+// until it is promoted). Background jobs must only run when this is true.
+func (app *App) ownsDBWriter() bool {
+	return app.IPCIsPrimary || app.ipcClient == nil
+}
+
 // EnsurePrimary performs an active liveness probe of the primary and, if the
 // primary is unreachable and auto-failover is enabled, triggers the failover
 // sequence.  Must be called before processing each user prompt on a secondary
@@ -2425,6 +2443,14 @@ func (app *App) PromoteToPrimary(ctx context.Context, lockFile *os.File) error {
 
 func (app *App) Shutdown() {
 	logging.Debug("App shutdown started")
+	// Let in-flight session evaluations finish (bounded) so they are not lost.
+	if app.Evaluator != nil {
+		flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := app.Evaluator.Flush(flushCtx); err != nil {
+			logging.Warn("evaluator: pending evaluations not flushed before exit", "error", err)
+		}
+		cancel()
+	}
 	// Releases the shared headless browser the design tools render through.
 	design.ClosePreviewServer()
 	design.CloseDefaultProvider()

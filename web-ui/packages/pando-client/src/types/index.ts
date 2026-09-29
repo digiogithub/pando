@@ -508,6 +508,10 @@ export interface EvaluatorSettingsConfig {
   maxSkills: number
   judgePromptTemplate: string
   async: boolean
+  idleTimeout?: string
+  backfillLimit?: number
+  backfillJudge?: boolean
+  includeSubagents?: boolean
 }
 
 // Skills catalog item (from GET /api/v1/skills/catalog?q=... → skills.sh CatalogSkill)

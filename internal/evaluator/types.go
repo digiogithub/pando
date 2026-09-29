@@ -1,6 +1,9 @@
 package evaluator
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // PromptTemplate represents a versioned prompt template variant.
 type PromptTemplate struct {
@@ -85,4 +88,43 @@ type ContextProfile struct {
 	// Confidence is a 0.0–1.0 measure of the trimmer's certainty.
 	// Profiles with Confidence < 0.5 should be ignored and defaults used.
 	Confidence float64
+}
+
+// EvaluateOptions tunes a single evaluation.
+type EvaluateOptions struct {
+	// Force bypasses the completion guards (minimum user turns, subagent
+	// sessions). Idempotency is never bypassed.
+	Force bool
+	// SkipJudge disables the LLM judge for this evaluation.
+	SkipJudge bool
+}
+
+// Result is the outcome of one evaluation.
+type Result struct {
+	SessionID string
+	// Skipped is non-empty when no score was written; it holds the reason.
+	Skipped string
+	// Reward is the decomposition of the persisted score (zero when Skipped).
+	Reward RewardResult
+	// Judged reports whether the LLM judge ran.
+	Judged bool
+}
+
+// Summary renders the result as human-readable text (reward decomposition).
+func (r *Result) Summary() string {
+	if r == nil {
+		return "no result"
+	}
+	if r.Skipped != "" {
+		return fmt.Sprintf("session %s not evaluated: %s", r.SessionID, r.Skipped)
+	}
+	judge := "off"
+	if r.Judged {
+		judge = "on"
+	}
+	rw := r.Reward
+	return fmt.Sprintf(
+		"session %s evaluated: reward %.3f (success %.2f, efficiency %.2f), corrections %d, messages %d, tokens %d prompt / %d completion, judge %s",
+		r.SessionID, rw.Total, rw.SuccessScore, rw.EfficiencyScore, rw.UserCorrections, rw.MessageCount, rw.PromptTokens, rw.CompletionTokens, judge,
+	)
 }

@@ -395,6 +395,13 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		result, err := program.Run()
 		tui.RestoreWindowTitle(tui.OriginalWindowTitle(result))
 
+		// Evaluate the session that was open at exit; Shutdown flushes it.
+		if id := tui.CurrentSessionID(result); id != "" && app.Evaluator != nil && !app.CoderAgent.IsSessionBusy(id) {
+			evalCtx, evalCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = session.MarkCompleted(evalCtx, id, "tui_exit")
+			evalCancel()
+		}
+
 		cleanupDone := make(chan struct{})
 		go func() {
 			defer close(cleanupDone)
@@ -1022,6 +1029,12 @@ func (a *acpSessionAdapter) CancelGoal(ctx context.Context, sessionID string) (d
 
 func (a *acpSessionAdapter) GetMessages(ctx context.Context, sessionID string) ([]message.Message, error) {
 	return a.msgSvc.List(ctx, sessionID)
+}
+
+// MarkCompleted lets the ACP layer trigger self-evaluation when a client closes
+// a session (optional interface, see PandoACPAgent.CloseSession).
+func (a *acpSessionAdapter) MarkCompleted(ctx context.Context, sessionID, reason string) error {
+	return session.MarkCompleted(ctx, sessionID, reason)
 }
 
 // acpPermissionAdapter adapts permission.Service to acpPkg.PermissionService.

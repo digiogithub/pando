@@ -25,6 +25,7 @@ func BuiltinCommands() []SlashCommand {
 		{Name: "compact", Description: "Create a manual compact summary for the current session", AcceptsArgs: false},
 		{Name: "summarize", Description: "Alias for /compact", AcceptsArgs: false},
 		{Name: "db-compact", Description: "Compact the database (VACUUM) and reclaim free space", AcceptsArgs: false},
+		{Name: "evaluate", Description: "Score a session with the self-improvement evaluator (optional session id; defaults to the current one)", AcceptsArgs: true},
 		{Name: "ponytail", Description: "Toggle lazy-senior-dev (ponytail) mode: lite|full|ultra|off", AcceptsArgs: true},
 		{Name: "caveman", Description: "Shorter answers to cut output tokens: lite|full|ultra", AcceptsArgs: true},
 		{Name: "caveman-finish", Description: "Disable caveman output brevity and return to normal output", AcceptsArgs: false},

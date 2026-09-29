@@ -18,6 +18,7 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/cronjob"
 	"github.com/digiogithub/pando/internal/design"
+	"github.com/digiogithub/pando/internal/evaluator"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/logging"
@@ -43,6 +44,9 @@ import (
 )
 
 type startCompactSessionMsg struct{}
+
+// evaluateSessionMsg asks the model to evaluate the currently selected session.
+type evaluateSessionMsg struct{}
 
 type originalWindowTitleMsg struct {
 	title string
@@ -187,6 +191,33 @@ func OriginalWindowTitle(model tea.Model) string {
 		return ""
 	}
 	return titledModel.originalWindowTitleValue()
+}
+
+// CurrentSessionID returns the session open in the TUI model, or "" when none
+// is selected. It is used after the program exits to evaluate that session.
+func CurrentSessionID(model tea.Model) string {
+	m, ok := model.(interface{ currentSessionIDValue() string })
+	if !ok {
+		return ""
+	}
+	return m.currentSessionIDValue()
+}
+
+func (a appModel) currentSessionIDValue() string {
+	return a.selectedSession.ID
+}
+
+// completeSession asks the evaluator to score a session the user is leaving.
+// Sessions whose agent run is still active are skipped: they are not finished,
+// and the idle sweeper picks them up later.
+func (a *appModel) completeSession(id, reason string) {
+	if id == "" || a.app == nil || a.app.Evaluator == nil {
+		return
+	}
+	if a.app.CoderAgent != nil && a.app.CoderAgent.IsSessionBusy(id) {
+		return
+	}
+	_ = session.MarkCompleted(context.Background(), id, reason)
 }
 
 func (a appModel) originalWindowTitleValue() string {
@@ -783,7 +814,32 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return a, tea.Batch(cmds...)
 
+	case evaluateSessionMsg:
+		id, svc := a.selectedSession.ID, a.app.Evaluator
+		if svc == nil || !svc.IsEnabled() {
+			return a, util.ReportWarn("Evaluator is not enabled")
+		}
+		if id == "" {
+			return a, util.ReportWarn("No session selected")
+		}
+		return a, func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			res, err := svc.EvaluateNow(ctx, id, evaluator.EvaluateOptions{Force: true})
+			if err != nil {
+				return util.InfoMsg{Type: util.InfoTypeError, Msg: err.Error()}
+			}
+			return util.InfoMsg{Type: util.InfoTypeInfo, Msg: res.Summary()}
+		}
+
+	case chat.SessionClearedMsg:
+		// New session requested: the one being left is complete.
+		a.completeSession(a.selectedSession.ID, "tui_new_session")
+
 	case chat.SessionSelectedMsg:
+		if prev := a.selectedSession.ID; prev != "" && prev != msg.ID {
+			a.completeSession(prev, "tui_session_switch")
+		}
 		a.selectedSession = msg
 		a.sessionDialog.SetSelectedSession(msg.ID)
 		a.isAgentRunning = a.app.CoderAgent.IsSessionBusy(msg.ID)
@@ -2566,6 +2622,15 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 		Category:    dialog.CommandCategorySessions,
 		Handler: func(cmd dialog.Command) tea.Cmd {
 			return util.CmdHandler(chat.SessionClearedMsg{})
+		},
+	})
+	model.RegisterCommand(dialog.Command{
+		ID:          "evaluate-session",
+		Title:       "Evaluate Session",
+		Description: "Score the current session with the self-improvement evaluator",
+		Category:    dialog.CommandCategorySessions,
+		Handler: func(cmd dialog.Command) tea.Cmd {
+			return util.CmdHandler(evaluateSessionMsg{})
 		},
 	})
 	model.RegisterCommand(dialog.Command{

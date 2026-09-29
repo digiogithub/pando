@@ -2,12 +2,13 @@
 id: PANDO-EP-0014
 type: epic
 title: Make the self-improvement loop (evaluator, UCB templates, learned skills) actually run and be useful
-status: backlog
+status: in_progress
 priority: high
 author: mcp
 labels: [evaluator, self-improvement, prompt, reliability]
 created: 2026-09-29T20:31:46Z
-updated: 2026-09-29T20:31:46Z
+updated: 2026-09-29T20:51:12Z
+started: 2026-09-29T20:51:12Z
 ---
 
 ## Description

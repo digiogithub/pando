@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/evaluator"
 )
 
 // EvaluatorMetrics is the JSON representation of aggregated evaluator statistics.
@@ -197,4 +198,40 @@ func (s *Server) handleGetEvaluatorSessions(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"sessions": sessions})
+}
+
+// EvaluateSessionResponse is the JSON result of a manual session evaluation.
+type EvaluateSessionResponse struct {
+	SessionID       string  `json:"session_id"`
+	Skipped         string  `json:"skipped,omitempty"`
+	Reward          float64 `json:"reward"`
+	SuccessScore    float64 `json:"success_score"`
+	EfficiencyScore float64 `json:"efficiency_score"`
+	UserCorrections int     `json:"user_corrections"`
+	MessageCount    int64   `json:"message_count"`
+	Judged          bool    `json:"judged"`
+}
+
+// handleEvaluateSession handles POST /api/v1/evaluator/sessions/{id}/evaluate.
+// It evaluates the session synchronously, bypassing the completion guards.
+func (s *Server) handleEvaluateSession(w http.ResponseWriter, r *http.Request) {
+	if s.app.Evaluator == nil || !s.app.Evaluator.IsEnabled() {
+		writeError(w, http.StatusConflict, "evaluator is not enabled")
+		return
+	}
+	res, err := s.app.Evaluator.EvaluateNow(r.Context(), r.PathValue("id"), evaluator.EvaluateOptions{Force: true})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, EvaluateSessionResponse{
+		SessionID:       res.SessionID,
+		Skipped:         res.Skipped,
+		Reward:          res.Reward.Total,
+		SuccessScore:    res.Reward.SuccessScore,
+		EfficiencyScore: res.Reward.EfficiencyScore,
+		UserCorrections: res.Reward.UserCorrections,
+		MessageCount:    res.Reward.MessageCount,
+		Judged:          res.Judged,
+	})
 }

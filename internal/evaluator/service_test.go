@@ -30,7 +30,10 @@ CREATE TABLE IF NOT EXISTS sessions (
     cost REAL NOT NULL DEFAULT 0.0,
     updated_at INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
-    summary_message_id TEXT
+    summary_message_id TEXT,
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+    reasoning_tokens INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS messages (

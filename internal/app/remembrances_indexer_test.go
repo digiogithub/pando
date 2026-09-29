@@ -99,6 +99,7 @@ func (s *indexingSessionService) Save(ctx context.Context, sess session.Session)
 func (s *indexingSessionService) Delete(ctx context.Context, id string) error {
 	return errors.New("not implemented")
 }
+
 func (s *indexingSessionService) EndSession(ctx context.Context, id string) error {
 	return errors.New("not implemented")
 }

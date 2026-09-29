@@ -20,8 +20,15 @@ import (
 
 // Service defines the evaluator interface used by other packages.
 type Service interface {
-	// EvaluateSession triggers evaluation of a completed session (async if configured).
+	// EvaluateSession triggers evaluation of a session on explicit request
+	// (async if configured). It bypasses the completion guards of MarkCompleted.
 	EvaluateSession(ctx context.Context, sessionID string) error
+
+	// MarkCompleted is the entry point for session-completion triggers (session
+	// switch, idle sweep, shutdown). It applies the evaluation guards (minimum
+	// user turns, subagent sessions, idempotency, in-flight dedupe) and
+	// evaluates asynchronously when configured. reason is only used for logging.
+	MarkCompleted(ctx context.Context, sessionID, reason string) error
 
 	// SelectTemplate returns the best prompt template for a section using UCB.
 	// Returns nil if insufficient history or evaluator disabled.
@@ -53,6 +60,12 @@ type EvaluatorService struct {
 	patterns     []*regexp.Regexp
 	taskPatterns []compiledPattern
 	mu           sync.Mutex
+	// inflight holds the session IDs being evaluated right now (dedupe).
+	inflight map[string]struct{}
+	// failed holds sessions the background sweeps must not retry in this process.
+	failed sync.Map
+	// wg tracks async evaluations so Flush can wait for them on shutdown.
+	wg sync.WaitGroup
 	// sessionTemplates maps sessionID -> templateID for the current session
 	sessionTemplates sync.Map
 }
@@ -79,6 +92,7 @@ func New(cfg config.EvaluatorConfig, q db.Querier, msgs message.Service) (*Evalu
 		cfg:          cfg,
 		db:           q,
 		msgs:         msgs,
+		inflight:     make(map[string]struct{}),
 		patterns:     patterns,
 		taskPatterns: compileTaskPatterns(cfg.TaskPatterns),
 	}
@@ -113,44 +127,129 @@ func (s *EvaluatorService) RecordTemplateSelection(_ context.Context, sessionID,
 	slog.Debug("evaluator: recorded template selection", "session_id", sessionID, "template_id", templateID)
 }
 
-// EvaluateSession triggers evaluation of a completed session.
+// EvaluateSession triggers evaluation of a session on explicit request. It does
+// not apply the completion guards (minimum user turns, subagent sessions).
 func (s *EvaluatorService) EvaluateSession(ctx context.Context, sessionID string) error {
-	if s == nil || !s.cfg.Enabled {
+	return s.dispatch(ctx, sessionID, "explicit", EvaluateOptions{Force: true})
+}
+
+// MarkCompleted evaluates a session that a surface considers completed. See
+// Service.MarkCompleted.
+func (s *EvaluatorService) MarkCompleted(ctx context.Context, sessionID, reason string) error {
+	return s.dispatch(ctx, sessionID, reason, EvaluateOptions{})
+}
+
+// dispatch runs an evaluation async or sync according to cfg.Async, deduping
+// concurrent triggers for the same session.
+func (s *EvaluatorService) dispatch(ctx context.Context, sessionID, reason string, opts EvaluateOptions) error {
+	if s == nil || !s.cfg.Enabled || sessionID == "" {
 		return nil
 	}
-	slog.Info("evaluator: starting session evaluation", "session_id", sessionID, "async", s.cfg.Async)
+	if !s.begin(sessionID) {
+		slog.Debug("evaluator: evaluation already in flight, skipping", "session_id", sessionID, "reason", reason)
+		return nil
+	}
+	slog.Info("evaluator: starting session evaluation", "session_id", sessionID, "reason", reason, "async", s.cfg.Async)
 	if s.cfg.Async {
+		s.wg.Add(1)
 		go func() {
+			defer s.wg.Done()
+			defer s.end(sessionID)
 			bgCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer cancel()
-			if err := s.runEvaluation(bgCtx, sessionID); err != nil {
+			if _, err := s.runEvaluation(bgCtx, sessionID, opts); err != nil {
 				slog.Warn("evaluator: evaluation failed", "session_id", sessionID, "err", err)
 			}
 		}()
 		return nil
 	}
-	return s.runEvaluation(ctx, sessionID)
+	defer s.end(sessionID)
+	_, err := s.runEvaluation(ctx, sessionID, opts)
+	return err
+}
+
+func (s *EvaluatorService) begin(sessionID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, busy := s.inflight[sessionID]; busy {
+		return false
+	}
+	s.inflight[sessionID] = struct{}{}
+	return true
+}
+
+func (s *EvaluatorService) end(sessionID string) {
+	s.mu.Lock()
+	delete(s.inflight, sessionID)
+	s.mu.Unlock()
+}
+
+// Flush waits for in-flight async evaluations until ctx is done. Call it on
+// shutdown with a short deadline so pending evaluations are not lost.
+func (s *EvaluatorService) Flush(ctx context.Context) error {
+	if s == nil {
+		return nil
+	}
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// EvaluateNow evaluates a session synchronously and returns the reward
+// decomposition (or the reason it was skipped). Unlike EvaluateSession it
+// ignores cfg.Async.
+func (s *EvaluatorService) EvaluateNow(ctx context.Context, sessionID string, opts EvaluateOptions) (*Result, error) {
+	if s == nil || !s.cfg.Enabled {
+		return &Result{SessionID: sessionID, Skipped: "evaluator disabled"}, nil
+	}
+	if !s.begin(sessionID) {
+		return &Result{SessionID: sessionID, Skipped: "evaluation already in progress"}, nil
+	}
+	defer s.end(sessionID)
+	return s.runEvaluation(ctx, sessionID, opts)
 }
 
 // runEvaluation performs the actual evaluation logic.
-func (s *EvaluatorService) runEvaluation(ctx context.Context, sessionID string) error {
+func (s *EvaluatorService) runEvaluation(ctx context.Context, sessionID string, opts EvaluateOptions) (*Result, error) {
+	res := &Result{SessionID: sessionID}
 	// Idempotency: skip if already evaluated
 	if _, err := s.db.GetSessionScore(ctx, sessionID); err == nil {
 		slog.Debug("evaluator: session already evaluated, skipping", "session_id", sessionID)
-		return nil
+		res.Skipped = "already evaluated"
+		return res, nil
+	}
+
+	sess, sessErr := s.db.GetSessionByID(ctx, sessionID)
+	if !opts.Force && !s.cfg.IncludeSubagents && sessErr == nil && sess.ParentSessionID.Valid {
+		slog.Debug("evaluator: skipping subagent session", "session_id", sessionID)
+		res.Skipped = "subagent session"
+		return res, nil
 	}
 
 	// Load messages
 	msgs, err := s.msgs.List(ctx, sessionID)
 	if err != nil {
-		return fmt.Errorf("evaluator: load messages: %w", err)
+		return res, fmt.Errorf("evaluator: load messages: %w", err)
+	}
+	if !opts.Force && countUserMessages(msgs) < minUserTurns {
+		slog.Debug("evaluator: skipping session with too few user turns", "session_id", sessionID)
+		res.Skipped = "fewer than 2 user messages"
+		return res, nil
 	}
 
 	// Convert to messageInfo for reward calculation (text + correction detection)
 	msgInfos := messagesToInfo(msgs)
 
 	// Get session-level token totals (stored at session level, not per-message)
-	if sess, err := s.db.GetSessionByID(ctx, sessionID); err == nil {
+	if sessErr == nil {
 		// Append a synthetic entry carrying the full token counts
 		msgInfos = append(msgInfos, messageInfo{
 			promptTokens:     sess.PromptTokens,
@@ -163,6 +262,7 @@ func (s *EvaluatorService) runEvaluation(ctx context.Context, sessionID string) 
 
 	// Calculate reward
 	reward := calculateReward(msgInfos, s.patterns, baseline, s.cfg.AlphaWeight, s.cfg.BetaWeight)
+	res.Reward = reward
 
 	// Get template used for this session
 	var templateID sql.NullString
@@ -188,7 +288,7 @@ func (s *EvaluatorService) runEvaluation(ctx context.Context, sessionID string) 
 		UserCorrections:  int64(reward.UserCorrections),
 	})
 	if err != nil {
-		return fmt.Errorf("evaluator: insert session score: %w", err)
+		return res, fmt.Errorf("evaluator: insert session score: %w", err)
 	}
 
 	slog.Info("evaluator: session evaluated",
@@ -200,7 +300,7 @@ func (s *EvaluatorService) runEvaluation(ctx context.Context, sessionID string) 
 	)
 
 	// Call LLM judge for moderately successful sessions (avoid wasting tokens on failures).
-	if s.judge != nil && (reward.Total > 0.5 || reward.SuccessScore == 1.0) {
+	if s.judge != nil && !opts.SkipJudge && (reward.Total > 0.5 || reward.SuccessScore == 1.0) {
 		transcript := buildTranscript(msgs)
 		templateName := "default"
 		if templateID.Valid {
@@ -218,13 +318,14 @@ func (s *EvaluatorService) runEvaluation(ctx context.Context, sessionID string) 
 			slog.Warn("evaluator: judge call failed", "session_id", sessionID, "err", judgeErr)
 		} else if judgeOut != nil {
 			slog.Debug("evaluator: judge output", "session_id", sessionID, "confidence", judgeOut.Confidence, "task_type", judgeOut.TaskType)
+			res.Judged = true
 			if err := s.saveSkillFromJudge(ctx, judgeOut, sessionID, templateID.String); err != nil {
 				slog.Warn("evaluator: save skill failed", "session_id", sessionID, "err", err)
 			}
 		}
 	}
 
-	return nil
+	return res, nil
 }
 
 // SelectTemplate returns the best template for a section using UCB.
@@ -390,6 +491,19 @@ func (s *EvaluatorService) GetStats(ctx context.Context) (*Stats, error) {
 		LastEvaluation:   lastEval,
 		IsEnabled:        true,
 	}, nil
+}
+
+// minUserTurns is the minimum number of user messages a session needs to be scored.
+const minUserTurns = 2
+
+func countUserMessages(msgs []message.Message) int {
+	n := 0
+	for _, m := range msgs {
+		if m.Role == message.User {
+			n++
+		}
+	}
+	return n
 }
 
 // messagesToInfo converts message.Message slice to evaluator messageInfo slice.

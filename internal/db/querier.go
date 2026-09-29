@@ -43,6 +43,7 @@ type Querier interface {
 	ListActiveTemplatesBySection(ctx context.Context, section string) ([]ListActiveTemplatesBySectionRow, error)
 	CountPromptTemplates(ctx context.Context) (int64, error)
 	InsertSessionScore(ctx context.Context, arg InsertSessionScoreParams) (SessionScore, error)
+	ListUnscoredSessions(ctx context.Context, arg ListUnscoredSessionsParams) ([]string, error)
 	GetSessionScore(ctx context.Context, sessionID string) (SessionScore, error)
 	CountSessionScores(ctx context.Context) (int64, error)
 	ListSessionScores(ctx context.Context, limit int64) ([]SessionScore, error)

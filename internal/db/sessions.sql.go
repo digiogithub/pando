@@ -157,6 +157,50 @@ func (q *Queries) ListSessions(ctx context.Context) ([]Session, error) {
 	return items, nil
 }
 
+const listUnscoredSessions = `-- name: ListUnscoredSessions :many
+SELECT s.id
+FROM sessions s
+WHERE s.message_count > 0
+  AND s.updated_at <= ?
+  AND (? = 1 OR s.parent_session_id IS NULL)
+  AND NOT EXISTS (SELECT 1 FROM session_scores sc WHERE sc.session_id = s.id)
+  AND (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id AND m.role = 'user') >= 2
+ORDER BY s.updated_at ASC, s.created_at ASC
+LIMIT ?
+`
+
+type ListUnscoredSessionsParams struct {
+	UpdatedAt int64       `json:"updated_at"`
+	Column2   interface{} `json:"column_2"`
+	Limit     int64       `json:"limit"`
+}
+
+// Sessions that have no session_scores row yet, at least two user messages and
+// have been idle since before the cutoff (unix seconds), oldest first. Child
+// (subagent) sessions are only returned when include_children is 1.
+func (q *Queries) ListUnscoredSessions(ctx context.Context, arg ListUnscoredSessionsParams) ([]string, error) {
+	rows, err := q.query(ctx, q.listUnscoredSessionsStmt, listUnscoredSessions, arg.UpdatedAt, arg.Column2, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateSession = `-- name: UpdateSession :one
 UPDATE sessions
 SET

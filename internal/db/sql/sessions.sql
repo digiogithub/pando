@@ -35,6 +35,20 @@ WHERE parent_session_id is NULL
   AND message_count > 0
 ORDER BY updated_at DESC, created_at DESC;
 
+-- name: ListUnscoredSessions :many
+-- Sessions that have no session_scores row yet, at least two user messages and
+-- have been idle since before the cutoff (unix seconds), oldest first. Child
+-- (subagent) sessions are only returned when include_children is 1.
+SELECT s.id
+FROM sessions s
+WHERE s.message_count > 0
+  AND s.updated_at <= ?
+  AND (? = 1 OR s.parent_session_id IS NULL)
+  AND NOT EXISTS (SELECT 1 FROM session_scores sc WHERE sc.session_id = s.id)
+  AND (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id AND m.role = 'user') >= 2
+ORDER BY s.updated_at ASC, s.created_at ASC
+LIMIT ?;
+
 -- name: UpdateSession :one
 UPDATE sessions
 SET

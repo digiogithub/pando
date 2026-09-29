@@ -87,6 +87,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.listNewFilesStmt, err = db.PrepareContext(ctx, listNewFiles); err != nil {
 		return nil, fmt.Errorf("error preparing query ListNewFiles: %w", err)
 	}
+	if q.listUnscoredSessionsStmt, err = db.PrepareContext(ctx, listUnscoredSessions); err != nil {
+		return nil, fmt.Errorf("error preparing query ListUnscoredSessions: %w", err)
+	}
 	if q.listSessionsStmt, err = db.PrepareContext(ctx, listSessions); err != nil {
 		return nil, fmt.Errorf("error preparing query ListSessions: %w", err)
 	}
@@ -291,6 +294,11 @@ func (q *Queries) Close() error {
 	if q.listNewFilesStmt != nil {
 		if cerr := q.listNewFilesStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing listNewFilesStmt: %w", cerr)
+		}
+	}
+	if q.listUnscoredSessionsStmt != nil {
+		if cerr := q.listUnscoredSessionsStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing listUnscoredSessionsStmt: %w", cerr)
 		}
 	}
 	if q.listSessionsStmt != nil {
@@ -514,6 +522,7 @@ type Queries struct {
 	listMessagesBySessionStmt        *sql.Stmt
 	listNewFilesStmt                 *sql.Stmt
 	listSessionsStmt                 *sql.Stmt
+	listUnscoredSessionsStmt         *sql.Stmt
 	updateFileStmt                   *sql.Stmt
 	updateGoalProgressStmt           *sql.Stmt
 	updateGoalStatusStmt             *sql.Stmt
@@ -573,6 +582,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listMessagesBySessionStmt:        q.listMessagesBySessionStmt,
 		listNewFilesStmt:                 q.listNewFilesStmt,
 		listSessionsStmt:                 q.listSessionsStmt,
+		listUnscoredSessionsStmt:         q.listUnscoredSessionsStmt,
 		updateFileStmt:                   q.updateFileStmt,
 		updateGoalProgressStmt:           q.updateGoalProgressStmt,
 		updateGoalStatusStmt:             q.updateGoalStatusStmt,

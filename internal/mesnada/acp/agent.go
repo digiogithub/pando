@@ -783,6 +783,14 @@ func (a *PandoACPAgent) CloseSession(ctx context.Context, req acpsdk.CloseSessio
 	delete(a.sessions, req.SessionId)
 	a.sessionsMu.Unlock()
 
+	// Closing a session is a completion signal for the self-improvement
+	// evaluator (guards and idempotency live in the evaluator).
+	if c, ok := a.sessionService.(interface {
+		MarkCompleted(ctx context.Context, sessionID, reason string) error
+	}); ok {
+		_ = c.MarkCompleted(ctx, acpSession.PandoSessionID(), "acp_close")
+	}
+
 	a.logger.Printf("[ACP AGENT] CloseSession: session %s closed", req.SessionId)
 	logging.Info("acp: session closed", "session_id", string(req.SessionId))
 	return acpsdk.CloseSessionResponse{}, nil

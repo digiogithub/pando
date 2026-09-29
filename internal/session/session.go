@@ -19,7 +19,7 @@ import (
 // evaluatorService is the minimal interface used by session to trigger evaluation.
 // A local interface is used to avoid import cycles between session and evaluator.
 type evaluatorService interface {
-	EvaluateSession(ctx context.Context, sessionID string) error
+	MarkCompleted(ctx context.Context, sessionID, reason string) error
 }
 
 // IPCPublisher is the minimal interface used by session to publish ZMQ events.
@@ -392,11 +392,7 @@ func (s *service) EndSession(ctx context.Context, id string) error {
 
 	// Trigger async self-evaluation (non-blocking, after snapshot and Lua hooks).
 	// Evaluator errors never fail EndSession.
-	if globalEvaluator != nil {
-		if err := globalEvaluator.EvaluateSession(ctx, id); err != nil {
-			slog.Warn("evaluator: failed to trigger evaluation", "session_id", id, "err", err)
-		}
-	}
+	_ = MarkCompleted(ctx, id, "end_session")
 
 	// Clear session cache
 	tools.UnregisterSessionCache(id)
@@ -404,6 +400,22 @@ func (s *service) EndSession(ctx context.Context, id string) error {
 	// Close browser session if one was created for this session
 	tools.CloseBrowserSession(id)
 
+	return nil
+}
+
+// MarkCompleted triggers self-evaluation of a session that a surface considers
+// completed (session switch, idle, close, shutdown) without the side effects of
+// EndSession (notification, snapshot, hooks, cache teardown). It is a no-op when
+// the evaluator is disabled. The evaluator owns the guards (minimum user turns,
+// subagent sessions, idempotency, in-flight dedupe).
+func MarkCompleted(ctx context.Context, id, reason string) error {
+	if globalEvaluator == nil || id == "" {
+		return nil
+	}
+	if err := globalEvaluator.MarkCompleted(ctx, id, reason); err != nil {
+		slog.Warn("evaluator: failed to trigger evaluation", "session_id", id, "reason", reason, "err", err)
+		return err
+	}
 	return nil
 }
 
