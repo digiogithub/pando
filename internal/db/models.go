@@ -34,21 +34,23 @@ type PromptTemplate struct {
 }
 
 type SessionScore struct {
-	ID               string         `json:"id"`
-	SessionID        string         `json:"session_id"`
-	TemplateID       sql.NullString `json:"template_id"`
-	Reward           float64        `json:"reward"`
-	SuccessScore     float64        `json:"success_score"`
-	EfficiencyScore  float64        `json:"efficiency_score"`
-	JudgeAnalysis    sql.NullString `json:"judge_analysis"`
-	JudgeModel       sql.NullString `json:"judge_model"`
-	PromptTokens     int64          `json:"prompt_tokens"`
-	CompletionTokens int64          `json:"completion_tokens"`
-	MessageCount     int64          `json:"message_count"`
-	UserCorrections  int64          `json:"user_corrections"`
-	EvaluatedAt      int64          `json:"evaluated_at"`
-	CreatedAt        int64          `json:"created_at"`
-	Components       string         `json:"components"`
+	ID                    string         `json:"id"`
+	SessionID             string         `json:"session_id"`
+	TemplateID            sql.NullString `json:"template_id"`
+	Reward                float64        `json:"reward"`
+	SuccessScore          float64        `json:"success_score"`
+	EfficiencyScore       float64        `json:"efficiency_score"`
+	JudgeAnalysis         sql.NullString `json:"judge_analysis"`
+	JudgeModel            sql.NullString `json:"judge_model"`
+	PromptTokens          int64          `json:"prompt_tokens"`
+	CompletionTokens      int64          `json:"completion_tokens"`
+	MessageCount          int64          `json:"message_count"`
+	UserCorrections       int64          `json:"user_corrections"`
+	EvaluatedAt           int64          `json:"evaluated_at"`
+	CreatedAt             int64          `json:"created_at"`
+	Components            string         `json:"components"`
+	JudgePromptTokens     int64          `json:"judge_prompt_tokens"`
+	JudgeCompletionTokens int64          `json:"judge_completion_tokens"`
 }
 
 type PromptUcbStat struct {

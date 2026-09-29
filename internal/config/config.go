@@ -926,6 +926,32 @@ func (c EvaluatorConfig) ResolvedWeights() EvaluatorWeights {
 	return w
 }
 
+// JudgeConfig gates and bounds the LLM judge (evaluator.judge.*). A zero value
+// makes the evaluator fall back to the defaults documented per field.
+type JudgeConfig struct {
+	// HighReward: the judge runs only for sessions whose reward is >= this.
+	// Default: 0.8.
+	HighReward float64 `toml:"highReward" json:"highReward"`
+	// LowReward: the judge also runs for sessions whose reward is <= this.
+	// Rewards between the two bands are not decisive and skip the judge.
+	// Default: 0.3.
+	LowReward float64 `toml:"lowReward" json:"lowReward"`
+	// MinTurns is the minimum number of user turns for a judge call. Default: 4.
+	MinTurns int `toml:"minTurns" json:"minTurns"`
+	// MaxTranscriptTokens caps the judge prompt (head + tail of the transcript,
+	// middle elided). Default: 6000.
+	MaxTranscriptTokens int `toml:"maxTranscriptTokens" json:"maxTranscriptTokens"`
+	// DailyCalls is the max judge calls per local day. 0 = unlimited (the viper
+	// default is 20).
+	DailyCalls int `toml:"dailyCalls" json:"dailyCalls"`
+	// DailyTokens is the max estimated judge tokens (prompt + completion) per
+	// local day. 0 = unlimited (the viper default is 200000).
+	DailyTokens int64 `toml:"dailyTokens" json:"dailyTokens"`
+}
+
+// IsZero reports whether no judge setting was provided.
+func (j JudgeConfig) IsZero() bool { return j == JudgeConfig{} }
+
 // EvaluatorConfig controls the self-improvement evaluation loop.
 type EvaluatorConfig struct {
 	// Enabled activates the evaluation loop. Default: false (opt-in).
@@ -971,6 +997,9 @@ type EvaluatorConfig struct {
 	TaskPatterns []TaskPatternConfig `toml:"taskPatterns" json:"taskPatterns,omitempty"`
 	// ContextTrimmer configures the opt-in pre-session tool filter. Default: off.
 	ContextTrimmer ContextTrimmerConfig `toml:"contextTrimmer" json:"contextTrimmer"`
+	// Judge gates and bounds the LLM judge (decisive sessions only, transcript
+	// cap, daily budget).
+	Judge JudgeConfig `toml:"judge" json:"judge"`
 }
 
 // ACPConfig defines the configuration for the ACP (Agent Client Protocol) stdio server.
@@ -2556,6 +2585,12 @@ func setDefaults(debug bool) {
 	viper.SetDefault("evaluator.backfillLimit", 50)
 	viper.SetDefault("evaluator.backfillJudge", false)
 	viper.SetDefault("evaluator.includeSubagents", false)
+	viper.SetDefault("evaluator.judge.highReward", 0.8)
+	viper.SetDefault("evaluator.judge.lowReward", 0.3)
+	viper.SetDefault("evaluator.judge.minTurns", 4)
+	viper.SetDefault("evaluator.judge.maxTranscriptTokens", 6000)
+	viper.SetDefault("evaluator.judge.dailyCalls", 20)
+	viper.SetDefault("evaluator.judge.dailyTokens", 200000)
 	viper.SetDefault("evaluator.contextTrimmer.enabled", false)
 	viper.SetDefault("evaluator.contextTrimmer.minConfidence", 0.7)
 	viper.SetDefault("evaluator.correctionsPatterns", DefaultCorrectionsPatterns())
@@ -5888,6 +5923,29 @@ func DefaultCorrectionsPatterns() []string {
 	}
 }
 
+// JudgeWithDefaults fills unset judge settings. The daily budgets are only
+// defaulted when no judge setting is present at all, because 0 is a valid
+// "unlimited" value for them.
+func JudgeWithDefaults(j JudgeConfig) JudgeConfig {
+	if j.IsZero() {
+		j.DailyCalls = 20
+		j.DailyTokens = 200000
+	}
+	if j.HighReward == 0 {
+		j.HighReward = 0.8
+	}
+	if j.LowReward == 0 {
+		j.LowReward = 0.3
+	}
+	if j.MinTurns == 0 {
+		j.MinTurns = 4
+	}
+	if j.MaxTranscriptTokens == 0 {
+		j.MaxTranscriptTokens = 6000
+	}
+	return j
+}
+
 // EvaluatorWithDefaults returns a copy of eval with zero/empty values replaced
 // by the recommended defaults. This ensures the TUI and Web-UI always display
 // sensible values even when the user has not explicitly configured the evaluator.
@@ -5928,6 +5986,7 @@ func EvaluatorWithDefaults(eval EvaluatorConfig) EvaluatorConfig {
 	if eval.ContextTrimmer.MinConfidence == 0 {
 		eval.ContextTrimmer.MinConfidence = 0.7
 	}
+	eval.Judge = JudgeWithDefaults(eval.Judge)
 	// Legacy alpha/beta migrate transparently into the weights table.
 	eval.Weights = eval.ResolvedWeights()
 	// Async defaults to true but bool zero-value is false; only apply the default

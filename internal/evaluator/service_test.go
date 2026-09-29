@@ -76,7 +76,9 @@ CREATE TABLE IF NOT EXISTS session_scores (
     user_corrections INTEGER NOT NULL DEFAULT 0,
     evaluated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
     created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    components TEXT NOT NULL DEFAULT '{}'
+    components TEXT NOT NULL DEFAULT '{}',
+    judge_prompt_tokens INTEGER NOT NULL DEFAULT 0,
+    judge_completion_tokens INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS events (

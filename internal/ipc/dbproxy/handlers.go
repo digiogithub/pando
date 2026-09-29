@@ -210,6 +210,16 @@ func dispatchWrite(ctx context.Context, q db.Querier, req WriteRequest) (json.Ra
 		}
 		return marshalResult(r, nil)
 
+	case "UpdateSessionScoreJudge":
+		var p db.UpdateSessionScoreJudgeParams
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return nil, invalidParamsErr(req.Method, err)
+		}
+		if err := q.UpdateSessionScoreJudge(ctx, p); err != nil {
+			return nil, mapToWriteError(req.Method, err)
+		}
+		return marshalResult(nil, nil)
+
 	case "InsertSessionFeedbackEvent":
 		var p db.InsertSessionFeedbackEventParams
 		if err := json.Unmarshal(req.Params, &p); err != nil {

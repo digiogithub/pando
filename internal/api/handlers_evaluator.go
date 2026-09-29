@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 
@@ -51,6 +52,12 @@ type EvaluatorSessionResponse struct {
 	// Components is the persisted reward decomposition (per-signal scores,
 	// weights, correction pattern hits, explicit feedback).
 	Components json.RawMessage `json:"components"`
+	// JudgeAnalysis is the stored LLM judge output (reasoning, key points,
+	// skill proposal); null when the judge did not run for this session.
+	JudgeAnalysis         json.RawMessage `json:"judge_analysis"`
+	JudgeModel            string          `json:"judge_model,omitempty"`
+	JudgePromptTokens     int64           `json:"judge_prompt_tokens"`
+	JudgeCompletionTokens int64           `json:"judge_completion_tokens"`
 }
 
 // handleGetEvaluatorMetrics handles GET /api/v1/evaluator/metrics.
@@ -199,6 +206,11 @@ func (s *Server) handleGetEvaluatorSessions(w http.ResponseWriter, r *http.Reque
 			MessageCount:    row.MessageCount,
 			EvaluatedAt:     row.EvaluatedAt,
 			Components:      componentsJSON(row.Components),
+			JudgeAnalysis:   judgeAnalysisJSON(row.JudgeAnalysis),
+			JudgeModel:      row.JudgeModel.String,
+
+			JudgePromptTokens:     row.JudgePromptTokens,
+			JudgeCompletionTokens: row.JudgeCompletionTokens,
 		})
 	}
 
@@ -239,6 +251,15 @@ func (s *Server) handleEvaluateSession(w http.ResponseWriter, r *http.Request) {
 		MessageCount:    res.Reward.MessageCount,
 		Judged:          res.Judged,
 	})
+}
+
+// judgeAnalysisJSON returns the stored judge output as raw JSON, or JSON null
+// when the judge did not run or the stored value is invalid.
+func judgeAnalysisJSON(raw sql.NullString) json.RawMessage {
+	if !raw.Valid || raw.String == "" || !json.Valid([]byte(raw.String)) {
+		return json.RawMessage("null")
+	}
+	return json.RawMessage(raw.String)
 }
 
 // componentsJSON returns the stored decomposition as raw JSON, falling back to

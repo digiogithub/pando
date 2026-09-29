@@ -2,14 +2,16 @@
 id: PANDO-US-0073
 type: story
 title: "Judge calls: decisive-only trigger, transcript cap, daily budget and persisted output"
-status: backlog
+status: done
 priority: medium
 parent: PANDO-EP-0014
 author: mcp
 labels: [evaluator, judge, cost]
 estimate: 3
 created: 2026-09-29T20:33:19Z
-updated: 2026-09-29T20:33:19Z
+updated: 2026-09-29T21:19:11Z
+started: 2026-09-29T21:13:38Z
+closed: 2026-09-29T21:19:11Z
 ---
 
 ## Description

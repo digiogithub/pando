@@ -17,6 +17,7 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/message"
+	"github.com/digiogithub/pando/internal/skills"
 )
 
 // Service defines the evaluator interface used by other packages.
@@ -69,6 +70,41 @@ type EvaluatorService struct {
 	wg sync.WaitGroup
 	// sessionTemplates maps sessionID -> templateID for the current session
 	sessionTemplates sync.Map
+	// judgeMu serialises judge calls so the daily budget check and the call
+	// that spends it cannot interleave.
+	judgeMu sync.Mutex
+	// budgetWarnedDay is the local date ("2006-01-02") for which the
+	// budget-exhausted warning was already logged.
+	budgetWarnedDay string
+	// lastJudgeErr is the most recent judge failure (init or call).
+	lastJudgeErr *JudgeError
+}
+
+// JudgeError is the most recent judge failure, kept in memory for diagnostics.
+type JudgeError struct {
+	Message string
+	At      time.Time
+}
+
+// LastJudgeError returns the most recent judge failure (initialisation or
+// call) since the process started, or nil when there was none.
+func (s *EvaluatorService) LastJudgeError() *JudgeError {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lastJudgeErr == nil {
+		return nil
+	}
+	e := *s.lastJudgeErr
+	return &e
+}
+
+func (s *EvaluatorService) recordJudgeError(err error) {
+	s.mu.Lock()
+	s.lastJudgeErr = &JudgeError{Message: err.Error(), At: time.Now()}
+	s.mu.Unlock()
 }
 
 // New creates a new EvaluatorService. Returns nil if disabled.
@@ -103,6 +139,7 @@ func New(cfg config.EvaluatorConfig, q db.Querier, msgs message.Service) (*Evalu
 		j, err := newJudge(cfg)
 		if err != nil {
 			slog.Warn("evaluator: judge init failed, continuing without LLM judge", "err", err)
+			svc.recordJudgeError(err)
 		} else {
 			svc.judge = j
 			slog.Info("evaluator: judge initialized", "model", cfg.Model)
@@ -384,12 +421,13 @@ func (s *EvaluatorService) runEvaluation(ctx context.Context, sessionID string, 
 	// Persist session score
 	scoreID := uuid.New().String()
 	_, err = s.db.InsertSessionScore(ctx, db.InsertSessionScoreParams{
-		ID:               scoreID,
-		SessionID:        sessionID,
-		TemplateID:       templateID,
-		Reward:           reward.Total,
-		SuccessScore:     reward.SuccessScore,
-		EfficiencyScore:  reward.EfficiencyScore,
+		ID:              scoreID,
+		SessionID:       sessionID,
+		TemplateID:      templateID,
+		Reward:          reward.Total,
+		SuccessScore:    reward.SuccessScore,
+		EfficiencyScore: reward.EfficiencyScore,
+		// Judge output is written by maybeJudge once (and if) the judge ran.
 		JudgeAnalysis:    sql.NullString{},
 		JudgeModel:       sql.NullString{},
 		PromptTokens:     reward.PromptTokens,
@@ -410,33 +448,140 @@ func (s *EvaluatorService) runEvaluation(ctx context.Context, sessionID string, 
 		"corrections", reward.UserCorrections,
 	)
 
-	// Call LLM judge for moderately successful sessions (avoid wasting tokens on failures).
-	if s.judge != nil && !opts.SkipJudge && (reward.Total > 0.5 || reward.SuccessScore == 1.0) {
-		transcript := buildTranscript(msgs)
-		templateName := "default"
-		if templateID.Valid {
-			templateName = templateID.String
-		}
-		meta := JudgeMeta{
-			TemplateName:    templateName,
-			TemplateVersion: 1,
-			Corrections:     reward.UserCorrections,
-			Tokens:          reward.PromptTokens + reward.CompletionTokens,
-			Transcript:      transcript,
-		}
-		judgeOut, judgeErr := s.judge.Evaluate(ctx, meta, s.cfg.JudgePromptTemplate)
-		if judgeErr != nil {
-			slog.Warn("evaluator: judge call failed", "session_id", sessionID, "err", judgeErr)
-		} else if judgeOut != nil {
-			slog.Debug("evaluator: judge output", "session_id", sessionID, "confidence", judgeOut.Confidence, "task_type", judgeOut.TaskType)
-			res.Judged = true
-			if err := s.saveSkillFromJudge(ctx, judgeOut, sessionID, templateID.String); err != nil {
-				slog.Warn("evaluator: save skill failed", "session_id", sessionID, "err", err)
-			}
-		}
-	}
+	s.maybeJudge(ctx, res, msgs, reward, templateID.String, opts)
 
 	return res, nil
+}
+
+// judgeSettings returns the judge gating config with zero values replaced by
+// the defaults. The daily budgets stay as configured (0 = unlimited).
+func (s *EvaluatorService) judgeSettings() config.JudgeConfig {
+	j := s.cfg.Judge
+	if j.HighReward == 0 {
+		j.HighReward = 0.8
+	}
+	if j.LowReward == 0 {
+		j.LowReward = 0.3
+	}
+	if j.MinTurns == 0 {
+		j.MinTurns = 4
+	}
+	if j.MaxTranscriptTokens == 0 {
+		j.MaxTranscriptTokens = 6000
+	}
+	return j
+}
+
+// shouldJudge reports whether a session is decisive enough for an LLM judge
+// call: a very high or very low reward and enough user turns.
+func shouldJudge(j config.JudgeConfig, total float64, userTurns int) bool {
+	if userTurns < j.MinTurns {
+		return false
+	}
+	return total >= j.HighReward || total <= j.LowReward
+}
+
+// maybeJudge runs the LLM judge for a freshly scored session when it is
+// decisive and the daily budget allows, and persists the judge output.
+func (s *EvaluatorService) maybeJudge(ctx context.Context, res *Result, msgs []message.Message, reward RewardResult, templateID string, opts EvaluateOptions) {
+	if s.judge == nil || opts.SkipJudge {
+		return
+	}
+	js := s.judgeSettings()
+	if !shouldJudge(js, reward.Total, countUserMessages(msgs)) {
+		slog.Debug("evaluator: judge skipped, session not decisive",
+			"session_id", res.SessionID, "reward", reward.Total, "user_turns", countUserMessages(msgs))
+		return
+	}
+
+	s.judgeMu.Lock()
+	defer s.judgeMu.Unlock()
+
+	if s.judgeBudgetExhausted(ctx, js) {
+		return
+	}
+
+	templateName := "default"
+	if templateID != "" {
+		templateName = templateID
+	}
+	meta := JudgeMeta{
+		TemplateName:    templateName,
+		TemplateVersion: 1,
+		Corrections:     reward.UserCorrections,
+		Tokens:          reward.PromptTokens + reward.CompletionTokens,
+	}
+	meta.Transcript = buildCappedTranscript(msgs, s.cfg.JudgePromptTemplate, meta, js.MaxTranscriptTokens)
+
+	jr, err := s.judge.EvaluateWithUsage(ctx, meta, s.cfg.JudgePromptTemplate)
+	if err != nil {
+		slog.Warn("evaluator: judge call failed", "session_id", res.SessionID, "err", err)
+		s.recordJudgeError(err)
+		return
+	}
+	if jr == nil || jr.Output == nil {
+		return
+	}
+	out := jr.Output
+	slog.Debug("evaluator: judge output", "session_id", res.SessionID, "confidence", out.Confidence, "task_type", out.TaskType)
+	res.Judged = true
+
+	model := jr.Model
+	if model == "" {
+		model = string(s.cfg.Model)
+	}
+	if model == "" {
+		model = "unknown"
+	}
+	analysis, _ := json.Marshal(out)
+	if err := s.db.UpdateSessionScoreJudge(ctx, db.UpdateSessionScoreJudgeParams{
+		JudgeAnalysis:         sql.NullString{String: string(analysis), Valid: true},
+		JudgeModel:            sql.NullString{String: model, Valid: true},
+		JudgePromptTokens:     jr.PromptTokens,
+		JudgeCompletionTokens: jr.CompletionTokens,
+		SessionID:             res.SessionID,
+	}); err != nil {
+		slog.Warn("evaluator: persist judge output failed", "session_id", res.SessionID, "err", err)
+	}
+	if err := s.saveSkillFromJudge(ctx, out, res.SessionID, templateID); err != nil {
+		slog.Warn("evaluator: save skill failed", "session_id", res.SessionID, "err", err)
+	}
+}
+
+// startOfDay returns the unix time of local midnight for t.
+func startOfDay(t time.Time) int64 {
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, t.Location()).Unix()
+}
+
+// judgeBudgetExhausted reports whether today's judge calls or tokens, counted
+// from persisted scores (so it survives restarts), reached the daily budget.
+// It logs a single warning per day when the budget is exhausted.
+func (s *EvaluatorService) judgeBudgetExhausted(ctx context.Context, js config.JudgeConfig) bool {
+	if js.DailyCalls <= 0 && js.DailyTokens <= 0 {
+		return false
+	}
+	now := time.Now()
+	usage, err := s.db.GetJudgeUsageSince(ctx, startOfDay(now))
+	if err != nil {
+		slog.Debug("evaluator: judge budget lookup failed, allowing call", "err", err)
+		return false
+	}
+	callsOut := js.DailyCalls > 0 && usage.Calls >= int64(js.DailyCalls)
+	tokensOut := js.DailyTokens > 0 && usage.Tokens >= js.DailyTokens
+	if !callsOut && !tokensOut {
+		return false
+	}
+	day := now.Format("2006-01-02")
+	s.mu.Lock()
+	warn := s.budgetWarnedDay != day
+	s.budgetWarnedDay = day
+	s.mu.Unlock()
+	if warn {
+		slog.Warn("evaluator: daily judge budget exhausted, skipping judge calls until tomorrow",
+			"calls", usage.Calls, "daily_calls", js.DailyCalls, "tokens", usage.Tokens, "daily_tokens", js.DailyTokens)
+	}
+	return true
 }
 
 // SelectTemplate returns the best template for a section using UCB.
@@ -641,12 +786,13 @@ func messagesToInfo(msgs []message.Message) []messageInfo {
 	return infos
 }
 
-// buildTranscript formats messages as a readable transcript for the judge.
-// Tool results are truncated to avoid huge payloads.
-func buildTranscript(msgs []message.Message) string {
+// transcriptChunks formats each message as a readable transcript chunk for the
+// judge. Tool results and any single chunk are truncated to avoid huge payloads.
+func transcriptChunks(msgs []message.Message, maxChunkChars int) []string {
 	const maxToolLen = 500
-	var sb strings.Builder
+	chunks := make([]string, 0, len(msgs))
 	for _, m := range msgs {
+		var sb strings.Builder
 		switch m.Role {
 		case message.User:
 			sb.WriteString("User: ")
@@ -667,7 +813,64 @@ func buildTranscript(msgs []message.Message) string {
 			}
 			fmt.Fprintf(&sb, "  [tool_result: %s] %s\n", tr.Name, content)
 		}
+		c := sb.String()
+		if c == "" {
+			continue
+		}
+		if maxChunkChars > 0 && len(c) > maxChunkChars {
+			c = c[:maxChunkChars] + "...[truncated]\n"
+		}
+		chunks = append(chunks, c)
 	}
+	return chunks
+}
+
+// buildCappedTranscript builds the judge transcript so that the whole rendered
+// prompt stays within maxTokens: the head and tail of the conversation are kept
+// and the middle is replaced by an elision marker. maxTokens <= 0 disables the cap.
+func buildCappedTranscript(msgs []message.Message, promptTemplate string, meta JudgeMeta, maxTokens int) string {
+	if maxTokens <= 0 {
+		return strings.Join(transcriptChunks(msgs, 0), "")
+	}
+	// Budget for the transcript = cap minus the prompt boilerplate.
+	overhead := 0
+	meta.Transcript = ""
+	if p, err := renderJudgePrompt(promptTemplate, meta); err == nil {
+		overhead = skills.EstimateTokens(p)
+	}
+	budget := maxTokens - overhead - 40 // room for the elision marker
+	if min := maxTokens / 4; budget < min {
+		budget = min
+	}
+	// No single message may take more than a quarter of the budget.
+	chunks := transcriptChunks(msgs, budget)
+	if len(chunks) == 0 {
+		return ""
+	}
+	costs := make([]int, len(chunks))
+	total := 0
+	for i, c := range chunks {
+		costs[i] = skills.EstimateTokens(c)
+		total += costs[i]
+	}
+	if total <= budget {
+		return strings.Join(chunks, "")
+	}
+	headBudget, tailBudget := budget*2/5, budget*3/5
+	head, used := 0, 0
+	for head < len(chunks) && used+costs[head] <= headBudget {
+		used += costs[head]
+		head++
+	}
+	tail, used := len(chunks), 0
+	for tail > head && used+costs[tail-1] <= tailBudget {
+		used += costs[tail-1]
+		tail--
+	}
+	var sb strings.Builder
+	sb.WriteString(strings.Join(chunks[:head], ""))
+	fmt.Fprintf(&sb, "[... %d messages elided ...]\n", tail-head)
+	sb.WriteString(strings.Join(chunks[tail:], ""))
 	return sb.String()
 }
 

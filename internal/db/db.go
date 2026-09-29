@@ -90,6 +90,12 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.updateSessionScoreStmt, err = db.PrepareContext(ctx, updateSessionScore); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateSessionScore: %w", err)
 	}
+	if q.updateSessionScoreJudgeStmt, err = db.PrepareContext(ctx, updateSessionScoreJudge); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateSessionScoreJudge: %w", err)
+	}
+	if q.getJudgeUsageSinceStmt, err = db.PrepareContext(ctx, getJudgeUsageSince); err != nil {
+		return nil, fmt.Errorf("error preparing query GetJudgeUsageSince: %w", err)
+	}
 	if q.getSessionsTokenBaselineStmt, err = db.PrepareContext(ctx, getSessionsTokenBaseline); err != nil {
 		return nil, fmt.Errorf("error preparing query GetSessionsTokenBaseline: %w", err)
 	}
@@ -311,6 +317,16 @@ func (q *Queries) Close() error {
 	if q.updateSessionScoreStmt != nil {
 		if cerr := q.updateSessionScoreStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing updateSessionScoreStmt: %w", cerr)
+		}
+	}
+	if q.updateSessionScoreJudgeStmt != nil {
+		if cerr := q.updateSessionScoreJudgeStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateSessionScoreJudgeStmt: %w", cerr)
+		}
+	}
+	if q.getJudgeUsageSinceStmt != nil {
+		if cerr := q.getJudgeUsageSinceStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing getJudgeUsageSinceStmt: %w", cerr)
 		}
 	}
 	if q.getSessionsTokenBaselineStmt != nil {
@@ -556,6 +572,8 @@ type Queries struct {
 	listSessionsStmt                 *sql.Stmt
 	listUnscoredSessionsStmt         *sql.Stmt
 	updateSessionScoreStmt           *sql.Stmt
+	updateSessionScoreJudgeStmt      *sql.Stmt
+	getJudgeUsageSinceStmt           *sql.Stmt
 	getSessionsTokenBaselineStmt     *sql.Stmt
 	insertSessionFeedbackEventStmt   *sql.Stmt
 	getLatestSessionFeedbackStmt     *sql.Stmt
@@ -620,6 +638,8 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		listSessionsStmt:                 q.listSessionsStmt,
 		listUnscoredSessionsStmt:         q.listUnscoredSessionsStmt,
 		updateSessionScoreStmt:           q.updateSessionScoreStmt,
+		updateSessionScoreJudgeStmt:      q.updateSessionScoreJudgeStmt,
+		getJudgeUsageSinceStmt:           q.getJudgeUsageSinceStmt,
 		getSessionsTokenBaselineStmt:     q.getSessionsTokenBaselineStmt,
 		insertSessionFeedbackEventStmt:   q.insertSessionFeedbackEventStmt,
 		getLatestSessionFeedbackStmt:     q.getLatestSessionFeedbackStmt,

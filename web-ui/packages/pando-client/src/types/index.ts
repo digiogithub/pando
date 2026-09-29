@@ -303,6 +303,19 @@ export interface EvaluatorSessionScore {
   message_count: number
   evaluated_at: number
   components: EvaluatorScoreComponents
+  // LLM judge output; null when the judge did not run for this session.
+  judge_analysis: EvaluatorJudgeAnalysis | null
+  judge_model?: string
+  judge_prompt_tokens: number
+  judge_completion_tokens: number
+}
+
+export interface EvaluatorJudgeAnalysis {
+  reasoning: string
+  key_points: string[] | null
+  new_skill: string
+  task_type: string
+  confidence: number
 }
 
 export interface EvaluatorMetrics {
@@ -570,6 +583,14 @@ export interface EvaluatorSettingsConfig {
   contextTrimmer?: {
     enabled: boolean
     minConfidence?: number
+  }
+  judge?: {
+    highReward?: number
+    lowReward?: number
+    minTurns?: number
+    maxTranscriptTokens?: number
+    dailyCalls?: number
+    dailyTokens?: number
   }
 }
 

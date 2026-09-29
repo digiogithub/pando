@@ -32,9 +32,10 @@ SELECT COUNT(*) FROM prompt_templates WHERE is_active = 1;
 INSERT INTO session_scores (
     id, session_id, template_id, reward, success_score, efficiency_score,
     judge_analysis, judge_model, prompt_tokens, completion_tokens,
-    message_count, user_corrections, components, evaluated_at, created_at
+    message_count, user_corrections, components, judge_prompt_tokens, judge_completion_tokens,
+    evaluated_at, created_at
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
 RETURNING *;
 
 -- name: GetSessionScore :one
@@ -46,7 +47,7 @@ SELECT COUNT(*) FROM session_scores;
 -- name: ListSessionScores :many
 SELECT id, session_id, template_id, reward, success_score, efficiency_score,
        judge_analysis, judge_model, prompt_tokens, completion_tokens,
-       message_count, user_corrections, evaluated_at, created_at, components
+       message_count, user_corrections, evaluated_at, created_at, components, judge_prompt_tokens, judge_completion_tokens
 FROM session_scores
 ORDER BY created_at DESC
 LIMIT ?;
@@ -165,3 +166,22 @@ SELECT
     (SELECT COALESCE(AVG(reward), 0.0) FROM session_scores) as avg_reward,
     (SELECT COUNT(*) FROM skill_library WHERE is_active = 1) as active_skills,
     (SELECT MAX(created_at) FROM session_scores) as last_evaluation;
+
+-- Stores the LLM judge output on an existing score. It does not touch reward,
+-- so neither UCB trigger fires.
+-- name: UpdateSessionScoreJudge :exec
+UPDATE session_scores
+SET judge_analysis = ?,
+    judge_model = ?,
+    judge_prompt_tokens = ?,
+    judge_completion_tokens = ?
+WHERE session_id = ?;
+
+-- Judge calls and tokens spent since a unix timestamp (start of the local day),
+-- derived from persisted scores so the daily budget survives restarts.
+-- name: GetJudgeUsageSince :one
+SELECT
+    COUNT(*) as calls,
+    CAST(COALESCE(SUM(judge_prompt_tokens + judge_completion_tokens), 0) AS INTEGER) as tokens
+FROM session_scores
+WHERE judge_model IS NOT NULL AND created_at >= ?;

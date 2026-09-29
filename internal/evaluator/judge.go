@@ -12,6 +12,7 @@ import (
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/provider"
 	"github.com/digiogithub/pando/internal/message"
+	"github.com/digiogithub/pando/internal/skills"
 )
 
 const defaultJudgePrompt = `You are an expert AI assistant evaluator. Analyze this conversation transcript between an AI coding assistant and a user.
@@ -152,8 +153,34 @@ func newJudge(cfg config.EvaluatorConfig) (*Judge, error) {
 	return &Judge{p: p}, nil
 }
 
+// JudgeResult is a parsed judge answer plus the accounting of the call.
+type JudgeResult struct {
+	Output           *JudgeOutput
+	Model            string
+	PromptTokens     int64
+	CompletionTokens int64
+}
+
+// ModelName returns the model ID the judge provider talks to ("" if unknown).
+func (j *Judge) ModelName() string {
+	if j == nil || j.p == nil {
+		return ""
+	}
+	return string(j.p.Model().ID)
+}
+
 // Evaluate calls the judge model with the session transcript and returns structured output.
 func (j *Judge) Evaluate(ctx context.Context, meta JudgeMeta, customPromptTemplate string) (*JudgeOutput, error) {
+	res, err := j.EvaluateWithUsage(ctx, meta, customPromptTemplate)
+	if err != nil || res == nil {
+		return nil, err
+	}
+	return res.Output, nil
+}
+
+// EvaluateWithUsage is Evaluate plus the model name and token usage of the
+// call. When the provider reports no usage the tokens are estimated.
+func (j *Judge) EvaluateWithUsage(ctx context.Context, meta JudgeMeta, customPromptTemplate string) (*JudgeResult, error) {
 	if j == nil {
 		return nil, nil
 	}
@@ -175,5 +202,21 @@ func (j *Judge) Evaluate(ctx context.Context, meta JudgeMeta, customPromptTempla
 		return nil, fmt.Errorf("judge evaluate: send messages: %w", err)
 	}
 
-	return parseJudgeOutput(resp.Content)
+	out, err := parseJudgeOutput(resp.Content)
+	if err != nil {
+		return nil, err
+	}
+	res := &JudgeResult{
+		Output:           out,
+		Model:            j.ModelName(),
+		PromptTokens:     resp.Usage.InputTokens + resp.Usage.CacheCreationTokens + resp.Usage.CacheReadTokens,
+		CompletionTokens: resp.Usage.OutputTokens,
+	}
+	if res.PromptTokens == 0 {
+		res.PromptTokens = int64(skills.EstimateTokens(prompt))
+	}
+	if res.CompletionTokens == 0 {
+		res.CompletionTokens = int64(skills.EstimateTokens(resp.Content))
+	}
+	return res, nil
 }

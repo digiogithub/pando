@@ -158,26 +158,29 @@ const insertSessionScore = `-- name: InsertSessionScore :one
 INSERT INTO session_scores (
     id, session_id, template_id, reward, success_score, efficiency_score,
     judge_analysis, judge_model, prompt_tokens, completion_tokens,
-    message_count, user_corrections, components, evaluated_at, created_at
+    message_count, user_corrections, components, judge_prompt_tokens, judge_completion_tokens,
+    evaluated_at, created_at
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
-RETURNING id, session_id, template_id, reward, success_score, efficiency_score, judge_analysis, judge_model, prompt_tokens, completion_tokens, message_count, user_corrections, evaluated_at, created_at, components
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
+RETURNING id, session_id, template_id, reward, success_score, efficiency_score, judge_analysis, judge_model, prompt_tokens, completion_tokens, message_count, user_corrections, evaluated_at, created_at, components, judge_prompt_tokens, judge_completion_tokens
 `
 
 type InsertSessionScoreParams struct {
-	ID               string         `json:"id"`
-	SessionID        string         `json:"session_id"`
-	TemplateID       sql.NullString `json:"template_id"`
-	Reward           float64        `json:"reward"`
-	SuccessScore     float64        `json:"success_score"`
-	EfficiencyScore  float64        `json:"efficiency_score"`
-	JudgeAnalysis    sql.NullString `json:"judge_analysis"`
-	JudgeModel       sql.NullString `json:"judge_model"`
-	PromptTokens     int64          `json:"prompt_tokens"`
-	CompletionTokens int64          `json:"completion_tokens"`
-	MessageCount     int64          `json:"message_count"`
-	UserCorrections  int64          `json:"user_corrections"`
-	Components       string         `json:"components"`
+	ID                    string         `json:"id"`
+	SessionID             string         `json:"session_id"`
+	TemplateID            sql.NullString `json:"template_id"`
+	Reward                float64        `json:"reward"`
+	SuccessScore          float64        `json:"success_score"`
+	EfficiencyScore       float64        `json:"efficiency_score"`
+	JudgeAnalysis         sql.NullString `json:"judge_analysis"`
+	JudgeModel            sql.NullString `json:"judge_model"`
+	PromptTokens          int64          `json:"prompt_tokens"`
+	CompletionTokens      int64          `json:"completion_tokens"`
+	MessageCount          int64          `json:"message_count"`
+	UserCorrections       int64          `json:"user_corrections"`
+	Components            string         `json:"components"`
+	JudgePromptTokens     int64          `json:"judge_prompt_tokens"`
+	JudgeCompletionTokens int64          `json:"judge_completion_tokens"`
 }
 
 func (q *Queries) InsertSessionScore(ctx context.Context, arg InsertSessionScoreParams) (SessionScore, error) {
@@ -195,6 +198,8 @@ func (q *Queries) InsertSessionScore(ctx context.Context, arg InsertSessionScore
 		arg.MessageCount,
 		arg.UserCorrections,
 		arg.Components,
+		arg.JudgePromptTokens,
+		arg.JudgeCompletionTokens,
 	)
 	var i SessionScore
 	err := row.Scan(
@@ -213,12 +218,14 @@ func (q *Queries) InsertSessionScore(ctx context.Context, arg InsertSessionScore
 		&i.EvaluatedAt,
 		&i.CreatedAt,
 		&i.Components,
+		&i.JudgePromptTokens,
+		&i.JudgeCompletionTokens,
 	)
 	return i, err
 }
 
 const getSessionScore = `-- name: GetSessionScore :one
-SELECT id, session_id, template_id, reward, success_score, efficiency_score, judge_analysis, judge_model, prompt_tokens, completion_tokens, message_count, user_corrections, evaluated_at, created_at, components FROM session_scores WHERE session_id = ? LIMIT 1
+SELECT id, session_id, template_id, reward, success_score, efficiency_score, judge_analysis, judge_model, prompt_tokens, completion_tokens, message_count, user_corrections, evaluated_at, created_at, components, judge_prompt_tokens, judge_completion_tokens FROM session_scores WHERE session_id = ? LIMIT 1
 `
 
 func (q *Queries) GetSessionScore(ctx context.Context, sessionID string) (SessionScore, error) {
@@ -240,6 +247,8 @@ func (q *Queries) GetSessionScore(ctx context.Context, sessionID string) (Sessio
 		&i.EvaluatedAt,
 		&i.CreatedAt,
 		&i.Components,
+		&i.JudgePromptTokens,
+		&i.JudgeCompletionTokens,
 	)
 	return i, err
 }
@@ -258,7 +267,7 @@ func (q *Queries) CountSessionScores(ctx context.Context) (int64, error) {
 const listSessionScores = `-- name: ListSessionScores :many
 SELECT id, session_id, template_id, reward, success_score, efficiency_score,
        judge_analysis, judge_model, prompt_tokens, completion_tokens,
-       message_count, user_corrections, evaluated_at, created_at, components
+       message_count, user_corrections, evaluated_at, created_at, components, judge_prompt_tokens, judge_completion_tokens
 FROM session_scores
 ORDER BY created_at DESC
 LIMIT ?
@@ -289,6 +298,8 @@ func (q *Queries) ListSessionScores(ctx context.Context, limit int64) ([]Session
 			&i.EvaluatedAt,
 			&i.CreatedAt,
 			&i.Components,
+			&i.JudgePromptTokens,
+			&i.JudgeCompletionTokens,
 		); err != nil {
 			return nil, err
 		}
@@ -315,7 +326,7 @@ SET reward = ?,
     components = ?,
     evaluated_at = strftime('%s', 'now')
 WHERE session_id = ?
-RETURNING id, session_id, template_id, reward, success_score, efficiency_score, judge_analysis, judge_model, prompt_tokens, completion_tokens, message_count, user_corrections, evaluated_at, created_at, components
+RETURNING id, session_id, template_id, reward, success_score, efficiency_score, judge_analysis, judge_model, prompt_tokens, completion_tokens, message_count, user_corrections, evaluated_at, created_at, components, judge_prompt_tokens, judge_completion_tokens
 `
 
 type UpdateSessionScoreParams struct {
@@ -362,6 +373,8 @@ func (q *Queries) UpdateSessionScore(ctx context.Context, arg UpdateSessionScore
 		&i.EvaluatedAt,
 		&i.CreatedAt,
 		&i.Components,
+		&i.JudgePromptTokens,
+		&i.JudgeCompletionTokens,
 	)
 	return i, err
 }
@@ -719,5 +732,57 @@ func (q *Queries) GetEvaluatorStats(ctx context.Context) (GetEvaluatorStatsRow, 
 		&i.ActiveSkills,
 		&i.LastEvaluation,
 	)
+	return i, err
+}
+
+const updateSessionScoreJudge = `-- name: UpdateSessionScoreJudge :exec
+UPDATE session_scores
+SET judge_analysis = ?,
+    judge_model = ?,
+    judge_prompt_tokens = ?,
+    judge_completion_tokens = ?
+WHERE session_id = ?
+`
+
+type UpdateSessionScoreJudgeParams struct {
+	JudgeAnalysis         sql.NullString `json:"judge_analysis"`
+	JudgeModel            sql.NullString `json:"judge_model"`
+	JudgePromptTokens     int64          `json:"judge_prompt_tokens"`
+	JudgeCompletionTokens int64          `json:"judge_completion_tokens"`
+	SessionID             string         `json:"session_id"`
+}
+
+// Stores the LLM judge output on an existing score. It does not touch reward,
+// so neither UCB trigger fires.
+func (q *Queries) UpdateSessionScoreJudge(ctx context.Context, arg UpdateSessionScoreJudgeParams) error {
+	_, err := q.exec(ctx, q.updateSessionScoreJudgeStmt, updateSessionScoreJudge,
+		arg.JudgeAnalysis,
+		arg.JudgeModel,
+		arg.JudgePromptTokens,
+		arg.JudgeCompletionTokens,
+		arg.SessionID,
+	)
+	return err
+}
+
+const getJudgeUsageSince = `-- name: GetJudgeUsageSince :one
+SELECT
+    COUNT(*) as calls,
+    CAST(COALESCE(SUM(judge_prompt_tokens + judge_completion_tokens), 0) AS INTEGER) as tokens
+FROM session_scores
+WHERE judge_model IS NOT NULL AND created_at >= ?
+`
+
+type GetJudgeUsageSinceRow struct {
+	Calls  int64 `json:"calls"`
+	Tokens int64 `json:"tokens"`
+}
+
+// Judge calls and tokens spent since a unix timestamp (start of the local day),
+// derived from persisted scores so the daily budget survives restarts.
+func (q *Queries) GetJudgeUsageSince(ctx context.Context, createdAt int64) (GetJudgeUsageSinceRow, error) {
+	row := q.queryRow(ctx, q.getJudgeUsageSinceStmt, getJudgeUsageSince, createdAt)
+	var i GetJudgeUsageSinceRow
+	err := row.Scan(&i.Calls, &i.Tokens)
 	return i, err
 }

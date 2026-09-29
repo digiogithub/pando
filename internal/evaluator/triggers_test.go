@@ -219,7 +219,9 @@ func TestSweep_JudgeOffWhenSkipJudge(t *testing.T) {
 	conn, q := setupTestDB(t)
 	addSession(t, conn, "s1", "", 2, time.Hour)
 	addSession(t, conn, "s2", "", 2, time.Hour)
-	svc := newSvc(t, q, twoTurns(), nil)
+	svc := newSvc(t, q, twoTurns(), func(c *config.EvaluatorConfig) {
+		c.Judge = config.JudgeConfig{HighReward: 0.01, LowReward: 0.0001, MinTurns: 1}
+	})
 	fake := &fakeJudgeProvider{}
 	evaluator.SetJudgeProvider(svc, fake)
 

@@ -46,6 +46,8 @@ type Querier interface {
 	ListUnscoredSessions(ctx context.Context, arg ListUnscoredSessionsParams) ([]string, error)
 	GetSessionScore(ctx context.Context, sessionID string) (SessionScore, error)
 	UpdateSessionScore(ctx context.Context, arg UpdateSessionScoreParams) (SessionScore, error)
+	UpdateSessionScoreJudge(ctx context.Context, arg UpdateSessionScoreJudgeParams) error
+	GetJudgeUsageSince(ctx context.Context, createdAt int64) (GetJudgeUsageSinceRow, error)
 	GetSessionsTokenBaseline(ctx context.Context, arg GetSessionsTokenBaselineParams) (float64, error)
 	InsertSessionFeedbackEvent(ctx context.Context, arg InsertSessionFeedbackEventParams) (int64, error)
 	GetLatestSessionFeedback(ctx context.Context, subject string) (string, error)
