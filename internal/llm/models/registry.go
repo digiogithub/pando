@@ -225,6 +225,9 @@ func RefreshProviderModelsForAccount(ctx context.Context, params AccountModelRef
 		return nil
 	}
 
+	// Enrichment of openai-compatible models matches the catalog by base URL.
+	RememberAccountBaseURL(params.AccountID, params.BaseURL)
+
 	fetched, err := FetchModelsFromProvider(ctx, params.ProviderType, params.APIKey, params.BearerToken, params.BaseURL)
 	if err != nil {
 		return fmt.Errorf("fetch models from account %s (%s): %w", params.AccountID, params.ProviderType, err)

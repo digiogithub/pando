@@ -113,3 +113,48 @@ func TestDecodeRejectsEmptyPayload(t *testing.T) {
 		t.Error("malformed payload must be reported as an error")
 	}
 }
+
+func TestProvidersForBaseURL(t *testing.T) {
+	c := newCatalog(map[string]Provider{
+		"kilo":        {API: "https://api.kilo.ai/api/gateway"},
+		"opencode":    {API: "https://opencode.ai/zen/v1"},
+		"opencode-go": {API: "https://opencode.ai/zen/go/v1"},
+		"deepseek":    {API: "https://api.deepseek.com"},
+		"templated":   {API: "https://${ACCOUNT}.example.com/v1"},
+		"no-api":      {},
+	})
+
+	cases := map[string]string{
+		"https://api.kilo.ai/api/gateway/": "kilo",
+		"https://opencode.ai/zen/v1":       "opencode",
+		"https://opencode.ai/zen":          "opencode",
+		"https://opencode.ai/zen/go/v1":    "opencode-go",
+		"HTTPS://API.DEEPSEEK.COM/v1/":     "deepseek",
+	}
+	for baseURL, want := range cases {
+		got := c.ProvidersForBaseURL(baseURL)
+		if len(got) != 1 || got[0] != want {
+			t.Errorf("ProvidersForBaseURL(%q) = %v, want [%s]", baseURL, got, want)
+		}
+	}
+	if got := c.ProvidersForBaseURL("https://unknown.example.com/v1"); got != nil {
+		t.Errorf("unknown base URL resolved to %v", got)
+	}
+	if got := c.ProvidersForBaseURL(""); got != nil {
+		t.Errorf("empty base URL resolved to %v", got)
+	}
+}
+
+func TestNormalizeBaseURL(t *testing.T) {
+	cases := map[string]string{
+		"https://www.Example.com/api/v1/": "example.com/api",
+		"http://localhost:8080":           "localhost:8080",
+		"https://${HOST}/v1":              "",
+		"   ":                             "",
+	}
+	for in, want := range cases {
+		if got := NormalizeBaseURL(in); got != want {
+			t.Errorf("NormalizeBaseURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

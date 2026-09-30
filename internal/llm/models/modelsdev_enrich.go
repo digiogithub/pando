@@ -3,6 +3,8 @@ package models
 import (
 	"context"
 	"slices"
+	"strings"
+	"sync"
 
 	"github.com/digiogithub/pando/internal/llm/models/modelsdev"
 )
@@ -28,19 +30,69 @@ var modelsDevProviders = map[ModelProvider][]string{
 	ProviderBedrock:    {"amazon-bedrock", "anthropic"},
 }
 
+// accountBaseURLs maps a provider account id to its configured base URL. It is
+// how enrichment finds the catalog entry for openai-compatible accounts, whose
+// provider type alone says nothing about the upstream (Kilo, OpenCode Zen, …).
+var accountBaseURLs sync.Map // string -> string
+
+// RememberAccountBaseURL records the base URL of a provider account so models
+// registered for it can later be matched against the models.dev catalog by
+// URL. An empty baseURL forgets the account.
+func RememberAccountBaseURL(accountID, baseURL string) {
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return
+	}
+	if strings.TrimSpace(baseURL) == "" {
+		accountBaseURLs.Delete(accountID)
+		return
+	}
+	accountBaseURLs.Store(accountID, baseURL)
+}
+
+func accountBaseURL(accountID string) string {
+	if v, ok := accountBaseURLs.Load(accountID); ok {
+		return v.(string)
+	}
+	return ""
+}
+
 // ModelsDevMetadata returns the models.dev entry describing a provider/model
 // pair. ok is false whenever the catalog is unavailable or the model is
 // unknown, which every caller must treat as "keep what you already have".
 func ModelsDevMetadata(ctx context.Context, provider ModelProvider, apiModel string) (modelsdev.Model, bool) {
+	return modelsDevMetadataFor(ctx, provider, apiModel, "")
+}
+
+// modelsDevMetadataFor is ModelsDevMetadata with the account's base URL, used
+// to resolve openai-compatible accounts: their models are looked up in the
+// catalog provider(s) whose API URL matches the configured base URL.
+func modelsDevMetadataFor(ctx context.Context, provider ModelProvider, apiModel, baseURL string) (modelsdev.Model, bool) {
+	if apiModel == "" {
+		return modelsdev.Model{}, false
+	}
 	providerIDs, ok := modelsDevProviders[provider]
-	if !ok || apiModel == "" {
+	if !ok && (provider != ProviderOpenAICompatible || modelsdev.NormalizeBaseURL(baseURL) == "") {
 		return modelsdev.Model{}, false
 	}
 	catalog, err := modelsdev.Get(ctx)
 	if err != nil {
 		return modelsdev.Model{}, false
 	}
+	if provider == ProviderOpenAICompatible {
+		providerIDs = catalog.ProvidersForBaseURL(baseURL)
+	}
 	return catalog.LookupAny(providerIDs, apiModel)
+}
+
+// modelMetadata resolves the catalog entry for a registered model, using the
+// base URL remembered for its account when the provider type needs it.
+func modelMetadata(ctx context.Context, model Model) (modelsdev.Model, bool) {
+	baseURL := ""
+	if model.Provider == ProviderOpenAICompatible {
+		baseURL = accountBaseURL(model.AccountID)
+	}
+	return modelsDevMetadataFor(ctx, model.Provider, model.APIModel, baseURL)
 }
 
 // EnrichModelFromModelsDev fills in metadata the provider's own listing API did
@@ -55,7 +107,7 @@ func EnrichModelFromModelsDev(ctx context.Context, model *Model) {
 	if model == nil {
 		return
 	}
-	entry, ok := ModelsDevMetadata(ctx, model.Provider, model.APIModel)
+	entry, ok := modelMetadata(ctx, *model)
 	if !ok {
 		return
 	}
@@ -74,7 +126,7 @@ func EnrichRegisteredModels(ctx context.Context) {
 	}
 	enriched := make(map[ModelID]Model)
 	for id, model := range SupportedModels() {
-		entry, ok := ModelsDevMetadata(ctx, model.Provider, model.APIModel)
+		entry, ok := modelMetadata(ctx, model)
 		if !ok || !applyModelsDevMetadata(&model, entry) {
 			continue
 		}

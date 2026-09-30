@@ -193,6 +193,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
+			models.RememberAccountBaseURL(acc.ID, acc.BaseURL)
 			fetched, err := models.FetchModelsFromProvider(ctx, acc.Type, acc.APIKey, e.bearerToken, acc.BaseURL)
 			if err != nil {
 				resultCh <- accountResult{accountID: acc.ID, provider: acc.Type, err: err.Error()}

@@ -11,6 +11,7 @@ package modelsdev
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -81,9 +82,13 @@ func (m Model) ReasoningEffortValues() []string {
 
 // Provider is one provider entry of the catalog, keyed by its models.dev id.
 type Provider struct {
-	ID     string           `json:"id"`
-	Name   string           `json:"name"`
-	Doc    string           `json:"doc"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Doc  string `json:"doc"`
+	// API is the provider's base URL for OpenAI-compatible style providers
+	// (e.g. "https://api.kilo.ai/api/gateway"). It lets Pando identify which
+	// catalog entry describes a user-configured openai-compatible account.
+	API    string           `json:"api"`
 	Models map[string]Model `json:"models"`
 }
 
@@ -96,6 +101,9 @@ type Catalog struct {
 	// registered under several keys (exact, lowercase, vendor-prefix stripped,
 	// version-suffix stripped) so provider-specific id spellings still resolve.
 	index map[string]map[string]Model
+	// byBaseURL maps a normalized provider base URL to the models.dev
+	// provider ids that serve it, sorted for deterministic lookups.
+	byBaseURL map[string][]string
 }
 
 // newCatalog builds the lookup indexes for a decoded payload.
@@ -103,6 +111,7 @@ func newCatalog(providers map[string]Provider) Catalog {
 	c := Catalog{
 		providers: providers,
 		index:     make(map[string]map[string]Model, len(providers)),
+		byBaseURL: make(map[string][]string),
 	}
 	for providerID, provider := range providers {
 		byKey := make(map[string]Model, len(provider.Models)*3)
@@ -119,8 +128,44 @@ func newCatalog(providers map[string]Provider) Catalog {
 			}
 		}
 		c.index[strings.ToLower(providerID)] = byKey
+		if key := NormalizeBaseURL(provider.API); key != "" {
+			c.byBaseURL[key] = append(c.byBaseURL[key], strings.ToLower(providerID))
+		}
+	}
+	for _, ids := range c.byBaseURL {
+		sort.Strings(ids)
 	}
 	return c
+}
+
+// ProvidersForBaseURL returns the models.dev provider ids whose API base URL
+// matches baseURL. Used to enrich models of user-configured openai-compatible
+// accounts (Kilo, OpenCode Zen, DeepSeek, …), whose Pando provider type says
+// nothing about which upstream catalog describes them.
+func (c Catalog) ProvidersForBaseURL(baseURL string) []string {
+	key := NormalizeBaseURL(baseURL)
+	if key == "" {
+		return nil
+	}
+	return c.byBaseURL[key]
+}
+
+// NormalizeBaseURL reduces a base URL to a comparable key: scheme, "www.",
+// trailing slashes and a trailing "/v1" are dropped and the result is
+// lowercased, so "https://api.deepseek.com/v1/" and "https://api.deepseek.com"
+// compare equal. URLs containing template placeholders yield "".
+func NormalizeBaseURL(raw string) string {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	if s == "" || strings.ContainsAny(s, "${}") {
+		return ""
+	}
+	if idx := strings.Index(s, "://"); idx >= 0 {
+		s = s[idx+3:]
+	}
+	s = strings.TrimPrefix(s, "www.")
+	s = strings.TrimRight(s, "/")
+	s = strings.TrimSuffix(s, "/v1")
+	return strings.TrimRight(s, "/")
 }
 
 // Providers returns the raw provider map. Callers must not mutate it.

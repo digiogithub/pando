@@ -474,57 +474,64 @@ func fetchOpenRouterModels(ctx context.Context, apiKey string) ([]FetchedModel, 
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	return doModelRequest(req, func(body []byte) ([]FetchedModel, error) {
-		var response struct {
-			Data []struct {
-				ID            string `json:"id"`
-				Name          string `json:"name"`
-				Description   string `json:"description"`
-				Created       int64  `json:"created"`
-				ContextLength int64  `json:"context_length"`
-				TopProvider   *struct {
-					ContextLength       int64 `json:"context_length"`
-					MaxCompletionTokens int64 `json:"max_completion_tokens,omitempty"`
-				} `json:"top_provider,omitempty"`
-				Architecture *struct {
-					InputModalities []string `json:"input_modalities,omitempty"`
-				} `json:"architecture,omitempty"`
-				SupportedParameters []string `json:"supported_parameters,omitempty"`
-			} `json:"data"`
-		}
-		if err := json.Unmarshal(body, &response); err != nil {
-			return nil, fmt.Errorf("parse response: %w", err)
-		}
-		result := make([]FetchedModel, 0, len(response.Data))
-		for _, m := range response.Data {
-			contextWindow := m.ContextLength
-			var maxOutputTokens int64
-			if m.TopProvider != nil {
-				if m.TopProvider.ContextLength > 0 {
-					contextWindow = m.TopProvider.ContextLength
-				}
-				maxOutputTokens = m.TopProvider.MaxCompletionTokens
+	return doModelRequest(req, parseOpenRouterStyleModels)
+}
+
+// parseOpenRouterStyleModels decodes an OpenRouter-shaped /models listing.
+// Many OpenAI-compatible gateways (Kilo, OpenRouter clones, …) return the same
+// shape, so the optional fields (context_length, top_provider, architecture,
+// supported_parameters) are read whenever present; plain OpenAI-style
+// listings that only carry id/created decode to zero values.
+func parseOpenRouterStyleModels(body []byte) ([]FetchedModel, error) {
+	var response struct {
+		Data []struct {
+			ID            string `json:"id"`
+			Name          string `json:"name"`
+			Description   string `json:"description"`
+			Created       int64  `json:"created"`
+			ContextLength int64  `json:"context_length"`
+			TopProvider   *struct {
+				ContextLength       int64 `json:"context_length"`
+				MaxCompletionTokens int64 `json:"max_completion_tokens,omitempty"`
+			} `json:"top_provider,omitempty"`
+			Architecture *struct {
+				InputModalities []string `json:"input_modalities,omitempty"`
+			} `json:"architecture,omitempty"`
+			SupportedParameters []string `json:"supported_parameters,omitempty"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+	result := make([]FetchedModel, 0, len(response.Data))
+	for _, m := range response.Data {
+		contextWindow := m.ContextLength
+		var maxOutputTokens int64
+		if m.TopProvider != nil {
+			if m.TopProvider.ContextLength > 0 {
+				contextWindow = m.TopProvider.ContextLength
 			}
-			// OpenRouter reports capabilities per model: "reasoning"/"include_reasoning"
-			// in supported_parameters, "image" among the input modalities.
-			canReason := slices.Contains(m.SupportedParameters, "reasoning") ||
-				slices.Contains(m.SupportedParameters, "include_reasoning")
-			supportsAttachments := m.Architecture != nil &&
-				slices.Contains(m.Architecture.InputModalities, "image")
-			result = append(result, FetchedModel{
-				ID:                      m.ID,
-				Name:                    m.Name,
-				Description:             m.Description,
-				Created:                 m.Created,
-				ContextWindow:           contextWindow,
-				MaxOutputTokens:         maxOutputTokens,
-				CanReason:               canReason,
-				SupportsReasoningEffort: slices.Contains(m.SupportedParameters, "reasoning"),
-				SupportsAttachments:     supportsAttachments,
-			})
+			maxOutputTokens = m.TopProvider.MaxCompletionTokens
 		}
-		return result, nil
-	})
+		// OpenRouter reports capabilities per model: "reasoning"/"include_reasoning"
+		// in supported_parameters, "image" among the input modalities.
+		canReason := slices.Contains(m.SupportedParameters, "reasoning") ||
+			slices.Contains(m.SupportedParameters, "include_reasoning")
+		supportsAttachments := m.Architecture != nil &&
+			slices.Contains(m.Architecture.InputModalities, "image")
+		result = append(result, FetchedModel{
+			ID:                      m.ID,
+			Name:                    m.Name,
+			Description:             m.Description,
+			Created:                 m.Created,
+			ContextWindow:           contextWindow,
+			MaxOutputTokens:         maxOutputTokens,
+			CanReason:               canReason,
+			SupportsReasoningEffort: slices.Contains(m.SupportedParameters, "reasoning"),
+			SupportsAttachments:     supportsAttachments,
+		})
+	}
+	return result, nil
 }
 
 func fetchOpenAICompatibleModels(ctx context.Context, apiKey, baseURL string) ([]FetchedModel, error) {
@@ -541,23 +548,9 @@ func fetchOpenAICompatibleModels(ctx context.Context, apiKey, baseURL string) ([
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	return doModelRequest(req, func(body []byte) ([]FetchedModel, error) {
-		var result struct {
-			Data []struct {
-				ID      string `json:"id"`
-				Created int64  `json:"created"`
-			} `json:"data"`
-		}
-		if err := json.Unmarshal(body, &result); err != nil {
-			return nil, fmt.Errorf("decode response: %w", err)
-		}
-
-		fetched := make([]FetchedModel, 0, len(result.Data))
-		for _, m := range result.Data {
-			fetched = append(fetched, FetchedModel{ID: m.ID, Created: m.Created})
-		}
-		return fetched, nil
-	})
+	// Gateways like Kilo answer with an OpenRouter-shaped listing that carries
+	// the real context window and output cap; reading it avoids the 128K guess.
+	return doModelRequest(req, parseOpenRouterStyleModels)
 }
 
 // fetchLlamaCppModels queries a running llama-server for its loaded model(s)
