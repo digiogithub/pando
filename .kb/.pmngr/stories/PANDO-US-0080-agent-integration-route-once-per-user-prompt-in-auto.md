@@ -2,15 +2,16 @@
 id: PANDO-US-0080
 type: story
 title: "Agent integration: route once per user prompt in Auto sessions, apply the routed model as a session override, capability and context-window filtering"
-status: in_review
+status: done
 priority: high
 parent: PANDO-EP-0015
 author: mcp
 labels: [model-routing, agent]
 estimate: 8
 created: 2026-09-30T19:34:53Z
-updated: 2026-09-30T21:00:23Z
+updated: 2026-10-01T07:57:13Z
 started: 2026-09-30T21:00:23Z
+closed: 2026-10-01T07:57:13Z
 ---
 
 ## Description

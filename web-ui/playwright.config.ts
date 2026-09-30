@@ -9,5 +9,7 @@ export default defineConfig({
     baseURL: process.env.PANDO_E2E_BASE_URL,
     channel: process.env.PANDO_E2E_CHANNEL || 'chrome',
     headless: true,
+    // `pando app` serves a self-signed certificate.
+    ignoreHTTPSErrors: true,
   },
 })

@@ -43,21 +43,22 @@ test.describe('model auto mode', () => {
       await page.getByLabel(label).click()
       await page.locator('.model-combo-option').first().click()
     }
-    await pickModel('Route 1 primary model')
+    // The playground validates the draft too, so every route needs a model first.
+    for (let i = 1; i <= 4; i++) {
+      await pickModel(`Route ${i} primary model`)
+    }
 
     await page.getByLabel('Playground prompt').fill('what is a goroutine?')
     await page.getByRole('button', { name: /Route$/ }).click()
     await expect(page.getByTestId('ama-playground-result')).toBeVisible()
 
-    // Remaining routes still lack models; fill them so Save succeeds.
-    for (let i = 2; i <= 4; i++) {
-      await pickModel(`Route ${i} primary model`)
-    }
     await page.getByRole('button', { name: 'Save' }).click()
     await expect(page.getByText('Auto mode settings saved')).toBeVisible()
 
     // Auto is the first entry of the model switcher.
     await page.goto('/')
+    // The shortcut is registered once the layout has mounted.
+    await expect(page.getByRole('searchbox', { name: 'Search sessions' })).toBeVisible()
     await page.keyboard.press('Control+o')
     await expect(page.locator('.ovl-model-name').first()).toContainText('Auto')
   })

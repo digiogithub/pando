@@ -2,29 +2,32 @@
 id: PANDO-SP-0001
 type: spec
 title: "Model auto mode: configuration"
-status: in_review
+status: done
 priority: high
 author: mcp
 labels: [model-routing, config, PANDO-EP-0015]
 created: 2026-09-30T20:01:14Z
-updated: 2026-09-30T21:06:56Z
+updated: 2026-10-01T07:58:20Z
 started: 2026-09-30T21:06:56Z
+closed: 2026-10-01T07:58:20Z
 requirements:
   R1:
-    status: in_review
+    status: done
     trace:
       code: [internal/config/model_auto_mode.go]
       tests:
         - internal/config/model_auto_mode_test.go#TestModelAutoModeProviderDefaults
         - internal/config/model_auto_mode_test.go#TestModelAutoModeProviderValidation
+    verified: {rev: "sha256:62f9cc56be64b8d4", commit: 95b34f12792a30bf862007ec8ae53a0c7e87afb5, at: 2026-10-01T07:56:56Z, by: José F. Rives}
   R2:
-    status: in_review
+    status: done
     trace:
       code: [internal/config/model_auto_mode.go]
       tests:
         - internal/config/model_auto_mode_test.go#TestModelAutoModeRouteValidation
+    verified: {rev: "sha256:50fb019e335fc264", commit: 95b34f12792a30bf862007ec8ae53a0c7e87afb5, at: 2026-10-01T07:56:56Z, by: José F. Rives}
   R3:
-    status: in_review
+    status: done
     trace:
       code:
         - internal/config/model_auto_mode.go
@@ -33,8 +36,9 @@ requirements:
       tests:
         - internal/config/model_auto_mode_test.go#TestModelAutoModeAPIKeyEncryption
         - internal/api/handlers_model_auto_mode_test.go#TestGetModelAutoModeMasksKey
+    verified: {rev: "sha256:6cb957ccc8353fb2", commit: 95b34f12792a30bf862007ec8ae53a0c7e87afb5, at: 2026-10-01T07:56:56Z, by: José F. Rives}
   R4:
-    status: in_review
+    status: done
     trace:
       code:
         - internal/config/model_auto_mode.go#UpdateModelAutoMode
@@ -43,13 +47,15 @@ requirements:
         - internal/config/model_auto_mode_test.go#TestUpdateModelAutoModePersistReload
         - internal/config/model_auto_mode_test.go#TestUpdateModelAutoModeLocked
         - internal/config/model_auto_mode_test.go#TestUpdateModelAutoModeRevertsOnWriteFailure
+    verified: {rev: "sha256:2b77a93bdd981d7f", commit: 95b34f12792a30bf862007ec8ae53a0c7e87afb5, at: 2026-10-01T07:56:56Z, by: José F. Rives}
   R5:
-    status: in_review
+    status: done
     trace:
       code: [internal/api/handlers_model_auto_mode.go, internal/api/routes.go]
       tests:
         - internal/api/handlers_model_auto_mode_test.go#TestPutModelAutoModeValidation
         - internal/api/handlers_model_auto_mode_test.go#TestPutModelAutoModeKeepsKey
+    verified: {rev: "sha256:1efa55a7ec1fbc15", commit: 95b34f12792a30bf862007ec8ae53a0c7e87afb5, at: 2026-10-01T07:56:56Z, by: José F. Rives}
 ---
 
 ## Purpose

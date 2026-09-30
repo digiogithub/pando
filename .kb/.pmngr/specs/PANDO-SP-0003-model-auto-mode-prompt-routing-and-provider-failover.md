@@ -2,16 +2,17 @@
 id: PANDO-SP-0003
 type: spec
 title: "Model auto mode: prompt routing and provider failover"
-status: in_review
+status: done
 priority: high
 author: mcp
 labels: [model-routing, agent, PANDO-EP-0015]
 created: 2026-09-30T20:01:14Z
-updated: 2026-09-30T21:06:56Z
+updated: 2026-10-01T07:58:20Z
 started: 2026-09-30T21:06:56Z
+closed: 2026-10-01T07:58:20Z
 requirements:
   R1:
-    status: in_review
+    status: done
     trace:
       code: [internal/llm/modelrouter/engine.go]
       tests:
@@ -21,8 +22,9 @@ requirements:
         - internal/llm/modelrouter/engine_test.go#TestEngineKeepAliveOllamaOnly
         - internal/llm/modelrouter/engine_test.go#TestForConfigCaching
         - internal/llm/modelrouter/engine_live_test.go#TestEngineLiveOllama
+    verified: {rev: "sha256:e89ea465b1c51b3d", commit: 95b34f12792a30bf862007ec8ae53a0c7e87afb5, at: 2026-10-01T07:56:56Z, by: José F. Rives}
   R2:
-    status: in_review
+    status: done
     trace:
       code:
         - internal/llm/modelrouter/engine.go
@@ -31,16 +33,18 @@ requirements:
         - internal/llm/modelrouter/engine_test.go#TestEngineRouterErrors
         - internal/llm/agent/model_auto_test.go#TestAutoRouterDownUsesCoder
         - internal/llm/agent/model_auto_test.go#TestAutoWarnOncePerSession
+    verified: {rev: "sha256:b60d86a03d0ffe34", commit: 95b34f12792a30bf862007ec8ae53a0c7e87afb5, at: 2026-10-01T07:56:56Z, by: José F. Rives}
   R3:
-    status: in_review
+    status: done
     trace:
       code: [internal/llm/modelrouter/state.go]
       tests:
         - internal/llm/modelrouter/state_test.go#TestStateTruncationBudget
         - internal/llm/modelrouter/state_test.go#TestStateAttachmentsNames
         - internal/llm/modelrouter/state_test.go#TestStateHistoryPrompts
+    verified: {rev: "sha256:1dee08f3e4c90912", commit: 95b34f12792a30bf862007ec8ae53a0c7e87afb5, at: 2026-10-01T07:56:56Z, by: José F. Rives}
   R4:
-    status: in_review
+    status: done
     trace:
       code:
         - internal/llm/agent/model_auto.go
@@ -52,8 +56,9 @@ requirements:
         - internal/llm/agent/model_auto_test.go#TestAutoConcurrentSessions
         - internal/llm/agent/model_auto_test.go#TestAutoSubagentsUnaffected
         - internal/llm/agent/model_auto_failover_test.go#TestSessionAutoModeFlag
+    verified: {rev: "sha256:be04df4078fdd545", commit: 95b34f12792a30bf862007ec8ae53a0c7e87afb5, at: 2026-10-01T07:56:56Z, by: José F. Rives}
   R5:
-    status: in_review
+    status: done
     trace:
       code:
         - internal/llm/modelrouter/candidates.go
@@ -63,8 +68,9 @@ requirements:
         - internal/llm/modelrouter/candidates_test.go#TestCandidatesContextWindow
         - internal/llm/modelrouter/candidates_test.go#TestCandidatesUnusableRoute
         - internal/llm/modelrouter/candidates_test.go#TestDefaultLookup
+    verified: {rev: "sha256:8424ff6636fdc8eb", commit: 95b34f12792a30bf862007ec8ae53a0c7e87afb5, at: 2026-10-01T07:56:56Z, by: José F. Rives}
   R6:
-    status: in_review
+    status: done
     trace:
       code:
         - internal/llm/agent/model_auto_failover.go
@@ -82,6 +88,7 @@ requirements:
         - internal/llm/provider/errors_classify_test.go#TestClassifyProviderErrors
         - internal/llm/provider/errors_classify_test.go#TestErrorClassPolicy
         - internal/llm/provider/retry_budget_test.go#TestWithMaxRetriesOverridesTheDefaultBudget
+    verified: {rev: "sha256:7c429673686b0b12", commit: 95b34f12792a30bf862007ec8ae53a0c7e87afb5, at: 2026-10-01T07:56:56Z, by: José F. Rives}
 ---
 
 ## Purpose

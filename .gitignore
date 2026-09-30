@@ -72,3 +72,10 @@ internal/desktop/bin/pando-desktop
 
 # Python bytecode
 __pycache__/
+
+# gintrack derived verification cache
+.kb/.pmngr/verify.json
+
+# Playwright output
+web-ui/test-results/
+web-ui/playwright-report/

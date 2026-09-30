@@ -2,15 +2,16 @@
 id: PANDO-US-0085
 type: story
 title: Docs, end-to-end validation (Ollama 0.35 tev1:0.8b/nimble + optional TypeSafe/OpenRouter Jev), spec coverage and KB summary
-status: in_review
+status: done
 priority: medium
 parent: PANDO-EP-0015
 author: mcp
 labels: [model-routing, docs, testing]
 estimate: 2
 created: 2026-09-30T19:34:53Z
-updated: 2026-09-30T21:00:23Z
+updated: 2026-10-01T07:57:13Z
 started: 2026-09-30T21:00:23Z
+closed: 2026-10-01T07:57:13Z
 ---
 
 ## Description

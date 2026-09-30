@@ -2,15 +2,16 @@
 id: PANDO-US-0081
 type: story
 title: "Provider failover: on provider failure switch the turn to fallback 1 then fallback 2, with bounded retries per candidate"
-status: in_review
+status: done
 priority: high
 parent: PANDO-EP-0015
 author: mcp
 labels: [model-routing, agent, provider, reliability]
 estimate: 5
 created: 2026-09-30T19:34:53Z
-updated: 2026-09-30T21:00:23Z
+updated: 2026-10-01T07:57:13Z
 started: 2026-09-30T21:00:23Z
+closed: 2026-10-01T07:57:13Z
 ---
 
 ## Description

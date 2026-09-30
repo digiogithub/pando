@@ -2,16 +2,17 @@
 id: PANDO-SP-0004
 type: spec
 title: "Model auto mode: selectors, settings and observability"
-status: in_review
+status: done
 priority: medium
 author: mcp
 labels: [model-routing, webui, tui, acp, PANDO-EP-0015]
 created: 2026-09-30T20:01:14Z
-updated: 2026-09-30T21:06:56Z
+updated: 2026-10-01T07:58:20Z
 started: 2026-09-30T21:06:56Z
+closed: 2026-10-01T07:58:20Z
 requirements:
   R1:
-    status: in_review
+    status: done
     trace:
       code:
         - internal/api/handlers_models.go
@@ -33,8 +34,9 @@ requirements:
         - internal/llm/agent/setup_bridge_model_test.go#TestSetupBridgeCurrentModelReportsAutoSession
         - web-ui/src/components/overlays/ModelSwitcher.test.tsx
         - web-ui/e2e/model-auto-mode.spec.ts
+    verified: {rev: "sha256:70bea4be6a59f4a7", commit: 95b34f12792a30bf862007ec8ae53a0c7e87afb5, at: 2026-10-01T07:56:57Z, by: José F. Rives}
   R2:
-    status: in_review
+    status: done
     trace:
       code:
         - web-ui/src/components/settings/ModelAutoModeSettings.tsx
@@ -49,16 +51,18 @@ requirements:
         - internal/tui/page/settings_model_auto_test.go#TestModelAutoModePullAction
         - internal/tui/page/settings_model_auto_test.go#TestModelAutoModeSectionRouteCap
         - internal/api/handlers_model_auto_mode_test.go#TestRouterModelsSuggestionsAndPull
+    verified: {rev: "sha256:a88e76103d2bd164", commit: 95b34f12792a30bf862007ec8ae53a0c7e87afb5, at: 2026-10-01T07:56:57Z, by: José F. Rives}
   R3:
-    status: in_review
+    status: done
     trace:
       code: [internal/api/handlers_model_auto_mode.go]
       tests:
         - internal/api/handlers_model_auto_mode_test.go#TestPlaygroundDraft
         - internal/api/handlers_model_auto_mode_test.go#TestPlaygroundNoLLM
         - tests/model_auto_mode/test_playground_live.py
+    verified: {rev: "sha256:4f5d150006e6e32f", commit: 95b34f12792a30bf862007ec8ae53a0c7e87afb5, at: 2026-10-01T07:56:57Z, by: José F. Rives}
   R4:
-    status: in_review
+    status: done
     trace:
       code:
         - internal/llm/agent/model_auto.go
@@ -74,8 +78,9 @@ requirements:
         - internal/agui/translate_test.go#TestRoutingNoticeCustomEvent
         - internal/tui/components/core/status_auto_test.go#TestStatusAutoLabel
         - web-ui/src/components/chat/RoutingNotice.test.tsx
+    verified: {rev: "sha256:a40dbafa71b9a72f", commit: 95b34f12792a30bf862007ec8ae53a0c7e87afb5, at: 2026-10-01T07:56:57Z, by: José F. Rives}
   R5:
-    status: in_review
+    status: done
     trace:
       code:
         - internal/extevents/extevents.go
@@ -85,8 +90,9 @@ requirements:
         - internal/extevents/extevents_test.go#TestModelRoutedPayload
         - internal/llm/agent/model_auto_test.go#TestAutoTelemetryPrivacy
         - cmd/doctor_model_auto_test.go#TestDoctorModelAutoMode
+    verified: {rev: "sha256:cb0e8ae214194c4f", commit: 95b34f12792a30bf862007ec8ae53a0c7e87afb5, at: 2026-10-01T07:56:56Z, by: José F. Rives}
   R6:
-    status: in_review
+    status: done
     trace:
       code:
         - internal/llm/systemone/systemonetest/server.go
@@ -96,6 +102,7 @@ requirements:
         - internal/llm/systemone/systemonetest/server_test.go#TestFakeServerFixtures
         - tests/model_auto_mode/bench_router.py
         - tests/model_auto_mode/live_providers.py
+    verified: {rev: "sha256:83b114eeaf0eb993", commit: 95b34f12792a30bf862007ec8ae53a0c7e87afb5, at: 2026-10-01T07:56:57Z, by: José F. Rives}
 ---
 
 ## Purpose

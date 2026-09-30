@@ -2,15 +2,16 @@
 id: PANDO-US-0078
 type: story
 title: "System One protocol client: typed `/v1/systemone` HTTP client (Jev API) with auth, bounded timeout, typed errors and warm-up"
-status: in_review
+status: done
 priority: high
 parent: PANDO-EP-0015
 author: mcp
 labels: [model-routing, ollama]
 estimate: 3
 created: 2026-09-30T19:34:53Z
-updated: 2026-09-30T21:00:23Z
+updated: 2026-10-01T07:57:13Z
 started: 2026-09-30T21:00:23Z
+closed: 2026-10-01T07:57:13Z
 ---
 
 ## Description

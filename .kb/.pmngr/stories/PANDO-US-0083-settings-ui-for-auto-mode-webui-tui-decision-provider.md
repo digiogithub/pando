@@ -2,15 +2,16 @@
 id: PANDO-US-0083
 type: story
 title: "Settings UI for auto mode (WebUI + TUI): decision provider (Ollama/TypeSafe/custom) with base URL + API key, decision-model selector, route editor with 2 fallbacks, threshold and router playground"
-status: in_review
+status: done
 priority: medium
 parent: PANDO-EP-0015
 author: mcp
 labels: [model-routing, webui, tui, config]
 estimate: 8
 created: 2026-09-30T19:34:53Z
-updated: 2026-09-30T21:00:23Z
+updated: 2026-10-01T07:57:13Z
 started: 2026-09-30T21:00:23Z
+closed: 2026-10-01T07:57:13Z
 ---
 
 ## Description

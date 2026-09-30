@@ -1,8 +1,12 @@
 """Live REST checks for Model auto mode against a RUNNING Pando (PANDO-SP-0004).
 
-Opt-in: set PANDO_E2E_BASE_URL (e.g. http://127.0.0.1:8765) and optionally
-PANDO_E2E_TOKEN (sent as `Authorization: Bearer`). Without the base URL every
-test is skipped. Runs under pytest or plainly: `python3 test_playground_live.py`.
+Opt-in: set PANDO_E2E_BASE_URL (e.g. https://127.0.0.1:8765) and optionally
+PANDO_E2E_TOKEN (sent as `X-Pando-Token` and `Authorization: Bearer`). Without
+the base URL every test is skipped. Runs under pytest or plainly:
+`python3 test_playground_live.py [--junit report.xml]`.
+
+`pando app` serves a self-signed certificate, so TLS verification is skipped
+for loopback hosts; set PANDO_E2E_INSECURE=1 to skip it for any host.
 
 The tests restore the original configuration when they finish. The router
 round trip only needs the Pando server; the playground/router tests that call
@@ -12,9 +16,13 @@ skipped if the server reports router_error.
 import copy
 import json
 import os
+import ssl
 import sys
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
+from xml.sax.saxutils import quoteattr
 
 try:
     import pytest
@@ -24,6 +32,16 @@ except ImportError:  # plain-python mode
 BASE = os.environ.get("PANDO_E2E_BASE_URL", "").rstrip("/")
 TOKEN = os.environ.get("PANDO_E2E_TOKEN", "")
 API = "/api/v1"
+
+
+def _ssl_context():
+    host = urllib.parse.urlparse(BASE).hostname or ""
+    if os.environ.get("PANDO_E2E_INSECURE") == "1" or host in ("127.0.0.1", "localhost", "::1"):
+        return ssl._create_unverified_context()
+    return None
+
+
+SSL_CONTEXT = _ssl_context()
 
 
 class Skip(Exception):
@@ -46,9 +64,10 @@ def call(method, path, body=None, timeout=60):
     req = urllib.request.Request(BASE + API + path, data=data, method=method)
     req.add_header("Content-Type", "application/json")
     if TOKEN:
+        req.add_header("X-Pando-Token", TOKEN)
         req.add_header("Authorization", "Bearer " + TOKEN)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with urllib.request.urlopen(req, timeout=timeout, context=SSL_CONTEXT) as r:
             return r.status, json.load(r)
     except urllib.error.HTTPError as e:
         raw = e.read().decode(errors="replace")
@@ -200,22 +219,52 @@ def test_models_list_exposes_auto_when_enabled():
     assert first["id"] == "auto" and first["provider"] == "auto"
 
 
+def _write_junit(path, results):
+    """Writes the plain-mode results as JUnit XML (for `gintrack spec ingest`)."""
+    this = os.path.relpath(os.path.abspath(__file__))
+    lines = ['<?xml version="1.0" encoding="utf-8"?>']
+    lines.append(
+        '<testsuite name="test_playground_live" tests="%d" failures="%d" skipped="%d">'
+        % (len(results), sum(r[1] == "fail" for r in results), sum(r[1] == "skip" for r in results))
+    )
+    for name, outcome, msg, secs in results:
+        lines.append(
+            '  <testcase classname="test_playground_live" name=%s file=%s time="%.3f">'
+            % (quoteattr(name), quoteattr(this), secs)
+        )
+        if outcome == "fail":
+            lines.append("    <failure message=%s/>" % quoteattr(msg))
+        elif outcome == "skip":
+            lines.append("    <skipped message=%s/>" % quoteattr(msg))
+        lines.append("  </testcase>")
+    lines.append("</testsuite>")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+
 def _main():
+    junit = sys.argv[sys.argv.index("--junit") + 1] if "--junit" in sys.argv else ""
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
-    failed = 0
+    results = []
     for name, fn in tests:
+        start = time.time()
+        outcome, msg = "pass", ""
         try:
             fn()
             print(f"PASS {name}")
         except Skip as e:
+            outcome, msg = "skip", str(e)
             print(f"SKIP {name}: {e}")
         except AssertionError as e:
-            failed += 1
+            outcome, msg = "fail", str(e)
             print(f"FAIL {name}: {e}")
         except Exception as e:  # noqa: BLE001
-            failed += 1
+            outcome, msg = "fail", f"{type(e).__name__}: {e}"
             print(f"ERROR {name}: {type(e).__name__}: {e}")
-    return 1 if failed else 0
+        results.append((name, outcome, msg, time.time() - start))
+    if junit:
+        _write_junit(junit, results)
+    return 1 if any(r[1] == "fail" for r in results) else 0
 
 
 if __name__ == "__main__":

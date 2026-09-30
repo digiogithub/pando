@@ -7,11 +7,11 @@ priority: high
 author: mcp
 labels: [model-routing, ollama, providers, PANDO-EP-0015]
 created: 2026-09-30T20:01:14Z
-updated: 2026-09-30T21:06:56Z
+updated: 2026-10-01T07:57:58Z
 started: 2026-09-30T21:06:56Z
 requirements:
   R1:
-    status: in_review
+    status: done
     trace:
       code: [internal/llm/systemone/client.go]
       tests:
@@ -19,8 +19,9 @@ requirements:
         - internal/llm/systemone/client_test.go#TestClientAuthHeaders
         - internal/llm/systemone/client_test.go#TestClientUsageCost
         - internal/llm/systemone/client_test.go#TestQuestionMarshalOrder
+    verified: {rev: "sha256:ebca3b2d554465d4", commit: 95b34f12792a30bf862007ec8ae53a0c7e87afb5, at: 2026-10-01T07:56:56Z, by: José F. Rives}
   R2:
-    status: in_review
+    status: done
     trace:
       code: [internal/llm/systemone/client.go, internal/llm/systemone/errors.go]
       tests:
@@ -28,8 +29,9 @@ requirements:
         - internal/llm/systemone/client_test.go#TestClientErrorMapping
         - internal/llm/systemone/client_test.go#TestClientTooLarge
         - internal/llm/systemone/client_test.go#TestClientMalformed
+    verified: {rev: "sha256:d1459ee9b6bbffc9", commit: 95b34f12792a30bf862007ec8ae53a0c7e87afb5, at: 2026-10-01T07:56:56Z, by: José F. Rives}
   R3:
-    status: in_review
+    status: done
     trace:
       code:
         - internal/llm/systemone/provider_ollama.go
@@ -40,6 +42,7 @@ requirements:
         - internal/llm/systemone/provider_ollama_test.go#TestOllamaContextBudget
         - internal/llm/systemone/provider_ollama_test.go#TestOllamaDefaultKeepAlive
         - internal/llm/systemone/provider_ollama_live_test.go#TestOllamaLive
+    verified: {rev: "sha256:5ed9fce29f46970f", commit: 95b34f12792a30bf862007ec8ae53a0c7e87afb5, at: 2026-10-01T07:56:56Z, by: José F. Rives}
   R4:
     status: in_review
     trace:
@@ -51,7 +54,7 @@ requirements:
         - internal/llm/systemone/provider_remote_test.go#TestCustomNoModelsEndpoint
         - internal/llm/systemone/provider_remote_live_test.go#TestRemoteLive
   R5:
-    status: in_review
+    status: done
     trace:
       code:
         - internal/api/handlers_model_auto_mode.go
@@ -64,6 +67,7 @@ requirements:
         - internal/api/handlers_model_auto_mode_test.go#TestRouterModelsSuggestionsAndPull
         - internal/llm/systemone/health_test.go#TestHealthCache
         - internal/llm/systemone/health_test.go#TestWarmupOnReload
+    verified: {rev: "sha256:79a32b1c826ca405", commit: 95b34f12792a30bf862007ec8ae53a0c7e87afb5, at: 2026-10-01T07:56:56Z, by: José F. Rives}
 ---
 
 ## Purpose
