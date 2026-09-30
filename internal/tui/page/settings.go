@@ -156,6 +156,9 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			id := strings.TrimPrefix(msg.Field.Key, "action:login_provider_account:")
 			return p, p.loginProviderAccount(id)
 		}
+		if strings.HasPrefix(msg.Field.Key, "action:model_auto_") {
+			return p, p.handleModelAutoAction(msg.Field.Key)
+		}
 		if msg.Field.Key == "action:add_provider" {
 			return p, p.openAddProviderDialog()
 		}
@@ -290,6 +293,29 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return p, util.ReportError(msg.err)
 		}
 		return p, util.ReportInfo(msg.info)
+	case modelAutoTestResultMsg:
+		switch {
+		case msg.err != nil:
+			return p, util.ReportError(fmt.Errorf("router test failed: %w", msg.err))
+		case msg.ok:
+			return p, util.ReportInfo("Router OK: " + msg.summary)
+		default:
+			return p, util.ReportWarn("Router problems: " + strings.Join(msg.problems, "; "))
+		}
+	case modelAutoDiscoverMsg:
+		if msg.err != nil {
+			return p, util.ReportError(fmt.Errorf("discover router models: %w", msg.err))
+		}
+		setModelAutoRouterModels(msg.ids)
+		setModelAutoDiscovery(msg.status, msg.suggestions)
+		p.settings.SetSections(buildSections(p.app))
+		p.settings.SetSize(p.width, p.height)
+		return p, util.ReportInfo(fmt.Sprintf("Found %d router model(s)", len(msg.ids)))
+	case modelAutoPullMsg:
+		if msg.err != nil {
+			return p, util.ReportError(fmt.Errorf("pull %s: %w", msg.model, msg.err))
+		}
+		return p, tea.Batch(util.ReportInfo("Pulled "+msg.model), discoverModelAutoModels())
 	case configExternalChangeMsg:
 		// Config changed from outside TUI (file or Web-UI): rebuild sections and
 		// re-arm the listener command so we keep receiving future events.
@@ -519,6 +545,54 @@ func (p *settingsPage) saveField(msg settings.SaveFieldMsg) tea.Cmd {
 		cmds = append(cmds, util.CmdHandler(chat.ChatSidebarConfigChangedMsg{}))
 	}
 	return tea.Batch(cmds...)
+}
+
+// handleModelAutoAction runs the Auto mode section actions (add/delete route,
+// clear key, test connection, discover models).
+func (p *settingsPage) handleModelAutoAction(key string) tea.Cmd {
+	rebuild := func(info string, err error) tea.Cmd {
+		p.settings.SetSections(buildSections(p.app))
+		p.settings.SetSize(p.width, p.height)
+		if err != nil {
+			return util.ReportError(err)
+		}
+		return util.ReportInfo(info)
+	}
+	switch {
+	case key == "action:model_auto_add_route":
+		return rebuild("Route added", addModelAutoRoute())
+	case strings.HasPrefix(key, "action:model_auto_delete_route:"):
+		idx, err := strconv.Atoi(strings.TrimPrefix(key, "action:model_auto_delete_route:"))
+		if err != nil {
+			return util.ReportError(err)
+		}
+		return rebuild("Route deleted", deleteModelAutoRoute(idx))
+	case strings.HasPrefix(key, "action:model_auto_move_route:"):
+		parts := strings.Split(strings.TrimPrefix(key, "action:model_auto_move_route:"), ":")
+		if len(parts) != 2 {
+			return util.ReportError(fmt.Errorf("unsupported action %q", key))
+		}
+		idx, err1 := strconv.Atoi(parts[0])
+		delta, err2 := strconv.Atoi(parts[1])
+		if err1 != nil || err2 != nil {
+			return util.ReportError(fmt.Errorf("unsupported action %q", key))
+		}
+		return rebuild("Route moved", moveModelAutoRoute(idx, delta))
+	case strings.HasPrefix(key, "action:model_auto_pull:"):
+		return pullModelAutoModel(strings.TrimPrefix(key, "action:model_auto_pull:"))
+	case key == "action:model_auto_toggle_show_all":
+		modelAutoRouterMu.Lock()
+		modelAutoShowAll = !modelAutoShowAll
+		modelAutoRouterMu.Unlock()
+		return discoverModelAutoModels()
+	case key == "action:model_auto_clear_key":
+		return rebuild("Router API key cleared", config.ClearModelAutoModeAPIKey())
+	case key == "action:model_auto_test":
+		return testModelAutoConnection()
+	case key == "action:model_auto_discover":
+		return discoverModelAutoModels()
+	}
+	return util.ReportError(fmt.Errorf("unsupported action %q", key))
 }
 
 func (p *settingsPage) deleteMCPServer(name string) tea.Cmd {
@@ -918,6 +992,7 @@ func buildSections(app *pandoapp.App) []settings.Section {
 		withGroup(buildProviderAccountsSection(cfg), "AI"),
 		withGroup(buildAgentsSection(cfg), "AI"),
 		withGroup(buildPersonaAutoSelectSection(cfg), "AI"),
+		withGroup(buildModelAutoModeSection(cfg), "AI"),
 		withGroup(buildEvaluatorSection(cfg), "AI"),
 
 		// ── Extensions ──
@@ -3775,6 +3850,8 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 		return saveSkillsCatalog(field)
 	case strings.HasPrefix(field.Key, "personaAutoSelect."):
 		return savePersonaAutoSelect(field)
+	case strings.HasPrefix(field.Key, "modelAutoMode."):
+		return saveModelAutoMode(field)
 	case strings.HasPrefix(field.Key, "providerAccount."):
 		return saveProviderAccountField(field)
 	default:

@@ -5,7 +5,8 @@ import api from '@pando/client/services/api'
 import { useToastStore } from '@pando/client/stores/toastStore'
 import { modelMetaLine } from '@/components/shared/ModelCombobox'
 import { Badge, IconButton, Kbd } from '@/components/ui'
-import { Circle, CircleCheck, Search, X } from '@/components/ui/icons'
+import { Circle, CircleCheck, Search, Sparkles, X } from '@/components/ui/icons'
+import { AUTO_MODEL_ID, useModelAutoModeStore } from '@pando/client/stores/modelAutoModeStore'
 import type { BadgeTone } from '@/components/ui'
 import '@/styles/overlays.css'
 
@@ -22,10 +23,30 @@ interface ModelInfo {
   costPer1MIn?: number
   costPer1MOut?: number
   knowledge?: string
+  /** Only on the synthetic "auto" entry. */
+  routerProvider?: string
+  routerModel?: string
+  routerHealthy?: boolean
+  routerProblems?: string[]
 }
 
 interface ModelsResponse {
   models: ModelInfo[]
+  /** True when Auto is the active selection (concrete default_model is then the coder fallback). */
+  autoSelected?: boolean
+}
+
+/** Provider-aware tooltip for the Auto entry's health dot. */
+function autoHealthHint(model: ModelInfo): string {
+  const problems = model.routerProblems ?? []
+  const what = model.routerHealthy ? 'Decision provider is healthy.' : 'Decision provider is not healthy.'
+  let hint = ''
+  if (!model.routerHealthy) {
+    if (model.routerProvider === 'ollama') hint = 'Start Ollama and run "ollama pull tev1:0.8b".'
+    else if (model.routerProvider === 'typesafe') hint = 'Check your TypeSafe API key and connectivity.'
+    else hint = 'Check the gateway URL, API key and model.'
+  }
+  return [what, ...problems, hint, !model.routerHealthy ? 'Until fixed, prompts use the coder model.' : ''].filter(Boolean).join(' ')
 }
 
 const BADGE_TONE: Record<string, BadgeTone> = {
@@ -66,6 +87,8 @@ export default function ModelSwitcher() {
   const [models, setModels] = useState<ModelInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const autoSelected = useModelAutoModeStore((s) => s.autoSelected)
+  const lastRoutedModel = useModelAutoModeStore((s) => s.lastRoutedModel)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const hasLoadedRef = useRef(false)
@@ -78,7 +101,10 @@ export default function ModelSwitcher() {
     hasLoadedRef.current = true
     api
       .get<ModelsResponse>('/api/v1/models')
-      .then((resp) => setModels(resp.models))
+      .then((resp) => {
+        setModels(resp.models)
+        useModelAutoModeStore.setState({ autoSelected: !!resp.autoSelected })
+      })
       .catch(() => setModels(FALLBACK_MODELS))
       .finally(() => setLoading(false))
   }, [])
@@ -93,7 +119,10 @@ export default function ModelSwitcher() {
   )
 
   // Group by provider
-  const providers = [...new Set(filtered.map((m) => m.provider))]
+  // The Auto entry always leads the list, in its own group.
+  const providers = [...new Set(filtered.map((m) => m.provider))].sort(
+    (a, b) => Number(b === 'auto') - Number(a === 'auto'),
+  )
 
   const flatModels = providers.flatMap((p) => filtered.filter((m) => m.provider === p))
 
@@ -103,7 +132,11 @@ export default function ModelSwitcher() {
     async (modelId: string) => {
       try {
         await api.put<{ model: string }>('/api/v1/models/active', { model: modelId })
-        updateField('default_model', modelId)
+        if (modelId === AUTO_MODEL_ID) useModelAutoModeStore.setState({ autoSelected: true })
+        else {
+          updateField('default_model', modelId)
+          useModelAutoModeStore.setState({ autoSelected: false })
+        }
         addToast(`Model switched to ${modelId}`, 'success')
         close()
       } catch (err) {
@@ -185,7 +218,9 @@ export default function ModelSwitcher() {
                   {providerModels.map((model, idx) => {
                     const flatIdx = providerOffset + idx
                     const isSelected = normalizedSelectedIndex === flatIdx
-                    const isActive = model.id === activeModel
+                    const isAuto = model.id === AUTO_MODEL_ID
+                    const isActive = isAuto ? autoSelected : !autoSelected && model.id === activeModel
+                    const displayName = isAuto && lastRoutedModel ? `${model.name} · ${lastRoutedModel}` : model.name
                     return (
                       <div
                         key={model.id}
@@ -195,10 +230,21 @@ export default function ModelSwitcher() {
                         className="ovl-item ovl-model-row"
                       >
                         <span className={isActive ? 'ovl-model-radio ovl-model-radio--active' : 'ovl-model-radio'}>
-                          {isActive ? <CircleCheck size={15} /> : <Circle size={10} />}
+                          {isAuto ? <Sparkles size={15} aria-label="Auto" /> : isActive ? <CircleCheck size={15} /> : <Circle size={10} />}
                         </span>
                         <div className="ovl-model-info">
-                          <div className={isActive ? 'ovl-model-name ovl-model-name--active' : 'ovl-model-name'}>{model.name}</div>
+                          <div className={isActive ? 'ovl-model-name ovl-model-name--active' : 'ovl-model-name'}>
+                            {displayName}
+                            {isAuto && (
+                              <span
+                                data-testid="auto-health-dot"
+                                role="img"
+                                aria-label={model.routerHealthy ? 'Decision provider healthy' : 'Decision provider unhealthy'}
+                                title={autoHealthHint(model)}
+                                style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', marginLeft: 8, background: model.routerHealthy ? 'var(--success)' : 'var(--warning)' }}
+                              />
+                            )}
+                          </div>
                           {model.description && <div className="ovl-model-desc">{model.description}</div>}
                           {modelMetaLine(model) && <div className="ovl-model-meta">{modelMetaLine(model)}</div>}
                         </div>

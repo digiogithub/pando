@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/lsp"
@@ -507,12 +508,41 @@ func (m statusCmp) availableFooterMsgWidth(diagnostics, tokenInfo string) int {
 	return max(0, m.width-lipgloss.Width(helpWidget)-lipgloss.Width(m.model())-lipgloss.Width(diagnostics)-tokensWidth)
 }
 
+// autoLabel returns "Auto" / "Auto → <model>" when the selected session runs in
+// Auto model mode, and "" otherwise.
+func (m statusCmp) autoLabel() string {
+	c := config.Get()
+	if c == nil || !c.ModelAutoMode.Enabled {
+		return ""
+	}
+	if m.session.ID == "" {
+		if c.ModelAutoMode.AutoSelected() {
+			return "Auto"
+		}
+		return ""
+	}
+	if !agent.SessionAutoMode(m.session.ID) {
+		return ""
+	}
+	if id, ok := agent.LastRoutedModel(m.session.ID); ok {
+		name := models.SupportedModels()[id].Name
+		if name == "" {
+			name = string(id)
+		}
+		return "Auto → " + name
+	}
+	return "Auto"
+}
+
 func (m statusCmp) model() string {
 	t := theme.CurrentTheme()
 
 	modelName := m.sessionModel().Name
 	if modelName == "" {
 		modelName = "No model"
+	}
+	if label := m.autoLabel(); label != "" {
+		modelName = label
 	}
 
 	return styles.Padded().

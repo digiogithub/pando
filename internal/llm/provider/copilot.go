@@ -452,8 +452,8 @@ func (c *copilotClient) send(ctx context.Context, messages []message.Message, to
 				return nil, retryErr
 			}
 			if retry {
-				logging.WarnPersist(fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, maxRetries), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
-				notify.Warn(notify.SourceLLMProvider, fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, maxRetries), 10*time.Second)
+				logging.WarnPersist(fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, c.providerOptions.retryLimit()), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
+				notify.Warn(notify.SourceLLMProvider, fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, c.providerOptions.retryLimit()), 10*time.Second)
 				select {
 				case <-ctx.Done():
 					return nil, ctx.Err()
@@ -657,13 +657,13 @@ func (c *copilotClient) stream(ctx context.Context, messages []message.Message, 
 				close(eventChan)
 				return
 			}
-			if attempts > maxRetries {
-				logging.Warn("Maximum retry attempts reached for rate limit", "attempts", attempts, "max_retries", maxRetries)
+			if attempts > c.providerOptions.retryLimit() {
+				logging.Warn("Maximum retry attempts reached for rate limit", "attempts", attempts, "max_retries", c.providerOptions.retryLimit())
 				retry = false
 			}
 			if retry {
-				logging.WarnPersist(fmt.Sprintf("Retrying due to rate limit... attempt %d of %d (paused for %d ms)", attempts, maxRetries, after), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
-				notify.Warn(notify.SourceLLMProvider, fmt.Sprintf("Retrying due to rate limit... attempt %d of %d (paused for %d ms)", attempts, maxRetries, after), 10*time.Second)
+				logging.WarnPersist(fmt.Sprintf("Retrying due to rate limit... attempt %d of %d (paused for %d ms)", attempts, c.providerOptions.retryLimit(), after), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
+				notify.Warn(notify.SourceLLMProvider, fmt.Sprintf("Retrying due to rate limit... attempt %d of %d (paused for %d ms)", attempts, c.providerOptions.retryLimit(), after), 10*time.Second)
 				select {
 				case <-ctx.Done():
 					// context cancelled
@@ -680,7 +680,7 @@ func (c *copilotClient) stream(ctx context.Context, messages []message.Message, 
 			// rate-limit (429/500) that exhausted attempts; wrap it to avoid sending
 			// a nil error downstream which callers cannot distinguish from success.
 			if retryErr == nil {
-				retryErr = fmt.Errorf("maximum retry attempts (%d) exceeded for rate limit", maxRetries)
+				retryErr = fmt.Errorf("maximum retry attempts (%d) exceeded for rate limit", c.providerOptions.retryLimit())
 			}
 			notify.Error(notify.SourceLLMProvider, retryErr.Error())
 			eventChan <- ProviderEvent{Type: EventError, Error: retryErr}
@@ -882,8 +882,8 @@ func (c *copilotClient) sendWithResponsesAPI(ctx context.Context, msgs []message
 				return nil, retryErr
 			}
 			if retry {
-				logging.WarnPersist(fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, maxRetries), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
-				notify.Warn(notify.SourceLLMProvider, fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, maxRetries), 10*time.Second)
+				logging.WarnPersist(fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, c.providerOptions.retryLimit()), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
+				notify.Warn(notify.SourceLLMProvider, fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, c.providerOptions.retryLimit()), 10*time.Second)
 				select {
 				case <-ctx.Done():
 					return nil, ctx.Err()
@@ -1061,12 +1061,12 @@ func (c *copilotClient) streamWithResponsesAPI(ctx context.Context, msgs []messa
 				close(eventChan)
 				return
 			}
-			if attempts > maxRetries {
+			if attempts > c.providerOptions.retryLimit() {
 				retry = false
 			}
 			if retry {
-				logging.WarnPersist(fmt.Sprintf("Retrying due to rate limit... attempt %d of %d (paused for %d ms)", attempts, maxRetries, after), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
-				notify.Warn(notify.SourceLLMProvider, fmt.Sprintf("Retrying due to rate limit... attempt %d of %d (paused for %d ms)", attempts, maxRetries, after), 10*time.Second)
+				logging.WarnPersist(fmt.Sprintf("Retrying due to rate limit... attempt %d of %d (paused for %d ms)", attempts, c.providerOptions.retryLimit(), after), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
+				notify.Warn(notify.SourceLLMProvider, fmt.Sprintf("Retrying due to rate limit... attempt %d of %d (paused for %d ms)", attempts, c.providerOptions.retryLimit(), after), 10*time.Second)
 				select {
 				case <-ctx.Done():
 					if ctx.Err() == nil {
@@ -1082,7 +1082,7 @@ func (c *copilotClient) streamWithResponsesAPI(ctx context.Context, msgs []messa
 			// rate-limit (429/500) that exhausted attempts; wrap it to avoid sending
 			// a nil error downstream which callers cannot distinguish from success.
 			if retryErr == nil {
-				retryErr = fmt.Errorf("maximum retry attempts (%d) exceeded for rate limit", maxRetries)
+				retryErr = fmt.Errorf("maximum retry attempts (%d) exceeded for rate limit", c.providerOptions.retryLimit())
 			}
 			notify.Error(notify.SourceLLMProvider, retryErr.Error())
 			eventChan <- ProviderEvent{Type: EventError, Error: retryErr}
@@ -1122,8 +1122,8 @@ func (c *copilotClient) shouldRetry(attempts int, err error) (bool, int64, error
 		logging.Debug("Copilot retry evaluation", "attempts", attempts, "statusCode", apierr.StatusCode)
 	}
 
-	if attempts > maxRetries {
-		return false, 0, fmt.Errorf("maximum retry attempts reached for rate limit: %d retries", maxRetries)
+	if attempts > c.providerOptions.retryLimit() {
+		return false, 0, fmt.Errorf("maximum retry attempts reached for rate limit: %d retries", c.providerOptions.retryLimit())
 	}
 
 	retryMs := 0

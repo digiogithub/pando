@@ -286,7 +286,7 @@ func (a *anthropicClient) sendBeta(ctx context.Context, messages []message.Messa
 				return nil, retryErr
 			}
 			if retry {
-				logging.WarnPersist(fmt.Sprintf("Retrying (attempt %d/%d)...", attempts, maxRetries), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
+				logging.WarnPersist(fmt.Sprintf("Retrying (attempt %d/%d)...", attempts, a.providerOptions.retryLimit()), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
 				select {
 				case <-ctx.Done():
 					return nil, ctx.Err()
@@ -408,7 +408,7 @@ func (a *anthropicClient) streamBeta(ctx context.Context, messages []message.Mes
 				return
 			}
 			if retry {
-				logging.WarnPersist(fmt.Sprintf("Retrying (attempt %d/%d)...", attempts, maxRetries), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
+				logging.WarnPersist(fmt.Sprintf("Retrying (attempt %d/%d)...", attempts, a.providerOptions.retryLimit()), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
 				select {
 				case <-ctx.Done():
 					if ctx.Err() != nil {

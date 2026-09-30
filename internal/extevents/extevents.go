@@ -234,3 +234,48 @@ func providerAccountChanged(evType extension.EventType, id, providerType string,
 		},
 	})
 }
+
+// ModelRoutedInfo describes one Auto model mode decision. It deliberately has
+// no field for prompt text: this topic leaves the process in some deployments.
+type ModelRoutedInfo struct {
+	SessionID       string
+	RouteID         string
+	Model           string
+	Fallback        bool
+	Reason          string
+	Probability     float64
+	Confidence      float64
+	RouterProvider  string
+	RouterModel     string
+	RouterLatencyMs int64
+	RouterCostUSD   *float64
+}
+
+// ModelRouted reports the model Auto mode picked for a turn, or the failover
+// candidate it moved to (Fallback true).
+func ModelRouted(info ModelRoutedInfo) {
+	if !Enabled() {
+		return
+	}
+	payload := map[string]any{
+		"model":           info.Model,
+		"routeId":         info.RouteID,
+		"fallback":        info.Fallback,
+		"reason":          info.Reason,
+		"probability":     info.Probability,
+		"confidence":      info.Confidence,
+		"routerProvider":  info.RouterProvider,
+		"routerModel":     info.RouterModel,
+		"routerLatencyMs": float64(info.RouterLatencyMs),
+	}
+	if info.RouterCostUSD != nil {
+		payload["routerCostUsd"] = *info.RouterCostUSD
+	}
+	Publish(extension.Event{
+		Topic:     extension.TopicModelRoute,
+		Type:      extension.EventRouted,
+		ID:        info.RouteID,
+		SessionID: info.SessionID,
+		Payload:   payload,
+	})
+}

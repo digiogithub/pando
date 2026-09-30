@@ -829,7 +829,15 @@ func (a *acpAgentAdapter) SetSessionLLMOverrides(sessionID string, overrides acp
 		ThinkingMode:    config.ThinkingMode(overrides.ThinkingMode),
 		Persona:         overrides.Persona,
 		PersonaScoped:   overrides.PersonaScoped,
+		// Copy AutoMode: a full-struct write would otherwise reset the
+		// session's Auto flag.
+		AutoMode: overrides.AutoMode,
 	})
+}
+
+// SessionAutoMode reports whether the session runs in model auto mode.
+func (a *acpAgentAdapter) SessionAutoMode(sessionID string) bool {
+	return agent.SessionAutoMode(sessionID)
 }
 
 // SetPonytailMode sets the per-session ponytail intensity. Returns the

@@ -44,6 +44,16 @@ type AgentEvent struct {
 	// messageId used by session/load replay instead of only after the
 	// terminal AgentEventTypeResponse event.
 	MessageID string
+	// Routing is true for a model auto mode routing notice carried by an
+	// AgentEventTypeSystemMessage event (mirrors agent.AgentEvent.Routing != nil).
+	Routing bool
+}
+
+// AutoModeService is an optional capability of an AgentService: it reports the
+// per-session Auto model mode flag (agent.SessionAutoMode). The adapters
+// implement it; services that do not simply never run in Auto.
+type AutoModeService interface {
+	SessionAutoMode(sessionID string) bool
 }
 
 // ACPModelInfo holds minimal model metadata for ACP responses.
@@ -65,6 +75,10 @@ type SessionLLMOverrides struct {
 	// must be set for the Persona (or auto-selection) to take effect.
 	Persona       string
 	PersonaScoped bool
+	// AutoMode is the explicit per-session Auto flag: nil leaves the global
+	// selection in force, otherwise it forces Auto on/off for the session. It
+	// must be carried on every full-struct write so it is never reset.
+	AutoMode *bool
 }
 
 // AgentService defines the interface for interacting with Pando's LLM agent.

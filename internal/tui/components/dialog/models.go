@@ -1,16 +1,19 @@
 package dialog
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/llm/modelrouter"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/tui/layout"
 	"github.com/digiogithub/pando/internal/tui/styles"
@@ -72,6 +75,49 @@ type modelDialogCmp struct {
 	// accountDisplayNames maps a provider-account ID to its human-friendly Display
 	// Name, used to label models when several accounts share a provider type.
 	accountDisplayNames map[string]string
+
+	// autoHealth is the router health hint shown for the Auto entry. It is
+	// filled asynchronously (see autoHealthCmd) so opening the dialog never blocks.
+	autoHealth string
+}
+
+// autoHealthMsg carries the router health hint computed off the UI goroutine.
+type autoHealthMsg struct{ hint string }
+
+// autoModelEntry is the pseudo model rendered as the first row of the dialog
+// when model auto mode is enabled. It is never registered in SupportedModels.
+func autoModelEntry() models.Model {
+	return models.Model{ID: models.ModelID(config.AutoModelID), Name: "Auto", Provider: "auto"}
+}
+
+// autoModeEnabled reports whether the Auto entry should be offered.
+func autoModeEnabled() bool {
+	c := config.Get()
+	return c != nil && c.ModelAutoMode.Enabled
+}
+
+// autoHealthCmd probes the router (60s shared cache) without blocking the UI.
+func autoHealthCmd() tea.Cmd {
+	c := config.Get()
+	if c == nil || !c.ModelAutoMode.Enabled {
+		return nil
+	}
+	cfg := c.ModelAutoMode
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		report, err := modelrouter.RouterHealth(ctx, cfg)
+		switch {
+		case err != nil:
+			return autoHealthMsg{hint: "router unavailable"}
+		case report.OK:
+			return autoHealthMsg{hint: "router healthy"}
+		case len(report.Problems) > 0:
+			return autoHealthMsg{hint: "router: " + report.Problems[0]}
+		default:
+			return autoHealthMsg{hint: "router unavailable"}
+		}
+	}
 }
 
 type modelKeyMap struct {
@@ -113,6 +159,11 @@ var modelKeys = modelKeyMap{
 func (m *modelDialogCmp) Init() tea.Cmd {
 	m.setupModels()
 	m.queryInput.Focus()
+	if m.onSelect == nil && len(m.customProviderModels) == 0 {
+		if cmd := autoHealthCmd(); cmd != nil {
+			return tea.Batch(textinput.Blink, cmd)
+		}
+	}
 	return textinput.Blink
 }
 
@@ -164,6 +215,9 @@ func (m *modelDialogCmp) selectedModelDetails() string {
 		return ""
 	}
 	model := m.filteredModels[m.selectedIdx]
+	if string(model.ID) == config.AutoModelID {
+		return m.autoDetails()
+	}
 
 	parts := make([]string, 0, 4)
 	if model.ContextWindow > 0 {
@@ -186,6 +240,18 @@ func (m *modelDialogCmp) selectedModelDetails() string {
 	}
 	if model.Knowledge != "" {
 		parts = append(parts, "cutoff "+model.Knowledge)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// autoDetails renders the metadata line of the Auto entry.
+func (m *modelDialogCmp) autoDetails() string {
+	parts := []string{"routes each prompt"}
+	if c := config.Get(); c != nil && c.ModelAutoMode.Router.Model != "" {
+		parts = append(parts, string(c.ModelAutoMode.Router.EffectiveProvider())+"/"+c.ModelAutoMode.Router.Model)
+	}
+	if m.autoHealth != "" {
+		parts = append(parts, m.autoHealth)
 	}
 	return strings.Join(parts, " · ")
 }
@@ -269,6 +335,8 @@ func (m *modelDialogCmp) filterModels() {
 
 func (m *modelDialogCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case autoHealthMsg:
+		m.autoHealth = msg.hint
 	case tea.KeyMsg:
 		switch {
 		// NOTE: the search input is always focused in this dialog, so list
@@ -473,6 +541,9 @@ func (m *modelDialogCmp) View() string {
 					Foreground(t.BadgeText()).Bold(true)
 			}
 			label := m.accountLabel(mod, sameTypeCount)
+			if string(mod.ID) == config.AutoModelID {
+				label = styles.MagicIcon + " " + mod.Name
+			}
 			if mod.CanReason {
 				label += " ⚡"
 			}
@@ -652,6 +723,9 @@ func (m *modelDialogCmp) setupModelsForProvider(provider models.ModelProvider) {
 		m.models = append([]models.Model(nil), m.customProviderModels[provider]...)
 	} else {
 		m.models = dropAmbiguousStaticModels(getModelsForProvider(provider))
+		if m.onSelect == nil && autoModeEnabled() {
+			m.models = append([]models.Model{autoModelEntry()}, m.models...)
+		}
 	}
 	m.selectedIdx = 0
 	m.scrollOffset = 0
@@ -665,17 +739,29 @@ func (m *modelDialogCmp) setupModelsForProvider(provider models.ModelProvider) {
 		selectedModelID = agentCfg.Model
 	}
 
+	hasAuto := len(m.filteredModels) > 0 && string(m.filteredModels[0].ID) == config.AutoModelID
+	if hasAuto && config.Get().ModelAutoMode.AutoSelected() {
+		// Auto is the active selection: keep it highlighted on every page.
+		return
+	}
+
 	// Try to select the current model if it belongs to this provider
+	found := false
 	if provider == models.SupportedModels()[selectedModelID].Provider {
 		for i, model := range m.filteredModels {
 			if model.ID == selectedModelID {
 				m.selectedIdx = i
+				found = true
 				if m.selectedIdx >= numVisibleModels {
 					m.scrollOffset = m.selectedIdx - (numVisibleModels - 1)
 				}
 				break
 			}
 		}
+	}
+	// Avoid landing on Auto by accident when it is not the active selection.
+	if hasAuto && !found && len(m.filteredModels) > 1 {
+		m.selectedIdx = 1
 	}
 }
 

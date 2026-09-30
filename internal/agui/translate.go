@@ -230,8 +230,21 @@ func (t *translator) protocol(ev agent.AgentEvent) []Event {
 			"done":     ev.Done,
 		})}
 
-	case agent.AgentEventTypeSystemMessage,
-		agent.AgentEventTypeSteeringQueued,
+	case agent.AgentEventTypeSystemMessage:
+		if ev.Routing != nil {
+			// Model auto mode routing notice: a structured custom event so
+			// clients can render a chip; the text stays available for plain ones.
+			return []Event{NewCustom("pando.model_routed", map[string]any{
+				"text":    ev.SystemMessage,
+				"routing": ev.Routing,
+			})}
+		}
+		if ev.SystemMessage == "" {
+			return nil
+		}
+		return []Event{NewCustom("pando."+string(ev.Type), ev.SystemMessage)}
+
+	case agent.AgentEventTypeSteeringQueued,
 		agent.AgentEventTypeSteeringInjected,
 		agent.AgentEventTypeConclusionQueued,
 		agent.AgentEventTypeConclusionInjected,

@@ -1,4 +1,4 @@
-schema: 1
+schema: 2
 key: PANDO
 name: PANDO
 timezone: UTC
@@ -41,9 +41,10 @@ id_allocation:
   write_counters: true
   counters:
     milestone: 3
-    epic: 14
-    story: 76
+    epic: 15
+    story: 86
     task: 8
+    spec: 4
 priorities:
   - critical
   - high

@@ -401,7 +401,7 @@ func (a *anthropicClient) send(ctx context.Context, messages []message.Message, 
 				return nil, retryErr
 			}
 			if retry {
-				logging.WarnPersist(fmt.Sprintf("Retrying (attempt %d/%d)...", attempts, maxRetries), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
+				logging.WarnPersist(fmt.Sprintf("Retrying (attempt %d/%d)...", attempts, a.providerOptions.retryLimit()), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
 				select {
 				case <-ctx.Done():
 					return nil, ctx.Err()
@@ -585,7 +585,7 @@ func (a *anthropicClient) stream(ctx context.Context, messages []message.Message
 				return
 			}
 			if retry {
-				logging.WarnPersist(fmt.Sprintf("Retrying (attempt %d/%d)...", attempts, maxRetries), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
+				logging.WarnPersist(fmt.Sprintf("Retrying (attempt %d/%d)...", attempts, a.providerOptions.retryLimit()), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
 				select {
 				case <-ctx.Done():
 					// context cancelled
@@ -716,7 +716,7 @@ func (a *anthropicClient) shouldRetry(attempts int, err error) (bool, int64, err
 	switch apierr.StatusCode {
 	case 408, 409:
 		// Request timeout / lock timeout — transient, always retry.
-		if attempts <= maxRetries {
+		if attempts <= a.providerOptions.retryLimit() {
 			return true, retryDelay(attempts, apierr), nil
 		}
 		return false, 0, err
@@ -730,21 +730,21 @@ func (a *anthropicClient) shouldRetry(attempts int, err error) (bool, int64, err
 			}
 		}
 		// 5-hour session limit or overage — retry with backoff.
-		if attempts <= maxRetries {
+		if attempts <= a.providerOptions.retryLimit() {
 			return true, retryDelay(attempts, apierr), nil
 		}
 		return false, 0, a.buildRateLimitError(attempts, apierr)
 
 	case 529:
 		// API overloaded — retry.
-		if attempts <= maxRetries {
+		if attempts <= a.providerOptions.retryLimit() {
 			return true, retryDelay(attempts, apierr), nil
 		}
 		return false, 0, a.buildRateLimitError(attempts, apierr)
 	}
 
 	// Retry on 5xx server errors.
-	if apierr.StatusCode >= 500 && attempts <= maxRetries {
+	if apierr.StatusCode >= 500 && attempts <= a.providerOptions.retryLimit() {
 		return true, retryDelay(attempts, apierr), nil
 	}
 

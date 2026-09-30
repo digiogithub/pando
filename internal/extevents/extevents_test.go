@@ -237,3 +237,45 @@ func TestSetSinkNilDetaches(t *testing.T) {
 		t.Errorf("detached sink still received events: %d", len(c.seen()))
 	}
 }
+
+func TestModelRoutedPayload(t *testing.T) {
+	c := installSink(t)
+
+	cost := 0.0004
+	ModelRouted(ModelRoutedInfo{
+		SessionID: "s1", RouteID: "implementation", Model: "gpt-x", Reason: "matched",
+		Probability: 0.93, Confidence: 0.81, RouterProvider: "custom", RouterModel: "typesafe/jev-1.13",
+		RouterLatencyMs: 38, RouterCostUSD: &cost,
+	})
+	ModelRouted(ModelRoutedInfo{SessionID: "s1", Model: "coder", Fallback: true, Reason: "router_error"})
+
+	if !waitFor(t, func() bool { return len(c.seen()) == 2 }) {
+		t.Fatalf("expected two events, got %d", len(c.seen()))
+	}
+	got := c.seen()
+	ev := got[0]
+	if ev.Topic != extension.TopicModelRoute || ev.Type != extension.EventRouted || ev.ID != "implementation" || ev.SessionID != "s1" {
+		t.Fatalf("event = %+v", ev)
+	}
+	want := map[string]any{
+		"model": "gpt-x", "routeId": "implementation", "fallback": false, "reason": "matched",
+		"probability": 0.93, "confidence": 0.81, "routerProvider": "custom",
+		"routerModel": "typesafe/jev-1.13", "routerLatencyMs": float64(38), "routerCostUsd": cost,
+	}
+	for k, v := range want {
+		if ev.Payload[k] != v {
+			t.Errorf("payload[%q] = %v, want %v", k, ev.Payload[k], v)
+		}
+	}
+	for _, forbidden := range []string{"prompt", "state", "apiKey", "api_key", "text"} {
+		if _, has := ev.Payload[forbidden]; has {
+			t.Errorf("payload carries %q", forbidden)
+		}
+	}
+	if _, has := got[1].Payload["routerCostUsd"]; has {
+		t.Errorf("cost must be omitted when the gateway reported none")
+	}
+	if got[1].Payload["fallback"] != true {
+		t.Errorf("fallback flag lost: %v", got[1].Payload)
+	}
+}

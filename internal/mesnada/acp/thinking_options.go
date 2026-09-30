@@ -47,13 +47,26 @@ func sessionLLMOverridesFor(session *ACPServerSession) SessionLLMOverrides {
 	if session == nil {
 		return SessionLLMOverrides{}
 	}
-	return SessionLLMOverrides{
+	overrides := SessionLLMOverrides{
 		Model:           session.Model(),
 		ReasoningEffort: session.ReasoningEffort(),
 		ThinkingMode:    session.ThinkingMode(),
 		Persona:         session.Persona(),
 		PersonaScoped:   true,
 	}
+	// "auto" is a selector value, never a model name: it becomes the explicit
+	// per-session Auto flag. A concrete pick switches Auto off explicitly; an
+	// empty model leaves the global selection in force (nil).
+	switch {
+	case overrides.Model == autoModelValue:
+		on := true
+		overrides.Model = ""
+		overrides.AutoMode = &on
+	case overrides.Model != "":
+		off := false
+		overrides.AutoMode = &off
+	}
+	return overrides
 }
 
 // reconcileACPSessionModel adopts a model the agent switched to at runtime
@@ -72,7 +85,25 @@ func reconcileACPSessionModel(svc AgentService, session *ACPServerSession) bool 
 	if svc == nil || session == nil {
 		return false
 	}
+	// pando_setup "model auto" turns Auto on inside the agent. If this session
+	// previously pushed an explicit "Auto off" (concrete pick), adopt the
+	// agent-side flag; otherwise the next prompt would push AutoMode=false and
+	// undo the switch.
+	if session.AutoPushedOff() && autoModeEnabled() {
+		if auto, ok := svc.(AutoModeService); ok && auto.SessionAutoMode(session.PandoSessionID()) {
+			session.SetModel(autoModelValue)
+			session.SetAutoPushedOff(false)
+			reconcileACPThinkingSession(svc, session)
+			return true
+		}
+	}
 	override := strings.TrimSpace(svc.SessionModelOverrideID(session.PandoSessionID()))
+	// During an Auto turn the agent applies the routed model as a turn-scoped
+	// override; that is not a user switch and must not drop the session out of
+	// Auto.
+	if override != "" && sessionInAuto(svc, session) {
+		return false
+	}
 	if override == "" || override == strings.TrimSpace(session.Model()) {
 		return false
 	}

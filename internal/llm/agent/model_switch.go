@@ -214,8 +214,11 @@ func (a *agent) applyPendingModelSwitch(
 		return current, msgHistory
 	}
 
-	a.emitModelSwitchMessage(sessionID, eventCh, fmt.Sprintf(
-		"\n\n⇄ Model switched to %s%s.\n", next.Model().ID, describeModelPrice(next.Model())))
+	// An Auto failover announces itself with the Auto notice instead.
+	if !autoQuietSwitch(sessionID) {
+		a.emitModelSwitchMessage(sessionID, eventCh, fmt.Sprintf(
+			"\n\n⇄ Model switched to %s%s.\n", next.Model().ID, describeModelPrice(next.Model())))
+	}
 	return next, fitted
 }
 

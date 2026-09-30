@@ -1,3 +1,4 @@
+import { useModelAutoModeStore } from './modelAutoModeStore'
 import { create } from 'zustand'
 import type { Session, Message, PermissionRequest, PermissionAction, QuestionRequest, QuestionAnswer } from '../types'
 import api from '../services/api'
@@ -31,6 +32,8 @@ interface SessionStore {
   setActiveSession: (id: string) => Promise<{ isRunning: boolean }>
   setMessages: (msgs: Message[]) => void
   addMessage: (msg: Message) => void
+  /** Insert before the trailing (streaming) message so updateLastMessage* keep targeting it. */
+  insertBeforeLast: (msg: Message) => void
   updateLastMessage: (content: string) => void
   updateLastMessageParts: (parts: import('../types').ContentPart[]) => void
   markSessionRunning: (id: string, running: boolean) => void
@@ -119,6 +122,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   setActiveSession: async (id: string) => {
     set({ activeSessionId: id, messages: [], pendingPermissions: [], pendingQuestions: [] })
+    useModelAutoModeStore.getState().setLastRoutedModel(null)
     // Load the session's auto-approve state (best effort).
     void (async () => {
       try {
@@ -152,6 +156,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   addMessage: (msg) =>
     set((s) => ({ messages: [...s.messages, msg] })),
+
+  insertBeforeLast: (msg) =>
+    set((s) => {
+      if (s.messages.length === 0) return { messages: [msg] }
+      const msgs = [...s.messages]
+      msgs.splice(msgs.length - 1, 0, msg)
+      return { messages: msgs }
+    }),
 
   updateLastMessage: (content) =>
     set((s) => {

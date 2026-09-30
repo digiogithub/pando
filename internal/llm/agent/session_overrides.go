@@ -42,10 +42,15 @@ type SessionLLMOverrides struct {
 	// per-profile Prompt override (PANDO-US-0014) reusing the existing
 	// per-session mechanism instead of adding a second one.
 	Prompt string
+	// AutoMode is the explicit per-session Auto model mode choice: nil means
+	// "follow the global selection" (config modelAutoMode), true/false force it
+	// on/off for this session (see SessionAutoMode in model_auto.go).
+	AutoMode *bool
 }
 
 func (o SessionLLMOverrides) isEmpty() bool {
 	return o.Model == "" &&
+		o.AutoMode == nil &&
 		o.ReasoningEffort == "" &&
 		o.ThinkingMode == "" &&
 		o.Persona == "" &&
@@ -95,6 +100,11 @@ func SessionLLMOverridesFor(sessionID string) SessionLLMOverrides {
 // keeping persona and inference settings intact. Writing the whole struct here
 // would silently drop the persona ACP or the Web UI installed for the session.
 // An empty model clears just the model override.
+//
+// Selecting a concrete (non-empty) model also switches Auto mode off for the
+// session: picking a model by hand is an explicit "stop routing". Auto's own
+// turn-scoped application uses setAutoTurnModelOverride, which leaves the flag
+// alone.
 func SetSessionModelOverride(sessionID string, model models.ModelID) {
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
@@ -106,6 +116,10 @@ func SetSessionModelOverride(sessionID string, model models.ModelID) {
 
 	current := SessionLLMOverridesFor(sessionID)
 	current.Model = model
+	if model != "" {
+		off := false
+		current.AutoMode = &off
+	}
 	storeSessionLLMOverrides(sessionID, current)
 }
 
@@ -119,6 +133,10 @@ func storeSessionLLMOverrides(sessionID string, overrides SessionLLMOverrides) {
 		Persona:         strings.TrimSpace(overrides.Persona),
 		PersonaScoped:   overrides.PersonaScoped,
 		Prompt:          overrides.Prompt,
+	}
+	if overrides.AutoMode != nil {
+		v := *overrides.AutoMode
+		normalized.AutoMode = &v
 	}
 	if normalized.isEmpty() {
 		sessionLLMOverrides.Delete(sessionID)

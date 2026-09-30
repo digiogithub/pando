@@ -22,6 +22,7 @@ import APIServerSettings from './APIServerSettings'
 import WebUIAccessSettings from './WebUIAccessSettings'
 import ProviderAccountsSettings from './ProviderAccountsSettings'
 import ContainerRuntimeSettings from './ContainerRuntimeSettings'
+import ModelAutoModeSettings from './ModelAutoModeSettings'
 import UnsavedChangesDialog from './UnsavedChangesDialog'
 import { useUnsavedChangesStore } from './unsavedChanges'
 import { useConfigEventsStore } from '@pando/client/stores/configEventsStore'
@@ -62,6 +63,7 @@ type SettingsCategory =
   | 'appearance'
   | 'providers'
   | 'agents'
+  | 'model-auto-mode'
   | 'mcp-servers'
   | 'mcp-gateway'
   | 'lsp'
@@ -92,6 +94,7 @@ const CATEGORY_KEYS: { id: SettingsCategory; labelKey: string; icon: LucideIcon;
   { id: 'appearance', labelKey: 'settings.categories.appearance', icon: Palette },
   { id: 'providers', labelKey: 'settings.categories.providers', icon: Plug, path: 'providerAccounts' },
   { id: 'agents', labelKey: 'settings.categories.agents', icon: Bot, path: 'agents' },
+  { id: 'model-auto-mode', labelKey: 'settings.categories.modelAutoMode', icon: Sparkles, path: 'modelAutoMode' },
   { id: 'mcp-servers', labelKey: 'settings.categories.mcpServers', icon: Server, path: 'mcpServers' },
   { id: 'mcp-gateway', labelKey: 'settings.categories.mcpGateway', icon: Network, path: 'mcpGateway' },
   { id: 'lsp', labelKey: 'settings.categories.lsp', icon: Code, path: 'lsp' },
@@ -116,6 +119,7 @@ const PANELS: Partial<Record<SettingsCategory, ReactNode>> = {
   appearance: <AppearanceSettings />,
   providers: <ProviderAccountsSettings />,
   agents: <AgentsSettings />,
+  'model-auto-mode': <ModelAutoModeSettings />,
   'mcp-servers': <MCPServersSettings />,
   'mcp-gateway': <MCPGatewaySettings />,
   lsp: <LSPSettings />,

@@ -94,6 +94,7 @@
       "appearance": "外观",
       "providers": "提供商",
       "agents": "代理",
+      "modelAutoMode": "Auto mode",
       "mcpServers": "MCP 服务器",
       "mcpGateway": "MCP 网关",
       "lsp": "LSP",

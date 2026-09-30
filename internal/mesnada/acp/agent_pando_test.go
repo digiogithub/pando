@@ -388,12 +388,17 @@ type mockAgentService struct {
 	sessionModelOverrides map[string]string
 	availableModels       []ACPModelInfo
 	sessionOverrides      map[string]SessionLLMOverrides
-	ponytailModes         map[string]string
-	cavemanModes          map[string]string
-	busy                  bool
-	steerErr              error
-	steerCalls            []string
-	pendingSteering       int
+	// autoModes mimics agent.SessionAutoMode keyed by Pando session id.
+	autoModes map[string]bool
+	// defaultAuto is what SessionAutoMode reports for a session without an
+	// explicit flag (config DefaultAuto).
+	defaultAuto     bool
+	ponytailModes   map[string]string
+	cavemanModes    map[string]string
+	busy            bool
+	steerErr        error
+	steerCalls      []string
+	pendingSteering int
 
 	superpowersModes        map[string]bool
 	superpowersFinishCalled bool
@@ -489,7 +494,21 @@ func (m *mockAgentService) SetModelOverride(modelID string) error {
 	return m.modelOverrideErr
 }
 
+// SessionAutoMode implements AutoModeService.
+func (m *mockAgentService) SessionAutoMode(sessionID string) bool {
+	if v, ok := m.autoModes[sessionID]; ok {
+		return v
+	}
+	return m.defaultAuto
+}
+
 func (m *mockAgentService) SetSessionLLMOverrides(sessionID string, overrides SessionLLMOverrides) {
+	if overrides.AutoMode != nil {
+		if m.autoModes == nil {
+			m.autoModes = make(map[string]bool)
+		}
+		m.autoModes[sessionID] = *overrides.AutoMode
+	}
 	if m.sessionOverrides == nil {
 		m.sessionOverrides = make(map[string]SessionLLMOverrides)
 	}
@@ -705,6 +724,7 @@ type mockSessionService struct {
 	goals     map[string]db.SessionGoal
 	created   []string
 	counter   int
+	messages  map[string][]message.Message
 }
 
 func newMockSessionService() *mockSessionService {
@@ -754,7 +774,7 @@ func (m *mockSessionService) GetACPSessionState(ctx context.Context, sessionID s
 }
 
 func (m *mockSessionService) GetMessages(ctx context.Context, sessionID string) ([]message.Message, error) {
-	return nil, nil
+	return m.messages[sessionID], nil
 }
 
 func (m *mockSessionService) SaveACPSessionState(ctx context.Context, sessionID string, state string) error {

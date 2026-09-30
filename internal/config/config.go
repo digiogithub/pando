@@ -1279,6 +1279,8 @@ type Config struct {
 	Evaluator         EvaluatorConfig         `json:"evaluator,omitempty" toml:"evaluator"`
 	CLIAssist         CLIAssistConfig         `json:"cliAssist,omitempty" toml:"cliAssist"`
 	PersonaAutoSelect PersonaAutoSelectConfig `json:"personaAutoSelect,omitempty"`
+	// ModelAutoMode routes each user prompt to a configured model (see model_auto_mode.go).
+	ModelAutoMode     ModelAutoModeConfig     `json:"modelAutoMode" mapstructure:"modelAutoMode" toml:"ModelAutoMode"`
 	ACP               ACPConfig               `json:"acp,omitempty" toml:"acp"`
 	OpenLit           OpenLitConfig           `json:"openlit,omitempty" toml:"OpenLit"`
 	Projects          ProjectsConfig          `json:"projects,omitempty" toml:"Projects"`
@@ -2578,6 +2580,13 @@ func setDefaults(debug bool) {
 	viper.SetDefault("design.critique.threshold", 8.0)
 	viper.SetDefault("design.critique.policy", "standard")
 
+	viper.SetDefault("modelAutoMode.enabled", false)
+	viper.SetDefault("modelAutoMode.defaultAuto", true)
+	viper.SetDefault("modelAutoMode.router.provider", string(DecisionProviderOllama))
+	viper.SetDefault("modelAutoMode.threshold", defaultModelAutoThreshold)
+	viper.SetDefault("modelAutoMode.minConfidence", 0.0)
+	viper.SetDefault("modelAutoMode.timeoutMs", 0)
+	viper.SetDefault("modelAutoMode.historyPrompts", 0)
 	viper.SetDefault("snapshots.enabled", false)
 	viper.SetDefault("snapshots.maxSnapshots", 100)
 	viper.SetDefault("snapshots.maxFileSize", "10MB")
@@ -3015,6 +3024,7 @@ func applyDefaultValues() {
 	normalizeMesnadaDelegationDefaults()
 	normalizeMesnadaOrchestratorDefaults()
 	normalizeTelemetryDefaults()
+	normalizeModelAutoModeDefaults()
 	refreshConfiguredDynamicModels()
 	ensureAgentDefaults()
 	ensureEvaluatorDefaultModel()
@@ -3437,6 +3447,8 @@ func Validate() error {
 	if cfg == nil {
 		return fmt.Errorf("config not loaded")
 	}
+
+	logModelAutoModeValidation()
 
 	if err := validateCronJobs(cfg.CronJobs); err != nil {
 		return err

@@ -6,13 +6,13 @@ import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import clsx from 'clsx'
 import { format } from 'date-fns'
-import type { Message, ContentPart, ToolCallStatus, ToolKind, ToolCallLocation } from '@pando/client/types'
+import type { Message, RoutingInfo, ContentPart, ToolCallStatus, ToolKind, ToolCallLocation } from '@pando/client/types'
 import type { StreamingState, ActiveToolCall } from '@pando/client/hooks/useChat'
 import MarkdownLink from '@/components/shared/MarkdownLink'
 import { IconButton, Spinner } from '@/components/ui'
 import {
   Brain, Check, ChevronRight, Copy, Eye, FilePen, FilePlus, FileText, Folder, Globe,
-  Pencil, Search, SquareTerminal, Trash2, VenetianMask, Wrench, type LucideIcon,
+  Pencil, Search, SquareTerminal, Trash2, VenetianMask, Wrench, Sparkles, TriangleAlert, Info, type LucideIcon,
 } from '@/components/ui/icons'
 import { copyToClipboard } from '@/utils/clipboard'
 
@@ -536,6 +536,49 @@ function PersonaRow({ text, timestamp }: { text: string; timestamp: string }) {
   )
 }
 
+// ─── Routing / system notices (model auto mode) ────────────────────────────────
+
+/** Compact label for a routing notice: "Auto → model · route · p=0.93". */
+export function routingLabel(routing: RoutingInfo, fallbackText: string): string {
+  switch (routing.kind) {
+    case 'routed': {
+      const parts = [`Auto → ${routing.model ?? '?'}`]
+      if (routing.routeId) parts.push(routing.routeId)
+      if (typeof routing.probability === 'number') parts.push(`p=${routing.probability.toFixed(2)}`)
+      return parts.join(' · ')
+    }
+    case 'failover':
+      return fallbackText || `Auto → ${routing.model ?? '?'} (failover)`
+    default:
+      return fallbackText || `Auto → ${routing.model ?? '?'}`
+  }
+}
+
+export function RoutingRow({ routing, text }: { routing: RoutingInfo; text: string }) {
+  const warn = routing.kind === 'failover' || routing.kind === 'router_unavailable' || routing.kind === 'route_unusable'
+  const Icon = warn ? TriangleAlert : Sparkles
+  return (
+    <div
+      className={`chat-routing${warn ? ' chat-routing--warn' : ''}`}
+      data-testid="routing-row"
+      data-kind={routing.kind}
+      title={text.trim()}
+    >
+      <Icon size={12} className="chat-routing-icon" />
+      <span className="chat-routing-text">{routingLabel(routing, text.trim())}</span>
+    </div>
+  )
+}
+
+export function NoticeRow({ text }: { text: string }) {
+  return (
+    <div className="chat-routing" data-testid="notice-row" title={text}>
+      <Info size={12} className="chat-routing-icon" />
+      <span className="chat-routing-text">{text}</span>
+    </div>
+  )
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 type Entry =
@@ -676,6 +719,12 @@ export default function MessageBubble({ message, streaming, streamingState }: Me
   const textContent = messageText(message)
 
   // System / Persona message: collapsible, hidden by default
+  if (message.role === 'system' && message.routing) {
+    return <RoutingRow routing={message.routing} text={textContent} />
+  }
+  if (message.role === 'system' && message.notice) {
+    return <NoticeRow text={textContent.trim()} />
+  }
   if (message.role === 'system') {
     return <PersonaRow text={textContent} timestamp={timestamp} />
   }

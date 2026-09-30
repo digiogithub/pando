@@ -293,6 +293,19 @@ func (r *Runtime) applySessionOverrides(sessionID string, profile *Profile) {
 		return
 	}
 
+	// "auto" selects the model auto mode router for the session instead of
+	// pinning a concrete model (PANDO-SP-0004 R1). It is skipped when auto mode
+	// is disabled so the session keeps its configured coder model.
+	if string(model) == config.AutoModelID {
+		model = ""
+		if cfg := config.Get(); cfg != nil && cfg.ModelAutoMode.Enabled {
+			agent.SetSessionAutoMode(sessionID, true)
+		}
+	}
+	if persona == "" && prompt == "" && model == "" {
+		return
+	}
+
 	ov := agent.SessionLLMOverridesFor(sessionID)
 	if persona != "" || prompt != "" {
 		ov.Persona = persona

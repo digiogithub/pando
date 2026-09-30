@@ -94,6 +94,7 @@
       "appearance": "外観",
       "providers": "プロバイダー",
       "agents": "エージェント",
+      "modelAutoMode": "Auto mode",
       "mcpServers": "MCP サーバー",
       "mcpGateway": "MCP ゲートウェイ",
       "lsp": "LSP",

@@ -1,5 +1,5 @@
 import api, { notifyNetworkError } from './api'
-import type { SSEEvent } from '../types'
+import type { SSEEvent, RoutingInfo } from '../types'
 
 type ToolCallKind = NonNullable<NonNullable<SSEEvent['tool_call']>['kind']>
 type ToolCallStatus = NonNullable<NonNullable<SSEEvent['tool_call']>['status']>
@@ -282,6 +282,12 @@ function parseSSEPayload(eventType: SSEEvent['type'], raw: Record<string, unknow
     case 'steering_injected':
       base.session_id = typeof raw.session_id === 'string' ? raw.session_id : base.session_id
       base.message = typeof raw.message === 'string' ? raw.message : undefined
+      break
+
+    case 'system_message':
+      base.session_id = typeof raw.session_id === 'string' ? raw.session_id : base.session_id
+      base.message = typeof raw.text === 'string' ? raw.text : undefined
+      base.routing = raw.routing && typeof raw.routing === 'object' ? (raw.routing as RoutingInfo) : undefined
       break
 
     default:

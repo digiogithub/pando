@@ -123,4 +123,5 @@ first migration is running.
 - [Remote diagnostics (telemetry)](telemetry.md)
 - [Web UI access control](webui.md)
 - [Model catalog (models.dev)](model-catalog.md)
+- [Model auto mode](model-auto-mode.md)
 - [Knowledge Base](knowledge-base.md)

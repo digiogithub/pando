@@ -610,6 +610,29 @@ Enabled     = false
 PersonaPath = ''
 
 # =============================================================================
+# Model Auto Mode — route each prompt to a model chosen by a small decision model
+# (System One: Ollama >= 0.35, TypeSafe Jev or a custom Jev-compatible gateway)
+# =============================================================================
+[ModelAutoMode]
+Enabled       = false
+DefaultAuto   = true
+Threshold     = 0.6
+MinConfidence = 0.0
+TimeoutMs     = 0
+HistoryPrompts = 0
+
+[ModelAutoMode.Router]
+Provider  = 'ollama'
+Model     = ''
+KeepAlive = '30m'
+
+# [[ModelAutoMode.Routes]]
+# ID          = 'hard-coding'
+# Description = 'Complex refactors, architecture and debugging'
+# Model       = 'anthropic.claude-sonnet-4'
+# Fallbacks   = []
+
+# =============================================================================
 # ACP (Agent Client Protocol)
 # =============================================================================
 [acp]

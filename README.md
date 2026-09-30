@@ -96,6 +96,7 @@ More commands in [docs/usage.md](docs/usage.md).
 | Output compression filters | [output-filters.md](docs/output-filters.md) |
 | MCP server authentication | [mcp-authentication.md](docs/mcp-authentication.md) |
 | Model pricing and capabilities | [model-catalog.md](docs/model-catalog.md) |
+| Model auto mode (per-prompt routing) | [model-auto-mode.md](docs/model-auto-mode.md) |
 | Remote diagnostics (telemetry) | [telemetry.md](docs/telemetry.md) |
 | AG-UI / CopilotKit | [agui.md](docs/agui.md) |
 | Desktop Controller | [desktop-controller.md](docs/desktop-controller.md) |

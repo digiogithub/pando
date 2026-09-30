@@ -321,3 +321,31 @@ func TestSetSessionModelOverridePreservesOtherOverrides(t *testing.T) {
 		t.Fatalf("overrides = %+v, want the persona and reasoning effort preserved", got)
 	}
 }
+
+func TestSetupBridgeCurrentModelReportsAutoSession(t *testing.T) {
+	setupModelTestEnv(t, true)
+	config.Get().ModelAutoMode.Enabled = true
+	bridge, sessionID := newModelTestSession(t, "auto")
+	t.Cleanup(func() { lastRoutings.Delete(sessionID) })
+
+	SetSessionAutoMode(sessionID, true)
+	state, err := bridge.CurrentModel(sessionID)
+	if err != nil {
+		t.Fatalf("CurrentModel: %v", err)
+	}
+	if state.ID != config.AutoModelID || !state.Overridden || state.Name != "Auto" {
+		t.Fatalf("state = %+v, want auto without a routed model", state)
+	}
+
+	lastRoutings.Store(sessionID, RoutingInfo{Model: testModelPricey})
+	state, _ = bridge.CurrentModel(sessionID)
+	if state.ID != config.AutoModelID || !strings.Contains(state.Name, string(testModelPricey)) {
+		t.Fatalf("state = %+v, want auto with the last routed model", state)
+	}
+
+	SetSessionAutoMode(sessionID, false)
+	state, _ = bridge.CurrentModel(sessionID)
+	if state.ID != string(testModelCheap) {
+		t.Fatalf("state = %+v, want the configured model after leaving Auto", state)
+	}
+}

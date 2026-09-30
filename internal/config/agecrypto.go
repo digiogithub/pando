@@ -413,6 +413,11 @@ func encryptSensitiveConfigFields(in *Config) (*Config, error) {
 			}
 		}
 	}
+	// Encrypt the model auto mode decision router API key
+	out.ModelAutoMode.Router.APIKey, err = encryptSecretString(in.ModelAutoMode.Router.APIKey)
+	if err != nil {
+		return nil, fmt.Errorf("encrypt modelAutoMode router APIKey: %w", err)
+	}
 	// Encrypt remembrances embedding API keys
 	out.Remembrances.DocumentEmbeddingAPIKey, err = encryptSecretString(in.Remembrances.DocumentEmbeddingAPIKey)
 	if err != nil {
@@ -478,6 +483,11 @@ func decryptSensitiveConfigFields(in *Config) error {
 			return fmt.Errorf("decrypt basic auth password for %s: %w", user.Username, err)
 		}
 		in.Server.BasicAuth.Users[i].Password = decrypted
+	}
+	// Decrypt the model auto mode decision router API key
+	in.ModelAutoMode.Router.APIKey, err = decryptSecretString(in.ModelAutoMode.Router.APIKey)
+	if err != nil {
+		return fmt.Errorf("decrypt modelAutoMode router APIKey: %w", err)
 	}
 	// Decrypt remembrances embedding API keys
 	in.Remembrances.DocumentEmbeddingAPIKey, err = decryptSecretString(in.Remembrances.DocumentEmbeddingAPIKey)

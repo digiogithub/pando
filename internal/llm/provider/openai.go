@@ -280,8 +280,8 @@ func (o *openaiClient) send(ctx context.Context, messages []message.Message, too
 				return nil, retryErr
 			}
 			if retry {
-				logging.WarnPersist(fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, maxRetries), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
-				notify.Warn(notify.SourceLLMProvider, fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, maxRetries), 10*time.Second)
+				logging.WarnPersist(fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, o.providerOptions.retryLimit()), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
+				notify.Warn(notify.SourceLLMProvider, fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, o.providerOptions.retryLimit()), 10*time.Second)
 				select {
 				case <-ctx.Done():
 					return nil, ctx.Err()
@@ -481,8 +481,8 @@ func (o *openaiClient) stream(ctx context.Context, messages []message.Message, t
 				return
 			}
 			if retry {
-				logging.WarnPersist(fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, maxRetries), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
-				notify.Warn(notify.SourceLLMProvider, fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, maxRetries), 10*time.Second)
+				logging.WarnPersist(fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, o.providerOptions.retryLimit()), logging.PersistTimeArg, time.Millisecond*time.Duration(after+100))
+				notify.Warn(notify.SourceLLMProvider, fmt.Sprintf("Retrying due to rate limit... attempt %d of %d", attempts, o.providerOptions.retryLimit()), 10*time.Second)
 				select {
 				case <-ctx.Done():
 					// context cancelled
@@ -525,8 +525,8 @@ func (o *openaiClient) shouldRetry(attempts int, err error) (bool, int64, error)
 		logging.Debug("OpenAI retry evaluation", "attempts", attempts, "statusCode", apierr.StatusCode)
 	}
 
-	if attempts > maxRetries {
-		return false, 0, fmt.Errorf("maximum retry attempts reached for rate limit: %d retries", maxRetries)
+	if attempts > o.providerOptions.retryLimit() {
+		return false, 0, fmt.Errorf("maximum retry attempts reached for rate limit: %d retries", o.providerOptions.retryLimit())
 	}
 
 	retryMs := 0

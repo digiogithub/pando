@@ -57,6 +57,22 @@ type goalSSEPayload struct {
 	CompletedAt   *int64 `json:"completedAt,omitempty"`
 }
 
+// applyRequestModel handles ChatRequest.Model. "auto" puts the session in
+// model auto mode (400 when the feature is disabled); any other value keeps
+// the existing behaviour (the request model is not applied per request).
+func applyRequestModel(sessionID, model string) error {
+	if model != config.AutoModelID {
+		return nil
+	}
+	if cfg := config.Get(); cfg == nil || !cfg.ModelAutoMode.Enabled {
+		return errAutoModeDisabled
+	}
+	agent.SetSessionAutoMode(sessionID, true)
+	return nil
+}
+
+var errAutoModeDisabled = errors.New("model auto mode is not enabled")
+
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -77,6 +93,11 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	sess, err := s.getOrCreateSession(r.Context(), req.SessionID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if err := applyRequestModel(sess.ID, req.Model); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -136,6 +157,11 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 	sess, err := s.getOrCreateSession(r.Context(), req.SessionID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if err := applyRequestModel(sess.ID, req.Model); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -595,6 +621,19 @@ func (s *Server) dispatchSSEEvent(
 				"cost":                  event.TokenUsage.Cost,
 			})
 		}
+
+	case agent.AgentEventTypeSystemMessage:
+		if event.SystemMessage == "" && event.Routing == nil {
+			return
+		}
+		payload := map[string]interface{}{
+			"session_id": event.SessionID,
+			"text":       event.SystemMessage,
+		}
+		if event.Routing != nil {
+			payload["routing"] = event.Routing
+		}
+		writeSSEEvent(w, flusher, "system_message", payload)
 
 	case agent.AgentEventTypeSteeringQueued:
 		writeSSEEvent(w, flusher, "steering_queued", map[string]interface{}{

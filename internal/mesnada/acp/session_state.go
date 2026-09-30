@@ -3,9 +3,11 @@ package acp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
+	"github.com/digiogithub/pando/internal/config"
 	llmmodels "github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/message"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
@@ -121,7 +123,15 @@ func buildSessionModelState(svc AgentService, currentModelID string) *acpsdk.Ses
 	currentID := resolvedModelValue(svc, currentModelID)
 	available := svc.AvailableModels()
 
-	infos := make([]acpsdk.ModelInfo, 0, len(available))
+	infos := make([]acpsdk.ModelInfo, 0, len(available)+1)
+	if autoModeEnabled() {
+		autoDesc := autoModelDescription()
+		infos = append(infos, acpsdk.ModelInfo{
+			ModelId:     acpsdk.ModelId(autoModelValue),
+			Name:        autoModelName,
+			Description: &autoDesc,
+		})
+	}
 	for _, m := range available {
 		name := m.Name
 		if name == "" {
@@ -180,7 +190,7 @@ func buildSessionConfigOptions(svc AgentService, session *ACPServerSession) []ac
 		askPermission  bool
 	)
 	if session != nil {
-		currentModel = session.Model()
+		currentModel = sessionModelValue(svc, session)
 		currentMode = session.Mode()
 		currentPersona = session.Persona()
 		askPermission = session.AskPermission()
@@ -475,9 +485,57 @@ func resolvedPersonaValue(svc AgentService, currentPersona string) string {
 	return ""
 }
 
+const (
+	autoModelValue = "auto"
+	autoModelName  = "Auto"
+)
+
+// autoModeEnabled reports whether model auto mode is enabled in the config.
+func autoModeEnabled() bool {
+	cfg := config.Get()
+	return cfg != nil && cfg.ModelAutoMode.Enabled
+}
+
+// sessionInAuto reports whether the session currently runs in Auto mode.
+func sessionInAuto(svc AgentService, session *ACPServerSession) bool {
+	if session == nil || !autoModeEnabled() {
+		return false
+	}
+	switch strings.TrimSpace(session.Model()) {
+	case autoModelValue:
+		return true
+	case "":
+		if auto, ok := svc.(AutoModeService); ok {
+			return auto.SessionAutoMode(session.PandoSessionID())
+		}
+	}
+	return false
+}
+
+func autoModelDescription() string {
+	desc := "Route each prompt to the best configured model"
+	cfg := config.Get()
+	if cfg == nil {
+		return desc
+	}
+	router := cfg.ModelAutoMode.Router
+	model := strings.TrimSpace(router.Model)
+	if model == "" {
+		return desc
+	}
+	return fmt.Sprintf("%s (router: %s/%s)", desc, router.EffectiveProvider(), model)
+}
+
 func buildModelConfigValues(svc AgentService) []configOptionValue {
 	available := svc.AvailableModels()
-	values := make([]configOptionValue, 0, len(available))
+	values := make([]configOptionValue, 0, len(available)+1)
+	if autoModeEnabled() {
+		values = append(values, configOptionValue{
+			Value:       autoModelValue,
+			Name:        autoModelName,
+			Description: autoModelDescription(),
+		})
+	}
 	for _, model := range available {
 		id := strings.TrimSpace(model.ID)
 		if id == "" {
@@ -498,10 +556,28 @@ func buildModelConfigValues(svc AgentService) []configOptionValue {
 
 func resolvedModelValue(svc AgentService, currentModel string) string {
 	currentModel = strings.TrimSpace(currentModel)
+	if currentModel == autoModelValue && !autoModeEnabled() {
+		// Auto was turned off: the session behaves as the coder model.
+		currentModel = ""
+	}
 	if currentModel != "" {
 		return currentModel
 	}
 	return strings.TrimSpace(svc.CurrentModelID())
+}
+
+// sessionModelValue is the model the ACP client should see for a session: the
+// explicit pick, or "auto" for a session that has not picked a model while Auto
+// is the agent's selection for it (new sessions under DefaultAuto).
+func sessionModelValue(svc AgentService, session *ACPServerSession) string {
+	if session == nil {
+		return resolvedModelValue(svc, "")
+	}
+	current := strings.TrimSpace(session.Model())
+	if current == "" && sessionInAuto(svc, session) {
+		return autoModelValue
+	}
+	return resolvedModelValue(svc, current)
 }
 
 func boolToAskPermissionValue(enabled bool) string {
@@ -838,5 +914,39 @@ func (a *PandoACPAgent) streamSessionHistory(ctx context.Context, sessionID acps
 		}
 	}
 
+	// Routing notices are not stored as messages; replay the last one so the
+	// client shows which model Auto picked for the most recent turn.
+	for _, notice := range a.replayRoutingNotices(acpSession, pandoSessionID) {
+		sendUpdate(updateAgentMessageTextWithID(notice, pandoSessionID+"-routing"))
+	}
+
 	a.logger.Printf("[ACP AGENT] streamSessionHistory: completed replaying history for session %s", sessionID)
+}
+
+// isRoutingNoticeText reports whether a system message is a model auto mode
+// routing notice (they all start with "Auto:").
+func isRoutingNoticeText(msg string) bool {
+	return strings.HasPrefix(strings.TrimSpace(msg), "Auto:")
+}
+
+// replayRoutingNotices returns the routing notices to replay after the history:
+// the persisted last notice plus any the agent still holds for its last run.
+func (a *PandoACPAgent) replayRoutingNotices(acpSession *ACPServerSession, pandoSessionID string) []string {
+	var notices []string
+	seen := map[string]bool{}
+	add := func(n string) {
+		n = strings.TrimSpace(n)
+		if n == "" || seen[n] || !isRoutingNoticeText(n) {
+			return
+		}
+		seen[n] = true
+		notices = append(notices, n)
+	}
+	if acpSession != nil {
+		add(acpSession.RoutingNotice())
+	}
+	for _, m := range a.agentService.LastRunSystemMessages(pandoSessionID) {
+		add(m)
+	}
+	return notices
 }

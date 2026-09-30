@@ -361,6 +361,7 @@ func (a *PandoACPAgent) processPromptWithAgent(
 		acpSession.CleanMode(),
 	)
 	a.agentService.SetSessionLLMOverrides(acpSession.PandoSessionID(), overrides)
+	acpSession.SetAutoPushedOff(overrides.AutoMode != nil && !*overrides.AutoMode)
 	eventChan, err := a.agentService.Run(ctx, acpSession.PandoSessionID(), promptText, attachments...)
 	if err != nil {
 		return "", fmt.Errorf("failed to start agent: %w", err)
@@ -481,6 +482,13 @@ func (a *PandoACPAgent) processAgentEventStream(
 			msg := strings.TrimSpace(event.SystemMessage)
 			if msg == "" {
 				continue
+			}
+			if event.Routing || isRoutingNoticeText(msg) {
+				// Remember the notice so session/load can replay it.
+				acpSession.SetRoutingNotice(msg)
+				if err := a.persistACPState(ctx, acpSession); err != nil {
+					a.logger.Printf("[ACP AGENT] Failed to persist routing notice: %v", err)
+				}
 			}
 			if usageUpdate, normalized, suppress := a.normalizeSystemMessage(ctx, acpSession, msg); !suppress {
 				if usageUpdate != nil {

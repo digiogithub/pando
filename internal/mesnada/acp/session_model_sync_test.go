@@ -67,3 +67,43 @@ func TestReconcileACPSessionModelHandlesNilInputs(t *testing.T) {
 		t.Fatalf("expected false for a nil session")
 	}
 }
+
+func TestReconcileACPSessionModelAdoptsAgentSideAuto(t *testing.T) {
+	enableAutoModeForTest(t, true)
+	svc := &mockAgentService{autoModes: map[string]bool{}}
+	session := newModelSyncSession()
+	session.SetModel("picked-model")
+
+	// Before any prompt pushed "Auto off" the concrete pick is authoritative,
+	// even when the global default says Auto.
+	svc.defaultAuto = true
+	if reconcileACPSessionModel(svc, session) || session.Model() != "picked-model" {
+		t.Fatalf("pick must be kept before a prompt pushed overrides, got %q", session.Model())
+	}
+	svc.defaultAuto = false
+
+	// A prompt pushes AutoMode=false for the concrete pick.
+	overrides := sessionLLMOverridesFor(session)
+	if overrides.AutoMode == nil || *overrides.AutoMode {
+		t.Fatal("concrete pick must push AutoMode=false")
+	}
+	session.SetAutoPushedOff(true)
+
+	// Still off on the agent side: nothing to adopt.
+	if reconcileACPSessionModel(svc, session) {
+		t.Fatal("no change expected while the agent is not in Auto")
+	}
+
+	// pando_setup "model auto" flips the agent-side flag.
+	svc.autoModes["pando-1"] = true
+	if !reconcileACPSessionModel(svc, session) {
+		t.Fatal("agent-side Auto must be adopted")
+	}
+	if session.Model() != "auto" {
+		t.Fatalf("session model = %q, want auto", session.Model())
+	}
+	next := sessionLLMOverridesFor(session)
+	if next.AutoMode == nil || !*next.AutoMode {
+		t.Fatal("next prompt must keep Auto on")
+	}
+}

@@ -720,6 +720,19 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, tea.Batch(cmds...)
 		}
 
+		// Auto model mode routing notice / failover: a compact status-bar notice.
+		if payload.Type == agent.AgentEventTypeSystemMessage && payload.Routing != nil {
+			if payload.SessionID == a.selectedSession.ID {
+				text := strings.TrimSpace(payload.SystemMessage)
+				if payload.Routing.Kind == "routed" {
+					cmds = append(cmds, util.ReportInfo(text))
+				} else {
+					cmds = append(cmds, util.ReportWarn(text))
+				}
+			}
+			return a, tea.Batch(cmds...)
+		}
+
 		if payload.Type == agent.AgentEventTypeTodosUpdated && len(payload.Todos) > 0 {
 			// Forward plan updates to all pages so the sidebar can re-render.
 			todosMsg := chat.TodosUpdatedMsg{SessionID: payload.SessionID, Todos: payload.Todos}
@@ -801,9 +814,28 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case dialog.ModelSelectedMsg:
 		a.showModelDialog = false
 
+		if string(msg.Model.ID) == config.AutoModelID {
+			if err := config.SetModelAutoSelected(true); err != nil {
+				return a, util.ReportError(err)
+			}
+			if a.selectedSession.ID != "" {
+				agent.SetSessionAutoMode(a.selectedSession.ID, true)
+			}
+			return a, util.ReportInfo("Model changed to Auto")
+		}
+
 		model, err := a.app.CoderAgent.Update(config.AgentCoder, msg.Model.ID)
 		if err != nil {
 			return a, util.ReportError(err)
+		}
+
+		if config.Get() != nil && config.Get().ModelAutoMode.Enabled {
+			if err := config.SetModelAutoSelected(false); err != nil {
+				return a, util.ReportError(err)
+			}
+		}
+		if a.selectedSession.ID != "" {
+			agent.SetSessionAutoMode(a.selectedSession.ID, false)
 		}
 
 		return a, util.ReportInfo(fmt.Sprintf("Model changed to %s", model.Name))

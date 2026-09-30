@@ -37,6 +37,18 @@ var setupModelProposals sync.Map
 // CurrentModel reports the model the session runs on, flagging whether it comes
 // from a session override or from the agent's configured default.
 func (b *setupBridge) CurrentModel(sessionID string) (tools.SetupModelState, error) {
+	// A session in Auto has no single model: report "auto" plus the model the
+	// last prompt was routed to, when known.
+	if SessionAutoMode(sessionID) {
+		state := tools.SetupModelState{ID: config.AutoModelID, Name: "Auto", Overridden: true}
+		if routed, ok := LastRoutedModel(sessionID); ok {
+			state.Name = fmt.Sprintf("Auto (last routed: %s)", routed)
+			if m, known := models.SupportedModels()[routed]; known {
+				state.Provider = string(m.Provider)
+			}
+		}
+		return state, nil
+	}
 	id, overridden := effectiveSessionModel(sessionID)
 	if id == "" {
 		return tools.SetupModelState{}, fmt.Errorf("no model is configured for the coder agent")
@@ -69,6 +81,24 @@ func (b *setupBridge) SetSessionModel(sessionID, modelID string, confirmed bool)
 	current, err := b.CurrentModel(sessionID)
 	if err != nil {
 		return tools.SetupModelSwitch{}, err
+	}
+
+	// "auto" hands the session to Auto model mode: every following user prompt
+	// is routed. It needs no cost confirmation (the user configured the routes)
+	// and does not consume the per-run switch budget: the model only changes at
+	// the start of the next turn.
+	if strings.EqualFold(strings.TrimSpace(modelID), config.AutoModelID) {
+		if cfg := config.Get(); cfg == nil || !cfg.ModelAutoMode.Enabled {
+			return tools.SetupModelSwitch{}, fmt.Errorf(
+				"auto model mode is not enabled. The user can enable it in Settings > Model Auto Mode")
+		}
+		setupModelProposals.Delete(sessionID)
+		SetSessionAutoMode(sessionID, true)
+		return tools.SetupModelSwitch{
+			Applied:  true,
+			Previous: current,
+			Target:   tools.SetupModelState{ID: config.AutoModelID, Name: "Auto", Overridden: true},
+		}, nil
 	}
 
 	// Clearing the override restores a model the user already picked, so it needs
@@ -146,6 +176,8 @@ func (b *setupBridge) SetSessionModel(sessionID, modelID string, confirmed bool)
 
 	if clearing {
 		SetSessionModelOverride(sessionID, "")
+		// Back to the configured model also means leaving Auto.
+		SetSessionAutoMode(sessionID, false)
 	} else {
 		SetSessionModelOverride(sessionID, target.ID)
 	}

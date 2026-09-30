@@ -49,6 +49,10 @@ const (
 	// EventActivated is the Type of an event reporting that an optional piece
 	// of behaviour was switched on for a run.
 	EventActivated EventType = "activated"
+
+	// EventRouted is the Type of an event reporting that Auto model mode chose
+	// the model for a turn (see TopicModelRoute).
+	EventRouted EventType = "routed"
 )
 
 // The topics core publishes. More may be added; an unknown topic is not an
@@ -127,6 +131,24 @@ const (
 	// API keys, tokens and base URLs are never published: an observer is told
 	// that the set of accounts moved, not what is in them.
 	TopicProvider = "provider"
+
+	// TopicModelRoute reports one Auto model mode decision (or one provider
+	// failover inside an Auto turn), with the route id as ID and EventRouted as
+	// Type. Payload:
+	//
+	//	"model"           string   the model that will answer
+	//	"routeId"         string   the matched route, "" when none matched
+	//	"fallback"        bool     true when the model is a failover candidate
+	//	"reason"          string   matched, no_match, router_error, route_unusable, ...
+	//	"probability"     float64  router probability of the chosen route
+	//	"confidence"      float64  router confidence of the answer
+	//	"routerProvider"  string   ollama, typesafe or custom
+	//	"routerModel"     string   the decision model
+	//	"routerLatencyMs" float64  router round trip
+	//	"routerCostUsd"   float64  present only when the gateway reported a cost
+	//
+	// Prompt text, history and API keys are never published.
+	TopicModelRoute = "model_route"
 )
 
 // Event is one resource lifecycle notification.

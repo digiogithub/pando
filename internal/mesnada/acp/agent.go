@@ -326,7 +326,7 @@ func (a *PandoACPAgent) NewSession(ctx context.Context, req acpsdk.NewSessionReq
 		SessionId:     sessionID,
 		ConfigOptions: buildSessionConfigOptions(a.agentService, acpSession),
 		Modes:         buildSessionModeState(a.agentService, currentMode),
-		Models:        buildSessionModelState(a.agentService, acpSession.Model()),
+		Models:        buildSessionModelState(a.agentService, sessionModelValue(a.agentService, acpSession)),
 		Meta:          mergeMetaMaps(personaStateToMeta(buildSessionPersonaState(a.agentService, acpSession.Persona())), goalMeta(acpSession.Goal())),
 	}, nil
 }
@@ -932,6 +932,12 @@ func (a *PandoACPAgent) validateModel(modelID string) error {
 	if modelID == "" {
 		return fmt.Errorf("model is required")
 	}
+	if modelID == autoModelValue {
+		if !autoModeEnabled() {
+			return fmt.Errorf("unknown model: %s (auto mode is disabled)", modelID)
+		}
+		return nil
+	}
 	for _, model := range a.agentService.AvailableModels() {
 		if strings.TrimSpace(model.ID) == modelID {
 			return nil
@@ -1273,7 +1279,7 @@ func (a *PandoACPAgent) mustSessionModel(sessionID acpsdk.SessionId) string {
 	if err != nil {
 		return ""
 	}
-	return acpSession.Model()
+	return sessionModelValue(a.agentService, acpSession)
 }
 
 func (a *PandoACPAgent) mustSessionThinkingStreamMode(sessionID acpsdk.SessionId) string {

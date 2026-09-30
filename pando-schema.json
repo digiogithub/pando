@@ -349,7 +349,7 @@
                     "type": "string"
                   },
                   "redirectURI": {
-                    "description": "Custom redirect URI for the interactive flow (type=oauth only). Must point at a loopback host (127.0.0.1/localhost). Defaults to http://127.0.0.1:\u003ccallbackPort\u003e/mcp/oauth/callback.",
+                    "description": "Custom redirect URI for the interactive flow (type=oauth only). Must point at a loopback host (127.0.0.1/localhost). Defaults to http://127.0.0.1:<callbackPort>/mcp/oauth/callback.",
                     "type": "string"
                   },
                   "scopes": {
@@ -381,7 +381,7 @@
               },
               "type": {
                 "default": "none",
-                "description": "Authentication mechanism. \"none\" (default) sends no credentials. \"bearer\" sends 'Authorization: Bearer \u003cToken\u003e'. \"basic\" sends HTTP Basic auth using Username/Password. \"header\" sends Token as the raw value of a custom header named HeaderName. \"oauth\" drives the interactive OAuth 2.1 authorization-code + PKCE flow (pando mcp login). \"oauth_client_credentials\" mints a token non-interactively via the OAuth 2.1 client_credentials grant, for headless/CI use.",
+                "description": "Authentication mechanism. \"none\" (default) sends no credentials. \"bearer\" sends 'Authorization: Bearer <Token>'. \"basic\" sends HTTP Basic auth using Username/Password. \"header\" sends Token as the raw value of a custom header named HeaderName. \"oauth\" drives the interactive OAuth 2.1 authorization-code + PKCE flow (pando mcp login). \"oauth_client_credentials\" mints a token non-interactively via the OAuth 2.1 client_credentials grant, for headless/CI use.",
                 "enum": [
                   "none",
                   "bearer",
@@ -750,6 +750,129 @@
     "wd": {
       "description": "Working directory for the application",
       "type": "string"
+    },
+    "modelAutoMode": {
+      "description": "Model auto mode: route each prompt to a configured model chosen by a small decision model (System One)",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable model auto mode"
+        },
+        "defaultAuto": {
+          "type": "boolean",
+          "default": true,
+          "description": "New sessions start in Auto"
+        },
+        "selected": {
+          "type": "boolean",
+          "description": "Global Auto selection used by WebUI/TUI (unset follows defaultAuto)"
+        },
+        "router": {
+          "type": "object",
+          "description": "Decision provider",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "enum": [
+                "ollama",
+                "typesafe",
+                "custom"
+              ],
+              "default": "ollama"
+            },
+            "baseURL": {
+              "type": "string",
+              "description": "API root; /v1/systemone and /v1/models are appended. Empty: Ollama provider URL or http://localhost:11434 (ollama), https://api.typesafe.ai (typesafe); required for custom"
+            },
+            "apiKey": {
+              "type": "string",
+              "description": "Encrypted at rest; $ENV_VAR allowed; typesafe falls back to $TYPESAFE_API_KEY"
+            },
+            "model": {
+              "type": "string",
+              "description": "Decision model, e.g. tev1:0.8b, jev-latest, typesafe/jev-1.13 (local model for ollama)"
+            },
+            "keepAlive": {
+              "type": "string",
+              "default": "30m",
+              "description": "Ollama keep_alive"
+            },
+            "headers": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Extra HTTP headers for gateways"
+            }
+          }
+        },
+        "threshold": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "default": 0.6,
+          "description": "Minimum probability of the chosen route"
+        },
+        "minConfidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0,
+          "description": "Optional entropy-concentration guard (0 = off)"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Routing call timeout; 0 = 1500 (ollama) / 3000 (remote)"
+        },
+        "historyPrompts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20,
+          "default": 0,
+          "description": "Previous user prompts added to the state"
+        },
+        "routes": {
+          "type": "array",
+          "description": "Task routes (max 25 enabled)",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "description",
+              "model"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Stable slug; 'none' is reserved"
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "model": {
+                "type": "string",
+                "description": "Primary model id"
+              },
+              "fallbacks": {
+                "type": "array",
+                "maxItems": 2,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "disabled": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "title": "Pando Configuration",

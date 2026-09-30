@@ -241,3 +241,32 @@ func TestEventWireFormat(t *testing.T) {
 		})
 	}
 }
+
+func TestRoutingNoticeCustomEvent(t *testing.T) {
+	tr := newTranslator("thread-1", "run-1")
+	tr.Start()
+	evs := tr.Translate(agent.AgentEvent{
+		Type:          agent.AgentEventTypeSystemMessage,
+		SystemMessage: "Auto: code → m\n",
+		Routing:       &agent.RoutingInfo{RouteID: "code", Model: "m", Kind: "routed"},
+	})
+	assertTypes(t, evs, EventCustom)
+	c, ok := evs[0].(CustomEvent)
+	if !ok || c.Name != "pando.model_routed" {
+		t.Fatalf("got %#v", evs[0])
+	}
+	raw, _ := json.Marshal(c.Value)
+	var v struct {
+		Text    string             `json:"text"`
+		Routing *agent.RoutingInfo `json:"routing"`
+	}
+	if err := json.Unmarshal(raw, &v); err != nil || v.Routing == nil || v.Routing.Model != "m" || v.Text == "" {
+		t.Fatalf("bad value %s (%v)", raw, err)
+	}
+
+	// Non-routing system messages keep the generic custom event.
+	evs = tr.Translate(agent.AgentEvent{Type: agent.AgentEventTypeSystemMessage, SystemMessage: "x"})
+	if c := evs[0].(CustomEvent); c.Name != "pando.system_message" && c.Name != "pando."+string(agent.AgentEventTypeSystemMessage) {
+		t.Fatalf("got %s", c.Name)
+	}
+}

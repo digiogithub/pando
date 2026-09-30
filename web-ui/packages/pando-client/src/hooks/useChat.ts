@@ -3,6 +3,7 @@ import { createSSEStream, createGETSSEStream } from '../services/sse'
 import { api } from '../services/api'
 import { useSessionStore } from '../stores/sessionStore'
 import { useFileChangesStore } from '../stores/fileChangesStore'
+import { handleSystemMessageEvent } from './routingNotice'
 import type {
   Message, SSEEvent, SSEToolCall, SSEToolResult, SSEToolCallUpdate,
   ContentPart, ToolKind, ToolCallStatus, ToolCallLocation, SSEPlanEntry, GoalStatus,
@@ -417,6 +418,10 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
         itemsRef.current = []
         toolCallsRef.current = []
         setStreamingState((prev) => ({ ...prev, thinking: '', toolCalls: [], items: [] }))
+      }
+
+      if (event.type === 'system_message') {
+        handleSystemMessageEvent(event, activeSessionId ?? '')
       }
 
       if (event.type === 'error') {

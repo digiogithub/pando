@@ -33,6 +33,25 @@ export interface ContentPart {
   image_url?: string
 }
 
+/** Structured model auto mode routing notice (mirrors agent.RoutingInfo). */
+export interface RoutingInfo {
+  routeId?: string
+  model?: string
+  matched?: boolean
+  probability?: number
+  confidence?: number
+  reason?: string
+  fallbackUsed?: boolean
+  errorClass?: string
+  routerProvider?: string
+  routerModel?: string
+  routerLatencyMs?: number
+  routerCostUsd?: number
+  candidates?: string[]
+  kind?: 'routed' | 'no_match' | 'router_unavailable' | 'route_unusable' | 'failover' | string
+  notice?: string
+}
+
 export interface Message {
   id: string
   session_id: string
@@ -40,6 +59,10 @@ export interface Message {
   content: ContentPart[]
   model?: string
   created_at: string
+  /** Set on client-side routing rows (model auto mode); rendered as a chip. */
+  routing?: RoutingInfo
+  /** True for client-side generic system notices rendered as a muted row. */
+  notice?: boolean
 }
 
 export interface FileNode {
@@ -144,7 +167,7 @@ export interface SSEEvent {
       | 'tool_call' | 'tool_call_update' | 'tool_result'
       | 'plan_update' | 'todos_update' | 'goal_status'
       | 'token_usage' | 'permission_request' | 'question_request'
-      | 'steering_queued' | 'steering_injected'
+      | 'steering_queued' | 'steering_injected' | 'system_message'
       | 'error' | 'done'
   session_id?: string
   content?: string
@@ -158,6 +181,7 @@ export interface SSEEvent {
   token_usage?: SSETokenUsage
   permission_request?: PermissionRequest
   question_request?: QuestionRequest
+  routing?: RoutingInfo
 }
 
 // PermissionRequest is a pending tool permission prompt surfaced by the agent

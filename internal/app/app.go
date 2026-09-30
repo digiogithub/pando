@@ -2564,6 +2564,7 @@ func ForwardACPAgentEvents(ctx context.Context, realCh <-chan agent.AgentEvent) 
 			case agent.AgentEventTypeSystemMessage:
 				acpEv.Type = mesnadaACP.AgentEventTypeSystemMessage
 				acpEv.SystemMessage = ev.SystemMessage
+				acpEv.Routing = ev.Routing != nil
 			case agent.AgentEventTypeContentDelta:
 				acpEv.Type = mesnadaACP.AgentEventTypeContentDelta
 				acpEv.Delta = ev.Delta
@@ -2658,7 +2659,15 @@ func (a *appACPAgentAdapter) SetSessionLLMOverrides(sessionID string, overrides 
 		ThinkingMode:    config.ThinkingMode(overrides.ThinkingMode),
 		Persona:         overrides.Persona,
 		PersonaScoped:   overrides.PersonaScoped,
+		// Copy AutoMode: a full-struct write would otherwise reset the
+		// session's Auto flag.
+		AutoMode: overrides.AutoMode,
 	})
+}
+
+// SessionAutoMode reports whether the session runs in model auto mode.
+func (a *appACPAgentAdapter) SessionAutoMode(sessionID string) bool {
+	return agent.SessionAutoMode(sessionID)
 }
 
 func (a *appACPAgentAdapter) SetPonytailMode(sessionID string, mode string) (string, bool) {

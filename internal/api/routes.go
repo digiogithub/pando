@@ -9,6 +9,7 @@ import (
 	"github.com/digiogithub/pando/internal/design/preview"
 	"github.com/digiogithub/pando/internal/evaluator"
 	"github.com/digiogithub/pando/internal/extensions"
+	"github.com/digiogithub/pando/internal/llm/modelrouter"
 	"github.com/digiogithub/pando/internal/logging"
 )
 
@@ -213,6 +214,17 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Models
 	mux.HandleFunc("GET /api/v1/models", s.handleListModels)
 	mux.HandleFunc("PUT /api/v1/models/active", s.handleSetActiveModel)
+
+	// Model auto mode: config, decision-provider probes and routing playground.
+	modelrouter.StartWarmupOnReload()
+	mux.HandleFunc("/api/v1/config/model-auto-mode", s.handleConfigModelAutoMode)
+	mux.HandleFunc("GET /api/v1/model-auto-mode/router/models", s.handleModelAutoRouterModels)
+	mux.HandleFunc("POST /api/v1/model-auto-mode/router/models", s.handleModelAutoRouterModels)
+	mux.HandleFunc("POST /api/v1/model-auto-mode/router/test", s.handleModelAutoRouterTest)
+	mux.HandleFunc("GET /api/v1/model-auto-mode/router/health", s.handleModelAutoRouterHealth)
+	mux.HandleFunc("POST /api/v1/model-auto-mode/router/pull", s.handleModelAutoRouterPull)
+	mux.HandleFunc("GET /api/v1/model-auto-mode/router/pull/{id}", s.handleModelAutoRouterPullJob)
+	mux.HandleFunc("POST /api/v1/model-auto-mode/playground", s.handleModelAutoPlayground)
 	// Personas
 	mux.HandleFunc("GET /api/v1/personas", s.handleListPersonas)
 	mux.HandleFunc("GET /api/v1/personas/active", s.handleGetActivePersona)

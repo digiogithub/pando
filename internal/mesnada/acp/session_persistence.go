@@ -12,6 +12,8 @@ type persistedACPState struct {
 	ReasoningEffort    string `json:"reasoning_effort,omitempty"`
 	ThinkingMode       string `json:"thinking_mode,omitempty"`
 	ThinkingStreamMode string `json:"thinking_stream_mode,omitempty"`
+	// RoutingNotice is the last model auto mode routing notice, replayed on load.
+	RoutingNotice string `json:"routing_notice,omitempty"`
 }
 
 func (a *PandoACPAgent) persistACPState(ctx context.Context, session *ACPServerSession) error {
@@ -55,7 +57,8 @@ func (a *PandoACPAgent) restoreACPState(ctx context.Context, session *ACPServerS
 
 func marshalPersistedACPState(svc AgentService, session *ACPServerSession) (string, error) {
 	state := persistedACPState{
-		Model:              strings.TrimSpace(resolvedModelValue(svc, session.Model())),
+		Model:              strings.TrimSpace(sessionModelValue(svc, session)),
+		RoutingNotice:      session.RoutingNotice(),
 		ReasoningEffort:    session.ReasoningEffort(),
 		ThinkingMode:       session.ThinkingMode(),
 		ThinkingStreamMode: session.ThinkingStreamMode(),
@@ -89,11 +92,21 @@ func applyPersistedACPState(svc AgentService, session *ACPServerSession, state p
 	session.SetReasoningEffort(state.ReasoningEffort)
 	session.SetThinkingMode(state.ThinkingMode)
 	session.SetThinkingStreamMode(state.ThinkingStreamMode)
+	session.SetRoutingNotice(state.RoutingNotice)
 }
 
 func normalizePersistedACPModel(svc AgentService, modelID string) string {
 	modelID = strings.TrimSpace(modelID)
 	if modelID == "" {
+		return ""
+	}
+
+	if modelID == autoModelValue {
+		// Auto only survives while it is still enabled; otherwise the session
+		// behaves as the coder model.
+		if autoModeEnabled() {
+			return autoModelValue
+		}
 		return ""
 	}
 

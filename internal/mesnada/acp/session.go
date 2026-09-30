@@ -45,6 +45,12 @@ type ACPServerSession struct {
 
 	// model is the model ID requested by the client (set via SetSessionModel)
 	model string
+	// routingNotice is the last model auto mode routing notice, replayed on load.
+	routingNotice string
+	// autoPushedOff is set once a prompt pushed an explicit AutoMode=false to
+	// the agent, so a later agent-side Auto switch can be told apart from the
+	// global default.
+	autoPushedOff bool
 
 	// persona is the persona name requested by the client (set via SetSessionPersona)
 	persona string
@@ -234,6 +240,35 @@ func (s *ACPServerSession) SetModel(model string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.model = model
+}
+
+// SetAutoPushedOff records whether the last prompt pushed an explicit "Auto
+// off" flag to the agent (the session runs on a concrete model pick).
+func (s *ACPServerSession) SetAutoPushedOff(v bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.autoPushedOff = v
+}
+
+// AutoPushedOff reports whether an explicit "Auto off" flag was pushed.
+func (s *ACPServerSession) AutoPushedOff() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.autoPushedOff
+}
+
+// SetRoutingNotice stores the last model auto mode routing notice.
+func (s *ACPServerSession) SetRoutingNotice(notice string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.routingNotice = notice
+}
+
+// RoutingNotice returns the last model auto mode routing notice.
+func (s *ACPServerSession) RoutingNotice() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.routingNotice
 }
 
 // Model returns the current model ID.

@@ -10,6 +10,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/llm/modelrouter"
 	"github.com/digiogithub/pando/internal/llm/models"
 )
 
@@ -33,6 +34,12 @@ type ModelInfo struct {
 	CostPer1MOut            float64  `json:"costPer1MOut,omitempty"`
 	Knowledge               string   `json:"knowledge,omitempty"`
 	ReleaseDate             string   `json:"releaseDate,omitempty"`
+
+	// Set only on the synthetic "auto" entry.
+	RouterProvider string   `json:"routerProvider,omitempty"`
+	RouterModel    string   `json:"routerModel,omitempty"`
+	RouterHealthy  bool     `json:"routerHealthy,omitempty"`
+	RouterProblems []string `json:"routerProblems,omitempty"`
 }
 
 // modelInfoMetadata copies the selector-visible metadata of a registered model
@@ -326,10 +333,47 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if auto := autoModelInfo(ctx, cfg.ModelAutoMode); auto != nil {
+		allModels = append([]ModelInfo{*auto}, allModels...)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"models": allModels,
-		"errors": providerErrors,
+		"models":       allModels,
+		"errors":       providerErrors,
+		"autoSelected": cfg.ModelAutoMode.AutoSelected(),
 	})
+}
+
+// autoModelInfo builds the synthetic "Auto" entry listed first in every model
+// selector when model auto mode is enabled. Router health comes from the
+// process-wide 60s cache, bounded so a dead router never stalls the listing.
+func autoModelInfo(ctx context.Context, m config.ModelAutoModeConfig) *ModelInfo {
+	if !m.Enabled {
+		return nil
+	}
+	info := &ModelInfo{
+		ID:             config.AutoModelID,
+		Name:           "Auto",
+		Provider:       "auto",
+		Description:    "Routes each prompt to the best configured model",
+		Badges:         []string{"auto"},
+		RouterProvider: string(m.Router.EffectiveProvider()),
+		RouterModel:    m.Router.Model,
+		RouterProblems: []string{},
+	}
+	hctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	report, err := modelrouter.RouterHealth(hctx, m)
+	switch {
+	case err != nil:
+		info.RouterProblems = []string{err.Error()}
+	default:
+		info.RouterHealthy = report.OK
+		if len(report.Problems) > 0 {
+			info.RouterProblems = report.Problems
+		}
+	}
+	return info
 }
 
 // staticModelInfosForAccount builds the selectable model list for a provider that
@@ -398,9 +442,31 @@ func (s *Server) handleSetActiveModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// "auto" is a selection flag, not a model: the coder model stays as the
+	// fallback used when routing does not match or the router fails.
+	if req.Model == config.AutoModelID {
+		if !config.Get().ModelAutoMode.Enabled {
+			writeError(w, http.StatusBadRequest, "model auto mode is not enabled")
+			return
+		}
+		if err := config.SetModelAutoSelected(true); err != nil {
+			writeConfigError(w, http.StatusBadRequest, "failed to select auto mode: "+err.Error(), err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"model": req.Model})
+		return
+	}
+
 	if err := s.setCoderModel(models.ModelID(req.Model)); err != nil {
 		writeConfigError(w, http.StatusBadRequest, "failed to update model: "+err.Error(), err)
 		return
+	}
+
+	if cur := config.Get().ModelAutoMode; cur.Selected != nil && *cur.Selected || cur.AutoSelected() {
+		if err := config.SetModelAutoSelected(false); err != nil {
+			writeConfigError(w, http.StatusInternalServerError, "failed to leave auto mode: "+err.Error(), err)
+			return
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"model": req.Model})

@@ -250,6 +250,12 @@ type AgentEvent struct {
 
 	// TokenUsage is populated when Type == AgentEventTypeTokenUsage.
 	TokenUsage *TokenUsageInfo
+
+	// Routing is set on the AgentEventTypeSystemMessage event that announces an
+	// Auto model mode decision or failover (SystemMessage carries the same
+	// notice text, e.g. "Auto: implementation → gpt-x (p=0.93, 38 ms via
+	// ollama/tev1:0.8b)"). Nil on every other event.
+	Routing *RoutingInfo
 }
 
 const (
@@ -715,7 +721,8 @@ func (a *agent) Resume(ctx context.Context, sessionID string, content string) er
 		SystemMessage: "🔁 Resuming — a delegated task reported its result.",
 	})
 
-	events, err := a.runInternal(ctx, sessionID, content)
+	// A resurrection is system initiated: it never re-routes in Auto mode.
+	events, err := a.runInternal(withSystemInitiatedRun(ctx), sessionID, content)
 	if err != nil {
 		// The run failed to start (e.g. ErrSessionBusy from a race, or ErrNoModel);
 		// do not count a resurrection that never started.
@@ -1043,7 +1050,9 @@ func (a *agent) runInternal(ctx context.Context, sessionID string, content strin
 	if a.provider == nil {
 		return nil, ErrNoModel
 	}
-	if !a.provider.Model().SupportsAttachments && attachments != nil {
+	// In an Auto turn the routed model decides about attachments (processGeneration
+	// drops them if it cannot read them), not the coder model.
+	if !a.provider.Model().SupportsAttachments && attachments != nil && !a.autoTurnEligible(ctx, sessionID) {
 		attachments = nil
 	}
 	events := make(chan AgentEvent, 512)
@@ -1324,12 +1333,29 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 		}
 	}
 
+	// Auto model mode: route the user's prompt once, at the start of the user
+	// turn (never on tool iterations, resurrections, /compact or subagents), and
+	// run the turn on the routed model through a turn-scoped session override.
+	// It sits after persona auto-select and before prepareProvider.
+	var autoTurn *autoTurnState
+	if a.autoTurnEligible(ctx, sessionID) {
+		autoTurn, attachmentParts = a.beginAutoTurn(ctx, sessionID, memoryQuery, msgs, attachmentParts, eventCh)
+		if autoTurn != nil {
+			defer a.endAutoTurn(sessionID, autoTurn)
+		}
+	}
+
 	userMsg, err := a.createUserMessage(ctx, sessionID, content, attachmentParts)
 	if err != nil {
 		return a.err(fmt.Errorf("failed to create user message: %w", err))
 	}
 	// Append the new user message to the conversation history.
 	msgHistory := append(msgs, userMsg)
+	if autoTurn != nil && autoTurn.modelChanged {
+		// The previous turn was answered by another model: its reasoning blocks
+		// and thought signatures are not valid for this one.
+		msgHistory = sanitizeHistoryForModelSwitch(msgHistory)
+	}
 
 	// Build provider with persona injected into the system prompt.
 	requestProvider, err := a.prepareProvider(promptCtx, content, personaContent)
@@ -1386,6 +1412,18 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 				agentMessage.AddFinish(message.FinishReasonCanceled)
 				a.messages.Update(context.Background(), agentMessage)
 				return a.err(ErrRequestCancelled)
+			}
+			// Auto turn: provider failures move the turn to the next candidate.
+			if autoTurn != nil {
+				nextProvider, nextHistory, handled, autoErr := a.handleAutoStreamError(
+					promptCtx, sessionID, autoTurn, err, agentMessage, requestProvider, content, personaContent, msgHistory, eventCh)
+				if handled {
+					requestProvider, msgHistory = nextProvider, nextHistory
+					continue
+				}
+				if autoErr != nil {
+					err = autoErr
+				}
 			}
 			return a.err(fmt.Errorf("failed to process events: %w", err))
 		}
@@ -1740,6 +1778,11 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 	for event := range providerEventChan {
 		if processErr := a.processEvent(ctx, sessionID, &assistantMsg, event, requestProvider, eventCh); processErr != nil {
 			a.finishMessage(ctx, &assistantMsg, message.FinishReasonCanceled)
+			if event.Type == provider.EventError {
+				// Tag provider failures so Auto failover can tell them apart from
+				// storage errors raised while processing events.
+				processErr = &streamProviderError{err: processErr}
+			}
 			return assistantMsg, nil, processErr
 		}
 		if ctx.Err() != nil {
@@ -1755,7 +1798,7 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 		var toolCtxErr error
 		toolCtx, toolCtxErr = withToolWorkspaceContext(ctx)
 		if toolCtxErr != nil {
-			return assistantMsg, nil, toolCtxErr
+			return assistantMsg, nil, provider.MarkToolError(toolCtxErr)
 		}
 	}
 
@@ -1940,7 +1983,7 @@ out:
 		Parts: parts,
 	})
 	if err != nil {
-		return assistantMsg, nil, fmt.Errorf("failed to create cancelled tool message: %w", err)
+		return assistantMsg, nil, provider.MarkToolError(fmt.Errorf("failed to create cancelled tool message: %w", err))
 	}
 
 	return assistantMsg, &msg, err
@@ -2836,6 +2879,15 @@ func createAgentProvider(ctx context.Context, agentName config.AgentName, agentT
 		return nil, fmt.Errorf("provider account %q is disabled", acc.ID)
 	}
 
+	// Auto mode: a candidate that still has fallbacks left gets a reduced retry
+	// budget so a failing provider hands over quickly.
+	retryBudget := autoRetryBudget(sessionIDFromContext(ctx))
+	if providerBuilderHook != nil {
+		if p, ok := providerBuilderHook(model, retryBudget); ok {
+			return p, nil
+		}
+	}
+
 	maxTokens := config.ResolveAgentMaxTokens(agentName, agentConfig, model)
 
 	pc := ""
@@ -2858,6 +2910,9 @@ func createAgentProvider(ctx context.Context, agentName config.AgentName, agentT
 			provider.WithModel(model),
 			provider.WithSystemMessage(systemMessage),
 			provider.WithMaxTokens(maxTokens),
+		}
+		if retryBudget > 0 {
+			opts = append(opts, provider.WithMaxRetries(retryBudget))
 		}
 		if (model.Provider == models.ProviderOpenAI || model.Provider == models.ProviderLocal) && model.CanReason {
 			opts = append(opts, provider.WithOpenAIOptions(
@@ -2898,7 +2953,11 @@ func createAgentProvider(ctx context.Context, agentName config.AgentName, agentT
 		return agentProvider, nil
 	}
 
-	agentProvider, err := provider.NewProviderFromAccount(*acc, model, maxTokens, systemMessage)
+	var extraOpts []provider.ProviderClientOption
+	if retryBudget > 0 {
+		extraOpts = append(extraOpts, provider.WithMaxRetries(retryBudget))
+	}
+	agentProvider, err := provider.NewProviderFromAccount(*acc, model, maxTokens, systemMessage, extraOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("could not create provider: %w", err)
 	}

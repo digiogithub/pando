@@ -79,6 +79,28 @@ type providerClientOptions struct {
 	geminiOptions    []GeminiOption
 	bedrockOptions   []BedrockOption
 	copilotOptions   []CopilotOption
+
+	// maxRetries overrides the package retry budget for this client when > 0.
+	// Auto-mode failover uses a small budget on every candidate except the
+	// last so a failing provider hands over quickly instead of backing off
+	// through all defaultMaxRetries attempts.
+	maxRetries int
+}
+
+// retryLimit is how many retries a request may make on this client.
+func (o providerClientOptions) retryLimit() int {
+	if o.maxRetries > 0 {
+		return o.maxRetries
+	}
+	return maxRetries
+}
+
+// WithMaxRetries caps the retry budget of the provider. Values <= 0 keep the
+// default budget.
+func WithMaxRetries(n int) ProviderClientOption {
+	return func(options *providerClientOptions) {
+		options.maxRetries = n
+	}
 }
 
 type ProviderClientOption func(*providerClientOptions)
@@ -220,7 +242,7 @@ func NewProvider(providerName models.ModelProvider, opts ...ProviderClientOption
 
 // NewProviderFromAccount creates a Provider from a named ProviderAccount configuration.
 // This is the preferred way to create providers when using the multi-account system.
-func NewProviderFromAccount(account config.ProviderAccount, model models.Model, maxTokens int64, systemMessage string) (Provider, error) {
+func NewProviderFromAccount(account config.ProviderAccount, model models.Model, maxTokens int64, systemMessage string, extra ...ProviderClientOption) (Provider, error) {
 	providerType := account.Type
 	opts := []ProviderClientOption{
 		WithAPIKey(account.APIKey),
@@ -228,6 +250,7 @@ func NewProviderFromAccount(account config.ProviderAccount, model models.Model, 
 		WithMaxTokens(maxTokens),
 		WithSystemMessage(systemMessage),
 	}
+	opts = append(opts, extra...)
 
 	// Apply cache-disable options based on global config
 	anthCacheOpts, oaiCacheOpts, gemCacheOpts := CacheDisabledOptions()

@@ -94,6 +94,7 @@
       "appearance": "Apparence",
       "providers": "Fournisseurs",
       "agents": "Agents",
+      "modelAutoMode": "Auto mode",
       "mcpServers": "Serveurs MCP",
       "mcpGateway": "Passerelle MCP",
       "lsp": "LSP",
