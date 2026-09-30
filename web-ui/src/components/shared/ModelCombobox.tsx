@@ -50,11 +50,19 @@ export default function ModelCombobox({
   onChange,
   onSelect,
   placeholder = 'e.g. claude-sonnet-4-6',
+  ariaLabel,
+  invalid,
+  excludeIds,
 }: {
   value: string
   onChange: (v: string) => void
   onSelect?: (m: ModelInfo) => void
   placeholder?: string
+  /** Accessible name for the trigger button. */
+  ariaLabel?: string
+  invalid?: boolean
+  /** Model ids hidden from the list (e.g. the synthetic "auto" entry). */
+  excludeIds?: string[]
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -80,14 +88,14 @@ export default function ModelCombobox({
       api
         .get<{ models: ModelInfo[]; errors?: Record<string, string> }>('/api/v1/models')
         .then((r) => {
-          setModels(r.models)
+          setModels(excludeIds?.length ? r.models.filter((m) => !excludeIds.includes(m.id)) : r.models)
           setProviderErrors(r.errors ?? {})
         })
         .catch(() => {})
         .finally(() => setFetching(false))
     }
     setTimeout(() => searchRef.current?.focus(), 0)
-  }, [])
+  }, [excludeIds])
 
   const closeDropdown = useCallback(() => {
     setOpen(false)
@@ -140,6 +148,9 @@ export default function ModelCombobox({
         type="button"
         onClick={open ? closeDropdown : openDropdown}
         className="model-combo-trigger"
+        aria-label={ariaLabel}
+        aria-invalid={invalid || undefined}
+        style={invalid ? { borderColor: 'var(--danger)' } : undefined}
       >
         <span className="model-combo-value">
           {value ? (

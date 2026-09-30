@@ -178,4 +178,68 @@ describe('ModelAutoModeSettings', () => {
       'code', 'quick_question', 'implementation', 'planning', 'review',
     ])
   })
+
+  it('adds and removes fallbacks with the + button, stacked below the primary model', async () => {
+    render(<ModelAutoModeSettings />)
+    await screen.findByLabelText('Route 1 id')
+    const routeModels = () => useModelAutoModeStore.getState().draft.routes[0].fallbacks
+    expect(screen.queryByLabelText('Route 1 fallback 1')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add route 1 fallback' }))
+    expect(screen.getByLabelText('Route 1 fallback 1')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Route 1 fallback 2')).not.toBeInTheDocument()
+    // Empty entries are never saved.
+    expect(routeModels()).toEqual([])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add route 1 fallback' }))
+    expect(screen.getByLabelText('Route 1 fallback 2')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add route 1 fallback' })).not.toBeInTheDocument()
+
+    // Stacked vertically: primary, fallback 1, fallback 2 in document order inside one column.
+    const col = screen.getByTestId('ama-route-0-models')
+    expect(col.className).toContain('flex-col')
+    const labels = ['Route 1 primary model', 'Route 1 fallback 1', 'Route 1 fallback 2'].map((l) => screen.getByLabelText(l))
+    expect(labels[0].compareDocumentPosition(labels[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(labels[1].compareDocumentPosition(labels[2]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove route 1 fallback 2' }))
+    expect(screen.queryByLabelText('Route 1 fallback 2')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add route 1 fallback' })).toBeInTheDocument()
+  })
+
+  it('shows existing fallbacks and shifts fallback 2 up when fallback 1 is removed', async () => {
+    get.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/models') return { models: [] }
+      return serverConfig({
+        routes: [{ id: 'code', description: 'd', model: 'gpt-4o', fallbacks: ['m-a', 'm-b'], disabled: false }],
+      })
+    })
+    render(<ModelAutoModeSettings />)
+    await screen.findByLabelText('Route 1 fallback 2')
+    expect(screen.getByLabelText('Route 1 fallback 1')).toHaveTextContent('m-a')
+    expect(screen.getByLabelText('Route 1 fallback 2')).toHaveTextContent('m-b')
+    expect(screen.queryByRole('button', { name: 'Add route 1 fallback' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove route 1 fallback 1' }))
+    expect(useModelAutoModeStore.getState().draft.routes[0].fallbacks).toEqual(['m-b'])
+    expect(screen.getByLabelText('Route 1 fallback 1')).toHaveTextContent('m-b')
+    expect(screen.queryByLabelText('Route 1 fallback 2')).not.toBeInTheDocument()
+  })
+
+  it('renders pull suggestions as separate rows', async () => {
+    get.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/models') return { models: [] }
+      return serverConfig({ router: { ...serverConfig().router, provider: 'ollama', model: '' } })
+    })
+    post.mockResolvedValue({ models: [], status: 'filtered', suggestions: ['tev1:0.8b', 'tev1', 'nimble'] })
+    render(<ModelAutoModeSettings />)
+    await screen.findByLabelText('Keep alive')
+    fireEvent.click(screen.getByRole('button', { name: 'Load models' }))
+    const list = await screen.findByTestId('pull-suggestions')
+    const rows = list.querySelectorAll('li')
+    expect(rows).toHaveLength(3)
+    rows.forEach((row) => expect(row.querySelectorAll('button')).toHaveLength(1))
+    expect(rows[0]).toHaveTextContent('tev1:0.8b')
+    expect(rows[2]).toHaveTextContent('nimble')
+  })
 })

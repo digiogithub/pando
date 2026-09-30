@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
-import api from '@pando/client/services/api'
+import { useEffect, useState } from 'react'
 import {
   AUTO_MODEL_ID,
   useModelAutoModeStore,
@@ -7,9 +6,10 @@ import {
   type ModelAutoRoute,
 } from '@pando/client/stores/modelAutoModeStore'
 import { useUnsavedChangesGuard } from './unsavedChanges'
+import ModelCombobox from '@/components/shared/ModelCombobox'
 import { useDialogs } from '@/components/shared/useDialogs'
 import { Badge, Button, Input, SettingsRow, SettingsSection, Select, Switch, Textarea } from '@/components/ui'
-import { ArrowDown, ArrowUp, CircleAlert, CircleCheck, Play, Plus, Trash2, TriangleAlert } from '@/components/ui/icons'
+import { ArrowDown, ArrowUp, CircleAlert, CircleCheck, Play, Plus, Trash2, X, TriangleAlert } from '@/components/ui/icons'
 
 const MAX_ROUTES = 25
 const MAX_DESCRIPTION = 500
@@ -39,11 +39,9 @@ const STARTER_ROUTES: Omit<ModelAutoRoute, 'model' | 'fallbacks' | 'disabled'>[]
   { id: 'review', description: 'Reviewing, auditing or explaining existing code, diffs or pull requests.' },
 ]
 
-interface ModelOption {
-  id: string
-  name: string
-  provider: string
-}
+const MAX_FALLBACKS = 2
+// The synthetic "auto" entry must never be routed to.
+const HIDDEN_MODELS = [AUTO_MODEL_ID]
 
 function isLocalURL(url: string): boolean {
   try {
@@ -78,11 +76,90 @@ function Check({ ok, label }: { ok: boolean; label: string }) {
   )
 }
 
+function RouteModelFields({
+  index,
+  route,
+  errors,
+  onChange,
+}: {
+  index: number
+  route: ModelAutoRoute
+  errors: { model: string[]; fallbacks: string[] }
+  onChange: (patch: Partial<ModelAutoRoute>) => void
+}) {
+  // Number of empty fallback fields the user opened with "Add fallback" but has not filled yet.
+  const [pending, setPending] = useState(0)
+  const count = Math.min(MAX_FALLBACKS, route.fallbacks.length + pending)
+
+  const setFallback = (slot: number, value: string) => {
+    const fb = [...route.fallbacks]
+    fb[slot] = value
+    const next = Array.from(fb, (v) => v ?? '').filter((v) => !!v)
+    if (next.length > route.fallbacks.length) setPending((p) => Math.max(0, p - 1))
+    onChange({ fallbacks: next })
+  }
+
+  const removeFallback = (slot: number) => {
+    if (slot < route.fallbacks.length) onChange({ fallbacks: route.fallbacks.filter((_, i) => i !== slot) })
+    else setPending((p) => Math.max(0, p - 1))
+  }
+
+  return (
+    <div className="flex flex-col gap-3" data-testid={`ama-route-${index}-models`}>
+      <div className="settings-field">
+        <span className="settings-field-label">Primary model</span>
+        <ModelCombobox
+          value={route.model}
+          onChange={(v) => onChange({ model: v })}
+          ariaLabel={`Route ${index + 1} primary model`}
+          invalid={errors.model.length > 0}
+          excludeIds={HIDDEN_MODELS}
+          placeholder="Select a model"
+        />
+        <FieldErrors errors={errors.model} />
+      </div>
+      {Array.from({ length: count }, (_, slot) => (
+        <div key={slot} className="settings-field" data-testid={`ama-route-${index}-fallback-${slot + 1}`}>
+          <span className="settings-field-label">Fallback {slot + 1}</span>
+          <div className="flex items-center gap-2">
+            <ModelCombobox
+              value={route.fallbacks[slot] ?? ''}
+              onChange={(v) => setFallback(slot, v)}
+              ariaLabel={`Route ${index + 1} fallback ${slot + 1}`}
+              invalid={errors.fallbacks.length > 0}
+              excludeIds={HIDDEN_MODELS}
+              placeholder="Select a model"
+            />
+            <Button
+              variant="secondary"
+              aria-label={`Remove route ${index + 1} fallback ${slot + 1}`}
+              onClick={() => removeFallback(slot)}
+            >
+              <X size={14} />
+            </Button>
+          </div>
+        </div>
+      ))}
+      {count < MAX_FALLBACKS && (
+        <div>
+          <Button
+            variant="secondary"
+            aria-label={`Add route ${index + 1} fallback`}
+            onClick={() => setPending(count + 1 - route.fallbacks.length)}
+          >
+            <Plus size={14} /> Add fallback
+          </Button>
+        </div>
+      )}
+      <FieldErrors errors={errors.fallbacks} />
+    </div>
+  )
+}
+
 export default function ModelAutoModeSettings() {
   const s = useModelAutoModeStore()
   const { draft, original, info, fieldErrors } = s
   const { confirm, dialogs } = useDialogs()
-  const [models, setModels] = useState<ModelOption[]>([])
   const [prompt, setPrompt] = useState('')
   const [history, setHistory] = useState('')
   const [headerKey, setHeaderKey] = useState('')
@@ -97,10 +174,6 @@ export default function ModelAutoModeSettings() {
 
   useEffect(() => {
     void s.fetchConfig()
-    api
-      .get<{ models: ModelOption[] }>('/api/v1/models')
-      .then((r) => setModels((r.models ?? []).filter((m) => m.id !== AUTO_MODEL_ID)))
-      .catch(() => setModels([]))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -116,28 +189,6 @@ export default function ModelAutoModeSettings() {
   const effectiveURL = router.baseURL || defaultURL
   const remote = !!effectiveURL && !isLocalURL(effectiveURL)
   const coderLabel = 'the coder model'
-
-  const modelOptions = useMemo(() => {
-    const opts = models.map((m) => ({ value: m.id, label: `${m.name || m.id} (${m.provider})` }))
-    return opts
-  }, [models])
-
-  const modelSelect = (value: string, onChange: (v: string) => void, label: string, optional: boolean, invalid: boolean) => {
-    const known = value === '' || modelOptions.some((o) => o.value === value)
-    return (
-      <Select
-        aria-label={label}
-        value={value}
-        invalid={invalid}
-        onChange={(e) => onChange(e.target.value)}
-        options={[
-          { value: '', label: optional ? '— none —' : '— select a model —' },
-          ...(known ? [] : [{ value, label: `${value} (unavailable)` }]),
-          ...modelOptions,
-        ]}
-      />
-    )
-  }
 
   const updateRoute = (i: number, patch: Partial<ModelAutoRoute>) =>
     s.setRoutes(draft.routes.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
@@ -172,12 +223,6 @@ export default function ModelAutoModeSettings() {
       disabled: false,
     }))
     s.setRoutes([...draft.routes, ...fresh].slice(0, MAX_ROUTES))
-  }
-
-  const setFallback = (i: number, slot: number, value: string) => {
-    const fb = [...draft.routes[i].fallbacks]
-    fb[slot] = value
-    updateRoute(i, { fallbacks: fb.filter((v) => !!v) })
   }
 
   const applyPreset = (id: string) => {
@@ -390,34 +435,38 @@ export default function ModelAutoModeSettings() {
             </p>
           )}
           {router.provider === 'ollama' && (rm?.suggestions?.length ?? 0) > 0 && (
-            <div className="flex flex-wrap items-center gap-2 text-xs" data-testid="pull-suggestions">
+            <div className="flex flex-col gap-2 text-xs mt-2" data-testid="pull-suggestions">
               <span className="text-fg-muted">Suggested decision models:</span>
-              {rm?.suggestions?.map((name) => {
-                const job = s.pulls[name]
-                const running = job?.state === 'running'
-                const pct = job && job.total > 0 ? Math.round((job.completed / job.total) * 100) : null
-                return (
-                  <span key={name} className="flex items-center gap-2">
-                    <Button
-                      variant="secondary"
-                      loading={running}
-                      disabled={running}
-                      onClick={() => void s.pullModel(name)}
-                    >
-                      Pull {name}
-                    </Button>
-                    {job?.state === 'running' && (
-                      <span className="text-fg-muted">
-                        {job.status ?? 'starting'}
-                        {pct !== null ? ` ${pct}%` : ''}
+              <ul className="flex flex-col gap-2">
+                {rm?.suggestions?.map((name) => {
+                  const job = s.pulls[name]
+                  const running = job?.state === 'running'
+                  const pct = job && job.total > 0 ? Math.round((job.completed / job.total) * 100) : null
+                  return (
+                    <li key={name} data-testid={`pull-row-${name}`} className="flex items-center gap-3">
+                      <code className="flex-1 min-w-0 truncate">{name}</code>
+                      <Button
+                        variant="secondary"
+                        aria-label={`Pull ${name}`}
+                        loading={running}
+                        disabled={running}
+                        onClick={() => void s.pullModel(name)}
+                      >
+                        Pull
+                      </Button>
+                      <span className="w-40 text-fg-muted truncate">
+                        {running && (
+                          <>
+                            {job.status ?? 'starting'}
+                            {pct !== null ? ` ${pct}%` : ''}
+                          </>
+                        )}
+                        {job?.state === 'error' && <span style={{ color: 'var(--danger)' }}>{job.error}</span>}
                       </span>
-                    )}
-                    {job?.state === 'error' && (
-                      <span style={{ color: 'var(--danger)' }}>{job.error}</span>
-                    )}
-                  </span>
-                )
-              })}
+                    </li>
+                  )
+                })}
+              </ul>
             </div>
           )}
           {rm?.hint && <p className="text-xs text-fg-muted">{rm.hint}</p>}
@@ -542,21 +591,12 @@ export default function ModelAutoModeSettings() {
                 {r.description.length}/{MAX_DESCRIPTION}
               </span>
             </div>
-            <div className="settings-field-grid">
-              <div className="settings-field">
-                <span className="settings-field-label">Primary model</span>
-                {modelSelect(r.model, (v) => updateRoute(i, { model: v }), `Route ${i + 1} primary model`, false, errs(`routes[${i}].model`).length > 0)}
-                <FieldErrors errors={errs(`routes[${i}].model`)} />
-              </div>
-              {[0, 1].map((slot) => (
-                <div key={slot} className="settings-field">
-                  <span className="settings-field-label">Fallback {slot + 1}</span>
-                  {(slot === 0 || r.fallbacks[0]) &&
-                    modelSelect(r.fallbacks[slot] ?? '', (v) => setFallback(i, slot, v), `Route ${i + 1} fallback ${slot + 1}`, true, errs(`routes[${i}].fallbacks`).length > 0)}
-                </div>
-              ))}
-            </div>
-            <FieldErrors errors={errs(`routes[${i}].fallbacks`)} />
+            <RouteModelFields
+              index={i}
+              route={r}
+              errors={{ model: errs(`routes[${i}].model`), fallbacks: errs(`routes[${i}].fallbacks`) }}
+              onChange={(patch) => updateRoute(i, patch)}
+            />
           </div>
         ))}
         <div className="p-4 flex gap-2">

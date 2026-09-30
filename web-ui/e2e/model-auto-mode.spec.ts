@@ -38,10 +38,12 @@ test.describe('model auto mode', () => {
     await page.getByRole('button', { name: 'Save' }).click()
     await expect(page.getByRole('alert').first()).toBeVisible()
 
-    const firstModel = page.getByLabel('Route 1 primary model')
-    const options = await firstModel.locator('option').allTextContents()
-    expect(options.length).toBeGreaterThan(1)
-    await firstModel.selectOption({ index: 1 })
+    // Model pickers are the same combobox used in Settings > Agents.
+    const pickModel = async (label: string) => {
+      await page.getByLabel(label).click()
+      await page.locator('.model-combo-option').first().click()
+    }
+    await pickModel('Route 1 primary model')
 
     await page.getByLabel('Playground prompt').fill('what is a goroutine?')
     await page.getByRole('button', { name: /Route$/ }).click()
@@ -49,7 +51,7 @@ test.describe('model auto mode', () => {
 
     // Remaining routes still lack models; fill them so Save succeeds.
     for (let i = 2; i <= 4; i++) {
-      await page.getByLabel(`Route ${i} primary model`).selectOption({ index: 1 })
+      await pickModel(`Route ${i} primary model`)
     }
     await page.getByRole('button', { name: 'Save' }).click()
     await expect(page.getByText('Auto mode settings saved')).toBeVisible()
