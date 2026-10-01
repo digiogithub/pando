@@ -62,6 +62,20 @@
     "noSessionsYet": "暂无会话",
     "instances": "实例"
   },
+  "projects": {
+    "tabs": {
+      "main": "主界面",
+      "starting": "正在启动项目工作区…",
+      "started": "项目工作区已就绪",
+      "stopped": "项目工作区已停止",
+      "error": "无法打开项目工作区",
+      "restart": "重新启动工作区",
+      "close": "关闭标签页",
+      "closeAndStop": "关闭并停止工作区",
+      "reopen": "重新打开工作区",
+      "needsInit": "打开项目工作区前请先初始化项目"
+    }
+  },
   "orchestrator": {
     "delegationMetrics": {
       "title": "委派指标",

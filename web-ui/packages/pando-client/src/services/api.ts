@@ -40,12 +40,29 @@ function normalizeBaseURL(url: string): string {
 
 let baseURL = normalizeBaseURL(resolveInitialBaseURL())
 
+function getConfiguredBasePath(url: string): string {
+  const trimmed = url.trim()
+  if (!trimmed) return ''
+
+  try {
+    const parsed = new URL(trimmed, 'http://pando.local')
+    return (parsed.pathname.replace(/\/+$/, '') || '/')
+  } catch {
+    const normalized = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+    return normalized.replace(/\/+$/, '') || '/'
+  }
+}
+
 export function setBaseURL(url: string): void {
   baseURL = normalizeBaseURL(url)
 }
 
 export function getBaseURL(): string {
   return baseURL
+}
+
+export function isProjectChildMode(): boolean {
+  return /^\/api\/v1\/projects\/[^/]+\/web$/.test(getConfiguredBasePath(baseURL))
 }
 
 export function resolveAPIURL(path: string): string {

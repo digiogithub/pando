@@ -294,8 +294,10 @@ export default function ProjectsView() {
         <ProjectInitWizard
           project={initDialogProject}
           onConfirm={async () => {
-            await initProject(initDialogProject.id)
-            setInitDialogProject(null)
+            const initialized = await initProject(initDialogProject.id, { activateAfter: true })
+            if (initialized) {
+              setInitDialogProject(null)
+            }
           }}
           onCancel={() => setInitDialogProject(null)}
         />

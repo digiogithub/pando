@@ -62,6 +62,20 @@
     "noSessionsYet": "Aucune session pour l'instant",
     "instances": "Instances"
   },
+  "projects": {
+    "tabs": {
+      "main": "Principal",
+      "starting": "Démarrage de l’espace de travail du projet…",
+      "started": "Espace de travail du projet prêt",
+      "stopped": "Espace de travail du projet arrêté",
+      "error": "Impossible d’ouvrir l’espace de travail du projet",
+      "restart": "Redémarrer l’espace de travail",
+      "close": "Fermer l’onglet",
+      "closeAndStop": "Fermer et arrêter l’espace de travail",
+      "reopen": "Rouvrir l’espace de travail",
+      "needsInit": "Initialisez le projet avant d’ouvrir son espace de travail"
+    }
+  },
   "orchestrator": {
     "delegationMetrics": {
       "title": "Métriques de délégation",

@@ -11,6 +11,61 @@ export interface Workspace {
   version: string
 }
 
+export type ProjectManagerEventType =
+  | 'switched'
+  | 'status_changed'
+  | 'init_required'
+  | 'delegation_changed'
+  | 'web_started'
+  | 'web_stopped'
+  | 'web_error'
+
+export interface ProjectManagerEvent {
+  type: ProjectManagerEventType
+  projectId: string
+  status?: string
+  error?: string
+  delegations?: number
+  webPort?: number
+}
+
+export type ProjectInitOutcome = 'initialized' | 'cancelled' | 'failed'
+
+type ProjectEventListener = (event: ProjectManagerEvent) => void
+
+const projectEventListeners = new Set<ProjectEventListener>()
+const projectInitWaiters = new Map<string, Array<(outcome: ProjectInitOutcome) => void>>()
+
+function emitProjectEvent(event: ProjectManagerEvent) {
+  for (const listener of projectEventListeners) {
+    listener(event)
+  }
+}
+
+function resolveProjectInitWaiters(projectId: string, outcome: ProjectInitOutcome) {
+  const waiters = projectInitWaiters.get(projectId)
+  if (!waiters || waiters.length === 0) return
+  projectInitWaiters.delete(projectId)
+  for (const resolve of waiters) {
+    resolve(outcome)
+  }
+}
+
+export function registerProjectEventListener(listener: ProjectEventListener): () => void {
+  projectEventListeners.add(listener)
+  return () => {
+    projectEventListeners.delete(listener)
+  }
+}
+
+export function waitForProjectInit(projectId: string): Promise<ProjectInitOutcome> {
+  return new Promise((resolve) => {
+    const waiters = projectInitWaiters.get(projectId) ?? []
+    waiters.push(resolve)
+    projectInitWaiters.set(projectId, waiters)
+  })
+}
+
 interface ProjectStore {
   projects: Project[]
   activeProjectId: string | null
@@ -28,7 +83,7 @@ interface ProjectStore {
   stopProject: (id: string) => Promise<void>
   openProjectDesktop: (id: string) => Promise<void>
   deactivateProject: () => Promise<void>
-  initProject: (id: string) => Promise<void>
+  initProject: (id: string, options?: { activateAfter?: boolean }) => Promise<boolean>
   removeProject: (id: string) => Promise<void>
   setInitDialogProject: (p: Project | null) => void
   connectEvents: () => void
@@ -196,17 +251,27 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }
   },
 
-  initProject: async (id: string) => {
+  initProject: async (id: string, options?: { activateAfter?: boolean }) => {
     try {
       await api.post(`/api/v1/projects/${id}/init`, {})
       await get().fetchProjects()
-      await get().activateProject(id)
+      if (options?.activateAfter) {
+        const activation = await get().activateProject(id)
+        if (activation === 'needs_init') {
+          resolveProjectInitWaiters(id, 'failed')
+          return false
+        }
+      }
+      resolveProjectInitWaiters(id, 'initialized')
       useToastStore.getState().addToast('Project initialized', 'success')
+      return true
     } catch (e) {
+      resolveProjectInitWaiters(id, 'failed')
       useToastStore.getState().addToast(
         e instanceof Error ? e.message : 'Failed to initialize project',
         'error',
       )
+      return false
     }
   },
 
@@ -227,7 +292,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }
   },
 
-  setInitDialogProject: (p: Project | null) => set({ initDialogProject: p }),
+  setInitDialogProject: (p: Project | null) => {
+    const current = get().initDialogProject
+    if (p === null && current) {
+      resolveProjectInitWaiters(current.id, 'cancelled')
+    }
+    set({ initDialogProject: p })
+  },
 
   connectEvents: () => {
     if (get()._es) return
@@ -250,13 +321,64 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         void get().fetchActive()
       }
 
-      es.addEventListener('switched', refresh)
-      es.addEventListener('status_changed', refresh)
-      es.addEventListener('delegation_changed', () => {
+      const parseEvent = (type: ProjectManagerEventType, raw: string): ProjectManagerEvent => {
+        let data: {
+          project_id?: string
+          status?: string
+          error?: string
+          delegations?: number
+          web_port?: number
+        } = {}
+
+        try {
+          data = JSON.parse(raw) as typeof data
+        } catch {
+          // Keep the event with an empty payload when the server sends no data.
+        }
+
+        const parsed: ProjectManagerEvent = {
+          type,
+          projectId: data.project_id ?? '',
+          status: data.status,
+          error: data.error,
+          delegations: data.delegations,
+          webPort: data.web_port,
+        }
+        emitProjectEvent(parsed)
+        return parsed
+      }
+
+      const bindEvent = (
+        type: ProjectManagerEventType,
+        handler: (event: ProjectManagerEvent) => void,
+      ) => {
+        es.addEventListener(type, (event) => {
+          const payload = event instanceof MessageEvent ? event.data : ''
+          const parsed = parseEvent(type, typeof payload === 'string' ? payload : '')
+          handler(parsed)
+        })
+      }
+
+      bindEvent('switched', () => {
+        refresh()
+      })
+      bindEvent('status_changed', () => {
+        refresh()
+      })
+      bindEvent('delegation_changed', () => {
         // In-flight delegated-loop count changed — refresh the row badges.
         void get().fetchProjects()
       })
-      es.addEventListener('init_required', () => {
+      bindEvent('init_required', () => {
+        void get().fetchProjects()
+      })
+      bindEvent('web_started', () => {
+        void get().fetchProjects()
+      })
+      bindEvent('web_stopped', () => {
+        void get().fetchProjects()
+      })
+      bindEvent('web_error', () => {
         void get().fetchProjects()
       })
 

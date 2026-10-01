@@ -62,6 +62,20 @@
     "noSessionsYet": "Noch keine Sitzungen",
     "instances": "Instanzen"
   },
+  "projects": {
+    "tabs": {
+      "main": "Haupt",
+      "starting": "Projektarbeitsbereich wird gestartet…",
+      "started": "Projektarbeitsbereich bereit",
+      "stopped": "Projektarbeitsbereich gestoppt",
+      "error": "Der Projektarbeitsbereich konnte nicht geöffnet werden",
+      "restart": "Arbeitsbereich neu starten",
+      "close": "Tab schließen",
+      "closeAndStop": "Arbeitsbereich schließen und beenden",
+      "reopen": "Arbeitsbereich erneut öffnen",
+      "needsInit": "Initialisieren Sie das Projekt, bevor Sie seinen Arbeitsbereich öffnen"
+    }
+  },
   "orchestrator": {
     "delegationMetrics": {
       "title": "Delegationsmetriken",

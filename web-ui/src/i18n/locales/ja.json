@@ -62,6 +62,20 @@
     "noSessionsYet": "セッションがありません",
     "instances": "インスタンス"
   },
+  "projects": {
+    "tabs": {
+      "main": "メイン",
+      "starting": "プロジェクトのワークスペースを起動しています…",
+      "started": "プロジェクトのワークスペースを利用できます",
+      "stopped": "プロジェクトのワークスペースを停止しました",
+      "error": "プロジェクトのワークスペースを開けませんでした",
+      "restart": "ワークスペースを再起動",
+      "close": "タブを閉じる",
+      "closeAndStop": "閉じてワークスペースを停止",
+      "reopen": "ワークスペースを再度開く",
+      "needsInit": "ワークスペースを開く前にプロジェクトを初期化してください"
+    }
+  },
   "orchestrator": {
     "delegationMetrics": {
       "title": "委譲メトリクス",

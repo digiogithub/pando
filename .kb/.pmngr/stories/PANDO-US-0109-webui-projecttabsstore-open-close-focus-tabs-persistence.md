@@ -2,14 +2,15 @@
 id: PANDO-US-0109
 type: story
 title: "WebUI: `projectTabsStore` (open/close/focus tabs, persistence, SSE sync, reload restore)"
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0019
 author: mcp
 labels: [projects, webui]
 estimate: 5
 created: 2026-10-01T19:24:42Z
-updated: 2026-10-01T19:24:42Z
+updated: 2026-10-01T20:07:23Z
+closed: 2026-10-01T20:07:23Z
 ---
 
 ## Description

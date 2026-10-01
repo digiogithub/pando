@@ -775,9 +775,37 @@ export interface Project {
   delegations?: number // count of delegated agent loops running inside the warm instance
   delegation_spawned?: boolean // instance auto-started by the delegation router (vs user-activated)
   acp_pid?: number
+  web_state?: 'starting' | 'running' | 'error' | 'stopped'
+  web_port?: number
+  web_url?: string
   last_opened?: number
   created_at: number
   updated_at: number
+}
+
+export interface ProjectWebInstance {
+  project_id: string
+  name: string
+  path: string
+  web_port?: number
+  web_url?: string
+  pid?: number
+  state: 'starting' | 'running' | 'error' | 'stopped'
+  started_at: string
+  delegations?: number
+  error?: string
+}
+
+export interface ProjectTab {
+  projectId: string
+  name: string
+  path: string
+  state: 'starting' | 'running' | 'error' | 'stopped'
+  webUrl?: string
+  webPort?: number
+  delegations?: number
+  openedAt: string
+  error?: string
 }
 
 // Settings / config types (matching SettingsResponse in handlers_settings.go)

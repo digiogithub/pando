@@ -62,6 +62,20 @@
     "noSessionsYet": "Nenhuma sessão ainda",
     "instances": "Instâncias"
   },
+  "projects": {
+    "tabs": {
+      "main": "Principal",
+      "starting": "Iniciando o espaço de trabalho do projeto…",
+      "started": "Espaço de trabalho do projeto pronto",
+      "stopped": "Espaço de trabalho do projeto parado",
+      "error": "Não foi possível abrir o espaço de trabalho do projeto",
+      "restart": "Reiniciar espaço de trabalho",
+      "close": "Fechar aba",
+      "closeAndStop": "Fechar e parar o espaço de trabalho",
+      "reopen": "Reabrir espaço de trabalho",
+      "needsInit": "Inicialize o projeto antes de abrir o espaço de trabalho"
+    }
+  },
   "orchestrator": {
     "delegationMetrics": {
       "title": "Métricas de delegação",

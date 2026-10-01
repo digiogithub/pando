@@ -62,6 +62,20 @@
     "untitledSession": "Untitled session",
     "noSessionsYet": "No sessions yet"
   },
+  "projects": {
+    "tabs": {
+      "main": "Main",
+      "starting": "Starting project workspace…",
+      "started": "Project workspace ready",
+      "stopped": "Project workspace stopped",
+      "error": "Failed to open the project workspace",
+      "restart": "Restart workspace",
+      "close": "Close tab",
+      "closeAndStop": "Close and stop workspace",
+      "reopen": "Reopen workspace",
+      "needsInit": "Initialize the project before opening its workspace"
+    }
+  },
   "orchestrator": {
     "delegationMetrics": {
       "title": "Delegation metrics",
