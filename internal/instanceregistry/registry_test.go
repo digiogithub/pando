@@ -1,8 +1,10 @@
 package instanceregistry
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -24,14 +26,16 @@ func setupTestDir(t *testing.T) func() {
 
 func newTestEntry(id string) *Entry {
 	return &Entry{
-		InstanceID: id,
-		Path:       "/tmp/test-workdir",
-		PID:        os.Getpid(), // use current PID so liveness check passes
-		PubPort:    5555,
-		RPCPort:    5556,
-		StartedAt:  time.Now(),
-		Mode:       ModeTUI,
-		IsPrimary:  true,
+		InstanceID:       id,
+		Path:             "/tmp/test-workdir",
+		PID:              os.Getpid(), // use current PID so liveness check passes
+		PubPort:          5555,
+		RPCPort:          5556,
+		WebPort:          8765,
+		StartedAt:        time.Now(),
+		Mode:             ModeTUI,
+		ParentInstanceID: "parent-1",
+		IsPrimary:        true,
 	}
 }
 
@@ -57,7 +61,9 @@ func TestAnnounceAndList(t *testing.T) {
 			assert.Equal(t, entry.PID, e.PID)
 			assert.Equal(t, entry.PubPort, e.PubPort)
 			assert.Equal(t, entry.RPCPort, e.RPCPort)
+			assert.Equal(t, entry.WebPort, e.WebPort)
 			assert.Equal(t, entry.Mode, e.Mode)
+			assert.Equal(t, entry.ParentInstanceID, e.ParentInstanceID)
 			assert.Equal(t, entry.IsPrimary, e.IsPrimary)
 		}
 	}
@@ -227,4 +233,35 @@ func TestMultipleInstancesSameProcess(t *testing.T) {
 	entries, err := r.List()
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(entries), 3, fmt.Sprintf("expected at least 3 entries, got %d", len(entries)))
+}
+
+func TestListParsesLegacyEntriesWithoutWebFields(t *testing.T) {
+	cleanup := setupTestDir(t)
+	defer cleanup()
+
+	legacy := map[string]interface{}{
+		"instance_id": "legacy-1",
+		"path":        "/tmp/legacy-workdir",
+		"pid":         os.Getpid(),
+		"pub_port":    5555,
+		"rpc_port":    5556,
+		"started_at":  time.Now().UTC().Format(time.RFC3339Nano),
+		"mode":        string(ModeWebUI),
+		"is_primary":  true,
+	}
+	data, err := json.Marshal(legacy)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(instancesDir, "legacy-1.json"), data, 0o644))
+
+	entries, err := New().List()
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, 0, entries[0].WebPort)
+	assert.Empty(t, entries[0].ParentInstanceID)
+
+	got, err := New().Get("legacy-1")
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, 0, got.WebPort)
+	assert.Empty(t, got.ParentInstanceID)
 }

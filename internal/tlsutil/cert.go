@@ -7,6 +7,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -23,6 +24,9 @@ const (
 	keyFile  = "server.key"
 	// Certificate validity: 10 years.
 	certValidity = 10 * 365 * 24 * time.Hour
+	// LoopbackServerName is the DNS name the generated certificate always
+	// carries, so callers can pin it while connecting to 127.0.0.1.
+	LoopbackServerName = "localhost"
 )
 
 // CertPaths holds the file paths for the TLS certificate and private key.
@@ -60,6 +64,43 @@ func EnsureCert(dataDir string) (CertPaths, error) {
 	}
 
 	return paths, nil
+}
+
+// LoadPinnedLoopbackTLSConfig builds a TLS client config that trusts only the
+// certificate stored at certPath and verifies it against localhost while
+// allowing the caller to connect to 127.0.0.1.
+func LoadPinnedLoopbackTLSConfig(certPath string) (*tls.Config, error) {
+	data, err := os.ReadFile(certPath)
+	if err != nil {
+		return nil, fmt.Errorf("read certificate: %w", err)
+	}
+
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return nil, fmt.Errorf("decode certificate PEM: no certificate found")
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse certificate: %w", err)
+	}
+	if err := cert.VerifyHostname(LoopbackServerName); err != nil {
+		return nil, fmt.Errorf("certificate missing %q SAN: %w", LoopbackServerName, err)
+	}
+	if err := cert.VerifyHostname("127.0.0.1"); err != nil {
+		return nil, fmt.Errorf("certificate missing 127.0.0.1 SAN: %w", err)
+	}
+
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(data) {
+		return nil, fmt.Errorf("append certificate to root pool")
+	}
+
+	return &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		RootCAs:    pool,
+		ServerName: LoopbackServerName,
+	}, nil
 }
 
 // isCertValid reads the PEM certificate and checks that it has not expired.
@@ -106,7 +147,7 @@ func generateSelfSigned(paths CertPaths) error {
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 		IsCA:                  true,
-		DNSNames:              []string{"localhost"},
+		DNSNames:              []string{LoopbackServerName},
 		IPAddresses:           collectLocalIPs(),
 	}
 

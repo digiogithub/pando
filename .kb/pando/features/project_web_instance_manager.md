@@ -17,8 +17,8 @@ Part of [[project_workspaces_webui_tabs]] (epic PANDO-EP-0019). Date: 2026-10-01
 - DB: migration `20261001214000_add_project_web_runtime.sql` (`web_pid`, `web_port`), query `UpdateProjectWebRuntime`, `Service.UpdateWebRuntime`, `Project.WebPID/WebPort`. sqlc v1.29.0 panicked on generate, so `internal/db/{models,projects.sql,querier,db}.go` were hand-edited consistently.
 
 ## Known follow-ups (owned by PANDO-US-0104)
-- Health probe uses `InsecureSkipVerify` on loopback (`insecureLoopbackHTTPClient`, TODO) until TLS pinning lands.
-- Re-adoption matches registry entries by path + `Mode == webui` and takes the port from `projects.web_port`; any instance sharing the DB could adopt (and on shutdown kill) another parent's children. 0104 must restrict adoption to orphans via `instanceregistry.Entry.ParentInstanceID` and replace the `PANDO_INSTANCE_ID` env hand-off with an explicit setter.
+- Done in PANDO-US-0104: the parent now pins a shared loopback certificate, fetches the child token over that pinned transport, stores it only in memory, and rejects children presenting another certificate.
+- Done in PANDO-US-0104: re-adoption now uses `instanceregistry.Entry.WebPort` + `ParentInstanceID`, only adopts loopback orphans whose recorded parent is no longer alive, and no longer relies on a process-wide `PANDO_INSTANCE_ID` environment hand-off.
 
 ## Verification
 `go build ./...`, `go vet ./internal/project/... ./cmd/...`, `go test ./internal/project/... ./internal/db/... ./internal/api/... -count=1` (ok), `go test -race ./internal/project/...` (ok, run by the implementing agent).

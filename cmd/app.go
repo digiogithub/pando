@@ -93,9 +93,6 @@ func runAppMode(cmd *cobra.Command) error {
 
 	// --- IPC bootstrap: determine primary/secondary role, open DB, wire services ---
 	instanceID := uuid.New().String()
-	if err := os.Setenv("PANDO_INSTANCE_ID", instanceID); err != nil {
-		return fmt.Errorf("failed to set PANDO_INSTANCE_ID: %w", err)
-	}
 	rt, err := ipcruntime.Bootstrap(ctx, cwd, instanceID)
 	if err != nil {
 		return fmt.Errorf("IPC bootstrap failed: %w", err)
@@ -110,8 +107,11 @@ func runAppMode(cmd *cobra.Command) error {
 	}
 
 	// Resolve TLS certificate: use provided files or auto-generate.
+	dataDir := config.Get().Data.Directory
+	if dataDir == "" {
+		dataDir = ".pando"
+	}
 	if tlsCert == "" || tlsKey == "" {
-		dataDir := config.Get().Data.Directory
 		if dataDir == "" {
 			dataDir = ".pando"
 		}
@@ -127,36 +127,42 @@ func runAppMode(cmd *cobra.Command) error {
 	scheme := "https"
 	baseURL := fmt.Sprintf("%s://%s:%d", scheme, host, port)
 	server, err := api.NewServer(ctx, api.ServerConfig{
-		Host:        host,
-		Port:        port,
-		Version:     version.Normalize(),
-		DB:          conn,
-		Querier:     rt.Querier,
-		CWD:         cwd,
-		StaticFS:    staticFS,
-		OpenUI:      true,
-		UIBaseURL:   baseURL,
-		TLSCertFile: tlsCert,
-		TLSKeyFile:  tlsKey,
-		InstanceID:  instanceID,
-		Role:        string(rt.Role),
-		PubPort:     rt.PubPort,
-		RPCPort:     rt.RPCPort,
-		StartupMode: "app",
+		Host:                host,
+		Port:                port,
+		Version:             version.Normalize(),
+		DB:                  conn,
+		Querier:             rt.Querier,
+		CWD:                 cwd,
+		StaticFS:            staticFS,
+		OpenUI:              true,
+		UIBaseURL:           baseURL,
+		TLSCertFile:         tlsCert,
+		TLSKeyFile:          tlsKey,
+		ParentInstanceID:    instanceID,
+		WebChildTLSCertFile: tlsCert,
+		WebChildTLSKeyFile:  tlsKey,
+		WebChildTLSDataDir:  dataDir,
+		InstanceID:          instanceID,
+		Role:                string(rt.Role),
+		PubPort:             rt.PubPort,
+		RPCPort:             rt.RPCPort,
+		StartupMode:         "app",
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create app server: %w", err)
 	}
 
 	_ = instanceregistry.Announce(&instanceregistry.Entry{
-		InstanceID: instanceID,
-		Path:       cwd,
-		PID:        os.Getpid(),
-		PubPort:    rt.PubPort,
-		RPCPort:    rt.RPCPort,
-		StartedAt:  time.Now(),
-		Mode:       instanceregistry.ModeWebUI,
-		IsPrimary:  rt.Role == ipcruntime.RolePrimary,
+		InstanceID:       instanceID,
+		Path:             cwd,
+		PID:              os.Getpid(),
+		PubPort:          rt.PubPort,
+		RPCPort:          rt.RPCPort,
+		WebPort:          port,
+		StartedAt:        time.Now(),
+		Mode:             instanceregistry.ModeWebUI,
+		ParentInstanceID: os.Getenv("PANDO_PARENT_INSTANCE"),
+		IsPrimary:        rt.Role == ipcruntime.RolePrimary,
 	})
 	defer func() { _ = instanceregistry.Revoke(instanceID) }()
 

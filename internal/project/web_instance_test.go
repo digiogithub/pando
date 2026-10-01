@@ -2,8 +2,12 @@ package project
 
 import (
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"errors"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +21,7 @@ import (
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/instanceregistry"
 	"github.com/digiogithub/pando/internal/pubsub"
+	"github.com/digiogithub/pando/internal/tlsutil"
 )
 
 const webTestSchema = `
@@ -69,10 +74,12 @@ func restoreWebHooks(t *testing.T) {
 	t.Helper()
 	prevSpawn := spawnWebProcess
 	prevProbe := probeWebHealth
+	prevFetchToken := fetchWebToken
 	prevRegistry := newInstanceRegistry
 	t.Cleanup(func() {
 		spawnWebProcess = prevSpawn
 		probeWebHealth = prevProbe
+		fetchWebToken = prevFetchToken
 		newInstanceRegistry = prevRegistry
 	})
 }
@@ -82,7 +89,10 @@ func newWebTestManager(t *testing.T) (*Manager, Service) {
 	restoreWebHooks(t)
 	conn := setupWebTestDB(t)
 	svc := NewService(db.New(conn))
-	mgr, err := NewManager(context.Background(), svc)
+	mgr, err := NewManager(context.Background(), svc, ManagerOptions{
+		ParentInstanceID: "test-parent",
+		WebTLSDataDir:    t.TempDir(),
+	})
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
@@ -123,6 +133,49 @@ func startShellCommand(t *testing.T, script string) *webProcessStart {
 	}
 }
 
+func ensureTestCert(t *testing.T) tlsutil.CertPaths {
+	t.Helper()
+	paths, err := tlsutil.EnsureCert(t.TempDir())
+	if err != nil {
+		t.Fatalf("EnsureCert: %v", err)
+	}
+	return paths
+}
+
+func newPinnedLoopbackServer(t *testing.T, certPaths tlsutil.CertPaths, token string) (*httptest.Server, int) {
+	t.Helper()
+
+	cert, err := tls.LoadX509KeyPair(certPaths.CertFile, certPaths.KeyFile)
+	if err != nil {
+		t.Fatalf("LoadX509KeyPair: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc(webTokenPath, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"token":"` + token + `"}`))
+	})
+
+	server := httptest.NewUnstartedServer(mux)
+	listener, err := net.Listen("tcp", net.JoinHostPort(webLoopbackHost, "0"))
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	server.Listener = listener
+	server.TLS = &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}
+	server.StartTLS()
+	t.Cleanup(server.Close)
+
+	port := listener.Addr().(*net.TCPAddr).Port
+	return server, port
+}
+
 func TestOpenWebReuseAndClose(t *testing.T) {
 	mgr, svc := newWebTestManager(t)
 	ctx := context.Background()
@@ -135,11 +188,18 @@ func TestOpenWebReuseAndClose(t *testing.T) {
 	}
 
 	spawnCount := 0
-	spawnWebProcess = func(_ context.Context, _ string, _ string, _ Project, _ int) (*webProcessStart, error) {
+	spawnWebProcess = func(_ context.Context, _ string, cfg webProcessConfig, _ Project, _ int) (*webProcessStart, error) {
 		spawnCount++
+		if cfg.ParentInstanceID != "test-parent" {
+			t.Fatalf("ParentInstanceID = %q, want test-parent", cfg.ParentInstanceID)
+		}
+		if cfg.TLSCertFile == "" || cfg.TLSKeyFile == "" {
+			t.Fatal("expected TLS certificate paths for child spawn")
+		}
 		return startShellCommand(t, `trap 'exit 0' TERM INT; while :; do sleep 1; done`), nil
 	}
-	probeWebHealth = func(context.Context, int) error { return nil }
+	probeWebHealth = func(context.Context, *http.Client, string) error { return nil }
+	fetchWebToken = func(context.Context, *http.Client, string) (string, error) { return "child-token", nil }
 
 	events := mgr.Subscribe(context.Background())
 
@@ -158,8 +218,15 @@ func TestOpenWebReuseAndClose(t *testing.T) {
 	if inst1 != inst2 {
 		t.Fatal("OpenWeb did not reuse the existing instance")
 	}
-	if inst1.State != WebStateRunning {
-		t.Fatalf("web state = %q, want %q", inst1.State, WebStateRunning)
+	if inst1.State() != WebStateRunning {
+		t.Fatalf("web state = %q, want %q", inst1.State(), WebStateRunning)
+	}
+	if inst1.APIToken() != "child-token" {
+		t.Fatalf("child token = %q, want child-token", inst1.APIToken())
+	}
+	snapshot := inst1.Snapshot()
+	if snapshot.Port == 0 || snapshot.PID == 0 {
+		t.Fatalf("unexpected snapshot: %+v", snapshot)
 	}
 
 	got, err := svc.Get(ctx, proj.ID)
@@ -202,10 +269,10 @@ func TestOpenWebCrashPublishesError(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	spawnWebProcess = func(_ context.Context, _ string, _ string, _ Project, _ int) (*webProcessStart, error) {
+	spawnWebProcess = func(_ context.Context, _ string, _ webProcessConfig, _ Project, _ int) (*webProcessStart, error) {
 		return startShellCommand(t, `echo "boom from child" >&2; exit 3`), nil
 	}
-	probeWebHealth = func(context.Context, int) error { return errors.New("not ready") }
+	probeWebHealth = func(context.Context, *http.Client, string) error { return errors.New("not ready") }
 
 	events := mgr.Subscribe(context.Background())
 
@@ -230,7 +297,7 @@ func TestOpenWebCrashPublishesError(t *testing.T) {
 	}
 }
 
-func TestNewManagerAdoptsRunningWebChild(t *testing.T) {
+func TestNewManagerAdoptsOrphanWithPinnedTLSAndTokenHandshake(t *testing.T) {
 	restoreWebHooks(t)
 	conn := setupWebTestDB(t)
 	svc := NewService(db.New(conn))
@@ -243,33 +310,35 @@ func TestNewManagerAdoptsRunningWebChild(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
+	certPaths := ensureTestCert(t)
+	_, port := newPinnedLoopbackServer(t, certPaths, "adopted-token")
 	dummy := startShellCommand(t, `trap 'exit 0' TERM INT; while :; do sleep 1; done`)
 	t.Cleanup(func() {
 		_ = dummy.cmd.Process.Kill()
 		_, _ = dummy.cmd.Process.Wait()
 	})
 
-	if err := svc.UpdateWebRuntime(ctx, proj.ID, dummy.cmd.Process.Pid, 9443); err != nil {
+	if err := svc.UpdateWebRuntime(ctx, proj.ID, dummy.cmd.Process.Pid, port); err != nil {
 		t.Fatalf("UpdateWebRuntime: %v", err)
 	}
 
-	probeWebHealth = func(_ context.Context, port int) error {
-		if port != 9443 {
-			t.Fatalf("probeWebHealth port = %d, want 9443", port)
-		}
-		return nil
-	}
 	newInstanceRegistry = func() registryLister {
 		return fakeRegistry{entries: []*instanceregistry.Entry{{
-			InstanceID: "child-1",
-			Path:       proj.Path,
-			PID:        dummy.cmd.Process.Pid,
-			Mode:       instanceregistry.ModeWebUI,
-			StartedAt:  time.Now(),
+			InstanceID:       "child-1",
+			Path:             proj.Path,
+			PID:              dummy.cmd.Process.Pid,
+			WebPort:          port,
+			Mode:             instanceregistry.ModeWebUI,
+			StartedAt:        time.Now(),
+			ParentInstanceID: "dead-parent",
 		}}}
 	}
 
-	mgr, err := NewManager(context.Background(), svc)
+	mgr, err := NewManager(context.Background(), svc, ManagerOptions{
+		ParentInstanceID: "new-parent",
+		WebTLSCertFile:   certPaths.CertFile,
+		WebTLSKeyFile:    certPaths.KeyFile,
+	})
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
@@ -279,14 +348,155 @@ func TestNewManagerAdoptsRunningWebChild(t *testing.T) {
 	if !ok || inst == nil {
 		t.Fatal("expected adopted web instance")
 	}
-	if inst.Port != 9443 {
-		t.Fatalf("adopted web port = %d, want 9443", inst.Port)
+	if inst.Port() != port {
+		t.Fatalf("adopted web port = %d, want %d", inst.Port(), port)
 	}
-	if inst.PID != dummy.cmd.Process.Pid {
-		t.Fatalf("adopted web pid = %d, want %d", inst.PID, dummy.cmd.Process.Pid)
+	if inst.PID() != dummy.cmd.Process.Pid {
+		t.Fatalf("adopted web pid = %d, want %d", inst.PID(), dummy.cmd.Process.Pid)
 	}
-	if inst.State != WebStateRunning {
-		t.Fatalf("adopted web state = %q, want %q", inst.State, WebStateRunning)
+	if inst.State() != WebStateRunning {
+		t.Fatalf("adopted web state = %q, want %q", inst.State(), WebStateRunning)
+	}
+	if inst.APIToken() != "adopted-token" {
+		t.Fatalf("adopted token = %q, want adopted-token", inst.APIToken())
+	}
+
+	got, err := svc.Get(ctx, proj.ID)
+	if err != nil {
+		t.Fatalf("Get after adoption: %v", err)
+	}
+	if got.WebPID != dummy.cmd.Process.Pid || got.WebPort != port {
+		t.Fatalf("unexpected persisted runtime after adoption: pid=%d port=%d", got.WebPID, got.WebPort)
+	}
+}
+
+func TestNewManagerRejectsChildWithDifferentCertificate(t *testing.T) {
+	restoreWebHooks(t)
+	conn := setupWebTestDB(t)
+	svc := NewService(db.New(conn))
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	writeProjectConfig(t, dir)
+	proj, err := svc.Create(ctx, "web-reject", dir)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	parentCert := ensureTestCert(t)
+	childCert := ensureTestCert(t)
+	_, port := newPinnedLoopbackServer(t, childCert, "wrong-token")
+	dummy := startShellCommand(t, `trap 'exit 0' TERM INT; while :; do sleep 1; done`)
+	t.Cleanup(func() {
+		_ = dummy.cmd.Process.Kill()
+		_, _ = dummy.cmd.Process.Wait()
+	})
+
+	if err := svc.UpdateWebRuntime(ctx, proj.ID, dummy.cmd.Process.Pid, port); err != nil {
+		t.Fatalf("UpdateWebRuntime: %v", err)
+	}
+
+	newInstanceRegistry = func() registryLister {
+		return fakeRegistry{entries: []*instanceregistry.Entry{{
+			InstanceID:       "child-1",
+			Path:             proj.Path,
+			PID:              dummy.cmd.Process.Pid,
+			WebPort:          port,
+			Mode:             instanceregistry.ModeWebUI,
+			StartedAt:        time.Now(),
+			ParentInstanceID: "dead-parent",
+		}}}
+	}
+
+	mgr, err := NewManager(context.Background(), svc, ManagerOptions{
+		ParentInstanceID: "new-parent",
+		WebTLSCertFile:   parentCert.CertFile,
+		WebTLSKeyFile:    parentCert.KeyFile,
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	t.Cleanup(mgr.Shutdown)
+
+	if inst, ok := mgr.WebInstance(proj.ID); ok && inst != nil {
+		t.Fatal("unexpected adoption of a child presenting another certificate")
+	}
+
+	got, err := svc.Get(ctx, proj.ID)
+	if err != nil {
+		t.Fatalf("Get after rejected adoption: %v", err)
+	}
+	if got.WebPID != 0 || got.WebPort != 0 {
+		t.Fatalf("expected rejected adoption to clear runtime, got pid=%d port=%d", got.WebPID, got.WebPort)
+	}
+}
+
+func TestNewManagerSkipsChildWhoseParentIsStillAlive(t *testing.T) {
+	restoreWebHooks(t)
+	conn := setupWebTestDB(t)
+	svc := NewService(db.New(conn))
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	writeProjectConfig(t, dir)
+	proj, err := svc.Create(ctx, "web-live-parent", dir)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	certPaths := ensureTestCert(t)
+	_, port := newPinnedLoopbackServer(t, certPaths, "adopted-token")
+	dummy := startShellCommand(t, `trap 'exit 0' TERM INT; while :; do sleep 1; done`)
+	t.Cleanup(func() {
+		_ = dummy.cmd.Process.Kill()
+		_, _ = dummy.cmd.Process.Wait()
+	})
+
+	if err := svc.UpdateWebRuntime(ctx, proj.ID, dummy.cmd.Process.Pid, port); err != nil {
+		t.Fatalf("UpdateWebRuntime: %v", err)
+	}
+
+	newInstanceRegistry = func() registryLister {
+		return fakeRegistry{entries: []*instanceregistry.Entry{
+			{
+				InstanceID: "live-parent",
+				Path:       t.TempDir(),
+				PID:        dummy.cmd.Process.Pid,
+				Mode:       instanceregistry.ModeTUI,
+				StartedAt:  time.Now(),
+			},
+			{
+				InstanceID:       "child-1",
+				Path:             proj.Path,
+				PID:              dummy.cmd.Process.Pid,
+				WebPort:          port,
+				Mode:             instanceregistry.ModeWebUI,
+				StartedAt:        time.Now(),
+				ParentInstanceID: "live-parent",
+			},
+		}}
+	}
+
+	mgr, err := NewManager(context.Background(), svc, ManagerOptions{
+		ParentInstanceID: "new-parent",
+		WebTLSCertFile:   certPaths.CertFile,
+		WebTLSKeyFile:    certPaths.KeyFile,
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	t.Cleanup(mgr.Shutdown)
+
+	if inst, ok := mgr.WebInstance(proj.ID); ok && inst != nil {
+		t.Fatal("unexpected adoption while the recorded parent instance is still alive")
+	}
+
+	got, err := svc.Get(ctx, proj.ID)
+	if err != nil {
+		t.Fatalf("Get after skipped adoption: %v", err)
+	}
+	if got.WebPID != 0 || got.WebPort != 0 {
+		t.Fatalf("expected skipped adoption to clear runtime, got pid=%d port=%d", got.WebPID, got.WebPort)
 	}
 }
 
@@ -306,10 +516,12 @@ func TestNewManagerClearsStaleWebRuntime(t *testing.T) {
 		t.Fatalf("UpdateWebRuntime: %v", err)
 	}
 
-	probeWebHealth = func(context.Context, int) error { return errors.New("stale") }
 	newInstanceRegistry = func() registryLister { return fakeRegistry{} }
 
-	mgr, err := NewManager(context.Background(), svc)
+	mgr, err := NewManager(context.Background(), svc, ManagerOptions{
+		ParentInstanceID: "new-parent",
+		WebTLSDataDir:    t.TempDir(),
+	})
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}

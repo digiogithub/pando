@@ -123,9 +123,6 @@ func runDesktopMode(cmd *cobra.Command) error {
 
 	// --- IPC bootstrap: determine primary/secondary role, open DB, wire services ---
 	instanceID := uuid.New().String()
-	if err := os.Setenv("PANDO_INSTANCE_ID", instanceID); err != nil {
-		return fmt.Errorf("failed to set PANDO_INSTANCE_ID: %w", err)
-	}
 	rt, err := ipcruntime.Bootstrap(ctx, cwd, instanceID)
 	if err != nil {
 		return fmt.Errorf("IPC bootstrap failed: %w", err)
@@ -139,36 +136,45 @@ func runDesktopMode(cmd *cobra.Command) error {
 		return fmt.Errorf("failed to load embedded web UI: %w", err)
 	}
 
+	dataDir := config.Get().Data.Directory
+	if dataDir == "" {
+		dataDir = ".pando"
+	}
+
 	baseURL := fmt.Sprintf("http://%s:%d", host, port)
 	server, err := api.NewServer(ctx, api.ServerConfig{
-		Host:        host,
-		Port:        port,
-		Version:     version.Normalize(),
-		DB:          conn,
-		Querier:     rt.Querier,
-		CWD:         cwd,
-		StaticFS:    staticFS,
-		OpenUI:      false,
-		UIBaseURL:   baseURL,
-		InstanceID:  instanceID,
-		Role:        string(rt.Role),
-		PubPort:     rt.PubPort,
-		RPCPort:     rt.RPCPort,
-		StartupMode: "desktop",
+		Host:               host,
+		Port:               port,
+		Version:            version.Normalize(),
+		DB:                 conn,
+		Querier:            rt.Querier,
+		CWD:                cwd,
+		StaticFS:           staticFS,
+		OpenUI:             false,
+		UIBaseURL:          baseURL,
+		ParentInstanceID:   instanceID,
+		WebChildTLSDataDir: dataDir,
+		InstanceID:         instanceID,
+		Role:               string(rt.Role),
+		PubPort:            rt.PubPort,
+		RPCPort:            rt.RPCPort,
+		StartupMode:        "desktop",
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create API server: %w", err)
 	}
 
 	_ = instanceregistry.Announce(&instanceregistry.Entry{
-		InstanceID: instanceID,
-		Path:       cwd,
-		PID:        os.Getpid(),
-		PubPort:    rt.PubPort,
-		RPCPort:    rt.RPCPort,
-		StartedAt:  time.Now(),
-		Mode:       instanceregistry.ModeDesktop,
-		IsPrimary:  rt.Role == ipcruntime.RolePrimary,
+		InstanceID:       instanceID,
+		Path:             cwd,
+		PID:              os.Getpid(),
+		PubPort:          rt.PubPort,
+		RPCPort:          rt.RPCPort,
+		WebPort:          port,
+		StartedAt:        time.Now(),
+		Mode:             instanceregistry.ModeDesktop,
+		ParentInstanceID: os.Getenv("PANDO_PARENT_INSTANCE"),
+		IsPrimary:        rt.Role == ipcruntime.RolePrimary,
 	})
 	defer func() { _ = instanceregistry.Revoke(instanceID) }()
 

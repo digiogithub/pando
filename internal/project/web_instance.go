@@ -2,13 +2,15 @@ package project
 
 import (
 	"context"
-	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,53 +22,126 @@ import (
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/procgroup"
 	"github.com/digiogithub/pando/internal/pubsub"
+	"github.com/digiogithub/pando/internal/tlsutil"
 )
 
 const (
 	webHealthProbeInterval = 200 * time.Millisecond
 	webStartupTimeout      = 20 * time.Second
 	webOutputBufferLimit   = 8 * 1024
+	webLoopbackHost        = "127.0.0.1"
+	webTokenPath           = "/api/v1/token"
 )
 
+// WebInstanceState describes the lifecycle state of a background WebUI child.
 type WebInstanceState string
 
 const (
+	// WebStateStarting means the child process exists but has not finished the
+	// pinned TLS and token handshake yet.
 	WebStateStarting WebInstanceState = "starting"
-	WebStateRunning  WebInstanceState = "running"
-	WebStateError    WebInstanceState = "error"
-	WebStateStopped  WebInstanceState = "stopped"
+	// WebStateRunning means the child answered the pinned health probe and the
+	// parent fetched its API token successfully.
+	WebStateRunning WebInstanceState = "running"
+	// WebStateError means the child crashed or failed startup.
+	WebStateError WebInstanceState = "error"
+	// WebStateStopped means the child exited cleanly or was shut down.
+	WebStateStopped WebInstanceState = "stopped"
 )
 
+// WebInstance represents a background `pando serve` child owned or adopted by
+// the project manager.
 type WebInstance struct {
 	Project   Project
-	cmd       *exec.Cmd
-	Port      int
-	PID       int
-	Token     string
 	StartedAt time.Time
-	errCh     chan error
-	cancel    context.CancelFunc
-	State     WebInstanceState
-	stdout    *tailBuffer
-	stderr    *tailBuffer
+
+	cmd    *exec.Cmd
+	errCh  chan error
+	cancel context.CancelFunc
+	stdout *tailBuffer
+	stderr *tailBuffer
 
 	mu       sync.RWMutex
+	state    WebInstanceState
+	port     int
+	pid      int
+	token    string
 	done     chan struct{}
 	exitErr  error
 	stopping bool
 	adopted  bool
 }
 
+// WebInstanceSnapshot is a race-free copy of a WebInstance's live runtime data.
+type WebInstanceSnapshot struct {
+	Project   Project
+	Port      int
+	PID       int
+	StartedAt time.Time
+	State     WebInstanceState
+	Adopted   bool
+}
+
+// Snapshot returns a race-free copy of the instance state for callers that need
+// stable port, pid, and lifecycle fields together.
+func (w *WebInstance) Snapshot() WebInstanceSnapshot {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	return WebInstanceSnapshot{
+		Project:   w.Project,
+		Port:      w.port,
+		PID:       w.pid,
+		StartedAt: w.StartedAt,
+		State:     w.state,
+		Adopted:   w.adopted,
+	}
+}
+
+// BaseURL returns the pinned loopback origin of the child WebUI server.
+func (w *WebInstance) BaseURL() string {
+	return loopbackWebBaseURL(w.Port())
+}
+
+// APIToken returns the in-memory API token learned from the child's token
+// endpoint. The token is never persisted.
+func (w *WebInstance) APIToken() string {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.token
+}
+
+// Port returns the loopback HTTPS port of the child.
+func (w *WebInstance) Port() int {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.port
+}
+
+// PID returns the operating-system process id of the child when known.
+func (w *WebInstance) PID() int {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.pid
+}
+
+// State returns the current lifecycle state of the child.
+func (w *WebInstance) State() WebInstanceState {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.state
+}
+
 func (w *WebInstance) setState(state WebInstanceState) {
 	w.mu.Lock()
-	w.State = state
+	w.state = state
 	w.mu.Unlock()
 }
 
-func (w *WebInstance) state() WebInstanceState {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-	return w.State
+func (w *WebInstance) setToken(token string) {
+	w.mu.Lock()
+	w.token = token
+	w.mu.Unlock()
 }
 
 func (w *WebInstance) markStopping() {
@@ -84,7 +159,8 @@ func (w *WebInstance) isStopping() bool {
 func (w *WebInstance) recordExit(err error, state WebInstanceState) {
 	w.mu.Lock()
 	w.exitErr = err
-	w.State = state
+	w.state = state
+	w.token = ""
 	w.mu.Unlock()
 	close(w.done)
 }
@@ -143,23 +219,38 @@ type webProcessStart struct {
 	stderr *tailBuffer
 }
 
+type webProcessConfig struct {
+	ParentInstanceID string
+	TLSCertFile      string
+	TLSKeyFile       string
+}
+
+type webTokenResponse struct {
+	Token string `json:"token"`
+}
+
 var (
 	spawnWebProcess = defaultSpawnWebProcess
 	probeWebHealth  = defaultProbeWebHealth
+	fetchWebToken   = defaultFetchWebToken
 )
 
-func defaultSpawnWebProcess(_ context.Context, pandoBin, parentInstanceID string, proj Project, port int) (*webProcessStart, error) {
+func defaultSpawnWebProcess(_ context.Context, pandoBin string, cfg webProcessConfig, proj Project, port int) (*webProcessStart, error) {
 	cmd := exec.Command(pandoBin, "serve",
-		"--host", "127.0.0.1",
+		"--host", webLoopbackHost,
 		"--port", strconv.Itoa(port),
 		"--cwd", proj.Path,
+		"--tls-cert", cfg.TLSCertFile,
+		"--tls-key", cfg.TLSKeyFile,
 	)
 	cmd.Dir = proj.Path
 	cmd.Env = append(os.Environ(),
 		"NO_COLOR=1",
-		"PANDO_PARENT_INSTANCE="+parentInstanceID,
 		"PANDO_PROJECT_ID="+proj.ID,
 	)
+	if cfg.ParentInstanceID != "" {
+		cmd.Env = append(cmd.Env, "PANDO_PARENT_INSTANCE="+cfg.ParentInstanceID)
+	}
 	procgroup.Ensure(cmd)
 
 	if err := checkDirAccessible(proj.Path); err != nil {
@@ -183,12 +274,13 @@ func defaultSpawnWebProcess(_ context.Context, pandoBin, parentInstanceID string
 	}, nil
 }
 
-func defaultProbeWebHealth(ctx context.Context, port int) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("https://127.0.0.1:%d/health", port), nil)
+func defaultProbeWebHealth(ctx context.Context, client *http.Client, baseURL string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/health", nil)
 	if err != nil {
 		return err
 	}
-	resp, err := insecureLoopbackHTTPClient().Do(req)
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -200,16 +292,33 @@ func defaultProbeWebHealth(ctx context.Context, port int) error {
 	return nil
 }
 
-func insecureLoopbackHTTPClient() *http.Client {
-	// TODO(PANDO-US-0104): pin the child certificate instead of skipping TLS
-	// verification for the loopback health probe.
-	return &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
-		},
+func defaultFetchWebToken(ctx context.Context, client *http.Client, baseURL string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+webTokenPath, nil)
+	if err != nil {
+		return "", err
 	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return "", fmt.Errorf("token endpoint returned status %d", resp.StatusCode)
+	}
+
+	var payload webTokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "", fmt.Errorf("decode token response: %w", err)
+	}
+	if strings.TrimSpace(payload.Token) == "" {
+		return "", fmt.Errorf("token endpoint returned an empty token")
+	}
+	return payload.Token, nil
 }
 
+// OpenWeb starts or reuses the background WebUI child for projectID.
 func (m *Manager) OpenWeb(ctx context.Context, projectID string) (*WebInstance, error) {
 	proj, err := m.service.Get(ctx, projectID)
 	if err != nil {
@@ -227,13 +336,23 @@ func (m *Manager) OpenWeb(ctx context.Context, projectID string) (*WebInstance, 
 		return nil, ErrProjectNeedsInit
 	}
 
+	webClient, err := m.webHTTPClient()
+	if err != nil {
+		return nil, fmt.Errorf("project manager: configure pinned web client: %w", err)
+	}
+	certPaths, err := m.webTLSCertPaths()
+	if err != nil {
+		return nil, fmt.Errorf("project manager: resolve child TLS certificate: %w", err)
+	}
+
 	m.mu.Lock()
 	if inst, ok := m.webInstances[projectID]; ok && inst != nil {
-		if state := inst.state(); state == WebStateStopped || state == WebStateError {
+		switch inst.State() {
+		case WebStateStopped, WebStateError:
 			delete(m.webInstances, projectID)
-		} else {
+		default:
 			m.mu.Unlock()
-			if err := m.waitForWebStartup(ctx, projectID, inst); err != nil {
+			if err := m.waitForWebStartup(ctx, projectID, inst, webClient); err != nil {
 				if errors.Is(err, ErrChildStartupTimeout) {
 					return nil, err
 				}
@@ -249,27 +368,31 @@ func (m *Manager) OpenWeb(ctx context.Context, projectID string) (*WebInstance, 
 	if preferredPort == 0 {
 		preferredPort = defaultWebPort
 	}
-	port, err := chooseAvailablePort("127.0.0.1", preferredPort)
+	port, err := chooseAvailablePort(webLoopbackHost, preferredPort)
 	if err != nil {
 		return nil, fmt.Errorf("project manager: choose web port for %s: %w", proj.Path, err)
 	}
 
-	started, err := spawnWebProcess(ctx, m.pandoBin, m.parentInstanceID, *proj, port)
+	started, err := spawnWebProcess(ctx, m.pandoBin, webProcessConfig{
+		ParentInstanceID: m.parentInstanceID,
+		TLSCertFile:      certPaths.CertFile,
+		TLSKeyFile:       certPaths.KeyFile,
+	}, *proj, port)
 	if err != nil {
 		return nil, fmt.Errorf("project manager: spawn web child for %s: %w", proj.Path, err)
 	}
 
 	inst := &WebInstance{
 		Project:   *proj,
-		cmd:       started.cmd,
-		Port:      port,
-		PID:       started.cmd.Process.Pid,
 		StartedAt: time.Now(),
+		cmd:       started.cmd,
 		errCh:     make(chan error, 1),
 		cancel:    started.cancel,
-		State:     WebStateStarting,
 		stdout:    started.stdout,
 		stderr:    started.stderr,
+		state:     WebStateStarting,
+		port:      port,
+		pid:       started.cmd.Process.Pid,
 		done:      make(chan struct{}),
 	}
 
@@ -277,14 +400,14 @@ func (m *Manager) OpenWeb(ctx context.Context, projectID string) (*WebInstance, 
 	if existing, ok := m.webInstances[projectID]; ok && existing != nil {
 		m.mu.Unlock()
 		terminateWebProcess(inst, syscall.SIGTERM)
-		return existing, m.waitForWebStartup(ctx, projectID, existing)
+		return existing, m.waitForWebStartup(ctx, projectID, existing, webClient)
 	}
 	m.webInstances[projectID] = inst
 	m.mu.Unlock()
 
 	go m.monitorOwnedWebInstance(projectID, inst)
 
-	if err := m.waitForWebStartup(ctx, projectID, inst); err != nil {
+	if err := m.waitForWebStartup(ctx, projectID, inst, webClient); err != nil {
 		if errors.Is(err, ErrChildStartupTimeout) {
 			terminateWebProcess(inst, syscall.SIGTERM)
 		}
@@ -295,6 +418,7 @@ func (m *Manager) OpenWeb(ctx context.Context, projectID string) (*WebInstance, 
 	return inst, nil
 }
 
+// CloseWeb stops the background WebUI child for projectID if one is running.
 func (m *Manager) CloseWeb(ctx context.Context, projectID string) error {
 	inst, ok := m.takeWebInstance(projectID)
 	if !ok || inst == nil {
@@ -318,6 +442,8 @@ func (m *Manager) CloseWeb(ctx context.Context, projectID string) error {
 	return nil
 }
 
+// WebInstances returns the currently tracked background WebUI children keyed by
+// project id.
 func (m *Manager) WebInstances() map[string]*WebInstance {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -329,6 +455,7 @@ func (m *Manager) WebInstances() map[string]*WebInstance {
 	return out
 }
 
+// WebInstance returns the tracked background WebUI child for projectID, if any.
 func (m *Manager) WebInstance(projectID string) (*WebInstance, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -336,11 +463,19 @@ func (m *Manager) WebInstance(projectID string) (*WebInstance, bool) {
 	return inst, ok
 }
 
-func (m *Manager) waitForWebStartup(ctx context.Context, projectID string, inst *WebInstance) error {
+// WebTransport returns the pinned transport used to talk to background WebUI
+// children. It is safe for long-lived streaming responses and WebSocket
+// upgrades.
+func (m *Manager) WebTransport() http.RoundTripper {
+	transport, _ := m.ensureWebTransport()
+	return transport
+}
+
+func (m *Manager) waitForWebStartup(ctx context.Context, projectID string, inst *WebInstance, client *http.Client) error {
 	if inst == nil {
 		return ErrChildStartupTimeout
 	}
-	if inst.state() == WebStateRunning {
+	if inst.State() == WebStateRunning && inst.APIToken() != "" {
 		return nil
 	}
 
@@ -352,30 +487,36 @@ func (m *Manager) waitForWebStartup(ctx context.Context, projectID string, inst 
 
 	for {
 		probeCtx, cancel := context.WithTimeout(ctx, webHealthProbeInterval)
-		err := probeWebHealth(probeCtx, inst.Port)
+		err := probeWebHealth(probeCtx, client, inst.BaseURL())
 		cancel()
 		if err == nil {
-			inst.setState(WebStateRunning)
-			if m.service != nil {
-				_ = m.service.UpdateWebRuntime(context.Background(), projectID, inst.PID, inst.Port)
+			tokenCtx, tokenCancel := context.WithTimeout(ctx, webHealthProbeInterval)
+			token, tokenErr := fetchWebToken(tokenCtx, client, inst.BaseURL())
+			tokenCancel()
+			if tokenErr == nil {
+				inst.setToken(token)
+				inst.setState(WebStateRunning)
+				if m.service != nil {
+					_ = m.service.UpdateWebRuntime(context.Background(), projectID, inst.PID(), inst.Port())
+				}
+				if m.broker != nil {
+					m.broker.Publish(pubsub.UpdatedEvent, ManagerEvent{
+						Type:      EvWebStarted,
+						ProjectID: projectID,
+						Port:      inst.Port(),
+					})
+				}
+				return nil
 			}
-			if m.broker != nil {
-				m.broker.Publish(pubsub.UpdatedEvent, ManagerEvent{
-					Type:      EvWebStarted,
-					ProjectID: projectID,
-					Port:      inst.Port,
-				})
-			}
-			return nil
 		}
 
 		select {
 		case <-inst.done:
 			exitErr := inst.exitError()
 			if exitErr == nil {
-				return fmt.Errorf("web instance for %s stopped before health probe completed", projectID)
+				return fmt.Errorf("web instance for %s stopped before startup completed", projectID)
 			}
-			return fmt.Errorf("web instance for %s exited before health probe completed: %w", projectID, exitErr)
+			return fmt.Errorf("web instance for %s exited before startup completed: %w", projectID, exitErr)
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
@@ -412,7 +553,7 @@ func (m *Manager) monitorOwnedWebInstance(projectID string, inst *WebInstance) {
 		m.broker.Publish(pubsub.UpdatedEvent, ManagerEvent{
 			Type:      eventType,
 			ProjectID: projectID,
-			Port:      inst.Port,
+			Port:      inst.Port(),
 			Error:     eventErr,
 		})
 	}
@@ -433,14 +574,14 @@ func (m *Manager) monitorAdoptedWebInstance(projectID string, inst *WebInstance)
 			inst.cancel()
 			return
 		case <-ticker.C:
-			if inst.PID > 0 && !pidIsAlive(inst.PID) {
+			if inst.PID() > 0 && !pidIsAlive(inst.PID()) {
 				state := WebStateStopped
 				eventType := EvWebStopped
 				eventErr := ""
 				if !inst.isStopping() {
 					state = WebStateError
 					eventType = EvWebError
-					eventErr = fmt.Sprintf("web child pid %d is no longer running", inst.PID)
+					eventErr = fmt.Sprintf("web child pid %d is no longer running", inst.PID())
 				}
 				inst.recordExit(nil, state)
 				if m.service != nil {
@@ -451,7 +592,7 @@ func (m *Manager) monitorAdoptedWebInstance(projectID string, inst *WebInstance)
 					m.broker.Publish(pubsub.UpdatedEvent, ManagerEvent{
 						Type:      eventType,
 						ProjectID: projectID,
-						Port:      inst.Port,
+						Port:      inst.Port(),
 						Error:     eventErr,
 					})
 				}
@@ -459,6 +600,97 @@ func (m *Manager) monitorAdoptedWebInstance(projectID string, inst *WebInstance)
 			}
 		}
 	}
+}
+
+func (m *Manager) webHTTPClient() (*http.Client, error) {
+	m.webClientMu.Lock()
+	defer m.webClientMu.Unlock()
+
+	if m.webClient != nil {
+		return m.webClient, nil
+	}
+
+	transport, err := m.ensureWebTransportLocked()
+	if err != nil {
+		return nil, err
+	}
+
+	m.webClient = &http.Client{Transport: transport}
+	return m.webClient, nil
+}
+
+func (m *Manager) ensureWebTransport() (http.RoundTripper, error) {
+	m.webClientMu.Lock()
+	defer m.webClientMu.Unlock()
+	return m.ensureWebTransportLocked()
+}
+
+func (m *Manager) ensureWebTransportLocked() (http.RoundTripper, error) {
+	if m.webTransport != nil {
+		return m.webTransport, nil
+	}
+
+	paths, err := m.webTLSCertPaths()
+	if err != nil {
+		return nil, err
+	}
+
+	tlsConfig, err := tlsutil.LoadPinnedLoopbackTLSConfig(paths.CertFile)
+	if err != nil {
+		return nil, fmt.Errorf("load pinned loopback TLS config: %w", err)
+	}
+
+	m.webTransport = &http.Transport{
+		// Loopback children are never reached through an HTTP proxy.
+		Proxy:                 nil,
+		DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		ForceAttemptHTTP2:     false,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: time.Second,
+		TLSClientConfig:       tlsConfig,
+	}
+
+	return m.webTransport, nil
+}
+
+func (m *Manager) webTLSCertPaths() (tlsutil.CertPaths, error) {
+	if m.webTLSCertFile != "" || m.webTLSKeyFile != "" {
+		if m.webTLSCertFile == "" || m.webTLSKeyFile == "" {
+			return tlsutil.CertPaths{}, fmt.Errorf("both web TLS certificate and key files must be set")
+		}
+		return absoluteCertPaths(tlsutil.CertPaths{
+			CertFile: m.webTLSCertFile,
+			KeyFile:  m.webTLSKeyFile,
+		})
+	}
+
+	dataDir := m.webTLSDataDir
+	if dataDir == "" {
+		dataDir = ".pando"
+		if cfg := config.Get(); cfg != nil && cfg.Data.Directory != "" {
+			dataDir = cfg.Data.Directory
+		}
+	}
+
+	paths, err := tlsutil.EnsureCert(dataDir)
+	if err != nil {
+		return tlsutil.CertPaths{}, err
+	}
+	return absoluteCertPaths(paths)
+}
+
+func absoluteCertPaths(paths tlsutil.CertPaths) (tlsutil.CertPaths, error) {
+	certFile, err := filepath.Abs(paths.CertFile)
+	if err != nil {
+		return tlsutil.CertPaths{}, fmt.Errorf("resolve TLS certificate path: %w", err)
+	}
+	keyFile, err := filepath.Abs(paths.KeyFile)
+	if err != nil {
+		return tlsutil.CertPaths{}, fmt.Errorf("resolve TLS key path: %w", err)
+	}
+	return tlsutil.CertPaths{CertFile: certFile, KeyFile: keyFile}, nil
 }
 
 func (m *Manager) takeWebInstance(projectID string) (*WebInstance, bool) {
@@ -493,43 +725,67 @@ func (m *Manager) adoptExistingWebInstances(ctx context.Context) {
 		return
 	}
 
+	liveIDs := make(map[string]struct{}, len(entries))
 	byPath := make(map[string][]*instanceregistry.Entry)
 	for _, entry := range entries {
-		if entry == nil || entry.Mode != instanceregistry.ModeWebUI || entry.Path == "" || entry.PID <= 0 {
+		if entry == nil {
+			continue
+		}
+		liveIDs[entry.InstanceID] = struct{}{}
+		if entry.Mode != instanceregistry.ModeWebUI || entry.Path == "" || entry.PID <= 0 || entry.WebPort <= 0 || entry.WebPort > 65535 || entry.ParentInstanceID == "" {
 			continue
 		}
 		byPath[entry.Path] = append(byPath[entry.Path], entry)
 	}
 
+	var webClient *http.Client
 	for _, proj := range projects {
 		projectEntries := byPath[proj.Path]
 		var adopted bool
 		for _, entry := range projectEntries {
-			port := proj.WebPort
-			if port == 0 {
+			if _, parentAlive := liveIDs[entry.ParentInstanceID]; parentAlive {
 				continue
 			}
-			// TODO(PANDO-US-0104): read the adopted web port from instanceregistry.Entry
-			// once WebPort and ParentInstanceID are persisted there.
+			if webClient == nil {
+				webClient, err = m.webHTTPClient()
+				if err != nil {
+					logging.Warn("project manager: configure pinned web client for adoption failed", "error", err)
+					return
+				}
+			}
+
+			inst := &WebInstance{
+				Project:   proj,
+				StartedAt: entry.StartedAt,
+				errCh:     make(chan error, 1),
+				cancel:    func() {},
+				stdout:    newTailBuffer(webOutputBufferLimit),
+				stderr:    newTailBuffer(webOutputBufferLimit),
+				state:     WebStateStarting,
+				port:      entry.WebPort,
+				pid:       entry.PID,
+				done:      make(chan struct{}),
+				adopted:   true,
+			}
+
 			probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			err := probeWebHealth(probeCtx, port)
+			err := probeWebHealth(probeCtx, webClient, inst.BaseURL())
 			cancel()
 			if err != nil {
 				continue
 			}
 
-			inst := &WebInstance{
-				Project:   proj,
-				Port:      port,
-				PID:       entry.PID,
-				StartedAt: entry.StartedAt,
-				errCh:     make(chan error, 1),
-				cancel:    func() {},
-				State:     WebStateRunning,
-				stdout:    newTailBuffer(webOutputBufferLimit),
-				stderr:    newTailBuffer(webOutputBufferLimit),
-				done:      make(chan struct{}),
-				adopted:   true,
+			tokenCtx, tokenCancel := context.WithTimeout(ctx, 2*time.Second)
+			token, err := fetchWebToken(tokenCtx, webClient, inst.BaseURL())
+			tokenCancel()
+			if err != nil {
+				continue
+			}
+
+			inst.setToken(token)
+			inst.setState(WebStateRunning)
+			if m.service != nil {
+				_ = m.service.UpdateWebRuntime(ctx, proj.ID, inst.PID(), inst.Port())
 			}
 			m.mu.Lock()
 			m.webInstances[proj.ID] = inst
@@ -544,6 +800,10 @@ func (m *Manager) adoptExistingWebInstances(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func loopbackWebBaseURL(port int) string {
+	return fmt.Sprintf("https://%s:%d", webLoopbackHost, port)
 }
 
 func webInstanceError(inst *WebInstance, waitErr error) string {
@@ -563,7 +823,8 @@ func terminateWebProcess(inst *WebInstance, sig syscall.Signal) {
 	if inst == nil {
 		return
 	}
-	pid := inst.PID
+
+	pid := inst.PID()
 	if pid == 0 && inst.cmd != nil && inst.cmd.Process != nil {
 		pid = inst.cmd.Process.Pid
 	}

@@ -38,14 +38,18 @@ type ServerConfig struct {
 	// Querier overrides the db.Querier passed to app.New. When non-nil it is
 	// used instead of db.New(cfg.DB). Secondary instances supply a DBProxy here
 	// so all writes are forwarded to the primary via ZMQ RPC.
-	Querier     db.Querier
-	CWD         string
-	StaticFS    fs.FS
-	OpenUI      bool
-	UIBaseURL   string
-	TLSCertFile string
-	TLSKeyFile  string
-	StartupMode string
+	Querier             db.Querier
+	CWD                 string
+	StaticFS            fs.FS
+	OpenUI              bool
+	UIBaseURL           string
+	TLSCertFile         string
+	TLSKeyFile          string
+	StartupMode         string
+	ParentInstanceID    string
+	WebChildTLSCertFile string
+	WebChildTLSKeyFile  string
+	WebChildTLSDataDir  string
 
 	// IPC identity fields populated by Bootstrap so the /api/ipc/status
 	// endpoint can report them without re-reading the lock file.
@@ -108,7 +112,14 @@ type Server struct {
 }
 
 func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
-	appOpts := app.AppOptions{DBQuerier: cfg.Querier, StartupMode: cfg.StartupMode}
+	appOpts := app.AppOptions{
+		DBQuerier:           cfg.Querier,
+		StartupMode:         cfg.StartupMode,
+		InstanceID:          cfg.ParentInstanceID,
+		WebChildTLSCertFile: cfg.WebChildTLSCertFile,
+		WebChildTLSKeyFile:  cfg.WebChildTLSKeyFile,
+		WebChildTLSDataDir:  cfg.WebChildTLSDataDir,
+	}
 	application, err := app.New(ctx, cfg.DB, appOpts)
 	if err != nil {
 		return nil, err

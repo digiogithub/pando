@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -62,6 +63,19 @@ type registryLister interface {
 
 var newInstanceRegistry = func() registryLister { return instanceregistry.New() }
 
+// ManagerOptions configures a project Manager.
+type ManagerOptions struct {
+	// ParentInstanceID identifies the parent Pando process that owns any spawned
+	// background WebUI children.
+	ParentInstanceID string
+	// WebTLSCertFile and WebTLSKeyFile provide the certificate/key pair the
+	// parent uses for child WebUI TLS pinning. When empty, the manager generates
+	// or reuses a certificate under WebTLSDataDir on first use.
+	WebTLSCertFile string
+	WebTLSKeyFile  string
+	WebTLSDataDir  string
+}
+
 // Manager tracks child Pando ACP processes for registered project directories
 // and routes lifecycle events to subscribers via a generic pubsub broker.
 type Manager struct {
@@ -77,6 +91,13 @@ type Manager struct {
 	// pandoBin is the path to the current pando executable.
 	pandoBin         string
 	parentInstanceID string
+	webTLSCertFile   string
+	webTLSKeyFile    string
+	webTLSDataDir    string
+
+	webClientMu  sync.Mutex
+	webClient    *http.Client
+	webTransport http.RoundTripper
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -84,13 +105,20 @@ type Manager struct {
 
 // NewManager creates a new Manager.
 // Call Shutdown() when done to stop all child processes and release resources.
-func NewManager(ctx context.Context, service Service) (*Manager, error) {
+func NewManager(ctx context.Context, service Service, opts ...ManagerOptions) (*Manager, error) {
 	pandoBin, err := os.Executable()
 	if err != nil {
 		return nil, fmt.Errorf("project manager: cannot determine executable path: %w", err)
 	}
 
 	mgrCtx, cancel := context.WithCancel(ctx)
+	opt := ManagerOptions{}
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+	if opt.ParentInstanceID == "" {
+		opt.ParentInstanceID = fmt.Sprintf("pid-%d", os.Getpid())
+	}
 
 	m := &Manager{
 		service:          service,
@@ -99,7 +127,10 @@ func NewManager(ctx context.Context, service Service) (*Manager, error) {
 		broker:           pubsub.NewBroker[ManagerEvent](),
 		registry:         newInstanceRegistry(),
 		pandoBin:         pandoBin,
-		parentInstanceID: managerParentInstanceID(),
+		parentInstanceID: opt.ParentInstanceID,
+		webTLSCertFile:   opt.WebTLSCertFile,
+		webTLSKeyFile:    opt.WebTLSKeyFile,
+		webTLSDataDir:    opt.WebTLSDataDir,
 		ctx:              mgrCtx,
 		cancel:           cancel,
 	}
@@ -720,11 +751,4 @@ func (m *Manager) Shutdown() {
 	}
 
 	m.broker.Shutdown()
-}
-
-func managerParentInstanceID() string {
-	if instanceID := os.Getenv("PANDO_INSTANCE_ID"); instanceID != "" {
-		return instanceID
-	}
-	return fmt.Sprintf("pid-%d", os.Getpid())
 }

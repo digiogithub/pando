@@ -17,26 +17,30 @@ import (
 
 // instanceResponse is the JSON wire representation of a running Pando instance.
 type instanceResponse struct {
-	InstanceID string    `json:"instance_id"`
-	Path       string    `json:"path"`
-	PID        int       `json:"pid"`
-	PubPort    int       `json:"pub_port"`
-	RPCPort    int       `json:"rpc_port"`
-	StartedAt  time.Time `json:"started_at"`
-	Mode       string    `json:"mode"`
-	IsPrimary  bool      `json:"is_primary"`
+	InstanceID       string    `json:"instance_id"`
+	Path             string    `json:"path"`
+	PID              int       `json:"pid"`
+	PubPort          int       `json:"pub_port"`
+	RPCPort          int       `json:"rpc_port"`
+	WebPort          int       `json:"web_port,omitempty"`
+	StartedAt        time.Time `json:"started_at"`
+	Mode             string    `json:"mode"`
+	ParentInstanceID string    `json:"parent_instance_id,omitempty"`
+	IsPrimary        bool      `json:"is_primary"`
 }
 
 func entryToResponse(e *instanceregistry.Entry) instanceResponse {
 	return instanceResponse{
-		InstanceID: e.InstanceID,
-		Path:       e.Path,
-		PID:        e.PID,
-		PubPort:    e.PubPort,
-		RPCPort:    e.RPCPort,
-		StartedAt:  e.StartedAt,
-		Mode:       string(e.Mode),
-		IsPrimary:  e.IsPrimary,
+		InstanceID:       e.InstanceID,
+		Path:             e.Path,
+		PID:              e.PID,
+		PubPort:          e.PubPort,
+		RPCPort:          e.RPCPort,
+		WebPort:          e.WebPort,
+		StartedAt:        e.StartedAt,
+		Mode:             string(e.Mode),
+		ParentInstanceID: e.ParentInstanceID,
+		IsPrimary:        e.IsPrimary,
 	}
 }
 

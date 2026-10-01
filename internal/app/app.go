@@ -207,6 +207,13 @@ type AppOptions struct {
 	// When non-nil this querier is used instead of db.New(conn).
 	// Primary instances leave this nil; secondary instances pass a dbproxy.DBProxy.
 	DBQuerier db.Querier
+	// InstanceID identifies the current Pando process for project child ownership.
+	InstanceID string
+	// WebChildTLSCertFile/WebChildTLSKeyFile configure the certificate the
+	// project manager passes to spawned background WebUI children.
+	WebChildTLSCertFile string
+	WebChildTLSKeyFile  string
+	WebChildTLSDataDir  string
 }
 
 // findFreePort returns the first available TCP port starting at preferred, trying
@@ -279,7 +286,12 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	agent.SetProjectServiceForTools(projects)
 
 	// Initialize project manager (Phase 2).
-	mgr, mgrErr := project.NewManager(ctx, projects)
+	mgr, mgrErr := project.NewManager(ctx, projects, project.ManagerOptions{
+		ParentInstanceID: opt.InstanceID,
+		WebTLSCertFile:   opt.WebChildTLSCertFile,
+		WebTLSKeyFile:    opt.WebChildTLSKeyFile,
+		WebTLSDataDir:    opt.WebChildTLSDataDir,
+	})
 	if mgrErr != nil {
 		return nil, fmt.Errorf("failed to initialize project manager: %w", mgrErr)
 	}

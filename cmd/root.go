@@ -213,9 +213,6 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 
 		// --- IPC bootstrap: determine primary/secondary role, open DB, wire services ---
 		instanceID := uuid.New().String()
-		if err := os.Setenv("PANDO_INSTANCE_ID", instanceID); err != nil {
-			return fmt.Errorf("failed to set PANDO_INSTANCE_ID: %w", err)
-		}
 		rt, err := ipcruntime.Bootstrap(ctx, cwd, instanceID)
 		if err != nil {
 			return fmt.Errorf("IPC bootstrap failed: %w", err)
@@ -244,7 +241,11 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		conn := rt.SQLDB
 		logging.Debug("Database connected")
 
-		pandoApp, err := app.New(ctx, conn, app.AppOptions{DBQuerier: rt.Querier, StartupMode: "tui"})
+		pandoApp, err := app.New(ctx, conn, app.AppOptions{
+			DBQuerier:   rt.Querier,
+			StartupMode: "tui",
+			InstanceID:  instanceID,
+		})
 		if err != nil {
 			logging.Error("Failed to create app: %v", err)
 			return err
@@ -612,9 +613,6 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 
 	// --- IPC bootstrap: determine primary/secondary role, open DB, wire services ---
 	acpInstanceID := uuid.New().String()
-	if err := os.Setenv("PANDO_INSTANCE_ID", acpInstanceID); err != nil {
-		return fmt.Errorf("failed to set PANDO_INSTANCE_ID: %w", err)
-	}
 	rt, bootstrapErr := ipcruntime.Bootstrap(ctx, cwd, acpInstanceID)
 	if bootstrapErr != nil {
 		return fmt.Errorf("IPC bootstrap failed: %w", bootstrapErr)
@@ -625,7 +623,12 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 
 	// Create app with all services (sessions, messages, agent, etc.).
 	// LSP is skipped: in ACP stdio mode the editor manages its own language servers.
-	pandoApp, err := app.New(ctx, conn, app.AppOptions{SkipLSP: true, DBQuerier: rt.Querier, StartupMode: "acp"})
+	pandoApp, err := app.New(ctx, conn, app.AppOptions{
+		SkipLSP:     true,
+		DBQuerier:   rt.Querier,
+		StartupMode: "acp",
+		InstanceID:  acpInstanceID,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to initialize app: %w", err)
 	}

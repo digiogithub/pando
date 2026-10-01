@@ -33,10 +33,14 @@ type Entry struct {
 	PubPort int `json:"pub_port"`
 	// RPCPort is the ZMQ ROUTER/RPC port used for request-response communication.
 	RPCPort int `json:"rpc_port"`
+	// WebPort is the HTTP(S) port served by this instance when it has one.
+	WebPort int `json:"web_port,omitempty"`
 	// StartedAt is when this instance was started.
 	StartedAt time.Time `json:"started_at"`
 	// Mode identifies how the instance was launched.
 	Mode Mode `json:"mode"`
+	// ParentInstanceID identifies the parent instance that spawned this process.
+	ParentInstanceID string `json:"parent_instance_id,omitempty"`
 	// IsPrimary is true if this instance holds the ipc.lock file.
 	IsPrimary bool `json:"is_primary"`
 }

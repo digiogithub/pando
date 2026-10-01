@@ -2,14 +2,15 @@
 id: PANDO-US-0104
 type: story
 title: "Parent–child trust: TLS pinning, token handshake and instanceregistry fields for web children"
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0019
 author: mcp
 labels: [projects, backend, security]
 estimate: 5
 created: 2026-10-01T19:23:08Z
-updated: 2026-10-01T19:23:08Z
+updated: 2026-10-01T20:07:23Z
+closed: 2026-10-01T20:07:23Z
 ---
 
 ## Description

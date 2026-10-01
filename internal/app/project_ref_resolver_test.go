@@ -47,6 +47,9 @@ func (f *fakeProjectService) List(ctx context.Context) ([]project.Project, error
 func (f *fakeProjectService) UpdateStatus(ctx context.Context, id, status string, pid, port int) error {
 	return nil
 }
+func (f *fakeProjectService) UpdateWebRuntime(ctx context.Context, id string, pid, port int) error {
+	return nil
+}
 func (f *fakeProjectService) MarkInitialized(ctx context.Context, id string) error { return nil }
 func (f *fakeProjectService) TouchLastOpened(ctx context.Context, id string) error { return nil }
 func (f *fakeProjectService) Rename(ctx context.Context, id, name string) error    { return nil }
