@@ -4,6 +4,7 @@ import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useSessionStore } from '@pando/client/stores/sessionStore'
 import { useServerStore } from '@pando/client/stores/serverStore'
 import { useSettingsStore } from '@pando/client/stores/settingsStore'
+import { useModelAutoModeStore } from '@pando/client/stores/modelAutoModeStore'
 import { authenticate } from '@pando/client/services/auth'
 import Sidebar from './Sidebar'
 import Header from './Header'
@@ -41,6 +42,7 @@ export default function MainLayout() {
     void authenticate().then(() => {
       fetchSessions()
       fetchSettings()
+      void useModelAutoModeStore.getState().hydrateAutoSelected()
       void hydrateChatMode()
       void hydrateLanguage()
       setConnected(true)

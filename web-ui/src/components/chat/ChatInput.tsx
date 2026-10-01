@@ -6,31 +6,13 @@ import api from '@pando/client/services/api'
 import { useChatDraftStore } from '@pando/client/stores/chatDraftStore'
 import { useSessionStore } from '@pando/client/stores/sessionStore'
 import { useProjectStore } from '@pando/client/stores/projectStore'
-import { useSettingsStore } from '@pando/client/stores/settingsStore'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
+import { useActiveModelLabel } from '@/utils/modelLabel'
 import { ArrowUp, ChevronDown, Folder, Gauge, Square } from '@/components/ui/icons'
 
 const MAX_CHARS = 8000
 // Grows up to 9 lines (24px line-height, see .chat-composer-input), then scrolls.
 const MAX_TEXTAREA_HEIGHT = 216
-
-/** Human label for a model id (mirrors the status bar). */
-function formatModel(id: string): string {
-  if (!id) return ''
-  if (id.startsWith('copilot.')) return 'Copilot ' + formatModel(id.slice(8))
-  if (id.startsWith('claude-')) {
-    const rest = id.slice(7)
-    const dash = rest.indexOf('-')
-    if (dash === -1) return 'Claude ' + rest.charAt(0).toUpperCase() + rest.slice(1)
-    const name = rest.slice(0, dash)
-    const version = rest.slice(dash + 1).replace(/-/g, '.')
-    return 'Claude ' + name.charAt(0).toUpperCase() + name.slice(1) + ' ' + version
-  }
-  if (id.startsWith('gpt-')) return 'GPT-' + id.slice(4)
-  if (id.startsWith('gemini-')) return 'Gemini ' + id.slice(7)
-  const slash = id.lastIndexOf('/')
-  return slash >= 0 ? id.slice(slash + 1) : id
-}
 
 function formatCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
@@ -58,7 +40,7 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled, goalA
   const [slashCommands, setSlashCommands] = useState<SlashCommandItem[]>([])
 
   // Meta row + model chip data.
-  const defaultModel = useSettingsStore((s) => s.config.default_model)
+  const modelLabel = useActiveModelLabel()
   const setModelSwitcherOpen = useLayoutStore((s) => s.setModelSwitcherOpen)
   const workspace = useProjectStore((s) => s.workspace)
   const fetchWorkspace = useProjectStore((s) => s.fetchWorkspace)
@@ -207,14 +189,14 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled, goalA
         <div className="chat-composer-actions">
           <span className="chat-composer-hint">{hint}</span>
           <span className="chat-spacer" />
-          {defaultModel && (
+          {modelLabel && (
             <button
               type="button"
               className="chat-chip"
               onClick={() => setModelSwitcherOpen(true)}
               title={t('common.clickToSwitchModel')}
             >
-              <span className="chat-chip-label">{formatModel(defaultModel)}</span>
+              <span className="chat-chip-label">{modelLabel}</span>
               <ChevronDown size={14} />
             </button>
           )}

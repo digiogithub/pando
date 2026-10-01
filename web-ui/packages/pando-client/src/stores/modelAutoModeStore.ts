@@ -212,8 +212,8 @@ interface ModelAutoModeStore {
   /** Top-level flag: is Auto the active selection right now. */
   autoSelected: boolean
   /**
-   * The concrete model the last prompt was routed to. Hook for a future
-   * routing-notice event; nothing in this store invents an event name.
+   * The concrete model the last prompt was routed to, set from the routing
+   * notice of each turn.
    */
   lastRoutedModel: string | null
   clearApiKey: boolean
@@ -246,6 +246,8 @@ interface ModelAutoModeStore {
   save: () => Promise<boolean>
   reset: () => void
   setLastRoutedModel: (model: string | null) => void
+  /** Loads only whether Auto is the active selection (model chip at startup). */
+  hydrateAutoSelected: () => Promise<void>
   setShowAllModels: (v: boolean) => void
   loadRouterModels: (showAll?: boolean) => Promise<void>
   pullModel: (model: string) => Promise<void>
@@ -359,6 +361,15 @@ export const useModelAutoModeStore = create<ModelAutoModeStore>((set, get) => ({
     set((s) => ({ draft: s.original, clearApiKey: false, dirty: false, fieldErrors: [], error: null })),
 
   setLastRoutedModel: (model) => set({ lastRoutedModel: model }),
+
+  hydrateAutoSelected: async () => {
+    try {
+      const r = await api.get<ModelAutoModeResponse>('/api/v1/config/model-auto-mode')
+      set({ autoSelected: !!r.autoSelected })
+    } catch {
+      // Older backend without model auto mode: keep the plain model label.
+    }
+  },
 
   setShowAllModels: (v) => set({ showAllModels: v }),
 
