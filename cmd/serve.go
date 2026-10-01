@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/signal"
@@ -128,9 +129,20 @@ This is the backend for the Pando Desktop/Web UI.`,
 			logging.Debug("Using auto-generated TLS certificate", "cert", tlsCert)
 		}
 
+		// A project child is shown inside the parent's WebUI through the parent's
+		// reverse proxy, so unlike a plain API server it serves the embedded UI.
+		var staticFS fs.FS
+		if startup.Mode == startupModeProjectChild {
+			staticFS, err = api.EmbeddedWebUI()
+			if err != nil {
+				return fmt.Errorf("failed to load embedded web ui: %w", err)
+			}
+		}
+
 		scheme := "https"
 		baseURL := fmt.Sprintf("%s://%s:%d", scheme, host, port)
 		server, err := api.NewServer(ctx, api.ServerConfig{
+			StaticFS:            staticFS,
 			Host:                host,
 			Port:                port,
 			Version:             version.Normalize(),

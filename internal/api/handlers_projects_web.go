@@ -14,6 +14,10 @@ type projectWebProxyTarget struct {
 	transport http.RoundTripper
 }
 
+func projectWebBrowserURL(projectID string) string {
+	return projectWebPrefix(projectID) + "/"
+}
+
 func (s *Server) handleProjectWebRedirect(w http.ResponseWriter, r *http.Request) {
 	target := r.URL.Path + "/"
 	if rawQuery := r.URL.RawQuery; rawQuery != "" {
@@ -92,19 +96,18 @@ func (s *Server) lookupProjectWebProxyTarget(projectID string) (projectWebProxyT
 		}
 		return projectWebProxyTarget{baseURL: baseURL, apiToken: apiToken, transport: transport}, true
 	}
-	if s.app == nil || s.app.ProjectManager == nil {
+	mgr := s.projectManagerAPI()
+	if mgr == nil {
 		return projectWebProxyTarget{}, false
 	}
-
-	inst, ok := s.app.ProjectManager.WebInstance(projectID)
-	if !ok || inst == nil || strings.TrimSpace(inst.BaseURL()) == "" || strings.TrimSpace(inst.APIToken()) == "" {
+	baseURL, apiToken, transport, ok := mgr.WebProxyTarget(projectID)
+	if !ok {
 		return projectWebProxyTarget{}, false
 	}
-
 	return projectWebProxyTarget{
-		baseURL:   inst.BaseURL(),
-		apiToken:  inst.APIToken(),
-		transport: s.app.ProjectManager.WebTransport(),
+		baseURL:   baseURL,
+		apiToken:  apiToken,
+		transport: transport,
 	}, true
 }
 

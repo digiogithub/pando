@@ -358,10 +358,7 @@ func (m *Manager) OpenWeb(ctx context.Context, projectID string) (*WebInstance, 
 		default:
 			m.mu.Unlock()
 			if err := m.waitForWebStartup(ctx, projectID, inst, webClient); err != nil {
-				if errors.Is(err, ErrChildStartupTimeout) {
-					return nil, err
-				}
-				return nil, fmt.Errorf("project manager: reuse web instance for %s: %w", proj.Path, err)
+				return nil, err
 			}
 			_ = m.service.TouchLastOpened(ctx, projectID)
 			return inst, nil
@@ -384,7 +381,10 @@ func (m *Manager) OpenWeb(ctx context.Context, projectID string) (*WebInstance, 
 		TLSKeyFile:       certPaths.KeyFile,
 	}, *proj, port)
 	if err != nil {
-		return nil, fmt.Errorf("project manager: spawn web child for %s: %w", proj.Path, err)
+		return nil, &ChildStartupError{
+			Detail: fmt.Sprintf("project manager: spawn web child for %s: %v", proj.Path, err),
+			Cause:  ErrChildStartupFailed,
+		}
 	}
 
 	inst := &WebInstance{
@@ -413,7 +413,7 @@ func (m *Manager) OpenWeb(ctx context.Context, projectID string) (*WebInstance, 
 	go m.monitorOwnedWebInstance(projectID, inst)
 
 	if err := m.waitForWebStartup(ctx, projectID, inst, webClient); err != nil {
-		if errors.Is(err, ErrChildStartupTimeout) {
+		if errors.Is(err, ErrChildStartupTimeout) || errors.Is(err, ErrChildStartupFailed) {
 			terminateWebProcess(inst, syscall.SIGTERM)
 		}
 		return nil, err
@@ -478,7 +478,10 @@ func (m *Manager) WebTransport() http.RoundTripper {
 
 func (m *Manager) waitForWebStartup(ctx context.Context, projectID string, inst *WebInstance, client *http.Client) error {
 	if inst == nil {
-		return ErrChildStartupTimeout
+		return &ChildStartupError{
+			Detail: ErrChildStartupTimeout.Error(),
+			Cause:  ErrChildStartupTimeout,
+		}
 	}
 	if inst.State() == WebStateRunning && inst.APIToken() != "" {
 		return nil
@@ -519,13 +522,26 @@ func (m *Manager) waitForWebStartup(ctx context.Context, projectID string, inst 
 		case <-inst.done:
 			exitErr := inst.exitError()
 			if exitErr == nil {
-				return fmt.Errorf("web instance for %s stopped before startup completed", projectID)
+				return &ChildStartupError{
+					Detail: fmt.Sprintf("web instance for %s stopped before startup completed", projectID),
+					Cause:  ErrChildStartupFailed,
+				}
 			}
-			return fmt.Errorf("web instance for %s exited before startup completed: %w", projectID, exitErr)
+			return &ChildStartupError{
+				Detail: webInstanceError(inst, exitErr),
+				Cause:  ErrChildStartupFailed,
+			}
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
-			return ErrChildStartupTimeout
+			detail := strings.TrimSpace(webInstanceError(inst, ErrChildStartupTimeout))
+			if detail == "" {
+				detail = ErrChildStartupTimeout.Error()
+			}
+			return &ChildStartupError{
+				Detail: detail,
+				Cause:  ErrChildStartupTimeout,
+			}
 		case <-ticker.C:
 		}
 	}

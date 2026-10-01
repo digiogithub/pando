@@ -245,11 +245,17 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/v1/cronjobs/{name}", s.handleCronJobByName)
 	mux.HandleFunc("DELETE /api/v1/cronjobs/{name}", s.handleCronJobByName)
 	mux.HandleFunc("POST /api/v1/cronjobs/{name}/run", s.handleRunCronJobNow)
-	// Projects — specific paths registered before {id} wildcard (Go 1.22 precedence)
+	// Projects — specific static and method-qualified control paths are
+	// registered alongside the proxy and {id} wildcard so Go 1.22 ServeMux
+	// routes POST .../web/open and POST .../web/close to the control handlers,
+	// while GET .../web/open and POST .../web/api/v1/... still reach the proxy.
 	mux.HandleFunc("GET /api/v1/projects", s.handleListProjects)
 	mux.HandleFunc("POST /api/v1/projects", s.handleCreateProject)
 	mux.HandleFunc("GET /api/v1/projects/active", s.handleGetActiveProject)
 	mux.HandleFunc("GET /api/v1/projects/events", s.handleProjectEvents)
+	mux.HandleFunc("GET /api/v1/projects/web", s.handleListProjectWebInstances)
+	mux.HandleFunc("POST /api/v1/projects/{id}/web/open", s.handleOpenProjectWeb)
+	mux.HandleFunc("POST /api/v1/projects/{id}/web/close", s.handleCloseProjectWeb)
 	mux.HandleFunc("/api/v1/projects/{id}/web", s.handleProjectWebRedirect)
 	mux.HandleFunc("/api/v1/projects/{id}/web/", s.handleProjectWebProxy)
 	mux.HandleFunc("GET /api/v1/projects/{id}", s.handleGetProject)

@@ -1,6 +1,9 @@
 package project
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
 
 // ErrProjectNeedsInit is returned when Activate is called on a project path
 // that has no .pando.toml (or .pando.json) configuration file.
@@ -49,6 +52,41 @@ var ErrSelfInstance = errors.New("project is served by this instance; warm deleg
 // ErrChildStartupTimeout is returned when a spawned background child never
 // becomes healthy within the startup timeout window.
 var ErrChildStartupTimeout = errors.New("child startup timed out")
+
+// ErrChildStartupFailed is returned when a background project child cannot be
+// started or never reaches a healthy ready state.
+var ErrChildStartupFailed = errors.New("child startup failed")
+
+// ChildStartupError carries a startup failure detail suitable for API
+// responses and logs. Detail never includes the child API token because the
+// token is only learned after a successful startup handshake.
+type ChildStartupError struct {
+	Detail string
+	Cause  error
+}
+
+func (e *ChildStartupError) Error() string {
+	detail := strings.TrimSpace(e.Detail)
+	switch {
+	case detail == "" && e.Cause != nil:
+		return e.Cause.Error()
+	case detail == "":
+		return ErrChildStartupFailed.Error()
+	default:
+		return detail
+	}
+}
+
+func (e *ChildStartupError) Unwrap() error {
+	if e == nil || e.Cause == nil {
+		return ErrChildStartupFailed
+	}
+	return e.Cause
+}
+
+func (e *ChildStartupError) Is(target error) bool {
+	return target == ErrChildStartupFailed || errors.Is(e.Cause, target)
+}
 
 // ErrChildInstance is returned when a project-child Pando instance is asked to
 // spawn or initialize another project child. Child instances may delegate to

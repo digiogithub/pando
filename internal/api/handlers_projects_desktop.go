@@ -30,6 +30,8 @@ var liveDesktopForPath = func(path string) bool {
 
 // handleOpenProjectDesktop handles POST /api/v1/projects/{id}/open-desktop.
 // It launches a separate Pando desktop window working in the project's folder.
+// Unlike /web/open, it does not start the background project WebUI child or
+// affect the ACP delegation child.
 // Only a desktop-mode server may do this: spawning native windows is a local
 // GUI action that makes no sense for a headless or remotely reached server.
 func (s *Server) handleOpenProjectDesktop(w http.ResponseWriter, r *http.Request) {

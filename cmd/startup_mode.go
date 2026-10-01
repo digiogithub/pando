@@ -11,6 +11,10 @@ import (
 
 var publicBasePathPattern = regexp.MustCompile(`^/api/v1/projects/[^/]+/web$`)
 
+// startupModeProjectChild is the startup mode of a Pando spawned by a parent
+// instance to serve one project (PANDO_PARENT_INSTANCE is set).
+const startupModeProjectChild = "project-child"
+
 type startupContext struct {
 	Mode             string
 	ParentInstanceID string
@@ -31,7 +35,7 @@ func resolveStartupContext(cwd, defaultMode string) startupContext {
 		return ctx
 	}
 
-	ctx.Mode = "project-child"
+	ctx.Mode = startupModeProjectChild
 	ctx.ProjectName = lookupProjectName(cwd)
 	if !publicBasePathPattern.MatchString(ctx.PublicBasePath) {
 		ctx.PublicBasePath = ""

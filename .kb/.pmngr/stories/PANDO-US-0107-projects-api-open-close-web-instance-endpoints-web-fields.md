@@ -2,14 +2,15 @@
 id: PANDO-US-0107
 type: story
 title: "Projects API: open/close web instance endpoints, `web_*` fields and SSE events"
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0019
 author: mcp
 labels: [projects, api]
 estimate: 5
 created: 2026-10-01T19:23:08Z
-updated: 2026-10-01T19:23:08Z
+updated: 2026-10-01T20:53:03Z
+closed: 2026-10-01T20:53:03Z
 ---
 
 ## Description

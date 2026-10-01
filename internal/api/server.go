@@ -28,6 +28,8 @@ import (
 	"github.com/digiogithub/pando/internal/design/preview"
 	"github.com/digiogithub/pando/internal/extensions"
 	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/project"
+	"github.com/digiogithub/pando/internal/pubsub"
 	"github.com/digiogithub/pando/internal/sandbox/portguard"
 )
 
@@ -64,12 +66,13 @@ type ServerConfig struct {
 }
 
 type Server struct {
-	httpServer    *http.Server
-	app           *app.App
-	config        ServerConfig
-	token         string
-	staticFS      fs.FS
-	staticHandler http.Handler
+	httpServer     *http.Server
+	app            *app.App
+	config         ServerConfig
+	token          string
+	staticFS       fs.FS
+	staticHandler  http.Handler
+	projectManager projectManagerAPI
 	// projectWebProxyLookup lets tests inject a fake child transport/target
 	// without constructing a full app.ProjectManager.
 	projectWebProxyLookup func(projectID string) (baseURL, apiToken string, transport http.RoundTripper, ok bool)
@@ -116,6 +119,140 @@ type Server struct {
 	// closes it directly: http.Server.Close would also mark the server as shut
 	// down, which would end the Serve loop for good.
 	activeListener net.Listener
+}
+
+type projectManagerAPI interface {
+	Runtime(projectID, path string) (running, external bool, pid int)
+	DelegationInfo(projectID string) (inflight int, spawned, running bool)
+	List(ctx context.Context) ([]project.Project, error)
+	Register(ctx context.Context, name, path string) (*project.Project, error)
+	Unregister(ctx context.Context, projectID string) error
+	Activate(ctx context.Context, projectID string) error
+	Deactivate(ctx context.Context) error
+	CompleteInit(ctx context.Context, projectID string) error
+	ActiveProject(ctx context.Context) (*project.Project, error)
+	StopReport(ctx context.Context, projectID string) (cancelled int, err error)
+	Rename(ctx context.Context, projectID, newName string) error
+	Subscribe(ctx context.Context) <-chan pubsub.Event[project.ManagerEvent]
+	OpenWeb(ctx context.Context, projectID string) (project.WebInstanceSnapshot, error)
+	CloseWeb(ctx context.Context, projectID string) error
+	WebInstance(projectID string) (project.WebInstanceSnapshot, bool)
+	WebInstances() []project.WebInstanceSnapshot
+	WebProxyTarget(projectID string) (baseURL, apiToken string, transport http.RoundTripper, ok bool)
+}
+
+type liveProjectManager struct {
+	manager *project.Manager
+}
+
+func (m liveProjectManager) Runtime(projectID, path string) (bool, bool, int) {
+	return m.manager.Runtime(projectID, path)
+}
+
+func (m liveProjectManager) DelegationInfo(projectID string) (int, bool, bool) {
+	return m.manager.DelegationInfo(projectID)
+}
+
+func (m liveProjectManager) List(ctx context.Context) ([]project.Project, error) {
+	return m.manager.List(ctx)
+}
+
+func (m liveProjectManager) Register(ctx context.Context, name, path string) (*project.Project, error) {
+	return m.manager.Register(ctx, name, path)
+}
+
+func (m liveProjectManager) Unregister(ctx context.Context, projectID string) error {
+	return m.manager.Unregister(ctx, projectID)
+}
+
+func (m liveProjectManager) Activate(ctx context.Context, projectID string) error {
+	return m.manager.Activate(ctx, projectID)
+}
+
+func (m liveProjectManager) Deactivate(ctx context.Context) error {
+	return m.manager.Deactivate(ctx)
+}
+
+func (m liveProjectManager) CompleteInit(ctx context.Context, projectID string) error {
+	return m.manager.CompleteInit(ctx, projectID)
+}
+
+func (m liveProjectManager) ActiveProject(ctx context.Context) (*project.Project, error) {
+	return m.manager.ActiveProject(ctx)
+}
+
+func (m liveProjectManager) StopReport(ctx context.Context, projectID string) (int, error) {
+	return m.manager.StopReport(ctx, projectID)
+}
+
+func (m liveProjectManager) Rename(ctx context.Context, projectID, newName string) error {
+	return m.manager.Rename(ctx, projectID, newName)
+}
+
+func (m liveProjectManager) Subscribe(ctx context.Context) <-chan pubsub.Event[project.ManagerEvent] {
+	return m.manager.Subscribe(ctx)
+}
+
+func (m liveProjectManager) OpenWeb(ctx context.Context, projectID string) (project.WebInstanceSnapshot, error) {
+	inst, err := m.manager.OpenWeb(ctx, projectID)
+	if err != nil {
+		return project.WebInstanceSnapshot{}, err
+	}
+	return inst.Snapshot(), nil
+}
+
+func (m liveProjectManager) CloseWeb(ctx context.Context, projectID string) error {
+	return m.manager.CloseWeb(ctx, projectID)
+}
+
+func (m liveProjectManager) WebInstance(projectID string) (project.WebInstanceSnapshot, bool) {
+	inst, ok := m.manager.WebInstance(projectID)
+	if !ok || inst == nil {
+		return project.WebInstanceSnapshot{}, false
+	}
+	return inst.Snapshot(), true
+}
+
+func (m liveProjectManager) WebInstances() []project.WebInstanceSnapshot {
+	instances := m.manager.WebInstances()
+	out := make([]project.WebInstanceSnapshot, 0, len(instances))
+	for _, inst := range instances {
+		if inst == nil {
+			continue
+		}
+		out = append(out, inst.Snapshot())
+	}
+	return out
+}
+
+func (m liveProjectManager) WebProxyTarget(projectID string) (string, string, http.RoundTripper, bool) {
+	inst, ok := m.manager.WebInstance(projectID)
+	if !ok || inst == nil {
+		return "", "", nil, false
+	}
+	baseURL := strings.TrimSpace(inst.BaseURL())
+	apiToken := strings.TrimSpace(inst.APIToken())
+	if baseURL == "" || apiToken == "" {
+		return "", "", nil, false
+	}
+	return baseURL, apiToken, m.manager.WebTransport(), true
+}
+
+func (s *Server) projectManagerAPI() projectManagerAPI {
+	if s.projectManager != nil {
+		return s.projectManager
+	}
+	if s.app == nil || s.app.ProjectManager == nil {
+		return nil
+	}
+	return liveProjectManager{manager: s.app.ProjectManager}
+}
+
+func (s *Server) projectService() project.Service {
+	if s.app == nil {
+		return nil
+	}
+	return s.app.Projects
 }
 
 func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
