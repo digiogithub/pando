@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/llm/modelrouter"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/redact"
 	"github.com/digiogithub/pando/internal/sandbox"
@@ -22,7 +23,7 @@ const (
 available models, list registered projects (command="projects", for
 mesnada_spawn_agent's "project" argument), read session usage, switch session
 modes, and — when the user asks for it and the capability is enabled — change
-this session's model.
+this session's model; "decision-model" tunes the router.
 
 It works like a CLI: pick a command and pass CLI-style arguments. Run it with
 command="help" to list every command, or pass "--help" as args to any command to
@@ -358,6 +359,25 @@ hostname or file path); secrets are always redacted before anything is sent.
 When the user asks to help diagnose an issue, "status" and the debug ID it
 prints is what they quote in a bug report.`,
 			Run: runSetupTelemetry,
+		},
+		{
+			Name:    "decision-model",
+			Summary: "Show, change, test or list models of the shared decision model (System One router)",
+			Usage: `Usage: decision-model [show|set|test|models|clear-key] [flags]
+The decision model is the small routing model shared by model auto mode, persona
+auto-select and the context relevance filter.
+  show        (default) Provider, effective base URL, MASKED API key, model,
+              timeout and which consumers are on.
+  set         Change the saved block. Only the flags you pass are changed:
+                --provider ollama|typesafe|custom   --base-url URL
+                --api-key KEY   --model ID   --timeout-ms N   --keep-alive DUR
+              Validation errors are returned and nothing is saved.
+  test        Probe the saved decision model and report a health verdict.
+  models      List the decision models the provider offers (--all: everything).
+  clear-key   Remove the stored API key.
+The API key is encrypted at rest and never printed; only a masked tail is shown.
+Example: decision-model set --provider ollama --model tev1:0.8b`,
+			Run: runSetupDecisionModel,
 		},
 		{
 			Name:    "sandbox",
@@ -1579,4 +1599,112 @@ func tokenizeSetupArgs(raw string) []string {
 	}
 	flush()
 	return tokens
+}
+
+// ---------------------------------------------------------------------------
+// decision-model
+// ---------------------------------------------------------------------------
+
+// runSetupDecisionModel shows or edits the shared decision model block. Like
+// telemetry it talks to the config package directly; the API key is only ever
+// written (encrypted by the config layer) and never echoed back.
+func runSetupDecisionModel(ctx context.Context, _ *pandoSetupTool, args setupArgs) (string, error) {
+	cfg := config.Get()
+	if cfg == nil {
+		return "", fmt.Errorf("configuration is not loaded")
+	}
+	action := strings.ToLower(strings.TrimSpace(args.Positional(0)))
+	switch action {
+	case "", "show", "status":
+		return modelrouter.RenderStatus(ctx, true)
+	case "test":
+		out, err := modelrouter.RenderStatus(ctx, true)
+		return out, err
+	case "models":
+		return modelrouter.RenderModels(ctx, args.Bool("all"))
+	case "clear-key":
+		if err := config.ClearDecisionModelAPIKey(); err != nil {
+			return "", err
+		}
+		return "Decision model API key cleared.\n", nil
+	case "set":
+		return runSetupDecisionModelSet(ctx, cfg, args)
+	default:
+		return "", fmt.Errorf("unknown decision-model action %q; run decision-model --help for usage", action)
+	}
+}
+
+func runSetupDecisionModelSet(ctx context.Context, cfg *config.Config, args setupArgs) (string, error) {
+	next := cfg.DecisionModel
+	changed := 0
+	if _, ok := args.flags["provider"]; ok {
+		next.Router.Provider = config.DecisionProviderKind(strings.ToLower(strings.TrimSpace(args.String("provider"))))
+		changed++
+	}
+	if _, ok := args.flags["base-url"]; ok {
+		next.Router.BaseURL = strings.TrimSpace(args.String("base-url"))
+		changed++
+	}
+	if _, ok := args.flags["model"]; ok {
+		next.Router.Model = strings.TrimSpace(args.String("model"))
+		changed++
+	}
+	if _, ok := args.flags["keep-alive"]; ok {
+		next.Router.KeepAlive = strings.TrimSpace(args.String("keep-alive"))
+		changed++
+	}
+	if _, ok := args.flags["api-key"]; ok {
+		key := strings.TrimSpace(args.String("api-key"))
+		if key == "" {
+			return "", fmt.Errorf("--api-key needs a value (use clear-key to remove the stored key)")
+		}
+		next.Router.APIKey = key
+		changed++
+	} else {
+		// An empty key tells UpdateDecisionModel to keep the stored one.
+		next.Router.APIKey = ""
+	}
+	if v, ok := args.flags["timeout-ms"]; ok {
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil || n < 0 {
+			return "", fmt.Errorf("--timeout-ms must be a non-negative integer, got %q", v)
+		}
+		next.TimeoutMs = n
+		changed++
+	}
+	if changed == 0 {
+		return "", fmt.Errorf("nothing to set: pass at least one of --provider, --base-url, --api-key, --model, --timeout-ms, --keep-alive")
+	}
+	if errs, _ := config.ValidateDecisionModel(withKeyForValidation(next, cfg.DecisionModel)); len(errs) > 0 {
+		parts := make([]string, len(errs))
+		for i, e := range errs {
+			parts[i] = e.Error()
+		}
+		return "", fmt.Errorf("invalid decision model configuration: %s", strings.Join(parts, "; "))
+	}
+	if err := config.UpdateDecisionModel(next); err != nil {
+		return "", scrubSetupSecret(err, next.Router.APIKey)
+	}
+	out, err := modelrouter.RenderStatus(ctx, false)
+	if err != nil {
+		return "", err
+	}
+	return "Decision model updated.\n\n" + out, nil
+}
+
+// withKeyForValidation keeps the stored key visible to validation when the
+// caller did not pass a new one (an empty key means "keep" on update).
+func withKeyForValidation(next, saved config.DecisionModelConfig) config.DecisionModelConfig {
+	if strings.TrimSpace(next.Router.APIKey) == "" {
+		next.Router.APIKey = saved.Router.APIKey
+	}
+	return next
+}
+
+func scrubSetupSecret(err error, secret string) error {
+	secret = strings.TrimSpace(secret)
+	if len(secret) < 4 {
+		return err
+	}
+	return fmt.Errorf("%s", strings.ReplaceAll(err.Error(), secret, "***"))
 }

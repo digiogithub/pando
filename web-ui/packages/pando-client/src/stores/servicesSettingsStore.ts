@@ -61,6 +61,12 @@ const DEFAULT_REMEMBRANCES: RemembrancesConfig = {
   context_enrichment_events_last_days: 30,
   context_enrichment_use_agent_planner: false,
   context_enrichment_planner_fallback_to_coder: false,
+  context_enrichment_decision_filter_enabled: false,
+  memory_context_decision_filter_enabled: false,
+  context_enrichment_decision_filter_threshold: 0.6,
+  context_enrichment_decision_filter_max_candidates: 32,
+  context_enrichment_decision_filter_max_candidate_chars: 400,
+  context_enrichment_decision_filter_allow_hosted: false,
   // Memory System
   memory_enabled: false,
   memory_context_enrichment_enabled: false,
@@ -166,7 +172,14 @@ export const useServicesSettingsStore = create<ServicesSettingsStore>((set, get)
       set((s) => ({ original: JSON.parse(JSON.stringify(s.config)), dirty: false }))
       useToastStore.getState().addToast('Services settings saved', 'success')
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Save failed'
+      let msg = e instanceof Error ? e.message : 'Save failed'
+      // The server answers validation failures with {"error": "..."}.
+      try {
+        const parsed = JSON.parse(msg) as { error?: string }
+        if (parsed && typeof parsed.error === 'string' && parsed.error) msg = parsed.error
+      } catch {
+        // plain text
+      }
       set({ error: msg })
       useToastStore.getState().addToast(msg, 'error')
     } finally {

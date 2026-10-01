@@ -9,6 +9,7 @@ import { format } from 'date-fns'
 import type { Message, RoutingInfo, ContentPart, ToolCallStatus, ToolKind, ToolCallLocation } from '@pando/client/types'
 import type { StreamingState, ActiveToolCall } from '@pando/client/hooks/useChat'
 import MarkdownLink from '@/components/shared/MarkdownLink'
+import ContextFilterNotice from './ContextFilterNotice'
 import { IconButton, Spinner } from '@/components/ui'
 import {
   Brain, Check, ChevronRight, Copy, Eye, FilePen, FilePlus, FileText, Folder, Globe,
@@ -721,6 +722,9 @@ export default function MessageBubble({ message, streaming, streamingState }: Me
   // System / Persona message: collapsible, hidden by default
   if (message.role === 'system' && message.routing) {
     return <RoutingRow routing={message.routing} text={textContent} />
+  }
+  if (message.role === 'system' && message.contextFilter) {
+    return <ContextFilterNotice info={message.contextFilter} />
   }
   if (message.role === 'system' && message.notice) {
     return <NoticeRow text={message.noticeKey ? t(message.noticeKey) : textContent.trim()} />

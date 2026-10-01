@@ -46,6 +46,7 @@ Pando is a Go-based CLI application that brings AI assistance to your terminal. 
 - **MCP client and server** — connect authenticated MCP servers, or expose Pando as one. [More](docs/mcp-authentication.md)
 - **Desktop Controller** — opt-in accessibility-tree UI automation. [More](docs/desktop-controller.md)
 - **AG-UI** — drive Pando from CopilotKit and other Generative-UI frontends. [More](docs/agui.md)
+- **Decision model** — one small local model (Ollama `tev1:0.8b`) shared by model auto mode, persona auto-select and an opt-in relevance filter for injected context. [More](docs/decision-model.md)
 - **Agent self-service** — `pando_setup` lets the agent inspect its own configuration and models. [More](docs/pando-setup.md)
 - **LLM proxy and multi-instance IPC** — route LLM requests through Pando; running instances discover and talk to each other.
 - **Extensions** — compile-time extensions, Lua hooks and prompt templates. [More](docs/extension-mechanisms.md)
@@ -96,6 +97,7 @@ More commands in [docs/usage.md](docs/usage.md).
 | Output compression filters | [output-filters.md](docs/output-filters.md) |
 | MCP server authentication | [mcp-authentication.md](docs/mcp-authentication.md) |
 | Model pricing and capabilities | [model-catalog.md](docs/model-catalog.md) |
+| Decision model (shared provider and relevance filter) | [decision-model.md](docs/decision-model.md) |
 | Model auto mode (per-prompt routing) | [model-auto-mode.md](docs/model-auto-mode.md) |
 | Remote diagnostics (telemetry) | [telemetry.md](docs/telemetry.md) |
 | AG-UI / CopilotKit | [agui.md](docs/agui.md) |

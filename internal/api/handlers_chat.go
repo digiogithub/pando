@@ -653,7 +653,7 @@ func (s *Server) dispatchSSEEvent(
 		}
 
 	case agent.AgentEventTypeSystemMessage:
-		if event.SystemMessage == "" && event.Routing == nil {
+		if event.SystemMessage == "" && event.Routing == nil && event.ContextFilter == nil {
 			return
 		}
 		payload := map[string]interface{}{
@@ -662,6 +662,9 @@ func (s *Server) dispatchSSEEvent(
 		}
 		if event.Routing != nil {
 			payload["routing"] = event.Routing
+		}
+		if event.ContextFilter != nil {
+			payload["context_filter"] = event.ContextFilter
 		}
 		writeSSEEvent(w, flusher, "system_message", payload)
 

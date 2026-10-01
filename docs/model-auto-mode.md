@@ -1,7 +1,8 @@
 # Model auto mode
 
 Auto mode lets Pando pick the model for each prompt. A tiny **decision model**
-(Ollama `tev1:0.8b`, TypeSafe Jev, or any Jev-compatible gateway) reads the
+(configured once in the shared `[DecisionModel]` block, see [decision-model.md](decision-model.md))
+reads the
 prompt once, answers a single multiple-choice question, and Pando sends the turn
 to the model you configured for the winning route. Expensive models are used for
 hard work, cheap or local ones for quick questions, and you choose the rules.
@@ -45,48 +46,16 @@ threshold applies to. Leave `MinConfidence` at `0` unless you have measured a ne
 
 ## Decision providers
 
-### Ollama (local, default)
-
-Needs Ollama **>= 0.35.0** (System One API) and a decision model:
-
-```sh
-ollama pull tev1:0.8b
-```
-
-- The model picker only lists models whose `/api/tags` `capabilities` contain
-  `decision` ("decision capability filter"). If the list is unfiltered, your
-  Ollama is older than 0.35 or the model is not a decision model.
-- `tev1:0.8b` runs with `num_ctx` 2050, so the state (prompt + history + route
-  descriptions) must fit in about 2K tokens. Pando trims history and truncates
-  long prompts to fit; keep route descriptions short (<= 500 characters each).
-- Local models only: `:cloud` models are rejected by Ollama (HTTP 400).
-- Request body cap is 64 KiB (HTTP 413 above it).
-- `KeepAlive = '30m'` keeps the model loaded; routing then takes tens of ms.
-
-### TypeSafe Jev (hosted)
-
-`Provider = 'typesafe'` uses `https://api.typesafe.ai` with model `jev-latest`
-(32K context). The key comes from `Router.APIKey` or `$TYPESAFE_API_KEY`.
-
-### Custom gateway
-
-`Provider = 'custom'` with `BaseURL` set to the gateway **root** (Pando appends
-`/v1/systemone` and `/v1/models`). Examples:
-
-| Gateway | BaseURL | Model |
-| --- | --- | --- |
-| OpenRouter | `https://openrouter.ai/api` | `typesafe/jev-1.13` |
-| LiteLLM | the proxy `typesafe` route, e.g. `http://localhost:4000/typesafe` | the model alias you configured |
-| Kev / self-hosted | its root URL | its model name |
-
-Add `Headers` for gateways needing extra headers and `APIKey` for bearer auth.
-
-> **Privacy:** with TypeSafe or a custom remote gateway, the user's prompt, recent
-> prompts and attachment names leave your machine to be classified. Use Ollama if
-> that is not acceptable. API keys are stored in the config and masked in the API
-> and UI; they are never logged.
+The decision provider (Ollama `tev1:0.8b`, TypeSafe Jev or a custom Jev-compatible gateway), its
+API key, timeout, privacy implications and the migration from the old `[ModelAutoMode.Router]`
+block are documented in **[decision-model.md](decision-model.md)**. Model auto mode, persona
+auto-select and the context relevance filter all share that one provider. Configure it under
+Settings > Decision model, with `pando_setup decision-model`, or in `[DecisionModel]`; auto mode
+only keeps the routing policy below.
 
 ## Configuration reference
+
+Routing policy only; the provider lives in [`[DecisionModel]`](decision-model.md#configuration).
 
 ```toml
 [ModelAutoMode]
@@ -94,17 +63,8 @@ Enabled        = true     # default false
 DefaultAuto    = true     # new sessions start in Auto when enabled (default true)
 Threshold      = 0.60     # min p(choice) to route (default 0.60)
 MinConfidence  = 0.0      # optional extra gate (default 0 = off)
-TimeoutMs      = 0        # router timeout; 0 = built-in default
 HistoryPrompts = 0        # recent user prompts sent as context; 0 = built-in default
-
-[ModelAutoMode.Router]
-Provider  = 'ollama'      # ollama | typesafe | custom (default ollama)
-BaseURL   = ''            # empty = provider default (Ollama localhost:11434, TypeSafe API); required for custom
-Model     = 'tev1:0.8b'
-KeepAlive = '30m'
-APIKey    = ''            # or $TYPESAFE_API_KEY for typesafe
-# [ModelAutoMode.Router.Headers]
-# X-Example = 'value'
+# The decision provider is configured in [DecisionModel] (docs/decision-model.md).
 
 [[ModelAutoMode.Routes]]
 ID          = 'quick'
@@ -142,10 +102,10 @@ shown in the model selector. The WebUI and `pando doctor` report unknown models.
 
 ### Settings UI
 
-Settings > Model auto mode (WebUI) and the TUI equivalent edit everything above:
-decision provider, router model picker (filtered by the `decision` capability),
-routes with fallbacks, threshold. **Test connection** checks reachability, API
-key, Ollama version and that the model is a decision model. The **playground**
+Settings > Model auto mode (WebUI) and the TUI equivalent edit the routing policy above:
+routes with fallbacks, threshold. A read-only row shows the decision model in use and links
+to Settings > Decision model, where the provider, model picker (filtered by the `decision`
+capability) and **Test connection** live. The **playground**
 routes a sample prompt against the current (even unsaved) draft and shows the
 chosen route, probabilities, candidates and why other candidates were skipped,
 without sending anything to an LLM.
@@ -156,18 +116,17 @@ All under `/api/v1` and your normal WebUI auth.
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET/PUT /config/model-auto-mode` | read/save the block (key masked; empty or masked key keeps the stored one; `clearApiKey` removes it) |
-| `GET/POST /model-auto-mode/router/models` | list decision models (POST accepts a draft router) |
-| `POST /model-auto-mode/router/test` | test connection, optional draft router |
-| `GET /model-auto-mode/router/health` | cached (60 s) health |
+| `GET/PUT /config/model-auto-mode` | read/save the routing policy (`router` is a read-only copy of the decision model; a legacy `router` in a PUT is forwarded to the decision model with a deprecation warning) |
+| `/decision-model/router/*`, `/config/decision-model` | provider, model discovery, test and health: see [decision-model.md](decision-model.md#rest-endpoints) (the old `/model-auto-mode/router/*` paths are deprecated aliases) |
 | `POST /model-auto-mode/playground` | route a prompt against the saved or a draft config |
 | `GET /models`, `PUT /models/active` | `auto` entry and selection |
 
 ### `pando doctor`
 
-`pando doctor` includes a Model auto mode section: provider reachability, Ollama
-version (must be >= 0.35), decision model present, route models known. It prints
-the exact fix, for example `ollama pull tev1:0.8b` or "Upgrade Ollama to >= 0.35".
+`pando doctor` includes a Model auto mode section (routes and their models known) and a
+separate Decision model section with provider reachability, Ollama version (must be >= 0.35)
+and decision model presence. It prints the exact fix, for example `ollama pull tev1:0.8b` or
+"Upgrade Ollama to >= 0.35".
 
 ## Routing notices
 
@@ -218,7 +177,7 @@ accuracy 0.90, p50 about 60 ms locally):
 | HTTP 400 on a `:cloud` model | System One is local-only on Ollama; use a local model or TypeSafe |
 | HTTP 401 / 403 | Wrong or missing API key (`$TYPESAFE_API_KEY`) |
 | HTTP 413 | State over 64 KiB; shorten prompt/attachments |
-| Timeouts on first request | Model cold start; raise `TimeoutMs`, keep `KeepAlive` |
+| Timeouts on first request | Model cold start; raise `DecisionModel.TimeoutMs`, keep `KeepAlive` |
 | "route has no usable model" | All candidates unknown/disabled/too small or without attachment support |
 
 ## Validation scripts

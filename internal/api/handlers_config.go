@@ -1236,6 +1236,11 @@ func (s *Server) handleConfigServices(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if err := req.Remembrances.ValidateDecisionFilter(); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
 		if err := config.UpdateMesnada(req.Mesnada); err != nil {
 			writeConfigError(w, http.StatusInternalServerError, "failed to update Mesnada config: "+err.Error(), err)
 			return

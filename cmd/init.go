@@ -394,6 +394,19 @@ Enabled     = false
 PersonaPath = ''    # Directory of persona files to select from
 
 # =============================================================================
+# Decision Model — shared System One / Jev decision provider (model auto mode,
+# persona auto-select, context filter). Ollama >= 0.35, TypeSafe Jev or a
+# custom Jev-compatible gateway. Manage it with: pando_setup decision-model
+# =============================================================================
+[DecisionModel]
+TimeoutMs = 0
+
+[DecisionModel.Router]
+Provider  = 'ollama'
+Model     = ''
+KeepAlive = '30m'
+
+# =============================================================================
 # ACP (Agent Client Protocol) — legacy standalone config block
 # =============================================================================
 [acp]

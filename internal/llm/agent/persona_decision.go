@@ -273,8 +273,8 @@ func resetPersonaState() {
 
 // personaRouterKey identifies the router a cooldown applies to. It never
 // includes the API key.
-func personaRouterKey(auto config.ModelAutoModeConfig) string {
-	return string(auto.Router.EffectiveProvider()) + "|" + auto.Router.EffectiveBaseURL() + "|" + auto.Router.Model
+func personaRouterKey(dec config.DecisionModelConfig) string {
+	return string(dec.Router.EffectiveProvider()) + "|" + dec.Router.EffectiveBaseURL() + "|" + dec.Router.Model
 }
 
 // --- selection --------------------------------------------------------------
@@ -372,29 +372,31 @@ func personaOptions(mgr *persona.Manager) []modelrouter.PersonaOption {
 func decidePersona(ctx context.Context, sel *PersonaSelector, sid string, req personaRequest) personaOutcome {
 	cfg := config.Get()
 	var auto config.ModelAutoModeConfig
+	var dec config.DecisionModelConfig
 	if cfg != nil {
 		auto = cfg.ModelAutoMode
+		dec = cfg.DecisionModel
 	}
 	mgr := personaManager()
 	pd := modelrouter.PersonaDecision{}
 	fromCooldown := false
 
-	key := personaRouterKey(auto)
+	key := personaRouterKey(dec)
 	if c, cooling := personaCooldownFor(key); cooling {
 		fromCooldown = true
 		pd = modelrouter.PersonaDecision{Reason: modelrouter.ReasonRouterError, ErrClass: c.class}
 		logging.Debug("persona_auto: decision model cooling down, using the fallback model", "error_class", c.class)
-	} else if engine, err := modelrouter.PersonaEngineFor(auto); err != nil {
+	} else if engine, err := modelrouter.ForConfig(dec); err != nil {
 		pd = modelrouter.PersonaDecision{Reason: modelrouter.ReasonRouterError, Err: err, ErrClass: "config"}
 	} else {
-		routeCtx, cancel := context.WithTimeout(ctx, auto.EffectiveTimeout()+routerGraceOnTimeout)
+		routeCtx, cancel := context.WithTimeout(ctx, dec.EffectiveTimeout()+routerGraceOnTimeout)
 		query := req.Query
 		if query == "" {
 			query = req.Prompt
 		}
-		pin := modelrouter.PersonaInput{Prompt: query, History: req.History, Personas: personaOptions(mgr)}
+		pin := modelrouter.PersonaInput{Prompt: query, History: req.History, Personas: personaOptions(mgr), HistoryPrompts: auto.HistoryPrompts}
 		if req.Combined != nil {
-			req.Combined.Dec, pd = engine.RouteWithPersona(routeCtx, req.Combined.In, pin)
+			req.Combined.Dec, pd = engine.RouteWithPersona(routeCtx, auto, req.Combined.In, pin)
 			req.Combined.Done = true
 		} else {
 			pd = engine.RoutePersona(routeCtx, pin)

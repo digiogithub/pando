@@ -17,8 +17,10 @@ func doctorCfg(baseURL, model string, route models.ModelID) *config.Config {
 		ModelAutoMode: config.ModelAutoModeConfig{
 			Enabled:   true,
 			Threshold: 0.6,
-			Router:    config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, BaseURL: baseURL, Model: model},
 			Routes:    []config.ModelAutoRoute{{ID: "code", Description: "coding", Model: route}},
+		},
+		DecisionModel: config.DecisionModelConfig{
+			Router: config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, BaseURL: baseURL, Model: model},
 		},
 	}
 }
@@ -26,7 +28,8 @@ func doctorCfg(baseURL, model string, route models.ModelID) *config.Config {
 func runDoctor(t *testing.T, cfg *config.Config) (string, int) {
 	t.Helper()
 	var buf bytes.Buffer
-	n := doctorModelAutoMode(context.Background(), cfg, &buf)
+	n := doctorDecisionModel(context.Background(), cfg, &buf)
+	n += doctorModelAutoMode(context.Background(), cfg, &buf)
 	return buf.String(), n
 }
 
@@ -34,7 +37,7 @@ func TestDoctorModelAutoMode(t *testing.T) {
 	good := systemonetest.NewOllama035(t)
 
 	// Disabled: nothing to check.
-	if out, n := runDoctor(t, &config.Config{}); n != 0 || !strings.Contains(out, "disabled") {
+	if out, n := runDoctor(t, &config.Config{}); n != 0 || !strings.Contains(out, "disabled") || !strings.Contains(out, "not used") {
 		t.Fatalf("disabled: n=%d out=%s", n, out)
 	}
 
@@ -77,8 +80,8 @@ func TestDoctorModelAutoMode(t *testing.T) {
 	// Remote provider with a wrong key.
 	remote := systemonetest.NewRemote(t, systemonetest.WithAPIKey("right"))
 	cfg := doctorCfg(remote.URL, "jev-latest", models.Claude35Haiku)
-	cfg.ModelAutoMode.Router.Provider = config.DecisionProviderCustom
-	cfg.ModelAutoMode.Router.APIKey = "wrong"
+	cfg.DecisionModel.Router.Provider = config.DecisionProviderCustom
+	cfg.DecisionModel.Router.APIKey = "wrong"
 	out, n = runDoctor(t, cfg)
 	if n == 0 || !strings.Contains(out, "credentials") || strings.Contains(out, "wrong") {
 		t.Fatalf("remote unauthorized: n=%d\n%s", n, out)

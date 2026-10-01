@@ -111,12 +111,30 @@
       "webuiAccess": "Acesso WebUI",
       "containerRuntime": "Runtime de contêineres",
       "tokenOptimization": "Otimização de tokens",
-      "sandbox": "Sandbox"
+      "sandbox": "Sandbox",
+      "decisionModel": "Modelo de decisão"
     },
     "remembrances": {
       "hero": {
         "title": "Remembrances",
         "tagline": "Base de conhecimento, eventos e código indexado que persistem entre sessões."
+      },
+      "decisionFilter": {
+        "title": "Filtro de relevância com o modelo de decisão",
+        "description": "Um pequeno modelo de decisão descarta os trechos recuperados que não são relevantes para o prompt antes de injetá-los. Se estiver indisponível, o contexto é injetado sem filtro.",
+        "missing": "Enquanto nenhum estiver configurado, o contexto é injetado sem filtro.",
+        "hostedNote": "Este provedor é remoto: os trechos recuperados são enviados a ele para serem classificados. Provedores hospedados só são usados se você permitir abaixo.",
+        "enabled": "Filtrar o contexto recuperado com o modelo de decisão",
+        "enabledHint": "Aplica-se aos trechos de KB, código e eventos adicionados pelo enriquecimento de contexto.",
+        "memoryEnabled": "Filtrar as memórias injetadas com o modelo de decisão",
+        "memoryEnabledHint": "Aplica-se às memórias armazenadas injetadas pela injeção automática no contexto.",
+        "threshold": "Limite de relevância",
+        "thresholdInvalid": "O limite deve ser maior que 0 e no máximo 1.",
+        "thresholdHint": "Trechos com pontuação abaixo dele são descartados (0–1, padrão 0.6).",
+        "maxCandidates": "Máx. de candidatos",
+        "maxCandidateChars": "Máx. de caracteres por candidato",
+        "allowHosted": "Permitir provedores de decisão hospedados (envia trechos ao provedor)",
+        "allowHostedHint": "Desativado: apenas provedores locais são usados para filtrar, então os trechos nunca saem da sua máquina."
       }
     },
     "mesnada": {
@@ -344,6 +362,80 @@
       "accent": "Cor de destaque",
       "accentDescription": "Usada na ação principal, no foco e na seleção. Todo o resto permanece neutro.",
       "accentDefault": "Padrão do tema"
+    },
+    "decisionModel": {
+      "title": "Modelo de decisão",
+      "description": "Um modelo pequeno que responde a perguntas rápidas de decisão do Pando: roteamento do modo Auto, seleção automática de persona e filtro de contexto. Configure-o uma vez aqui; todas as funções o reutilizam.",
+      "sections": {
+        "provider": "Provedor de decisão",
+        "providerDescription": "O provedor que responde às perguntas de decisão."
+      },
+      "provider": "Provedor",
+      "providers": {
+        "ollama": "Ollama (local)",
+        "typesafe": "TypeSafe Jev",
+        "custom": "Gateway personalizado compatível com Jev"
+      },
+      "preset": "Predefinição",
+      "presetHint": "Preenche a URL base (e o modelo quando conhecido).",
+      "presetChoose": "Escolha uma predefinição…",
+      "baseUrl": "URL base",
+      "baseUrlHint": "Deixe vazio para usar o padrão do provedor.",
+      "apiKey": "Chave de API",
+      "apiKeyStored": "Há uma chave armazenada:",
+      "apiKeyReplace": "Digite uma nova chave para substituí-la.",
+      "apiKeyNone": "Nenhuma chave armazenada.",
+      "apiKeyPlaceholder": "Chave de API",
+      "keepKey": "Manter chave",
+      "clearKey": "Limpar chave",
+      "headers": "Cabeçalhos extras",
+      "headersHint": "Cabeçalhos opcionais enviados em cada requisição ao gateway.",
+      "headerNameOf": "Nome do cabeçalho {{name}}",
+      "headerValueOf": "Valor do cabeçalho {{name}}",
+      "removeHeader": "Remover o cabeçalho {{name}}",
+      "newHeaderName": "Nome do novo cabeçalho",
+      "newHeaderValue": "Valor do novo cabeçalho",
+      "headerName": "Nome do cabeçalho",
+      "headerValue": "Valor",
+      "addHeader": "Adicionar",
+      "keepAlive": "Manter carregado",
+      "keepAliveHint": "Por quanto tempo o Ollama mantém o modelo de decisão carregado (ex.: 30m).",
+      "model": "Modelo de decisão",
+      "modelSelect": "— selecione um modelo —",
+      "modelPlaceholder": "id do modelo",
+      "loadModels": "Carregar modelos",
+      "unsupportedHint": "Este provedor não consegue listar modelos; digite o id do modelo manualmente.",
+      "unfilteredHint": "Este provedor não informa quais modelos suportam decisões; todos os modelos são listados.",
+      "showAll": "Mostrar todos os modelos",
+      "noModels": "Nenhum modelo de decisão encontrado. Instale um com",
+      "suggested": "Modelos de decisão sugeridos:",
+      "pullAria": "Baixar {{name}}",
+      "pull": "Baixar",
+      "pullStarting": "iniciando",
+      "timeout": "Tempo limite (ms)",
+      "timeoutHint": "Limite de uma chamada de decisão. 0 usa o padrão (1500 ms local, 3000 ms remoto).",
+      "connection": "Conexão",
+      "testConnection": "Testar conexão",
+      "report": {
+        "reachable": "Acessível",
+        "authorized": "Autorizado",
+        "version": "Versão ≥ 0.35",
+        "found": "encontrada {{version}}",
+        "modelPresent": "Modelo presente",
+        "decisionCapable": "Modelo apto para decisões",
+        "latency": "Latência"
+      },
+      "health": {
+        "healthy": "Saudável",
+        "unhealthy": "Não saudável"
+      },
+      "inUse": {
+        "label": "Modelo de decisão",
+        "configure": "Configurar",
+        "notConfigured": "Nenhum modelo de decisão está configurado.",
+        "none": "não configurado",
+        "hosted": "Este provedor é remoto: seus prompts saem da sua máquina para serem processados pelo modelo de decisão."
+      }
     }
   },
   "chat": {
@@ -515,6 +607,21 @@
       "noSessions": "Ainda não há sessões",
       "commands": "Comandos",
       "openCommands": "Abrir o lançador de comandos"
+    },
+    "contextFilter": {
+      "summary": "Filtro de contexto: {{kept}}/{{total}} mantidos",
+      "keptOf": "{{kept}}/{{total}} mantidos",
+      "threshold": "Limite: {{value}}",
+      "router": "Modelo de decisão",
+      "partial": "Resultado parcial: {{reason}}",
+      "showDetails": "Mostrar detalhes",
+      "hideDetails": "Ocultar detalhes",
+      "sources": {
+        "code": "Código",
+        "kb": "KB",
+        "events": "Eventos",
+        "memory": "Memórias"
+      }
     }
   },
   "terminal": {

@@ -18,14 +18,14 @@ func TestPersonaLiveOllama(t *testing.T) {
 	if base == "" {
 		base = "http://localhost:11434"
 	}
-	cfg := config.ModelAutoModeConfig{
-		Router:    config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, BaseURL: base, Model: "tev1:0.8b"},
-		TimeoutMs: 20000,
+	cfg := testConfig{ModelAutoModeConfig: config.ModelAutoModeConfig{
 		Routes: []config.ModelAutoRoute{
 			{ID: "implementation", Description: "Write, modify, fix or refactor source code", Model: "m-impl"},
 			{ID: "planning", Description: "Plan, design or analyse architecture before coding", Model: "m-plan"},
 		},
-	}
+	}}
+	cfg.Router = config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, BaseURL: base, Model: "tev1:0.8b"}
+	cfg.TimeoutMs = 20000
 	mgr, err := persona.NewManagerWithBuiltins(builtin.FS, "")
 	if err != nil {
 		t.Fatal(err)
@@ -34,7 +34,7 @@ func TestPersonaLiveOllama(t *testing.T) {
 	for name, desc := range mgr.Descriptions() {
 		personas = append(personas, PersonaOption{Name: name, Description: desc})
 	}
-	e, err := NewEngine(cfg)
+	e, err := newTestEngine(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestPersonaLiveOllama(t *testing.T) {
 	t.Logf("accuracy %d/%d", hits, len(cases))
 
 	// One request must yield both decisions.
-	dec, pd := e.RouteWithPersona(context.Background(),
+	dec, pd := e.RouteWithPersona(context.Background(), cfg.ModelAutoModeConfig,
 		Input{Prompt: cases[0].prompt, CoderModel: coder},
 		PersonaInput{Prompt: cases[0].prompt, Personas: personas})
 	if dec.Err != nil || pd.Err != nil {

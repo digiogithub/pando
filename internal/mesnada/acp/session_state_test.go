@@ -12,10 +12,12 @@ import (
 func enableAutoModeForTest(t *testing.T, enabled bool) {
 	t.Helper()
 	prev := config.Get()
-	config.SetForTests(&config.Config{ModelAutoMode: config.ModelAutoModeConfig{
-		Enabled: enabled,
-		Router:  config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, Model: "tev1:0.8b"},
-	}})
+	config.SetForTests(&config.Config{
+		ModelAutoMode: config.ModelAutoModeConfig{Enabled: enabled},
+		DecisionModel: config.DecisionModelConfig{
+			Router: config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, Model: "tev1:0.8b"},
+		},
+	})
 	t.Cleanup(func() { config.SetForTests(prev) })
 }
 

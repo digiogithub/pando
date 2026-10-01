@@ -10,6 +10,7 @@ import api from '@pando/client/services/api'
 import type { CodeProjectInfo } from '@pando/client/types'
 import { Badge, Button, Input, Select, SettingsRow, SettingsSection, Switch } from '@/components/ui'
 import { SectionHero } from '@/components/brand'
+import DecisionModelInUse from './DecisionModelInUse'
 
 const EMBEDDING_PROVIDERS = ['', 'openai', 'openai-compatible', 'anthropic', 'ollama']
 
@@ -259,6 +260,9 @@ export default function RemembrancesSettings() {
   }
 
   const rem = config.remembrances
+  const filterOn = !!(rem.context_enrichment_decision_filter_enabled || rem.memory_context_decision_filter_enabled)
+  const thr = rem.context_enrichment_decision_filter_threshold ?? 0.6
+  const thresholdInvalid = !(thr > 0 && thr <= 1)
 
   async function handleTestDocEmbedding() {
     setTestingDoc(true)
@@ -633,6 +637,85 @@ export default function RemembrancesSettings() {
             )}
           </div>
         )}
+
+        <div className="p-4 flex flex-col gap-4 border-t border-border" data-testid="rem-decision-filter">
+          <div>
+            <div className="text-sm font-medium text-fg">{t('settings.remembrances.decisionFilter.title', 'Decision model relevance filter')}</div>
+            <div className="text-xs text-muted">
+              {t(
+                'settings.remembrances.decisionFilter.description',
+                'A small decision model drops retrieved snippets that are not relevant to the prompt before they are injected. If it is unavailable, the context is injected unfiltered.',
+              )}
+            </div>
+          </div>
+          <DecisionModelInUse
+            consumerEnabled={filterOn}
+            missingNote={t('settings.remembrances.decisionFilter.missing', 'Until one is configured, the context is injected unfiltered.')}
+            hostedNote={t(
+              'settings.remembrances.decisionFilter.hostedNote',
+              'This provider is remote: retrieved snippets are sent to it to be ranked. Hosted providers are only used when you allow them below.',
+            )}
+            testId="rem-decision-in-use"
+          />
+          <ToggleField
+            id="rem-ctx-decision-filter"
+            label={t('settings.remembrances.decisionFilter.enabled', 'Filter retrieved context with the decision model')}
+            description={t('settings.remembrances.decisionFilter.enabledHint', 'Applies to the KB, code and event snippets added by context enrichment.')}
+            checked={rem.context_enrichment_decision_filter_enabled ?? false}
+            onCheckedChange={(v) => updateRemembrances('context_enrichment_decision_filter_enabled', v)}
+          />
+          <ToggleField
+            id="rem-mem-decision-filter"
+            label={t('settings.remembrances.decisionFilter.memoryEnabled', 'Filter injected memories with the decision model')}
+            description={t('settings.remembrances.decisionFilter.memoryEnabledHint', 'Applies to the stored memories injected by Auto-inject in context.')}
+            checked={rem.memory_context_decision_filter_enabled ?? false}
+            onCheckedChange={(v) => updateRemembrances('memory_context_decision_filter_enabled', v)}
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Field label={t('settings.remembrances.decisionFilter.threshold', 'Relevance threshold')}>
+              <Input
+                type="number"
+                min={0.01}
+                max={1}
+                step={0.05}
+                aria-label={t('settings.remembrances.decisionFilter.threshold', 'Relevance threshold')}
+                value={String(rem.context_enrichment_decision_filter_threshold ?? 0.6)}
+                invalid={thresholdInvalid}
+                onChange={(e) => updateRemembrances('context_enrichment_decision_filter_threshold', Number(e.target.value))}
+              />
+              <p className="text-xs text-muted m-0" role={thresholdInvalid ? 'alert' : undefined} style={thresholdInvalid ? { color: 'var(--danger)' } : undefined}>
+                {thresholdInvalid
+                  ? t('settings.remembrances.decisionFilter.thresholdInvalid', 'The threshold must be greater than 0 and at most 1.')
+                  : t('settings.remembrances.decisionFilter.thresholdHint', 'Snippets scoring below it are dropped (0–1, default 0.6).')}
+              </p>
+            </Field>
+            <Field label={t('settings.remembrances.decisionFilter.maxCandidates', 'Max candidates')}>
+              <Input
+                type="number"
+                min={1}
+                aria-label={t('settings.remembrances.decisionFilter.maxCandidates', 'Max candidates')}
+                value={String(rem.context_enrichment_decision_filter_max_candidates ?? 32)}
+                onChange={(e) => updateRemembrances('context_enrichment_decision_filter_max_candidates', Number(e.target.value))}
+              />
+            </Field>
+            <Field label={t('settings.remembrances.decisionFilter.maxCandidateChars', 'Max characters per candidate')}>
+              <Input
+                type="number"
+                min={1}
+                aria-label={t('settings.remembrances.decisionFilter.maxCandidateChars', 'Max characters per candidate')}
+                value={String(rem.context_enrichment_decision_filter_max_candidate_chars ?? 400)}
+                onChange={(e) => updateRemembrances('context_enrichment_decision_filter_max_candidate_chars', Number(e.target.value))}
+              />
+            </Field>
+          </div>
+          <ToggleField
+            id="rem-ctx-decision-hosted"
+            label={t('settings.remembrances.decisionFilter.allowHosted', 'Allow hosted decision providers (sends snippets to the provider)')}
+            description={t('settings.remembrances.decisionFilter.allowHostedHint', 'Off: only local providers are used for filtering, so snippets never leave your machine.')}
+            checked={rem.context_enrichment_decision_filter_allow_hosted ?? false}
+            onCheckedChange={(v) => updateRemembrances('context_enrichment_decision_filter_allow_hosted', v)}
+          />
+        </div>
       </SettingsSection>
 
       <SettingsSection title="Memory system">

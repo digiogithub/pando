@@ -111,12 +111,30 @@
       "webuiAccess": "Accès WebUI",
       "containerRuntime": "Environnement de conteneurs",
       "tokenOptimization": "Optimisation des tokens",
-      "sandbox": "Sandbox"
+      "sandbox": "Sandbox",
+      "decisionModel": "Modèle de décision"
     },
     "remembrances": {
       "hero": {
         "title": "Remembrances",
         "tagline": "Base de connaissances, événements et code indexé qui persistent d'une session à l'autre."
+      },
+      "decisionFilter": {
+        "title": "Filtre de pertinence avec le modèle de décision",
+        "description": "Un petit modèle de décision écarte les extraits récupérés qui ne sont pas pertinents pour le prompt avant leur injection. S’il est indisponible, le contexte est injecté sans filtrage.",
+        "missing": "Tant qu’aucun n’est configuré, le contexte est injecté sans filtrage.",
+        "hostedNote": "Ce fournisseur est distant : les extraits récupérés lui sont envoyés pour être classés. Les fournisseurs hébergés ne sont utilisés que si vous les autorisez ci-dessous.",
+        "enabled": "Filtrer le contexte récupéré avec le modèle de décision",
+        "enabledHint": "S’applique aux extraits de KB, de code et d’événements ajoutés par l’enrichissement du contexte.",
+        "memoryEnabled": "Filtrer les mémoires injectées avec le modèle de décision",
+        "memoryEnabledHint": "S’applique aux mémoires enregistrées injectées par l’injection automatique dans le contexte.",
+        "threshold": "Seuil de pertinence",
+        "thresholdInvalid": "Le seuil doit être supérieur à 0 et au plus égal à 1.",
+        "thresholdHint": "Les extraits dont le score est inférieur sont écartés (0–1, 0.6 par défaut).",
+        "maxCandidates": "Candidats max.",
+        "maxCandidateChars": "Caractères max. par candidat",
+        "allowHosted": "Autoriser les fournisseurs de décision hébergés (envoie des extraits au fournisseur)",
+        "allowHostedHint": "Désactivé : seuls les fournisseurs locaux servent au filtrage, les extraits ne quittent donc jamais votre machine."
       }
     },
     "mesnada": {
@@ -344,6 +362,80 @@
       "accent": "Couleur d'accent",
       "accentDescription": "Utilisée pour l'action principale, le focus et la sélection. Tout le reste reste neutre.",
       "accentDefault": "Par défaut du thème"
+    },
+    "decisionModel": {
+      "title": "Modèle de décision",
+      "description": "Un petit modèle qui répond aux questions de décision rapides de Pando : routage du mode Auto, sélection automatique de persona et filtre de contexte. Il se configure une seule fois ici ; toutes les fonctions le réutilisent.",
+      "sections": {
+        "provider": "Fournisseur de décision",
+        "providerDescription": "Le fournisseur qui répond aux questions de décision."
+      },
+      "provider": "Fournisseur",
+      "providers": {
+        "ollama": "Ollama (local)",
+        "typesafe": "TypeSafe Jev",
+        "custom": "Passerelle personnalisée compatible Jev"
+      },
+      "preset": "Préréglage",
+      "presetHint": "Renseigne l’URL de base (et le modèle lorsqu’il est connu).",
+      "presetChoose": "Choisir un préréglage…",
+      "baseUrl": "URL de base",
+      "baseUrlHint": "Laisser vide pour utiliser la valeur par défaut du fournisseur.",
+      "apiKey": "Clé d’API",
+      "apiKeyStored": "Une clé est enregistrée :",
+      "apiKeyReplace": "Saisissez une nouvelle clé pour la remplacer.",
+      "apiKeyNone": "Aucune clé enregistrée.",
+      "apiKeyPlaceholder": "Clé d’API",
+      "keepKey": "Conserver la clé",
+      "clearKey": "Effacer la clé",
+      "headers": "En-têtes supplémentaires",
+      "headersHint": "En-têtes facultatifs envoyés avec chaque requête vers la passerelle.",
+      "headerNameOf": "Nom de l’en-tête {{name}}",
+      "headerValueOf": "Valeur de l’en-tête {{name}}",
+      "removeHeader": "Supprimer l’en-tête {{name}}",
+      "newHeaderName": "Nom du nouvel en-tête",
+      "newHeaderValue": "Valeur du nouvel en-tête",
+      "headerName": "Nom de l’en-tête",
+      "headerValue": "Valeur",
+      "addHeader": "Ajouter",
+      "keepAlive": "Maintien en mémoire",
+      "keepAliveHint": "Durée pendant laquelle Ollama garde le modèle de décision chargé (p. ex. 30m).",
+      "model": "Modèle de décision",
+      "modelSelect": "— choisir un modèle —",
+      "modelPlaceholder": "id du modèle",
+      "loadModels": "Charger les modèles",
+      "unsupportedHint": "Ce fournisseur ne peut pas lister les modèles ; saisissez l’id du modèle manuellement.",
+      "unfilteredHint": "Ce fournisseur n’indique pas quels modèles gèrent les décisions ; tous les modèles sont listés.",
+      "showAll": "Afficher tous les modèles",
+      "noModels": "Aucun modèle de décision trouvé. Installez-en un avec",
+      "suggested": "Modèles de décision suggérés :",
+      "pullAria": "Télécharger {{name}}",
+      "pull": "Télécharger",
+      "pullStarting": "démarrage",
+      "timeout": "Délai d’expiration (ms)",
+      "timeoutHint": "Limite d’un appel de décision. 0 utilise la valeur par défaut (1500 ms en local, 3000 ms à distance).",
+      "connection": "Connexion",
+      "testConnection": "Tester la connexion",
+      "report": {
+        "reachable": "Joignable",
+        "authorized": "Autorisé",
+        "version": "Version ≥ 0.35",
+        "found": "trouvée {{version}}",
+        "modelPresent": "Modèle présent",
+        "decisionCapable": "Modèle adapté aux décisions",
+        "latency": "Latence"
+      },
+      "health": {
+        "healthy": "En bonne santé",
+        "unhealthy": "Défaillant"
+      },
+      "inUse": {
+        "label": "Modèle de décision",
+        "configure": "Configurer",
+        "notConfigured": "Aucun modèle de décision n’est configuré.",
+        "none": "non configuré",
+        "hosted": "Ce fournisseur est distant : vos prompts quittent votre machine pour être traités par le modèle de décision."
+      }
     }
   },
   "chat": {
@@ -515,6 +607,21 @@
       "noSessions": "Aucune session",
       "commands": "Commandes",
       "openCommands": "Ouvrir le lanceur de commandes"
+    },
+    "contextFilter": {
+      "summary": "Filtre de contexte : {{kept}}/{{total}} conservés",
+      "keptOf": "{{kept}}/{{total}} conservés",
+      "threshold": "Seuil : {{value}}",
+      "router": "Modèle de décision",
+      "partial": "Résultat partiel : {{reason}}",
+      "showDetails": "Afficher les détails",
+      "hideDetails": "Masquer les détails",
+      "sources": {
+        "code": "Code",
+        "kb": "KB",
+        "events": "Événements",
+        "memory": "Mémoires"
+      }
     }
   },
   "pwa": {

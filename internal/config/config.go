@@ -571,6 +571,27 @@ type RemembrancesConfig struct {
 	// so its tool calls and reasoning can be inspected from the UI.
 	ContextEnrichmentAgentLoopHiddenInChat bool `json:"context_enrichment_agent_loop_hidden_in_chat" toml:"ContextEnrichmentAgentLoopHiddenInChat"`
 
+	// ContextEnrichmentDecisionFilterEnabled asks the shared decision model which
+	// context-enrichment results are relevant before they are injected. Off by default.
+	ContextEnrichmentDecisionFilterEnabled bool `json:"context_enrichment_decision_filter_enabled" toml:"ContextEnrichmentDecisionFilterEnabled"`
+	// MemoryContextDecisionFilterEnabled does the same for the memory context block. Off by default.
+	MemoryContextDecisionFilterEnabled bool `json:"memory_context_decision_filter_enabled" toml:"MemoryContextDecisionFilterEnabled"`
+	// ContextEnrichmentDecisionFilterThreshold is the minimum p(useful) a candidate needs to
+	// be kept by the decision-model relevance filter. 0 = default (0.60); valid range (0, 1].
+	ContextEnrichmentDecisionFilterThreshold float64 `json:"context_enrichment_decision_filter_threshold" toml:"ContextEnrichmentDecisionFilterThreshold"`
+	// ContextEnrichmentDecisionFilterMaxCandidates caps how many candidates per turn are
+	// asked to the decision model; the rest are kept unfiltered. 0 = default (32).
+	ContextEnrichmentDecisionFilterMaxCandidates int `json:"context_enrichment_decision_filter_max_candidates" toml:"ContextEnrichmentDecisionFilterMaxCandidates"`
+	// ContextEnrichmentDecisionFilterMaxCandidateChars caps the text of one candidate sent to
+	// the decision model. 0 = default (400).
+	ContextEnrichmentDecisionFilterMaxCandidateChars int `json:"context_enrichment_decision_filter_max_candidate_chars" toml:"ContextEnrichmentDecisionFilterMaxCandidateChars"`
+	// ContextEnrichmentDecisionFilterAllowHosted lets the relevance filter send snippets to a
+	// hosted decision provider (typesafe/custom). Inverted flag: the filter is local-only
+	// (ollama) by default, so an absent key and old clients that omit the field keep the safe
+	// behaviour. The config file is rewritten from a raw struct on every save, so a
+	// "default true" bool would silently flip to false; see DecisionFilterLocalOnly.
+	ContextEnrichmentDecisionFilterAllowHosted bool `json:"context_enrichment_decision_filter_allow_hosted" toml:"ContextEnrichmentDecisionFilterAllowHosted"`
+
 	// Memory System — key/value store layered on top of KB with TTL, scoping, and auto-injection.
 	MemoryEnabled                  bool     `json:"memory_enabled" toml:"MemoryEnabled"`
 	MemoryContextEnrichmentEnabled bool     `json:"memory_context_enrichment_enabled" toml:"MemoryContextEnrichmentEnabled"`
@@ -1285,7 +1306,9 @@ type Config struct {
 	CLIAssist         CLIAssistConfig         `json:"cliAssist,omitempty" toml:"cliAssist"`
 	PersonaAutoSelect PersonaAutoSelectConfig `json:"personaAutoSelect,omitempty"`
 	// ModelAutoMode routes each user prompt to a configured model (see model_auto_mode.go).
-	ModelAutoMode     ModelAutoModeConfig     `json:"modelAutoMode" mapstructure:"modelAutoMode" toml:"ModelAutoMode"`
+	ModelAutoMode ModelAutoModeConfig `json:"modelAutoMode" mapstructure:"modelAutoMode" toml:"ModelAutoMode"`
+	// DecisionModel is the shared decision provider (see decision_model.go).
+	DecisionModel     DecisionModelConfig     `json:"decisionModel" mapstructure:"decisionModel" toml:"DecisionModel"`
 	ACP               ACPConfig               `json:"acp,omitempty" toml:"acp"`
 	OpenLit           OpenLitConfig           `json:"openlit,omitempty" toml:"OpenLit"`
 	Projects          ProjectsConfig          `json:"projects,omitempty" toml:"Projects"`
@@ -2587,10 +2610,10 @@ func setDefaults(debug bool) {
 
 	viper.SetDefault("modelAutoMode.enabled", false)
 	viper.SetDefault("modelAutoMode.defaultAuto", true)
-	viper.SetDefault("modelAutoMode.router.provider", string(DecisionProviderOllama))
+	viper.SetDefault("decisionModel.router.provider", string(DecisionProviderOllama))
+	viper.SetDefault("decisionModel.timeoutMs", 0)
 	viper.SetDefault("modelAutoMode.threshold", defaultModelAutoThreshold)
 	viper.SetDefault("modelAutoMode.minConfidence", 0.0)
-	viper.SetDefault("modelAutoMode.timeoutMs", 0)
 	viper.SetDefault("modelAutoMode.historyPrompts", 0)
 	viper.SetDefault("snapshots.enabled", false)
 	viper.SetDefault("snapshots.maxSnapshots", 100)
@@ -2656,6 +2679,12 @@ func setDefaults(debug bool) {
 	viper.SetDefault("remembrances.context_enrichment_code_results", 5)
 	viper.SetDefault("remembrances.context_enrichment_code_project", "")
 	viper.SetDefault("remembrances.context_enrichment_min_score", 0.45)
+	viper.SetDefault("remembrances.context_enrichment_decision_filter_enabled", false)
+	viper.SetDefault("remembrances.context_enrichment_decision_filter_threshold", DefaultDecisionFilterThreshold)
+	viper.SetDefault("remembrances.context_enrichment_decision_filter_max_candidates", DefaultDecisionFilterMaxCandidates)
+	viper.SetDefault("remembrances.context_enrichment_decision_filter_max_candidate_chars", DefaultDecisionFilterMaxCandidateChars)
+	viper.SetDefault("remembrances.context_enrichment_decision_filter_allow_hosted", false)
+	viper.SetDefault("remembrances.memory_context_decision_filter_enabled", false)
 	viper.SetDefault("remembrances.memory_enabled", false)
 	viper.SetDefault("remembrances.memory_context_enrichment_enabled", false)
 	viper.SetDefault("remembrances.memory_context_max_items", 10)
@@ -3029,6 +3058,7 @@ func applyDefaultValues() {
 	normalizeMesnadaDelegationDefaults()
 	normalizeMesnadaOrchestratorDefaults()
 	normalizeTelemetryDefaults()
+	migrateLegacyDecisionModel()
 	normalizeModelAutoModeDefaults()
 	refreshConfiguredDynamicModels()
 	ensureAgentDefaults()
@@ -3127,6 +3157,18 @@ func normalizeRemembrancesDefaults() {
 		if strings.TrimSpace(rem.CodeEmbeddingModel) == "" {
 			rem.CodeEmbeddingModel = rem.DocumentEmbeddingModel
 		}
+	}
+
+	// Relevance filter knobs: viper defaults do not reach this struct, so the
+	// documented defaults are applied here and the settings payload shows them.
+	if rem.ContextEnrichmentDecisionFilterThreshold <= 0 {
+		rem.ContextEnrichmentDecisionFilterThreshold = DefaultDecisionFilterThreshold
+	}
+	if rem.ContextEnrichmentDecisionFilterMaxCandidates <= 0 {
+		rem.ContextEnrichmentDecisionFilterMaxCandidates = DefaultDecisionFilterMaxCandidates
+	}
+	if rem.ContextEnrichmentDecisionFilterMaxCandidateChars <= 0 {
+		rem.ContextEnrichmentDecisionFilterMaxCandidateChars = DefaultDecisionFilterMaxCandidateChars
 	}
 
 	cfg.Remembrances = rem
@@ -5219,6 +5261,10 @@ func UpdateRemembrances(remembrancesCfg RemembrancesConfig) error {
 		return fmt.Errorf("config not loaded")
 	}
 
+	if err := remembrancesCfg.ValidateDecisionFilter(); err != nil {
+		return err
+	}
+
 	oldRemembrances := cfg.Remembrances
 	cfg.Remembrances = remembrancesCfg
 
@@ -5229,6 +5275,11 @@ func UpdateRemembrances(remembrancesCfg RemembrancesConfig) error {
 		return err
 	}
 
+	Bus.Publish(ConfigChangeEvent{
+		Section:   "remembrances",
+		Timestamp: time.Now(),
+		Source:    "config",
+	})
 	return nil
 }
 
@@ -5678,6 +5729,26 @@ func PersonaSelectorUsesDecisionModel() bool {
 		return false
 	}
 	return cfg.Agents[AgentPersonaSelector].UseDecisionModel
+}
+
+// AnyDecisionConsumerEnabled reports whether any consumer of the shared
+// decision model is on: model auto mode, the persona selector
+// (useDecisionModel) or the context relevance filter (context enrichment or
+// memory context). It gates the decision model warm-up.
+func AnyDecisionConsumerEnabled() bool {
+	return cfg.AnyDecisionConsumerEnabled()
+}
+
+// AnyDecisionConsumerEnabled is the *Config form of the package-level
+// predicate. A nil receiver reports false.
+func (c *Config) AnyDecisionConsumerEnabled() bool {
+	if c == nil {
+		return false
+	}
+	return c.ModelAutoMode.Enabled ||
+		c.Agents[AgentPersonaSelector].UseDecisionModel ||
+		c.Remembrances.ContextEnrichmentDecisionFilterEnabled ||
+		c.Remembrances.MemoryContextDecisionFilterEnabled
 }
 
 // UpdateAgentUseDecisionModel sets and persists the UseDecisionModel flag of

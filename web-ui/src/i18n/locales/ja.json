@@ -111,12 +111,30 @@
       "webuiAccess": "WebUI アクセス",
       "containerRuntime": "コンテナランタイム",
       "tokenOptimization": "トークン最適化",
-      "sandbox": "サンドボックス"
+      "sandbox": "サンドボックス",
+      "decisionModel": "判断モデル"
     },
     "remembrances": {
       "hero": {
         "title": "Remembrances",
         "tagline": "セッションをまたいで保持されるナレッジベース、イベント、インデックス済みコード。"
+      },
+      "decisionFilter": {
+        "title": "判断モデルによる関連性フィルター",
+        "description": "小型の判断モデルが、プロンプトに関係のない取得済みスニペットを注入前に除外します。利用できない場合、コンテキストはフィルターなしで注入されます。",
+        "missing": "設定されるまで、コンテキストはフィルターなしで注入されます。",
+        "hostedNote": "このプロバイダーはリモートです。取得したスニペットは順位付けのために送信されます。ホスト型プロバイダーは、以下で許可した場合にのみ使用されます。",
+        "enabled": "取得したコンテキストを判断モデルでフィルターする",
+        "enabledHint": "コンテキスト拡張で追加される KB・コード・イベントのスニペットに適用されます。",
+        "memoryEnabled": "注入するメモリを判断モデルでフィルターする",
+        "memoryEnabledHint": "コンテキストへの自動注入で挿入される保存済みメモリに適用されます。",
+        "threshold": "関連性のしきい値",
+        "thresholdInvalid": "しきい値は 0 より大きく 1 以下にしてください。",
+        "thresholdHint": "これを下回るスニペットは除外されます（0–1、既定 0.6）。",
+        "maxCandidates": "最大候補数",
+        "maxCandidateChars": "候補ごとの最大文字数",
+        "allowHosted": "ホスト型の判断プロバイダーを許可（スニペットがプロバイダーに送信されます）",
+        "allowHostedHint": "オフ：フィルターにはローカルのプロバイダーのみを使用するため、スニペットがマシンの外に出ることはありません。"
       }
     },
     "mesnada": {
@@ -344,6 +362,80 @@
       "accent": "アクセントカラー",
       "accentDescription": "主要なアクション、フォーカス、選択に使われます。それ以外はニュートラルなままです。",
       "accentDefault": "テーマの既定"
+    },
+    "decisionModel": {
+      "title": "判断モデル",
+      "description": "Pando の素早い判断を担う小型モデルです。Auto モードのルーティング、ペルソナの自動選択、コンテキストフィルターに使われます。ここで一度設定すれば、すべての機能が再利用します。",
+      "sections": {
+        "provider": "判断プロバイダー",
+        "providerDescription": "判断の質問に答えるプロバイダーです。"
+      },
+      "provider": "プロバイダー",
+      "providers": {
+        "ollama": "Ollama（ローカル）",
+        "typesafe": "TypeSafe Jev",
+        "custom": "カスタム Jev 互換ゲートウェイ"
+      },
+      "preset": "プリセット",
+      "presetHint": "ベース URL（分かる場合はモデルも）を入力します。",
+      "presetChoose": "プリセットを選択…",
+      "baseUrl": "ベース URL",
+      "baseUrlHint": "空のままにするとプロバイダーの既定値を使用します。",
+      "apiKey": "API キー",
+      "apiKeyStored": "キーが保存されています：",
+      "apiKeyReplace": "新しいキーを入力すると置き換えられます。",
+      "apiKeyNone": "キーは保存されていません。",
+      "apiKeyPlaceholder": "API キー",
+      "keepKey": "キーを保持",
+      "clearKey": "キーを削除",
+      "headers": "追加ヘッダー",
+      "headersHint": "ゲートウェイへのすべてのリクエストに付与する任意のヘッダーです。",
+      "headerNameOf": "ヘッダー {{name}} の名前",
+      "headerValueOf": "ヘッダー {{name}} の値",
+      "removeHeader": "ヘッダー {{name}} を削除",
+      "newHeaderName": "新しいヘッダー名",
+      "newHeaderValue": "新しいヘッダー値",
+      "headerName": "ヘッダー名",
+      "headerValue": "値",
+      "addHeader": "追加",
+      "keepAlive": "キープアライブ",
+      "keepAliveHint": "Ollama が判断モデルをメモリに保持する時間です（例: 30m）。",
+      "model": "判断モデル",
+      "modelSelect": "— モデルを選択 —",
+      "modelPlaceholder": "モデル ID",
+      "loadModels": "モデルを読み込む",
+      "unsupportedHint": "このプロバイダーはモデルを一覧表示できません。モデル ID を手入力してください。",
+      "unfilteredHint": "このプロバイダーはどのモデルが判断に対応しているか判別できないため、すべてのモデルを表示しています。",
+      "showAll": "すべてのモデルを表示",
+      "noModels": "判断モデルが見つかりません。次のコマンドでインストールしてください:",
+      "suggested": "推奨の判断モデル：",
+      "pullAria": "{{name}} を取得",
+      "pull": "取得",
+      "pullStarting": "開始中",
+      "timeout": "タイムアウト（ms）",
+      "timeoutHint": "1 回の判断呼び出しの上限です。0 は既定値（ローカル 1500 ms、リモート 3000 ms）を使用します。",
+      "connection": "接続",
+      "testConnection": "接続をテスト",
+      "report": {
+        "reachable": "到達可能",
+        "authorized": "認可済み",
+        "version": "バージョン ≥ 0.35",
+        "found": "検出 {{version}}",
+        "modelPresent": "モデルあり",
+        "decisionCapable": "判断に対応したモデル",
+        "latency": "レイテンシ"
+      },
+      "health": {
+        "healthy": "正常",
+        "unhealthy": "異常"
+      },
+      "inUse": {
+        "label": "判断モデル",
+        "configure": "設定",
+        "notConfigured": "判断モデルが設定されていません。",
+        "none": "未設定",
+        "hosted": "このプロバイダーはリモートです。プロンプトはマシンの外に送られ、判断モデルで処理されます。"
+      }
     }
   },
   "chat": {
@@ -515,6 +607,21 @@
       "noSessions": "セッションはまだありません",
       "commands": "コマンド",
       "openCommands": "コマンドランチャーを開く"
+    },
+    "contextFilter": {
+      "summary": "コンテキストフィルター：{{kept}}/{{total}} 件を保持",
+      "keptOf": "{{kept}}/{{total}} 件を保持",
+      "threshold": "しきい値：{{value}}",
+      "router": "判断モデル",
+      "partial": "部分的な結果：{{reason}}",
+      "showDetails": "詳細を表示",
+      "hideDetails": "詳細を隠す",
+      "sources": {
+        "code": "コード",
+        "kb": "KB",
+        "events": "イベント",
+        "memory": "メモリ"
+      }
     }
   },
   "pwa": {

@@ -30,6 +30,14 @@ func loadAutoModeConfig(t *testing.T) *Server {
 	return &Server{}
 }
 
+// saveAutoWithRouter stores the shared decision router, then the auto mode block.
+func saveAutoWithRouter(m config.ModelAutoModeConfig, r config.DecisionRouterConfig) error {
+	if err := config.UpdateDecisionModel(config.DecisionModelConfig{Router: r}); err != nil {
+		return err
+	}
+	return config.UpdateModelAutoMode(m)
+}
+
 func validAutoBody() map[string]any {
 	return map[string]any{
 		"enabled":   true,
@@ -63,10 +71,10 @@ func TestGetModelAutoModeMasksKey(t *testing.T) {
 	s := loadAutoModeConfig(t)
 	m := config.ModelAutoModeConfig{
 		Enabled: true,
-		Router:  config.DecisionRouterConfig{Provider: config.DecisionProviderTypeSafe, Model: "jev-latest", APIKey: autoTestKey},
 		Routes:  []config.ModelAutoRoute{{ID: "code", Description: "coding", Model: "claude-3.5-haiku"}},
 	}
-	if err := config.UpdateModelAutoMode(m); err != nil {
+	r := config.DecisionRouterConfig{Provider: config.DecisionProviderTypeSafe, Model: "jev-latest", APIKey: autoTestKey}
+	if err := saveAutoWithRouter(m, r); err != nil {
 		t.Fatal(err)
 	}
 	rec := doJSON(t, s.handleConfigModelAutoMode, http.MethodGet, "/api/v1/config/model-auto-mode", nil)
@@ -106,7 +114,7 @@ func TestPutModelAutoModeKeepsKey(t *testing.T) {
 		if strings.Contains(rec.Body.String(), autoTestKey) {
 			t.Fatal("key leaked in PUT response")
 		}
-		if got := config.Get().ModelAutoMode.Router.EffectiveAPIKey(); got != autoTestKey {
+		if got := config.Get().DecisionModel.Router.EffectiveAPIKey(); got != autoTestKey {
 			t.Fatalf("stored key = %q, want kept", got)
 		}
 	}
@@ -123,7 +131,7 @@ func TestPutModelAutoModeKeepsKey(t *testing.T) {
 	}
 	var resp ModelAutoModeResponse
 	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
-	if resp.Router.APIKeySet || config.Get().ModelAutoMode.Router.EffectiveAPIKey() != "" {
+	if resp.Router.APIKeySet || config.Get().DecisionModel.Router.EffectiveAPIKey() != "" {
 		t.Fatalf("key not cleared: %+v", resp.Router)
 	}
 }
@@ -167,7 +175,7 @@ func TestRouterTestEndpointDraft(t *testing.T) {
 	ollama := systemonetest.NewOllama035(t)
 
 	// Nothing saved: the draft is probed.
-	rec := doJSON(t, s.handleModelAutoRouterTest, http.MethodPost, "/x", map[string]any{
+	rec := doJSON(t, s.handleDecisionRouterTest, http.MethodPost, "/x", map[string]any{
 		"router": map[string]any{"provider": "ollama", "baseURL": ollama.URL, "model": "tev1:0.8b"},
 	})
 	if rec.Code != http.StatusOK {
@@ -188,7 +196,7 @@ func TestRouterTestEndpointDraft(t *testing.T) {
 	}
 
 	// A missing model reports a problem with the pull hint, draft still used.
-	rec = doJSON(t, s.handleModelAutoRouterTest, http.MethodPost, "/x", map[string]any{
+	rec = doJSON(t, s.handleDecisionRouterTest, http.MethodPost, "/x", map[string]any{
 		"router": map[string]any{"provider": "ollama", "baseURL": ollama.URL, "model": "nope:1b"},
 	})
 	resp.OK, resp.Problems = true, nil
@@ -198,7 +206,7 @@ func TestRouterTestEndpointDraft(t *testing.T) {
 	}
 
 	// Saved config is untouched by drafts.
-	if config.Get().ModelAutoMode.Router.Model != "" {
+	if config.Get().DecisionModel.Router.Model != "" {
 		t.Fatal("draft test must not persist anything")
 	}
 }
@@ -209,8 +217,8 @@ func TestRouterEndpointsNeverEchoKey(t *testing.T) {
 	draft := map[string]any{"provider": "custom", "baseURL": remote.URL, "model": "jev-latest", "apiKey": autoTestKey}
 
 	for name, h := range map[string]http.HandlerFunc{
-		"test":   s.handleModelAutoRouterTest,
-		"models": s.handleModelAutoRouterModels,
+		"test":   s.handleDecisionRouterTest,
+		"models": s.handleDecisionRouterModels,
 	} {
 		rec := doJSON(t, h, http.MethodPost, "/x", map[string]any{"router": draft})
 		if strings.Contains(rec.Body.String(), autoTestKey) {
@@ -219,14 +227,12 @@ func TestRouterEndpointsNeverEchoKey(t *testing.T) {
 	}
 
 	// Saved key is reused only for the same target and never echoed.
-	saved := config.ModelAutoModeConfig{
-		Enabled: true,
-		Router:  config.DecisionRouterConfig{Provider: config.DecisionProviderCustom, BaseURL: remote.URL, Model: "jev-latest", APIKey: "the-real-server-key"},
-	}
-	if err := config.UpdateModelAutoMode(saved); err != nil {
+	saved := config.ModelAutoModeConfig{Enabled: true}
+	savedRouter := config.DecisionRouterConfig{Provider: config.DecisionProviderCustom, BaseURL: remote.URL, Model: "jev-latest", APIKey: "the-real-server-key"}
+	if err := saveAutoWithRouter(saved, savedRouter); err != nil {
 		t.Fatal(err)
 	}
-	rec := doJSON(t, s.handleModelAutoRouterTest, http.MethodPost, "/x", map[string]any{
+	rec := doJSON(t, s.handleDecisionRouterTest, http.MethodPost, "/x", map[string]any{
 		"router": map[string]any{"provider": "custom", "baseURL": remote.URL, "model": "jev-latest"},
 	})
 	if strings.Contains(rec.Body.String(), "the-real-server-key") {
@@ -241,7 +247,7 @@ func TestRouterEndpointsNeverEchoKey(t *testing.T) {
 	}
 	// A different host must NOT receive the stored key.
 	other := systemonetest.NewRemote(t, systemonetest.WithAPIKey("the-real-server-key"))
-	rec = doJSON(t, s.handleModelAutoRouterTest, http.MethodPost, "/x", map[string]any{
+	rec = doJSON(t, s.handleDecisionRouterTest, http.MethodPost, "/x", map[string]any{
 		"router": map[string]any{"provider": "custom", "baseURL": other.URL, "model": "jev-latest"},
 	})
 	for _, r := range other.Requests() {
@@ -261,7 +267,7 @@ func TestRouterModelsEndpoint(t *testing.T) {
 	ollama := systemonetest.NewOllama035(t)
 	req := httptest.NewRequest(http.MethodGet, "/x?provider=ollama&baseURL="+ollama.URL, nil)
 	rec := httptest.NewRecorder()
-	s.handleModelAutoRouterModels(rec, req)
+	s.handleDecisionRouterModels(rec, req)
 	var resp struct {
 		Models []struct{ ID string } `json:"models"`
 		Status string                `json:"status"`
@@ -300,11 +306,10 @@ func TestPlaygroundDraft(t *testing.T) {
 	draftSrv := systemonetest.NewOllama035(t)
 	draftSrv.SetDecision("code", map[string]float64{"code": 0.95, "chat": 0.03, "none": 0.02})
 
-	if err := config.UpdateModelAutoMode(config.ModelAutoModeConfig{
+	if err := saveAutoWithRouter(config.ModelAutoModeConfig{
 		Enabled: true,
-		Router:  config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, BaseURL: saved.URL, Model: "tev1:0.8b"},
 		Routes:  playgroundRoutes(),
-	}); err != nil {
+	}, config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, BaseURL: saved.URL, Model: "tev1:0.8b"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -361,11 +366,10 @@ func TestPlaygroundNoLLM(t *testing.T) {
 	s := loadAutoModeConfig(t)
 	srv := systemonetest.NewOllama035(t)
 	srv.SetDecision("code", map[string]float64{"code": 0.9, "chat": 0.05, "none": 0.05})
-	if err := config.UpdateModelAutoMode(config.ModelAutoModeConfig{
+	if err := saveAutoWithRouter(config.ModelAutoModeConfig{
 		Enabled: true,
-		Router:  config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, BaseURL: srv.URL, Model: "tev1:0.8b"},
 		Routes:  playgroundRoutes(),
-	}); err != nil {
+	}, config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, BaseURL: srv.URL, Model: "tev1:0.8b"}); err != nil {
 		t.Fatal(err)
 	}
 	if s.app != nil {
@@ -392,7 +396,7 @@ func TestRouterModelsSuggestionsAndPull(t *testing.T) {
 	ollama := systemonetest.NewOllama035(t)
 	req := httptest.NewRequest(http.MethodGet, "/x?provider=ollama&baseURL="+ollama.URL, nil)
 	rec := httptest.NewRecorder()
-	s.handleModelAutoRouterModels(rec, req)
+	s.handleDecisionRouterModels(rec, req)
 	var resp struct {
 		Suggestions []string `json:"suggestions"`
 	}
@@ -405,12 +409,12 @@ func TestRouterModelsSuggestionsAndPull(t *testing.T) {
 	router := map[string]any{"provider": "ollama", "baseURL": ollama.URL}
 
 	// Non-suggested model: rejected, nothing reaches the server.
-	rec = doJSON(t, s.handleModelAutoRouterPull, http.MethodPost, "/x", map[string]any{"model": "llama3:70b", "router": router})
+	rec = doJSON(t, s.handleDecisionRouterPull, http.MethodPost, "/x", map[string]any{"model": "llama3:70b", "router": router})
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("non-suggested: %d %s", rec.Code, rec.Body.String())
 	}
 	// Non-ollama provider: rejected.
-	rec = doJSON(t, s.handleModelAutoRouterPull, http.MethodPost, "/x", map[string]any{
+	rec = doJSON(t, s.handleDecisionRouterPull, http.MethodPost, "/x", map[string]any{
 		"model": "nimble", "router": map[string]any{"provider": "custom", "baseURL": ollama.URL}})
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("custom provider: %d", rec.Code)
@@ -419,7 +423,7 @@ func TestRouterModelsSuggestionsAndPull(t *testing.T) {
 		t.Fatal("pull reached the server on rejected requests")
 	}
 
-	rec = doJSON(t, s.handleModelAutoRouterPull, http.MethodPost, "/x", map[string]any{"model": "nimble", "router": router})
+	rec = doJSON(t, s.handleDecisionRouterPull, http.MethodPost, "/x", map[string]any{"model": "nimble", "router": router})
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("pull: %d %s", rec.Code, rec.Body.String())
 	}
@@ -432,7 +436,7 @@ func TestRouterModelsSuggestionsAndPull(t *testing.T) {
 		jr := httptest.NewRequest(http.MethodGet, "/x", nil)
 		jr.SetPathValue("id", job.ID)
 		jrec := httptest.NewRecorder()
-		s.handleModelAutoRouterPullJob(jrec, jr)
+		s.handleDecisionRouterPullJob(jrec, jr)
 		var st struct {
 			State string `json:"state"`
 		}

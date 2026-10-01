@@ -19,7 +19,8 @@ func TestPersonaTelemetryPrivacy(t *testing.T) {
 	const apiKey = "sk-router-secret-key-456"
 	env := newPersonaEnv(t, true, withAutoConfig(func(m *config.ModelAutoModeConfig) {
 		m.Enabled = false
-		m.Router.APIKey = apiKey
+	}), withDecisionConfig(func(d *config.DecisionModelConfig) {
+		d.Router.APIKey = apiKey
 	}))
 	sid := env.personaSession("p-telemetry")
 

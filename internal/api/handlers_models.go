@@ -333,7 +333,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if auto := autoModelInfo(ctx, cfg.ModelAutoMode); auto != nil {
+	if auto := autoModelInfo(ctx, cfg.ModelAutoMode, cfg.DecisionModel); auto != nil {
 		allModels = append([]ModelInfo{*auto}, allModels...)
 	}
 
@@ -347,7 +347,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 // autoModelInfo builds the synthetic "Auto" entry listed first in every model
 // selector when model auto mode is enabled. Router health comes from the
 // process-wide 60s cache, bounded so a dead router never stalls the listing.
-func autoModelInfo(ctx context.Context, m config.ModelAutoModeConfig) *ModelInfo {
+func autoModelInfo(ctx context.Context, m config.ModelAutoModeConfig, d config.DecisionModelConfig) *ModelInfo {
 	if !m.Enabled {
 		return nil
 	}
@@ -357,13 +357,13 @@ func autoModelInfo(ctx context.Context, m config.ModelAutoModeConfig) *ModelInfo
 		Provider:       "auto",
 		Description:    "Routes each prompt to the best configured model",
 		Badges:         []string{"auto"},
-		RouterProvider: string(m.Router.EffectiveProvider()),
-		RouterModel:    m.Router.Model,
+		RouterProvider: string(d.Router.EffectiveProvider()),
+		RouterModel:    d.Router.Model,
 		RouterProblems: []string{},
 	}
 	hctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	report, err := modelrouter.RouterHealth(hctx, m)
+	report, err := modelrouter.RouterHealth(hctx, d)
 	switch {
 	case err != nil:
 		info.RouterProblems = []string{err.Error()}

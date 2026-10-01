@@ -3065,8 +3065,8 @@ func decodeSessionUpdateRecords(t *testing.T, raw string) []acpUpdateRecord {
 
 func TestAvailableCommands_ExposeGoalSlashCommands(t *testing.T) {
 	commands := availableCommands()
-	if len(commands) != 23 {
-		t.Fatalf("expected 23 available commands, got %d", len(commands))
+	if len(commands) != 24 {
+		t.Fatalf("expected 24 available commands, got %d", len(commands))
 	}
 
 	got := map[string]acpsdk.AvailableCommand{}

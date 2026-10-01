@@ -111,12 +111,30 @@
       "webuiAccess": "WebUI-Zugriff",
       "containerRuntime": "Container-Laufzeit",
       "tokenOptimization": "Token-Optimierung",
-      "sandbox": "Sandbox"
+      "sandbox": "Sandbox",
+      "decisionModel": "Entscheidungsmodell"
     },
     "remembrances": {
       "hero": {
         "title": "Remembrances",
         "tagline": "Wissensdatenbank, Ereignisse und indizierter Code, die sitzungsübergreifend erhalten bleiben."
+      },
+      "decisionFilter": {
+        "title": "Relevanzfilter mit dem Entscheidungsmodell",
+        "description": "Ein kleines Entscheidungsmodell verwirft abgerufene Snippets, die für den Prompt nicht relevant sind, bevor sie eingefügt werden. Ist es nicht verfügbar, wird der Kontext ungefiltert eingefügt.",
+        "missing": "Solange keines konfiguriert ist, wird der Kontext ungefiltert eingefügt.",
+        "hostedNote": "Dieser Anbieter ist remote: abgerufene Snippets werden zur Bewertung an ihn gesendet. Gehostete Anbieter werden nur verwendet, wenn Sie sie unten erlauben.",
+        "enabled": "Abgerufenen Kontext mit dem Entscheidungsmodell filtern",
+        "enabledHint": "Gilt für die KB-, Code- und Ereignis-Snippets der Kontextanreicherung.",
+        "memoryEnabled": "Eingefügte Erinnerungen mit dem Entscheidungsmodell filtern",
+        "memoryEnabledHint": "Gilt für die gespeicherten Erinnerungen, die „Automatisch im Kontext einfügen“ einfügt.",
+        "threshold": "Relevanzschwelle",
+        "thresholdInvalid": "Die Schwelle muss größer als 0 und höchstens 1 sein.",
+        "thresholdHint": "Snippets mit niedrigerer Bewertung werden verworfen (0–1, Standard 0.6).",
+        "maxCandidates": "Max. Kandidaten",
+        "maxCandidateChars": "Max. Zeichen pro Kandidat",
+        "allowHosted": "Gehostete Entscheidungsanbieter erlauben (sendet Snippets an den Anbieter)",
+        "allowHostedHint": "Aus: Zum Filtern werden nur lokale Anbieter verwendet, Snippets verlassen Ihren Rechner also nie."
       }
     },
     "mesnada": {
@@ -344,6 +362,80 @@
       "accent": "Akzentfarbe",
       "accentDescription": "Für die Hauptaktion, den Fokus und die Auswahl. Alles andere bleibt neutral.",
       "accentDefault": "Theme-Standard"
+    },
+    "decisionModel": {
+      "title": "Entscheidungsmodell",
+      "description": "Ein kleines Modell, das schnelle Entscheidungsfragen für Pando beantwortet: Routing im Auto-Modus, automatische Persona-Auswahl und den Kontextfilter. Hier einmal konfigurieren; alle Funktionen verwenden es.",
+      "sections": {
+        "provider": "Entscheidungsanbieter",
+        "providerDescription": "Der Anbieter, der die Entscheidungsfragen beantwortet."
+      },
+      "provider": "Anbieter",
+      "providers": {
+        "ollama": "Ollama (lokal)",
+        "typesafe": "TypeSafe Jev",
+        "custom": "Benutzerdefiniertes Jev-kompatibles Gateway"
+      },
+      "preset": "Voreinstellung",
+      "presetHint": "Füllt die Basis-URL (und das Modell, wenn bekannt).",
+      "presetChoose": "Voreinstellung wählen…",
+      "baseUrl": "Basis-URL",
+      "baseUrlHint": "Leer lassen, um den Standard des Anbieters zu verwenden.",
+      "apiKey": "API-Schlüssel",
+      "apiKeyStored": "Ein Schlüssel ist gespeichert:",
+      "apiKeyReplace": "Neuen Schlüssel eingeben, um ihn zu ersetzen.",
+      "apiKeyNone": "Kein Schlüssel gespeichert.",
+      "apiKeyPlaceholder": "API-Schlüssel",
+      "keepKey": "Schlüssel behalten",
+      "clearKey": "Schlüssel löschen",
+      "headers": "Zusätzliche Header",
+      "headersHint": "Optionale Header, die mit jeder Anfrage an das Gateway gesendet werden.",
+      "headerNameOf": "Name von Header {{name}}",
+      "headerValueOf": "Wert von Header {{name}}",
+      "removeHeader": "Header {{name}} entfernen",
+      "newHeaderName": "Name des neuen Headers",
+      "newHeaderValue": "Wert des neuen Headers",
+      "headerName": "Header-Name",
+      "headerValue": "Wert",
+      "addHeader": "Hinzufügen",
+      "keepAlive": "Keep-alive",
+      "keepAliveHint": "Wie lange Ollama das Entscheidungsmodell geladen hält (z. B. 30m).",
+      "model": "Entscheidungsmodell",
+      "modelSelect": "— Modell auswählen —",
+      "modelPlaceholder": "Modell-ID",
+      "loadModels": "Modelle laden",
+      "unsupportedHint": "Dieser Anbieter kann keine Modelle auflisten; Modell-ID manuell eingeben.",
+      "unfilteredHint": "Dieser Anbieter kann nicht angeben, welche Modelle Entscheidungen unterstützen; alle Modelle werden aufgelistet.",
+      "showAll": "Alle Modelle anzeigen",
+      "noModels": "Keine Entscheidungsmodelle gefunden. Installieren Sie eines mit",
+      "suggested": "Vorgeschlagene Entscheidungsmodelle:",
+      "pullAria": "{{name}} laden",
+      "pull": "Laden",
+      "pullStarting": "startet",
+      "timeout": "Timeout (ms)",
+      "timeoutHint": "Obergrenze eines Entscheidungsaufrufs. 0 verwendet den Standard (1500 ms lokal, 3000 ms remote).",
+      "connection": "Verbindung",
+      "testConnection": "Verbindung testen",
+      "report": {
+        "reachable": "Erreichbar",
+        "authorized": "Autorisiert",
+        "version": "Version ≥ 0.35",
+        "found": "gefunden {{version}}",
+        "modelPresent": "Modell vorhanden",
+        "decisionCapable": "Für Entscheidungen geeignetes Modell",
+        "latency": "Latenz"
+      },
+      "health": {
+        "healthy": "Funktionsfähig",
+        "unhealthy": "Nicht funktionsfähig"
+      },
+      "inUse": {
+        "label": "Entscheidungsmodell",
+        "configure": "Konfigurieren",
+        "notConfigured": "Es ist kein Entscheidungsmodell konfiguriert.",
+        "none": "nicht konfiguriert",
+        "hosted": "Dieser Anbieter ist remote: Ihre Prompts verlassen Ihren Rechner, damit das Entscheidungsmodell sie verarbeitet."
+      }
     }
   },
   "chat": {
@@ -515,6 +607,21 @@
       "noSessions": "Noch keine Sitzungen",
       "commands": "Befehle",
       "openCommands": "Befehlsstarter öffnen"
+    },
+    "contextFilter": {
+      "summary": "Kontextfilter: {{kept}}/{{total}} behalten",
+      "keptOf": "{{kept}}/{{total}} behalten",
+      "threshold": "Schwelle: {{value}}",
+      "router": "Entscheidungsmodell",
+      "partial": "Teilergebnis: {{reason}}",
+      "showDetails": "Details anzeigen",
+      "hideDetails": "Details ausblenden",
+      "sources": {
+        "code": "Code",
+        "kb": "KB",
+        "events": "Ereignisse",
+        "memory": "Erinnerungen"
+      }
     }
   },
   "terminal": {

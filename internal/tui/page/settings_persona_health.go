@@ -29,13 +29,13 @@ var (
 
 // personaRouterKey identifies the router a health status belongs to. It never
 // includes the API key.
-func personaRouterHealthKey(m config.ModelAutoModeConfig) string {
+func personaRouterHealthKey(m config.DecisionModelConfig) string {
 	return string(m.Router.EffectiveProvider()) + "|" + m.Router.EffectiveBaseURL() + "|" + m.Router.Model
 }
 
 // personaRouterHealthStatus returns the last known status of the router in
 // cfg, or "checking..." while no probe finished for it.
-func personaRouterHealthStatus(m config.ModelAutoModeConfig) string {
+func personaRouterHealthStatus(m config.DecisionModelConfig) string {
 	personaHealthMu.Lock()
 	defer personaHealthMu.Unlock()
 	if personaHealthKey == personaRouterHealthKey(m) && personaHealthVal != "" {
@@ -50,16 +50,14 @@ func setPersonaRouterHealth(key, status string) {
 	personaHealthKey, personaHealthVal = key, status
 }
 
-// checkPersonaRouterHealth probes the model auto mode router off the UI thread
-// (cached health, short timeout). It returns nil when the persona-selector does
-// not use the decision model or no router model is configured.
+// checkPersonaRouterHealth probes the shared decision model off the UI thread
+// (cached health, short timeout). It returns nil when no model is configured.
 func checkPersonaRouterHealth() tea.Cmd {
 	cfg := config.Get()
-	if cfg == nil || !cfg.Agents[config.AgentPersonaSelector].UseDecisionModel ||
-		strings.TrimSpace(cfg.ModelAutoMode.Router.Model) == "" {
+	if cfg == nil || strings.TrimSpace(cfg.DecisionModel.Router.Model) == "" {
 		return nil
 	}
-	m := cfg.ModelAutoMode
+	m := cfg.DecisionModel
 	return func() tea.Msg {
 		key := personaRouterHealthKey(m)
 		ctx, cancel := context.WithTimeout(context.Background(), personaRouterHealthTimeout)

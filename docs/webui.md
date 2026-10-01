@@ -23,6 +23,21 @@ it inside the native desktop window.
 > running Pando. The server binds to `localhost` by default; think carefully before exposing it
 > with `--host 0.0.0.0` (prefer a VPN such as Tailscale/ZeroTier) and enable WebUI Access below.
 
+## Decision model settings
+
+**Settings > Decision model** (AI group) configures the shared [decision model](decision-model.md)
+once for every feature that needs a quick classifier: provider (Ollama, TypeSafe Jev or a custom
+gateway), base URL, API key (never shown, with keep/clear), extra headers, keep-alive, timeout,
+model discovery with **Pull** for suggested Ollama models, **Test connection** and a privacy note
+for hosted providers. Model auto mode, the `persona-selector` agent and Remembrances show a
+read-only "decision model in use" row that links to this page and warns when their option is on
+and no model is configured. Remembrances also gains the relevance filter toggles, threshold,
+candidate limits and the "allow hosted providers" switch, and the chat shows a
+`Context filter: kept N/M` notice when the filter dropped context.
+
+> The page was implemented and unit-tested (Vitest) with the decision-model work; it has not been
+> exercised by hand in a browser or the desktop app as part of this documentation.
+
 ## WebUI Access (protecting a remotely exposed server)
 
 `pando serve` and `pando app` expose the agent over HTTP — including the bash tool, the

@@ -111,12 +111,30 @@
       "webuiAccess": "Acceso WebUI",
       "containerRuntime": "Entorno de contenedores",
       "tokenOptimization": "Optimización de tokens",
-      "sandbox": "Sandbox"
+      "sandbox": "Sandbox",
+      "decisionModel": "Modelo de decisión"
     },
     "remembrances": {
       "hero": {
         "title": "Remembrances",
         "tagline": "Base de conocimiento, eventos y código indexado que persisten entre sesiones."
+      },
+      "decisionFilter": {
+        "title": "Filtro de relevancia con el modelo de decisión",
+        "description": "Un modelo de decisión pequeño descarta los fragmentos recuperados que no son relevantes para el prompt antes de inyectarlos. Si no está disponible, el contexto se inyecta sin filtrar.",
+        "missing": "Hasta que se configure uno, el contexto se inyecta sin filtrar.",
+        "hostedNote": "Este proveedor es remoto: los fragmentos recuperados se le envían para ordenarlos. Los proveedores alojados solo se usan si lo permites abajo.",
+        "enabled": "Filtrar el contexto recuperado con el modelo de decisión",
+        "enabledHint": "Se aplica a los fragmentos de KB, código y eventos que añade el enriquecimiento de contexto.",
+        "memoryEnabled": "Filtrar las memorias inyectadas con el modelo de decisión",
+        "memoryEnabledHint": "Se aplica a las memorias guardadas que inyecta la inyección automática en el contexto.",
+        "threshold": "Umbral de relevancia",
+        "thresholdInvalid": "El umbral debe ser mayor que 0 y como máximo 1.",
+        "thresholdHint": "Los fragmentos con una puntuación inferior se descartan (0–1, por defecto 0.6).",
+        "maxCandidates": "Máx. de candidatos",
+        "maxCandidateChars": "Máx. de caracteres por candidato",
+        "allowHosted": "Permitir proveedores de decisión alojados (envía fragmentos al proveedor)",
+        "allowHostedHint": "Desactivado: solo se usan proveedores locales para filtrar, así que los fragmentos nunca salen de tu equipo."
       }
     },
     "mesnada": {
@@ -344,6 +362,80 @@
       "accent": "Color de acento",
       "accentDescription": "Se usa para la acción principal, el foco y la selección. Todo lo demás se mantiene neutro.",
       "accentDefault": "Predeterminado del tema"
+    },
+    "decisionModel": {
+      "title": "Modelo de decisión",
+      "description": "Un modelo pequeño que responde preguntas rápidas de decisión para Pando: enrutado del modo Auto, selección automática de persona y filtro de contexto. Se configura una sola vez aquí y lo reutilizan todas las funciones.",
+      "sections": {
+        "provider": "Proveedor de decisión",
+        "providerDescription": "El proveedor que responde a las preguntas de decisión."
+      },
+      "provider": "Proveedor",
+      "providers": {
+        "ollama": "Ollama (local)",
+        "typesafe": "TypeSafe Jev",
+        "custom": "Pasarela personalizada compatible con Jev"
+      },
+      "preset": "Preajuste",
+      "presetHint": "Rellena la URL base (y el modelo cuando se conoce).",
+      "presetChoose": "Elige un preajuste…",
+      "baseUrl": "URL base",
+      "baseUrlHint": "Déjala vacía para usar la predeterminada del proveedor.",
+      "apiKey": "Clave de API",
+      "apiKeyStored": "Hay una clave guardada:",
+      "apiKeyReplace": "Escribe una clave nueva para reemplazarla.",
+      "apiKeyNone": "No hay clave guardada.",
+      "apiKeyPlaceholder": "Clave de API",
+      "keepKey": "Conservar clave",
+      "clearKey": "Borrar clave",
+      "headers": "Cabeceras adicionales",
+      "headersHint": "Cabeceras opcionales que se envían en cada petición a la pasarela.",
+      "headerNameOf": "Nombre de la cabecera {{name}}",
+      "headerValueOf": "Valor de la cabecera {{name}}",
+      "removeHeader": "Quitar la cabecera {{name}}",
+      "newHeaderName": "Nombre de la nueva cabecera",
+      "newHeaderValue": "Valor de la nueva cabecera",
+      "headerName": "Nombre de la cabecera",
+      "headerValue": "Valor",
+      "addHeader": "Añadir",
+      "keepAlive": "Mantener cargado",
+      "keepAliveHint": "Cuánto tiempo mantiene Ollama cargado el modelo de decisión (p. ej. 30m).",
+      "model": "Modelo de decisión",
+      "modelSelect": "— selecciona un modelo —",
+      "modelPlaceholder": "id del modelo",
+      "loadModels": "Cargar modelos",
+      "unsupportedHint": "Este proveedor no puede listar modelos; escribe el id del modelo a mano.",
+      "unfilteredHint": "Este proveedor no indica qué modelos sirven para decisiones; se listan todos.",
+      "showAll": "Mostrar todos los modelos",
+      "noModels": "No se encontraron modelos de decisión. Instala uno con",
+      "suggested": "Modelos de decisión sugeridos:",
+      "pullAria": "Descargar {{name}}",
+      "pull": "Descargar",
+      "pullStarting": "iniciando",
+      "timeout": "Tiempo de espera (ms)",
+      "timeoutHint": "Límite de una llamada de decisión. 0 usa el valor por defecto (1500 ms en local, 3000 ms en remoto).",
+      "connection": "Conexión",
+      "testConnection": "Probar conexión",
+      "report": {
+        "reachable": "Accesible",
+        "authorized": "Autorizado",
+        "version": "Versión ≥ 0.35",
+        "found": "encontrada {{version}}",
+        "modelPresent": "Modelo presente",
+        "decisionCapable": "Modelo apto para decisiones",
+        "latency": "Latencia"
+      },
+      "health": {
+        "healthy": "Operativo",
+        "unhealthy": "No operativo"
+      },
+      "inUse": {
+        "label": "Modelo de decisión",
+        "configure": "Configurar",
+        "notConfigured": "No hay ningún modelo de decisión configurado.",
+        "none": "sin configurar",
+        "hosted": "Este proveedor es remoto: tus prompts salen de tu equipo para que el modelo de decisión los procese."
+      }
     }
   },
   "chat": {
@@ -515,6 +607,21 @@
       "noSessions": "Aún no hay sesiones",
       "commands": "Comandos",
       "openCommands": "Abrir lanzador de comandos"
+    },
+    "contextFilter": {
+      "summary": "Filtro de contexto: conservados {{kept}}/{{total}}",
+      "keptOf": "conservados {{kept}}/{{total}}",
+      "threshold": "Umbral: {{value}}",
+      "router": "Modelo de decisión",
+      "partial": "Resultado parcial: {{reason}}",
+      "showDetails": "Mostrar detalles",
+      "hideDetails": "Ocultar detalles",
+      "sources": {
+        "code": "Código",
+        "kb": "KB",
+        "events": "Eventos",
+        "memory": "Memorias"
+      }
     }
   },
   "terminal": {

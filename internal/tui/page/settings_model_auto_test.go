@@ -6,10 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
-	"github.com/digiogithub/pando/internal/llm/systemone/systemonetest"
 	"github.com/digiogithub/pando/internal/tui/components/settings"
 )
 
@@ -29,7 +27,7 @@ func withModelAutoTUIConfig(t *testing.T) *config.Config {
 		WorkingDir: dir,
 		Debug:      true,
 		Agents:     map[config.AgentName]config.Agent{config.AgentCoder: {Model: modelID}},
-		ModelAutoMode: config.ModelAutoModeConfig{
+		DecisionModel: config.DecisionModelConfig{
 			Router: config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, Model: "tev1:0.8b"},
 		},
 	}
@@ -56,17 +54,27 @@ func TestModelAutoModeSection(t *testing.T) {
 		t.Errorf("title = %q", section.Title)
 	}
 	for _, key := range []string{
-		"modelAutoMode.enabled", "modelAutoMode.defaultAuto", "modelAutoMode.provider",
-		"modelAutoMode.baseURL", "modelAutoMode.apiKey", "modelAutoMode.model",
-		"modelAutoMode.threshold", "modelAutoMode.timeoutMs", "modelAutoMode.historyPrompts",
-		"action:model_auto_test", "action:model_auto_add_route",
+		"modelAutoMode.enabled", "modelAutoMode.defaultAuto",
+		"modelAutoMode.threshold", "modelAutoMode.historyPrompts",
+		"modelAutoMode.info.routerInfo", "modelAutoMode.info.routerHealth", "modelAutoMode.info.routerHint",
+		"action:model_auto_add_route",
 	} {
 		if _, ok := modelAutoFieldByKey(t, cfg, key); !ok {
 			t.Errorf("missing field %q", key)
 		}
 	}
-	if f, _ := modelAutoFieldByKey(t, cfg, "modelAutoMode.baseURL"); !f.Disabled {
-		t.Error("Ollama base URL must be read-only")
+	// The router is owned by the Decision model section: no editable router fields here.
+	for _, key := range []string{
+		"modelAutoMode.provider", "modelAutoMode.baseURL", "modelAutoMode.apiKey",
+		"modelAutoMode.model", "modelAutoMode.timeoutMs", "action:model_auto_test",
+		"action:model_auto_discover", "action:model_auto_clear_key",
+	} {
+		if _, ok := modelAutoFieldByKey(t, cfg, key); ok {
+			t.Errorf("router field %q must not live in the Auto mode section", key)
+		}
+	}
+	if f, _ := modelAutoFieldByKey(t, cfg, "modelAutoMode.info.routerInfo"); f.Value != "ollama/tev1:0.8b" || !f.Disabled {
+		t.Errorf("decision model info row = %+v", f)
 	}
 
 	// Enable, then add and edit a route.
@@ -101,27 +109,6 @@ func TestModelAutoModeSection(t *testing.T) {
 		t.Error("threshold 7 must be rejected")
 	}
 
-	// API key: stored, masked in the section, masked value keeps it.
-	if err := saveModelAutoMode(settings.Field{Key: "modelAutoMode.apiKey", Value: "sk-live-9876"}); err != nil {
-		t.Fatalf("set key: %v", err)
-	}
-	keyField, _ := modelAutoFieldByKey(t, config.Get(), "modelAutoMode.apiKey")
-	if strings.Contains(keyField.Value, "sk-live-9876") || !strings.HasSuffix(keyField.Value, "9876") {
-		t.Errorf("key field must be masked, got %q", keyField.Value)
-	}
-	if err := saveModelAutoMode(settings.Field{Key: "modelAutoMode.apiKey", Value: keyField.Value}); err != nil {
-		t.Fatalf("masked resave: %v", err)
-	}
-	if config.Get().ModelAutoMode.Router.APIKey != "sk-live-9876" {
-		t.Error("masked resave must keep the stored key")
-	}
-
-	// Provider switch resets the model.
-	if err := saveModelAutoMode(settings.Field{Key: "modelAutoMode.provider", Value: "typesafe"}); err == nil {
-		// Enabled + empty model is invalid, so the switch must be refused until a model is chosen.
-		t.Error("switching provider while enabled without a model should fail validation")
-	}
-
 	// Delete the route.
 	if err := deleteModelAutoRoute(0); err != nil {
 		t.Fatalf("delete route: %v", err)
@@ -146,114 +133,6 @@ func TestModelAutoModeSectionRouteCap(t *testing.T) {
 		t.Error("add action must be disabled at the cap")
 	}
 	_ = cfg
-}
-
-func TestModelAutoModeSectionParity(t *testing.T) {
-	cfg := withModelAutoTUIConfig(t)
-	t.Cleanup(func() { setModelAutoDiscovery("", nil); setModelAutoRouterModels(nil) })
-
-	// Presets only for Custom, and they fill the base URL and model.
-	if _, ok := modelAutoFieldByKey(t, cfg, "modelAutoMode.preset"); ok {
-		t.Fatal("preset field must be Custom-only")
-	}
-	if err := saveModelAutoMode(settings.Field{Key: "modelAutoMode.provider", Value: "custom"}); err != nil {
-		t.Fatal(err)
-	}
-	preset, ok := modelAutoFieldByKey(t, config.Get(), "modelAutoMode.preset")
-	if !ok || strings.Join(preset.Options, ",") != "(choose),OpenRouter,LiteLLM,Kev" {
-		t.Fatalf("preset field = %+v", preset)
-	}
-	if err := saveModelAutoMode(settings.Field{Key: "modelAutoMode.preset", Value: "OpenRouter"}); err != nil {
-		t.Fatal(err)
-	}
-	r := config.Get().ModelAutoMode.Router
-	if r.BaseURL != "https://openrouter.ai/api" || r.Model != "typesafe/jev-1.13" {
-		t.Fatalf("openrouter preset: %+v", r)
-	}
-	// Privacy notice names the remote host.
-	prov, _ := modelAutoFieldByKey(t, config.Get(), "modelAutoMode.provider")
-	if !strings.Contains(prov.Hint, "openrouter.ai") {
-		t.Errorf("privacy hint = %q", prov.Hint)
-	}
-	if err := saveModelAutoMode(settings.Field{Key: "modelAutoMode.preset", Value: "Kev"}); err != nil {
-		t.Fatal(err)
-	}
-	if got := config.Get().ModelAutoMode.Router.BaseURL; got != "http://localhost:8009" {
-		t.Errorf("kev preset url = %q", got)
-	}
-
-	// Route reorder.
-	if err := addModelAutoRoute(); err != nil {
-		t.Fatal(err)
-	}
-	if err := addModelAutoRoute(); err != nil {
-		t.Fatal(err)
-	}
-	first := config.Get().ModelAutoMode.Routes[0].ID
-	if err := moveModelAutoRoute(0, 1); err != nil {
-		t.Fatal(err)
-	}
-	if got := config.Get().ModelAutoMode.Routes[1].ID; got != first {
-		t.Errorf("route not moved down: %q", got)
-	}
-	if err := moveModelAutoRoute(0, -1); err == nil {
-		t.Error("moving the first route up must fail")
-	}
-
-	// Show-all toggle appears for a filtered listing; free text when unsupported.
-	setModelAutoDiscovery("filtered", nil)
-	if _, ok := modelAutoFieldByKey(t, config.Get(), "action:model_auto_toggle_show_all"); !ok {
-		t.Error("show-all action missing for filtered listing")
-	}
-	setModelAutoDiscovery("unsupported", nil)
-	if _, ok := modelAutoFieldByKey(t, config.Get(), "action:model_auto_toggle_show_all"); ok {
-		t.Error("show-all must be hidden for unsupported listing")
-	}
-	model, _ := modelAutoFieldByKey(t, config.Get(), "modelAutoMode.model")
-	if model.Type != settings.FieldText {
-		t.Errorf("model field type = %v, want free text", model.Type)
-	}
-}
-
-func TestModelAutoModePullAction(t *testing.T) {
-	cfg := withModelAutoTUIConfig(t)
-	t.Cleanup(func() { setModelAutoDiscovery("", nil) })
-	fake := systemonetest.NewOllama035(t)
-	cfg.ModelAutoMode.Router.BaseURL = fake.URL
-
-	setModelAutoDiscovery("filtered", []string{"nimble"})
-	if _, ok := modelAutoFieldByKey(t, cfg, "action:model_auto_pull:nimble"); !ok {
-		t.Fatal("pull action missing for suggestion")
-	}
-
-	// Non-suggested models never reach the server.
-	_ = pullModelAutoModel("llama3:70b")()
-	if fake.Count("/api/pull") != 0 {
-		t.Fatal("non-suggested model was pulled")
-	}
-
-	var got *modelAutoPullMsg
-	var run func(tea.Cmd)
-	run = func(c tea.Cmd) {
-		if c == nil {
-			return
-		}
-		switch m := c().(type) {
-		case tea.BatchMsg:
-			for _, sub := range m {
-				run(sub)
-			}
-		case modelAutoPullMsg:
-			got = &m
-		}
-	}
-	run(pullModelAutoModel("nimble"))
-	if got == nil || got.err != nil {
-		t.Fatalf("pull result = %+v", got)
-	}
-	if fake.Count("/api/pull") != 1 {
-		t.Fatalf("fake pulls = %d", fake.Count("/api/pull"))
-	}
 }
 
 func agentFieldByKey(cfg *config.Config, key string) (settings.Field, bool) {
@@ -301,7 +180,7 @@ func TestPersonaSelectorDecisionModelFields(t *testing.T) {
 	if f, ok := agentFieldByKey(cfg, "agents.persona-selector.routerHealth"); !ok || f.Value != "checking..." {
 		t.Fatalf("router health before the probe = %+v ok=%v", f, ok)
 	}
-	setPersonaRouterHealth(personaRouterHealthKey(cfg.ModelAutoMode), "Healthy")
+	setPersonaRouterHealth(personaRouterHealthKey(cfg.DecisionModel), "Healthy")
 	if f, _ := agentFieldByKey(cfg, "agents.persona-selector.routerHealth"); f.Value != "Healthy" {
 		t.Fatalf("router health = %q, want Healthy", f.Value)
 	}
@@ -310,12 +189,12 @@ func TestPersonaSelectorDecisionModelFields(t *testing.T) {
 		t.Error("model field missing")
 	}
 
-	cfg.ModelAutoMode.Router.Provider = config.DecisionProviderTypeSafe
+	cfg.DecisionModel.Router.Provider = config.DecisionProviderTypeSafe
 	if _, ok := agentFieldByKey(cfg, "agents.persona-selector.routerPrivacy"); !ok {
 		t.Error("hosted router must show the privacy note")
 	}
-	cfg.ModelAutoMode.Router.Model = ""
-	if f, ok := agentFieldByKey(cfg, "agents.persona-selector.routerWarning"); !ok || !strings.Contains(f.Value, "No router model") {
+	cfg.DecisionModel.Router.Model = ""
+	if f, ok := agentFieldByKey(cfg, "agents.persona-selector.routerWarning"); !ok || !strings.Contains(f.Value, "Not configured") {
 		t.Errorf("warning missing: %+v", f)
 	}
 }
@@ -323,25 +202,21 @@ func TestPersonaSelectorDecisionModelFields(t *testing.T) {
 func TestCheckPersonaRouterHealthCmd(t *testing.T) {
 	cfg := withModelAutoTUIConfig(t)
 
-	// Option off or no router model: no probe at all.
-	if checkPersonaRouterHealth() != nil {
-		t.Fatal("no probe expected while the toggle is off")
-	}
-	cfg.Agents[config.AgentPersonaSelector] = config.Agent{UseDecisionModel: true}
-	cfg.ModelAutoMode.Router.Model = ""
+	// No decision model: no probe at all.
+	cfg.DecisionModel.Router.Model = ""
 	if checkPersonaRouterHealth() != nil {
 		t.Fatal("no probe expected without a router model")
 	}
 
 	// An unreachable router reports Unhealthy without blocking the caller.
-	cfg.ModelAutoMode.Router.Model = "tev1:0.8b"
-	cfg.ModelAutoMode.Router.BaseURL = "http://127.0.0.1:1"
+	cfg.DecisionModel.Router.Model = "tev1:0.8b"
+	cfg.DecisionModel.Router.BaseURL = "http://127.0.0.1:1"
 	cmd := checkPersonaRouterHealth()
 	if cmd == nil {
 		t.Fatal("probe expected")
 	}
 	msg, ok := cmd().(personaRouterHealthMsg)
-	if !ok || !strings.HasPrefix(msg.status, "Unhealthy") || msg.key != personaRouterHealthKey(cfg.ModelAutoMode) {
+	if !ok || !strings.HasPrefix(msg.status, "Unhealthy") || msg.key != personaRouterHealthKey(cfg.DecisionModel) {
 		t.Fatalf("msg = %+v ok=%v", msg, ok)
 	}
 }

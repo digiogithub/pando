@@ -92,6 +92,25 @@ debug = false
 autoCompact = true
 ```
 
+## Decision model
+
+Features that need a small, fast classifier (model auto mode, persona auto-select and the context
+relevance filter) share one provider configured in the top-level `[DecisionModel]` block:
+
+```toml
+[DecisionModel]
+TimeoutMs = 0             # 0 = 1500 ms (ollama) / 3000 ms (remote)
+
+[DecisionModel.Router]
+Provider  = 'ollama'      # ollama | typesafe | custom
+Model     = 'tev1:0.8b'   # ollama pull tev1:0.8b (Ollama >= 0.35)
+KeepAlive = '30m'
+```
+
+Older files that still carry `[ModelAutoMode.Router]` are migrated into this block on load. See
+[decision-model.md](decision-model.md) for the providers, REST endpoints, privacy notes and the
+relevance filter options under `[Remembrances]`.
+
 ## Data Directory and Legacy Database Migration
 
 Pando keeps its SQLite database at `<Data.Directory>/pando.db`, which for a project
@@ -123,5 +142,6 @@ first migration is running.
 - [Remote diagnostics (telemetry)](telemetry.md)
 - [Web UI access control](webui.md)
 - [Model catalog (models.dev)](model-catalog.md)
+- [Decision model](decision-model.md) and [Model auto mode](model-auto-mode.md)
 - [Model auto mode](model-auto-mode.md)
 - [Knowledge Base](knowledge-base.md)

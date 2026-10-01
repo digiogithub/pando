@@ -298,18 +298,18 @@ func (a *agent) beginAutoTurn(
 	var dec modelrouter.Decision
 	if pre != nil {
 		dec = *pre
-	} else if engine, err := modelrouter.ForConfig(auto); err != nil {
+	} else if engine, err := modelrouter.ForConfig(cfg.DecisionModel); err != nil {
 		dec = modelrouter.Decision{
 			Reason:         modelrouter.ReasonRouterError,
 			Err:            err,
 			ErrClass:       "config",
 			Candidates:     []models.ModelID{coder},
-			RouterProvider: string(auto.Router.EffectiveProvider()),
-			RouterModel:    auto.Router.Model,
+			RouterProvider: string(cfg.DecisionModel.Router.EffectiveProvider()),
+			RouterModel:    cfg.DecisionModel.Router.Model,
 		}
 	} else {
-		routeCtx, cancel := context.WithTimeout(ctx, auto.EffectiveTimeout()+routerGraceOnTimeout)
-		dec = engine.Route(routeCtx, in)
+		routeCtx, cancel := context.WithTimeout(ctx, cfg.DecisionModel.EffectiveTimeout()+routerGraceOnTimeout)
+		dec = engine.Route(routeCtx, auto, in)
 		cancel()
 	}
 	if len(dec.Candidates) == 0 && coder != "" {

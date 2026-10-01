@@ -31,6 +31,7 @@ import (
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/ponytail"
 	"github.com/digiogithub/pando/internal/pubsub"
+	"github.com/digiogithub/pando/internal/rag"
 	"github.com/digiogithub/pando/internal/runtime"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/skills"
@@ -257,6 +258,12 @@ type AgentEvent struct {
 	// notice text, e.g. "Auto: implementation → gpt-x (p=0.93, 38 ms via
 	// ollama/tev1:0.8b)"). Nil on every other event.
 	Routing *RoutingInfo
+
+	// ContextFilter is set on the AgentEventTypeSystemMessage event that
+	// announces the decision model dropped part of the injected context
+	// (SystemMessage carries the same text, e.g. "Context filter: kept 4/9
+	// (38 ms) — code 1/3, kb 2/4, events 1/2"). Nil on every other event.
+	ContextFilter *ContextFilterInfo
 }
 
 const (
@@ -1328,6 +1335,17 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 	// Seed the session's memory search with what the user actually typed, before
 	// hooks or context enrichment append to it.
 	promptCtx = withMemoryQuery(promptCtx, memoryQuery)
+	// Relevance filter (decision model): only eligible turns are filtered. The
+	// enrichment and the memory block still run on the others, unfiltered.
+	filterColl := &filterCollector{}
+	enrichCtx := ctx
+	filterEligible := a.contextFilterEligible(ctx, sessionID, session.ParentSessionID)
+	if filterEligible {
+		promptCtx = withFilterCollector(promptCtx, filterColl)
+	} else {
+		promptCtx = rag.WithoutRelevanceFilter(promptCtx)
+		enrichCtx = rag.WithoutRelevanceFilter(ctx)
+	}
 
 	// Resolve persona content to inject into the system prompt.
 	// This is done before creating the user message so the content (user query)
@@ -1365,7 +1383,15 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 				if announce {
 					a.emitStatus(sessionID, eventCh, "\n\n🧠 Context enrichment agent gathering project context...\n", "Context enrichment agent started")
 				}
-				enriched = sessionAware.EnrichContextForSession(ctx, sessionID, content)
+				if fe, ok := sessionAware.(FilteredSessionContextEnricher); ok {
+					var res rag.FilterResult
+					enriched, res = fe.EnrichContextForSessionWithResult(enrichCtx, sessionID, content)
+					if filterEligible {
+						filterColl.add(res)
+					}
+				} else {
+					enriched = sessionAware.EnrichContextForSession(enrichCtx, sessionID, content)
+				}
 				if announce {
 					doneMsg := "✓ Context enrichment done — no additional context found.\n\n"
 					doneStatus := "Context enrichment done: no additional context"
@@ -1377,7 +1403,15 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 				}
 			}
 		} else {
-			enriched = globalContextEnricher.EnrichContext(ctx, content)
+			if fe, ok := globalContextEnricher.(FilteredContextEnricher); ok {
+				var res rag.FilterResult
+				enriched, res = fe.EnrichContextWithResult(enrichCtx, content)
+				if filterEligible {
+					filterColl.add(res)
+				}
+			} else {
+				enriched = globalContextEnricher.EnrichContext(enrichCtx, content)
+			}
 		}
 		if enriched != "" {
 			content = content + "\n\n" + enriched
@@ -1417,6 +1451,7 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 	if err != nil {
 		return a.err(fmt.Errorf("failed to prepare agent provider: %w", err))
 	}
+	a.reportContextFilter(sessionID, eventCh, filterColl.snapshot())
 
 	msgHistory, err = a.ensureHistoryFitsBeforeSend(ctx, sessionID, msgHistory, requestProvider, eventCh)
 	if err != nil {

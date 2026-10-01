@@ -15,12 +15,31 @@ import (
 
 const coder models.ModelID = "coder-model"
 
-func testCfg(srv *systemonetest.Server, routes ...config.ModelAutoRoute) config.ModelAutoModeConfig {
-	return config.ModelAutoModeConfig{
-		Enabled:   true,
-		Router:    config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, BaseURL: srv.URL, Model: "tev1:0.8b"},
-		Threshold: 0.6,
-		Routes:    routes,
+// testConfig bundles the two config blocks an engine needs; the embedded
+// fields are promoted so tests can tweak cfg.Router / cfg.TimeoutMs directly.
+type testConfig struct {
+	config.ModelAutoModeConfig `json:"auto"`
+	config.DecisionModelConfig `json:"decision"`
+}
+
+func newTestEngine(cfg testConfig, opts ...EngineOption) (*Engine, error) {
+	return NewEngine(cfg.DecisionModelConfig, opts...)
+}
+
+func forTestConfig(cfg testConfig) (*Engine, error) {
+	return ForConfig(cfg.DecisionModelConfig)
+}
+
+func personaTestEngine(cfg testConfig) (*Engine, error) {
+	return ForConfig(cfg.DecisionModelConfig)
+}
+
+func testCfg(srv *systemonetest.Server, routes ...config.ModelAutoRoute) testConfig {
+	return testConfig{
+		ModelAutoModeConfig: config.ModelAutoModeConfig{Enabled: true, Threshold: 0.6, Routes: routes},
+		DecisionModelConfig: config.DecisionModelConfig{
+			Router: config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, BaseURL: srv.URL, Model: "tev1:0.8b"},
+		},
 	}
 }
 
@@ -32,16 +51,16 @@ func defaultRoutes() []config.ModelAutoRoute {
 	}
 }
 
-func route(t *testing.T, cfg config.ModelAutoModeConfig, in Input) Decision {
+func route(t *testing.T, cfg testConfig, in Input) Decision {
 	t.Helper()
-	e, err := NewEngine(cfg)
+	e, err := newTestEngine(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if in.CoderModel == "" {
 		in.CoderModel = coder
 	}
-	return e.Route(context.Background(), in)
+	return e.Route(context.Background(), cfg.ModelAutoModeConfig, in)
 }
 
 func TestEngineDecisionRules(t *testing.T) {
@@ -204,20 +223,20 @@ func TestEngineRouterErrors(t *testing.T) {
 	routes := defaultRoutes()
 	cases := []struct {
 		name  string
-		setup func(*systemonetest.Server, *config.ModelAutoModeConfig)
+		setup func(*systemonetest.Server, *testConfig)
 		want  string
 	}{
-		{"unauthorized", func(s *systemonetest.Server, _ *config.ModelAutoModeConfig) { s.FailNext(401) }, ErrClassUnauthorized},
-		{"model not found", func(s *systemonetest.Server, _ *config.ModelAutoModeConfig) { s.FailNext(404) }, ErrClassModelNotFound},
-		{"server", func(s *systemonetest.Server, _ *config.ModelAutoModeConfig) { s.FailNext(500) }, ErrClassServer},
-		{"too large", func(s *systemonetest.Server, _ *config.ModelAutoModeConfig) { s.FailNext(413) }, ErrClassTooLarge},
-		{"bad request", func(s *systemonetest.Server, _ *config.ModelAutoModeConfig) { s.FailNext(400) }, ErrClassBadRequest},
-		{"malformed", func(s *systemonetest.Server, _ *config.ModelAutoModeConfig) { s.SetRawResponse("{nope") }, ErrClassMalformed},
-		{"timeout", func(s *systemonetest.Server, c *config.ModelAutoModeConfig) {
+		{"unauthorized", func(s *systemonetest.Server, _ *testConfig) { s.FailNext(401) }, ErrClassUnauthorized},
+		{"model not found", func(s *systemonetest.Server, _ *testConfig) { s.FailNext(404) }, ErrClassModelNotFound},
+		{"server", func(s *systemonetest.Server, _ *testConfig) { s.FailNext(500) }, ErrClassServer},
+		{"too large", func(s *systemonetest.Server, _ *testConfig) { s.FailNext(413) }, ErrClassTooLarge},
+		{"bad request", func(s *systemonetest.Server, _ *testConfig) { s.FailNext(400) }, ErrClassBadRequest},
+		{"malformed", func(s *systemonetest.Server, _ *testConfig) { s.SetRawResponse("{nope") }, ErrClassMalformed},
+		{"timeout", func(s *systemonetest.Server, c *testConfig) {
 			s.Delay(2 * time.Second)
 			c.TimeoutMs = 150
 		}, ErrClassTimeout},
-		{"unreachable", func(s *systemonetest.Server, c *config.ModelAutoModeConfig) {
+		{"unreachable", func(s *systemonetest.Server, c *testConfig) {
 			c.Router.BaseURL = "http://127.0.0.1:1"
 		}, ErrClassUnreachable},
 	}
@@ -228,13 +247,13 @@ func TestEngineRouterErrors(t *testing.T) {
 			// Warm the budget lookups out of the failure queue: only the
 			// systemone call should consume the scripted failure.
 			tc.setup(srv, &cfg)
-			e, err := NewEngine(cfg, WithProvider(mustProvider(t, cfg)))
+			e, err := newTestEngine(cfg, WithProvider(mustProvider(t, cfg)))
 			if err != nil {
 				t.Fatal(err)
 			}
 			e.budgetSet, e.budget, e.budgetAt = true, 2050, time.Now()
 			start := time.Now()
-			d := e.Route(context.Background(), Input{Prompt: "x", CoderModel: coder})
+			d := e.Route(context.Background(), cfg.ModelAutoModeConfig, Input{Prompt: "x", CoderModel: coder})
 			if d.Reason != ReasonRouterError || d.Err == nil || d.ErrClass != tc.want {
 				t.Fatalf("got reason=%s class=%s err=%v, want class %s", d.Reason, d.ErrClass, d.Err, tc.want)
 			}
@@ -248,9 +267,9 @@ func TestEngineRouterErrors(t *testing.T) {
 	}
 }
 
-func mustProvider(t *testing.T, cfg config.ModelAutoModeConfig) systemone.DecisionProvider {
+func mustProvider(t *testing.T, cfg testConfig) systemone.DecisionProvider {
 	t.Helper()
-	e, err := NewEngine(cfg)
+	e, err := newTestEngine(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,17 +279,21 @@ func mustProvider(t *testing.T, cfg config.ModelAutoModeConfig) systemone.Decisi
 func TestForConfigCaching(t *testing.T) {
 	srv := systemonetest.NewOllama035(t)
 	cfg := testCfg(srv, defaultRoutes()...)
-	a, err := ForConfig(cfg)
+	a, err := forTestConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, _ := ForConfig(cfg)
+	b, _ := forTestConfig(cfg)
 	if a != b {
 		t.Fatal("same config must reuse the engine")
 	}
-	cfg.Threshold = 0.8
-	c, _ := ForConfig(cfg)
+	cfg.Threshold = 0.8 // consumer policy is not part of the engine key
+	if c, _ := forTestConfig(cfg); c != a {
+		t.Fatal("a policy change must not rebuild the engine")
+	}
+	cfg.Router.Model = "other-model"
+	c, _ := forTestConfig(cfg)
 	if c == a {
-		t.Fatal("changed config must rebuild the engine")
+		t.Fatal("changed decision model must rebuild the engine")
 	}
 }

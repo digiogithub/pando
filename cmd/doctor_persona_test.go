@@ -21,7 +21,7 @@ func personaDoctorCfg(baseURL, routerModel string, decision bool, agentModel mod
 		Agents: map[config.AgentName]config.Agent{
 			config.AgentPersonaSelector: {Model: agentModel, UseDecisionModel: decision},
 		},
-		ModelAutoMode: config.ModelAutoModeConfig{
+		DecisionModel: config.DecisionModelConfig{
 			Router: config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, BaseURL: baseURL, Model: routerModel},
 		},
 	}
@@ -46,7 +46,8 @@ func personaMgr(t *testing.T, n int) *persona.Manager {
 func runPersonaDoctor(t *testing.T, cfg *config.Config, mgr *persona.Manager) (string, int) {
 	t.Helper()
 	var buf bytes.Buffer
-	n := doctorPersonaAutoSelect(context.Background(), cfg, mgr, &buf)
+	n := doctorDecisionModel(context.Background(), cfg, &buf)
+	n += doctorPersonaAutoSelect(context.Background(), cfg, mgr, &buf)
 	return buf.String(), n
 }
 
@@ -55,7 +56,7 @@ func TestDoctorPersonaAutoSelect(t *testing.T) {
 
 	// Disabled: one neutral line.
 	out, n := runPersonaDoctor(t, &config.Config{}, nil)
-	if n != 0 || !strings.Contains(out, "disabled") || strings.Count(out, "\n") != 2 {
+	if n != 0 || !strings.Contains(out, "Persona auto-select\n  disabled") {
 		t.Fatalf("disabled: n=%d out=%s", n, out)
 	}
 
@@ -82,7 +83,7 @@ func TestDoctorPersonaAutoSelect(t *testing.T) {
 
 	// No router model.
 	out, n = runPersonaDoctor(t, personaDoctorCfg(good.URL, "", true, models.Claude35Haiku), personaMgr(t, 1))
-	if n == 0 || !strings.Contains(out, "no router model") {
+	if n == 0 || !strings.Contains(out, "no decision model configured") {
 		t.Fatalf("no router model: n=%d\n%s", n, out)
 	}
 

@@ -20,16 +20,21 @@ test.describe('model auto mode', () => {
   })
 
   test('configure routes, test connection, route in playground, save, see Auto first', async ({ page }) => {
-    await page.goto('/settings')
-    await page.getByRole('button', { name: 'Auto mode' }).click()
-
-    await page.getByRole('switch', { name: /Enable Auto mode/ }).click()
+    // The decision provider lives on its own page (deep link: /settings?section=decision-model).
+    await page.goto('/settings?section=decision-model')
     await page.getByLabel('Provider').selectOption('custom')
     if (fakeJev) await page.getByLabel('Base URL').fill(fakeJev)
     await page.getByLabel('Decision model').fill('fake-jev')
 
     await page.getByRole('button', { name: 'Test connection' }).click()
-    await expect(page.getByTestId('ama-test-report')).toContainText('Reachable')
+    await expect(page.getByTestId('dm-test-report')).toContainText('Reachable')
+    await page.getByRole('button', { name: 'Save' }).click()
+    await expect(page.getByText('Decision model settings saved')).toBeVisible()
+
+    // Auto mode shows the saved decision model read-only, with a Configure link.
+    await page.getByRole('button', { name: 'Auto mode' }).click()
+    await expect(page.getByTestId('ama-decision-in-use')).toContainText('fake-jev')
+    await page.getByRole('switch', { name: /Enable Auto mode/ }).click()
 
     await page.getByRole('button', { name: 'Add starter routes' }).click()
     await expect(page.getByLabel('Route 1 id')).toHaveValue('quick_question')

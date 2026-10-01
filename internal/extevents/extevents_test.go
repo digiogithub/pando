@@ -322,3 +322,40 @@ func TestPersonaRoutedPayload(t *testing.T) {
 		t.Errorf("errorClass lost: %v", got[1].Payload)
 	}
 }
+
+func TestContextFilteredPayload(t *testing.T) {
+	c := installSink(t)
+
+	ContextFiltered(ContextFilteredInfo{
+		SessionID: "s1", Kept: 4, Dropped: 5,
+		BySource:  map[string][2]int{"code": {2, 3}, "kb": {2, 2}},
+		Threshold: 0.6, LatencyMs: 42, RouterProvider: "ollama", RouterModel: "tev1:0.8b",
+		Reason: "partial:timeout",
+	})
+	if !waitFor(t, func() bool { return len(c.seen()) == 1 }) {
+		t.Fatalf("expected one event, got %d", len(c.seen()))
+	}
+	ev := c.seen()[0]
+	if ev.Topic != extension.TopicContextFilter || ev.Type != extension.EventFiltered || ev.SessionID != "s1" {
+		t.Fatalf("event = %+v", ev)
+	}
+	want := map[string]any{
+		"kept": float64(4), "dropped": float64(5), "threshold": 0.6, "latencyMs": float64(42),
+		"routerProvider": "ollama", "routerModel": "tev1:0.8b", "reason": "partial:timeout",
+	}
+	for k, v := range want {
+		if ev.Payload[k] != v {
+			t.Errorf("payload[%q] = %v, want %v", k, ev.Payload[k], v)
+		}
+	}
+	bs, _ := ev.Payload["bySource"].(map[string]any)
+	code, _ := bs["code"].(map[string]any)
+	if code["kept"] != float64(2) || code["dropped"] != float64(3) {
+		t.Errorf("bySource = %v", bs)
+	}
+	for _, forbidden := range []string{"prompt", "state", "apiKey", "api_key", "text", "snippet", "candidates"} {
+		if _, has := ev.Payload[forbidden]; has {
+			t.Errorf("payload carries %q", forbidden)
+		}
+	}
+}

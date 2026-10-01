@@ -71,6 +71,7 @@ export {
   Bot,
   Boxes,
   Brain,
+  BrainCircuit,
   Bug,
   Calendar,
   Camera,

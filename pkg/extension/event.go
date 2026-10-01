@@ -53,6 +53,10 @@ const (
 	// EventRouted is the Type of an event reporting that Auto model mode chose
 	// the model for a turn (see TopicModelRoute).
 	EventRouted EventType = "routed"
+
+	// EventFiltered is the Type of an event reporting that the decision model
+	// filtered the context injected into a turn (see TopicContextFilter).
+	EventFiltered EventType = "filtered"
 )
 
 // The topics core publishes. More may be added; an unknown topic is not an
@@ -164,6 +168,25 @@ const (
 	//
 	// Prompt text, history and API keys are never published.
 	TopicPersonaRoute = "persona_route"
+
+	// TopicContextFilter reports one decision-model relevance filtering of the
+	// context injected into a turn (enrichment and memory block), with
+	// EventFiltered as Type. It is published only when something was dropped.
+	// Payload:
+	//
+	//	"kept"           float64             candidates injected
+	//	"dropped"        float64             candidates removed
+	//	"bySource"       map[string]any      per source ("code", "kb", "events",
+	//	                                     "memory"): {"kept": n, "dropped": n}
+	//	"threshold"      float64             p(useful) cut-off in effect
+	//	"latencyMs"      float64             filter round trip
+	//	"routerProvider" string              ollama, typesafe or custom
+	//	"routerModel"    string              the decision model
+	//	"reason"         string              "" on full success, else the error
+	//	                                     class or "partial:<class>"
+	//
+	// Prompt text, snippets and API keys are never published.
+	TopicContextFilter = "context_filter"
 )
 
 // Event is one resource lifecycle notification.

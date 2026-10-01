@@ -3,6 +3,7 @@ package agui
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/digiogithub/pando/internal/llm/agent"
@@ -268,5 +269,32 @@ func TestRoutingNoticeCustomEvent(t *testing.T) {
 	evs = tr.Translate(agent.AgentEvent{Type: agent.AgentEventTypeSystemMessage, SystemMessage: "x"})
 	if c := evs[0].(CustomEvent); c.Name != "pando.system_message" && c.Name != "pando."+string(agent.AgentEventTypeSystemMessage) {
 		t.Fatalf("got %s", c.Name)
+	}
+}
+
+func TestContextFilterNoticeCustomEvent(t *testing.T) {
+	tr := newTranslator("thread-1", "run-1")
+	tr.Start()
+	evs := tr.Translate(agent.AgentEvent{
+		Type:          agent.AgentEventTypeSystemMessage,
+		SystemMessage: "Context filter: kept 4/9 (38 ms) — code 1/3\n",
+		ContextFilter: &agent.ContextFilterInfo{
+			Kept: 4, Dropped: 5, LatencyMs: 38,
+			BySource: map[string]agent.ContextFilterCounts{"code": {Kept: 1, Dropped: 2}},
+		},
+	})
+	assertTypes(t, evs, EventCustom)
+	c, ok := evs[0].(CustomEvent)
+	if !ok || c.Name != "pando.context_filtered" {
+		t.Fatalf("got %#v", evs[0])
+	}
+	raw, _ := json.Marshal(c.Value)
+	var v struct {
+		Text          string                   `json:"text"`
+		ContextFilter *agent.ContextFilterInfo `json:"contextFilter"`
+	}
+	if err := json.Unmarshal(raw, &v); err != nil || v.ContextFilter == nil || v.ContextFilter.Dropped != 5 ||
+		v.ContextFilter.BySource["code"].Kept != 1 || !strings.HasPrefix(v.Text, "Context filter:") {
+		t.Fatalf("bad value %s (%v)", raw, err)
 	}
 }

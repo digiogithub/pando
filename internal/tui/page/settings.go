@@ -159,6 +159,9 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if strings.HasPrefix(msg.Field.Key, "action:model_auto_") {
 			return p, p.handleModelAutoAction(msg.Field.Key)
 		}
+		if strings.HasPrefix(msg.Field.Key, "action:decision_model_") {
+			return p, p.handleDecisionModelAction(msg.Field.Key)
+		}
 		if msg.Field.Key == "action:add_provider" {
 			return p, p.openAddProviderDialog()
 		}
@@ -180,7 +183,8 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Field.Key == "action:telemetry_regenerate_id" {
 			return p, p.regenerateTelemetryID()
 		}
-		if msg.Field.Key == "agents."+string(config.AgentPersonaSelector)+".useDecisionModel" {
+		if msg.Field.Key == "agents."+string(config.AgentPersonaSelector)+".useDecisionModel" ||
+			strings.HasPrefix(msg.Field.Key, decisionKeyPrefix) {
 			return p, tea.Batch(p.saveField(msg), checkPersonaRouterHealth())
 		}
 		return p, p.saveField(msg)
@@ -301,29 +305,29 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return p, util.ReportError(msg.err)
 		}
 		return p, util.ReportInfo(msg.info)
-	case modelAutoTestResultMsg:
+	case decisionTestResultMsg:
 		switch {
 		case msg.err != nil:
-			return p, util.ReportError(fmt.Errorf("router test failed: %w", msg.err))
+			return p, util.ReportError(fmt.Errorf("decision model test failed: %w", msg.err))
 		case msg.ok:
-			return p, util.ReportInfo("Router OK: " + msg.summary)
+			return p, util.ReportInfo("Decision model OK: " + msg.summary)
 		default:
-			return p, util.ReportWarn("Router problems: " + strings.Join(msg.problems, "; "))
+			return p, util.ReportWarn("Decision model problems: " + strings.Join(msg.problems, "; "))
 		}
-	case modelAutoDiscoverMsg:
+	case decisionDiscoverMsg:
 		if msg.err != nil {
-			return p, util.ReportError(fmt.Errorf("discover router models: %w", msg.err))
+			return p, util.ReportError(fmt.Errorf("discover decision models: %w", msg.err))
 		}
-		setModelAutoRouterModels(msg.ids)
-		setModelAutoDiscovery(msg.status, msg.suggestions)
+		setDecisionModels(msg.ids)
+		setDecisionDiscovery(msg.status, msg.suggestions)
 		p.settings.SetSections(buildSections(p.app))
 		p.settings.SetSize(p.width, p.height)
-		return p, util.ReportInfo(fmt.Sprintf("Found %d router model(s)", len(msg.ids)))
-	case modelAutoPullMsg:
+		return p, util.ReportInfo(fmt.Sprintf("Found %d decision model(s)", len(msg.ids)))
+	case decisionPullMsg:
 		if msg.err != nil {
 			return p, util.ReportError(fmt.Errorf("pull %s: %w", msg.model, msg.err))
 		}
-		return p, tea.Batch(util.ReportInfo("Pulled "+msg.model), discoverModelAutoModels())
+		return p, tea.Batch(util.ReportInfo("Pulled "+msg.model), discoverDecisionModels())
 	case configExternalChangeMsg:
 		// Config changed from outside TUI (file or Web-UI): rebuild sections and
 		// re-arm the listener command so we keep receiving future events.
@@ -555,8 +559,7 @@ func (p *settingsPage) saveField(msg settings.SaveFieldMsg) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// handleModelAutoAction runs the Auto mode section actions (add/delete route,
-// clear key, test connection, discover models).
+// handleModelAutoAction runs the Auto mode section actions (add/delete/move route).
 func (p *settingsPage) handleModelAutoAction(key string) tea.Cmd {
 	rebuild := func(info string, err error) tea.Cmd {
 		p.settings.SetSections(buildSections(p.app))
@@ -586,19 +589,33 @@ func (p *settingsPage) handleModelAutoAction(key string) tea.Cmd {
 			return util.ReportError(fmt.Errorf("unsupported action %q", key))
 		}
 		return rebuild("Route moved", moveModelAutoRoute(idx, delta))
-	case strings.HasPrefix(key, "action:model_auto_pull:"):
-		return pullModelAutoModel(strings.TrimPrefix(key, "action:model_auto_pull:"))
-	case key == "action:model_auto_toggle_show_all":
-		modelAutoRouterMu.Lock()
-		modelAutoShowAll = !modelAutoShowAll
-		modelAutoRouterMu.Unlock()
-		return discoverModelAutoModels()
-	case key == "action:model_auto_clear_key":
-		return rebuild("Router API key cleared", config.ClearModelAutoModeAPIKey())
-	case key == "action:model_auto_test":
-		return testModelAutoConnection()
-	case key == "action:model_auto_discover":
-		return discoverModelAutoModels()
+	}
+	return util.ReportError(fmt.Errorf("unsupported action %q", key))
+}
+
+// handleDecisionModelAction runs the Decision model section actions (clear key,
+// test connection, discover and pull models).
+func (p *settingsPage) handleDecisionModelAction(key string) tea.Cmd {
+	switch {
+	case strings.HasPrefix(key, "action:decision_model_pull:"):
+		return pullDecisionModel(strings.TrimPrefix(key, "action:decision_model_pull:"))
+	case key == "action:decision_model_toggle_show_all":
+		decisionMu.Lock()
+		decisionShowAll = !decisionShowAll
+		decisionMu.Unlock()
+		return discoverDecisionModels()
+	case key == "action:decision_model_clear_key":
+		err := config.ClearDecisionModelAPIKey()
+		p.settings.SetSections(buildSections(p.app))
+		p.settings.SetSize(p.width, p.height)
+		if err != nil {
+			return util.ReportError(err)
+		}
+		return util.ReportInfo("Decision model API key cleared")
+	case key == "action:decision_model_test":
+		return testDecisionConnection()
+	case key == "action:decision_model_discover":
+		return discoverDecisionModels()
 	}
 	return util.ReportError(fmt.Errorf("unsupported action %q", key))
 }
@@ -1000,6 +1017,7 @@ func buildSections(app *pandoapp.App) []settings.Section {
 		withGroup(buildProviderAccountsSection(cfg), "AI"),
 		withGroup(buildAgentsSection(cfg), "AI"),
 		withGroup(buildPersonaAutoSelectSection(cfg), "AI"),
+		withGroup(buildDecisionModelSection(cfg), "AI"),
 		withGroup(buildModelAutoModeSection(cfg), "AI"),
 		withGroup(buildEvaluatorSection(cfg), "AI"),
 
@@ -1690,7 +1708,7 @@ func buildAgentsSection(cfg *config.Config) settings.Section {
 func personaSelectorDecisionFields(cfg *config.Config, agentCfg config.Agent) []settings.Field {
 	name := config.AgentPersonaSelector
 	fields := []settings.Field{{
-		Label: fmt.Sprintf("%s Use Decision Model (from model auto mode)", string(name)),
+		Label: fmt.Sprintf("%s Use decision model", string(name)),
 		Key:   fmt.Sprintf("agents.%s.useDecisionModel", name),
 		Value: boolString(agentCfg.UseDecisionModel),
 		Type:  settings.FieldToggle,
@@ -1698,32 +1716,7 @@ func personaSelectorDecisionFields(cfg *config.Config, agentCfg config.Agent) []
 	if !agentCfg.UseDecisionModel {
 		return fields
 	}
-	info := func(suffix, label, value string) settings.Field {
-		return settings.Field{
-			Label:    label,
-			Key:      fmt.Sprintf("agents.%s.%s", name, suffix),
-			Value:    value,
-			Type:     settings.FieldText,
-			Disabled: true,
-		}
-	}
-	router := cfg.ModelAutoMode.Router
-	routerModel := strings.TrimSpace(router.Model)
-	if routerModel == "" {
-		return append(fields, info("routerWarning", "Warning",
-			"No router model is configured in Model auto mode, so the fallback model is used. Configure it in the Auto mode section."))
-	}
-	provider := string(router.Provider)
-	if provider == "" {
-		provider = string(config.DecisionProviderOllama)
-	}
-	fields = append(fields, info("routerInfo", "Router", provider+"/"+routerModel+" (configured in Auto mode)"))
-	fields = append(fields, info("routerHealth", "Router health", personaRouterHealthStatus(cfg.ModelAutoMode)))
-	if provider != string(config.DecisionProviderOllama) {
-		fields = append(fields, info("routerPrivacy", "Privacy",
-			"This provider is remote: your prompts leave your machine to be classified."))
-	}
-	return fields
+	return append(fields, decisionModelInfoRows(cfg, fmt.Sprintf("agents.%s.", name))...)
 }
 
 // agentTokensHint returns a hint string for the MaxTokens field of an agent.
@@ -2777,6 +2770,57 @@ func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Se
 				Value: config.WorkingDirectory(),
 			},
 		)
+	}
+
+	// Decision-model relevance filter for the injected context blocks.
+	fields = append(fields,
+		settings.Field{
+			Label: "Context Relevance Filter",
+			Key:   "remembrances.context_enrichment_decision_filter_enabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(rem.ContextEnrichmentDecisionFilterEnabled),
+			Hint:  "Ask the decision model which enrichment results are relevant to the prompt.",
+		},
+		settings.Field{
+			Label: "Memory Relevance Filter",
+			Key:   "remembrances.memory_context_decision_filter_enabled",
+			Type:  settings.FieldToggle,
+			Value: boolString(rem.MemoryContextDecisionFilterEnabled),
+			Hint:  "Same filter for the memory context block.",
+		},
+	)
+	if rem.ContextEnrichmentDecisionFilterEnabled || rem.MemoryContextDecisionFilterEnabled {
+		fields = append(fields,
+			settings.Field{
+				Label: "Filter Threshold",
+				Key:   "remembrances.context_enrichment_decision_filter_threshold",
+				Type:  settings.FieldText,
+				Value: strconv.FormatFloat(rem.DecisionFilterThreshold(), 'f', -1, 64),
+				Hint:  "Minimum relevance probability (0-1, default 0.60).",
+			},
+			settings.Field{
+				Label: "Filter Max Candidates",
+				Key:   "remembrances.context_enrichment_decision_filter_max_candidates",
+				Type:  settings.FieldText,
+				Value: strconv.Itoa(rem.DecisionFilterMaxCandidates()),
+				Hint:  "Candidates scored per turn (default 32).",
+			},
+			settings.Field{
+				Label: "Filter Max Candidate Chars",
+				Key:   "remembrances.context_enrichment_decision_filter_max_candidate_chars",
+				Type:  settings.FieldText,
+				Value: strconv.Itoa(rem.DecisionFilterMaxCandidateChars()),
+				Hint:  "Characters of each candidate sent to the decision model (default 400).",
+			},
+			settings.Field{
+				Label: "Allow Hosted Providers",
+				Key:   "remembrances.context_enrichment_decision_filter_allow_hosted",
+				Type:  settings.FieldToggle,
+				Value: boolString(rem.ContextEnrichmentDecisionFilterAllowHosted),
+				Hint:  "Off: the filter only runs with a local (Ollama) decision model, so snippets never leave your machine.",
+			},
+		)
+		fields = append(fields, decisionModelInfoRows(cfg, "remembrances.filter.")...)
 	}
 
 	// Memory System subsection
@@ -3910,6 +3954,8 @@ func persistSetting(app *pandoapp.App, field settings.Field) error {
 		return savePersonaAutoSelect(field)
 	case strings.HasPrefix(field.Key, "modelAutoMode."):
 		return saveModelAutoMode(field)
+	case strings.HasPrefix(field.Key, decisionKeyPrefix):
+		return saveDecisionModel(field)
 	case strings.HasPrefix(field.Key, "providerAccount."):
 		return saveProviderAccountField(field)
 	default:
@@ -5083,6 +5129,42 @@ func saveRemembrances(field settings.Field) error {
 		}
 		remCfg.ContextEnrichmentAgentLoopHiddenInChat = !v
 	// Memory System fields
+	case "remembrances.context_enrichment_decision_filter_enabled":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid context relevance filter value: %w", err)
+		}
+		remCfg.ContextEnrichmentDecisionFilterEnabled = v
+	case "remembrances.memory_context_decision_filter_enabled":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid memory relevance filter value: %w", err)
+		}
+		remCfg.MemoryContextDecisionFilterEnabled = v
+	case "remembrances.context_enrichment_decision_filter_threshold":
+		v, err := parseFloatValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid filter threshold: %w", err)
+		}
+		remCfg.ContextEnrichmentDecisionFilterThreshold = v
+	case "remembrances.context_enrichment_decision_filter_max_candidates":
+		n, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid filter max candidates: %w", err)
+		}
+		remCfg.ContextEnrichmentDecisionFilterMaxCandidates = n
+	case "remembrances.context_enrichment_decision_filter_max_candidate_chars":
+		n, err := parseIntValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid filter max candidate chars: %w", err)
+		}
+		remCfg.ContextEnrichmentDecisionFilterMaxCandidateChars = n
+	case "remembrances.context_enrichment_decision_filter_allow_hosted":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid allow hosted value: %w", err)
+		}
+		remCfg.ContextEnrichmentDecisionFilterAllowHosted = v
 	case "remembrances.memory.header":
 		// read-only header — no-op
 	case "remembrances.memory_enabled":

@@ -47,11 +47,10 @@ func TestListModelsAutoFirst(t *testing.T) {
 		}
 	}
 
-	if err := config.UpdateModelAutoMode(config.ModelAutoModeConfig{
+	if err := saveAutoWithRouter(config.ModelAutoModeConfig{
 		Enabled: true,
-		Router:  config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, BaseURL: srv.URL, Model: "tev1:0.8b"},
 		Routes:  playgroundRoutes(),
-	}); err != nil {
+	}, config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, BaseURL: srv.URL, Model: "tev1:0.8b"}); err != nil {
 		t.Fatal(err)
 	}
 	ids, first := list()
@@ -63,11 +62,10 @@ func TestListModelsAutoFirst(t *testing.T) {
 	}
 
 	// Unhealthy router: still listed first, with problems.
-	if err := config.UpdateModelAutoMode(config.ModelAutoModeConfig{
+	if err := saveAutoWithRouter(config.ModelAutoModeConfig{
 		Enabled: true,
-		Router:  config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, BaseURL: srv.URL, Model: "missing:1b"},
 		Routes:  playgroundRoutes(),
-	}); err != nil {
+	}, config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, BaseURL: srv.URL, Model: "missing:1b"}); err != nil {
 		t.Fatal(err)
 	}
 	_, first = list()
@@ -94,11 +92,10 @@ func TestSetActiveModelLeavesAuto(t *testing.T) {
 		t.Fatalf("auto while disabled: %d", rec.Code)
 	}
 
-	if err := config.UpdateModelAutoMode(config.ModelAutoModeConfig{
+	if err := saveAutoWithRouter(config.ModelAutoModeConfig{
 		Enabled: true,
-		Router:  config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, Model: "tev1:0.8b"},
 		Routes:  playgroundRoutes(),
-	}); err != nil {
+	}, config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, Model: "tev1:0.8b"}); err != nil {
 		t.Fatal(err)
 	}
 	if rec := put("auto"); rec.Code != http.StatusOK {

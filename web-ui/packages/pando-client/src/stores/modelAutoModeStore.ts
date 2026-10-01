@@ -31,14 +31,15 @@ export interface ModelAutoRoute {
   disabled: boolean
 }
 
-/** The editable block, same shape as the PUT body (minus clearApiKey). */
+/**
+ * The editable block, same shape as the PUT body. The decision provider
+ * (router, timeoutMs) lives in decisionModelStore and is never sent from here.
+ */
 export interface ModelAutoModeDraft {
   enabled: boolean
   defaultAuto: boolean
-  router: DecisionRouterDraft
   threshold: number
   minConfidence: number
-  timeoutMs: number
   historyPrompts: number
   routes: ModelAutoRoute[]
 }
@@ -49,10 +50,8 @@ export interface ModelAutoModeResponse {
   defaultAuto: boolean
   selected?: boolean
   autoSelected: boolean
-  router: Omit<DecisionRouterDraft, 'apiKey'> & DecisionRouterInfo
   threshold: number
   minConfidence: number
-  timeoutMs: number
   historyPrompts: number
   routes: ModelAutoRoute[]
   warnings?: string[]
@@ -143,10 +142,8 @@ export const DEFAULT_THRESHOLD = 0.6
 export const EMPTY_DRAFT: ModelAutoModeDraft = {
   enabled: false,
   defaultAuto: false,
-  router: { provider: 'ollama', baseURL: '', model: '', keepAlive: '', headers: {}, apiKey: '' },
   threshold: DEFAULT_THRESHOLD,
   minConfidence: 0,
-  timeoutMs: 0,
   historyPrompts: 0,
   routes: [],
 }
@@ -165,50 +162,20 @@ export function parseApiError(err: unknown): { error: string; errors?: FieldErro
   return { error: raw || 'unknown error' }
 }
 
-function fromResponse(r: ModelAutoModeResponse): { draft: ModelAutoModeDraft; info: DecisionRouterInfo } {
+function fromResponse(r: ModelAutoModeResponse): ModelAutoModeDraft {
   return {
-    draft: {
-      enabled: r.enabled,
-      defaultAuto: r.defaultAuto,
-      router: {
-        provider: r.router.provider || 'ollama',
-        baseURL: r.router.baseURL ?? '',
-        model: r.router.model ?? '',
-        keepAlive: r.router.keepAlive ?? '',
-        headers: { ...(r.router.headers ?? {}) },
-        apiKey: '',
-      },
-      threshold: r.threshold || DEFAULT_THRESHOLD,
-      minConfidence: r.minConfidence ?? 0,
-      timeoutMs: r.timeoutMs ?? 0,
-      historyPrompts: r.historyPrompts ?? 0,
-      routes: (r.routes ?? []).map((x) => ({ ...x, fallbacks: [...(x.fallbacks ?? [])] })),
-    },
-    info: {
-      effectiveBaseURL: r.router.effectiveBaseURL ?? '',
-      apiKeySet: !!r.router.apiKeySet,
-      apiKeyMasked: r.router.apiKeyMasked ?? '',
-    },
+    enabled: r.enabled,
+    defaultAuto: r.defaultAuto,
+    threshold: r.threshold || DEFAULT_THRESHOLD,
+    minConfidence: r.minConfidence ?? 0,
+    historyPrompts: r.historyPrompts ?? 0,
+    routes: (r.routes ?? []).map((x) => ({ ...x, fallbacks: [...(x.fallbacks ?? [])] })),
   }
-}
-
-/** The router block sent to router/models and router/test drafts. */
-function routerPayload(d: DecisionRouterDraft) {
-  const out: Record<string, unknown> = {
-    provider: d.provider,
-    baseURL: d.baseURL,
-    model: d.model,
-    keepAlive: d.keepAlive,
-    headers: d.headers,
-  }
-  if (d.apiKey) out.apiKey = d.apiKey
-  return out
 }
 
 interface ModelAutoModeStore {
   draft: ModelAutoModeDraft
   original: ModelAutoModeDraft
-  info: DecisionRouterInfo
   /** Top-level flag: is Auto the active selection right now. */
   autoSelected: boolean
   /**
@@ -216,7 +183,6 @@ interface ModelAutoModeStore {
    * notice of each turn.
    */
   lastRoutedModel: string | null
-  clearApiKey: boolean
   dirty: boolean
   loading: boolean
   saving: boolean
@@ -224,62 +190,38 @@ interface ModelAutoModeStore {
   fieldErrors: FieldError[]
   warnings: string[]
 
-  routerModels: RouterModelsResponse | null
-  routerModelsLoading: boolean
-  showAllModels: boolean
-
-  /** Pull jobs by model name (latest state). */
-  pulls: Record<string, RouterPullJob>
-
-  testing: boolean
-  testResult: RouterTestResponse | null
-
   playgroundRunning: boolean
   playground: PlaygroundResponse | null
   playgroundError: string | null
 
   fetchConfig: () => Promise<void>
-  update: (patch: Partial<Omit<ModelAutoModeDraft, 'router'>>) => void
-  updateRouter: (patch: Partial<DecisionRouterDraft>) => void
-  setClearApiKey: (v: boolean) => void
+  update: (patch: Partial<ModelAutoModeDraft>) => void
   setRoutes: (routes: ModelAutoRoute[]) => void
   save: () => Promise<boolean>
   reset: () => void
   setLastRoutedModel: (model: string | null) => void
   /** Loads only whether Auto is the active selection (model chip at startup). */
   hydrateAutoSelected: () => Promise<void>
-  setShowAllModels: (v: boolean) => void
-  loadRouterModels: (showAll?: boolean) => Promise<void>
-  pullModel: (model: string) => Promise<void>
-  testConnection: () => Promise<void>
   runPlayground: (prompt: string, history: string[]) => Promise<void>
-  /** Field errors for a path relative to the section (`routes[0].description`, `router.model`). */
+  /** Field errors for a path relative to the section (`routes[0].description`). */
   errorsFor: (field: string) => string[]
 }
 
-function isDirty(s: { draft: ModelAutoModeDraft; original: ModelAutoModeDraft; clearApiKey: boolean }) {
-  return s.clearApiKey || JSON.stringify(s.draft) !== JSON.stringify(s.original)
+function isDirty(s: { draft: ModelAutoModeDraft; original: ModelAutoModeDraft }) {
+  return JSON.stringify(s.draft) !== JSON.stringify(s.original)
 }
 
 export const useModelAutoModeStore = create<ModelAutoModeStore>((set, get) => ({
   draft: EMPTY_DRAFT,
   original: EMPTY_DRAFT,
-  info: { effectiveBaseURL: '', apiKeySet: false, apiKeyMasked: '' },
   autoSelected: false,
   lastRoutedModel: null,
-  clearApiKey: false,
   dirty: false,
   loading: false,
   saving: false,
   error: null,
   fieldErrors: [],
   warnings: [],
-  routerModels: null,
-  routerModelsLoading: false,
-  showAllModels: false,
-  pulls: {},
-  testing: false,
-  testResult: null,
   playgroundRunning: false,
   playground: null,
   playgroundError: null,
@@ -288,14 +230,12 @@ export const useModelAutoModeStore = create<ModelAutoModeStore>((set, get) => ({
     set({ loading: true, error: null })
     try {
       const r = await api.get<ModelAutoModeResponse>('/api/v1/config/model-auto-mode')
-      const { draft, info } = fromResponse(r)
+      const draft = fromResponse(r)
       set({
         draft,
         original: draft,
-        info,
         autoSelected: !!r.autoSelected,
         warnings: r.warnings ?? [],
-        clearApiKey: false,
         dirty: false,
         fieldErrors: [],
       })
@@ -309,40 +249,23 @@ export const useModelAutoModeStore = create<ModelAutoModeStore>((set, get) => ({
   update: (patch) =>
     set((s) => {
       const draft = { ...s.draft, ...patch }
-      return { draft, dirty: isDirty({ draft, original: s.original, clearApiKey: s.clearApiKey }) }
-    }),
-
-  updateRouter: (patch) =>
-    set((s) => {
-      const draft = { ...s.draft, router: { ...s.draft.router, ...patch } }
-      // Typing a new key cancels a pending "clear".
-      const clearApiKey = patch.apiKey ? false : s.clearApiKey
-      return { draft, clearApiKey, dirty: isDirty({ draft, original: s.original, clearApiKey }) }
-    }),
-
-  setClearApiKey: (v) =>
-    set((s) => {
-      const draft = v ? { ...s.draft, router: { ...s.draft.router, apiKey: '' } } : s.draft
-      return { draft, clearApiKey: v, dirty: isDirty({ draft, original: s.original, clearApiKey: v }) }
+      return { draft, dirty: isDirty({ draft, original: s.original }) }
     }),
 
   setRoutes: (routes) => get().update({ routes }),
 
   save: async () => {
-    const { draft, clearApiKey } = get()
+    const { draft } = get()
     set({ saving: true, error: null, fieldErrors: [] })
     try {
-      const body: Record<string, unknown> = { ...draft, router: { ...draft.router } }
-      if (clearApiKey) body.clearApiKey = true
-      const r = await api.put<ModelAutoModeResponse>('/api/v1/config/model-auto-mode', body)
+      // The decision provider is saved on its own page: no router/timeoutMs here.
+      const r = await api.put<ModelAutoModeResponse>('/api/v1/config/model-auto-mode', { ...draft })
       const next = fromResponse(r)
       set({
-        draft: next.draft,
-        original: next.draft,
-        info: next.info,
+        draft: next,
+        original: next,
         autoSelected: !!r.autoSelected,
         warnings: r.warnings ?? [],
-        clearApiKey: false,
         dirty: false,
       })
       useToastStore.getState().addToast('Auto mode settings saved', 'success')
@@ -357,8 +280,7 @@ export const useModelAutoModeStore = create<ModelAutoModeStore>((set, get) => ({
     }
   },
 
-  reset: () =>
-    set((s) => ({ draft: s.original, clearApiKey: false, dirty: false, fieldErrors: [], error: null })),
+  reset: () => set((s) => ({ draft: s.original, dirty: false, fieldErrors: [], error: null })),
 
   setLastRoutedModel: (model) => set({ lastRoutedModel: model }),
 
@@ -371,66 +293,15 @@ export const useModelAutoModeStore = create<ModelAutoModeStore>((set, get) => ({
     }
   },
 
-  setShowAllModels: (v) => set({ showAllModels: v }),
-
-  loadRouterModels: async (showAll) => {
-    const all = showAll ?? get().showAllModels
-    set({ routerModelsLoading: true })
-    try {
-      const r = await api.post<RouterModelsResponse>('/api/v1/model-auto-mode/router/models', {
-        router: routerPayload(get().draft.router),
-        showAll: all,
-      })
-      set({ routerModels: r })
-    } catch (e) {
-      set({ routerModels: { models: [], status: 'unsupported', error: parseApiError(e).error } })
-    } finally {
-      set({ routerModelsLoading: false })
-    }
-  },
-
-  pullModel: async (model) => {
-    const setPull = (job: RouterPullJob) => set((st) => ({ pulls: { ...st.pulls, [model]: job } }))
-    const failed = (error: string) => setPull({ id: '', target: model, state: 'error', completed: 0, total: 0, error })
-    try {
-      let job = await api.post<RouterPullJob>('/api/v1/model-auto-mode/router/pull', {
-        model,
-        router: routerPayload(get().draft.router),
-      })
-      setPull(job)
-      while (job.state === 'running') {
-        await new Promise((r) => setTimeout(r, 1000))
-        job = await api.get<RouterPullJob>(`/api/v1/model-auto-mode/router/pull/${job.id}`)
-        setPull(job)
-      }
-      if (job.state === 'done') await get().loadRouterModels()
-    } catch (e) {
-      failed(parseApiError(e).error)
-    }
-  },
-
-  testConnection: async () => {
-    set({ testing: true, testResult: null })
-    try {
-      const r = await api.post<RouterTestResponse>('/api/v1/model-auto-mode/router/test', {
-        router: routerPayload(get().draft.router),
-      })
-      set({ testResult: r })
-    } catch (e) {
-      set({ testResult: { ok: false, error: parseApiError(e).error } })
-    } finally {
-      set({ testing: false })
-    }
-  },
-
   runPlayground: async (prompt, history) => {
     const { draft } = get()
     set({ playgroundRunning: true, playgroundError: null })
     try {
+      // Routes are the unsaved draft; the decision model is the saved one.
       const r = await api.post<PlaygroundResponse>('/api/v1/model-auto-mode/playground', {
         prompt,
         history,
-        config: { ...draft, router: routerPayload(draft.router) },
+        config: { ...draft },
       })
       set({ playground: r })
     } catch (e) {

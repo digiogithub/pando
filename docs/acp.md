@@ -92,6 +92,21 @@ pando acp stats
 pando acp stop
 ```
 
+## Decision model
+
+The shared decision model (`[DecisionModel]`, see [decision-model.md](decision-model.md) and `pando_setup decision-model`) shows up in ACP in
+three places:
+
+- **Model option "Auto"**: its description ends with the router in use, e.g.
+  `Route each prompt to the best configured model (router: ollama/tev1:0.8b)`.
+- **`/decision-model [test]`**: answers locally, without a model turn, with the decision model's
+  provider, effective URL, masked API key, model, timeout, enabled consumers and a live health
+  verdict. It is announced in `available_commands_update` like the other commands.
+- **Context filter notice**: when the relevance filter dropped retrieved context, the turn starts
+  with a plain agent message such as
+  `Context filter: kept 4/9 (38 ms) — code 1/3, kb 2/5, events 1/1`. It is live only and is not
+  replayed on `session/load`.
+
 ## Client Examples
 
 Examples are provided for:

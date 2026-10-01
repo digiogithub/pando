@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/digiogithub/pando/internal/llm/models"
 )
@@ -15,11 +14,22 @@ import (
 func validAutoMode() ModelAutoModeConfig {
 	return ModelAutoModeConfig{
 		Enabled:   true,
-		Router:    DecisionRouterConfig{Provider: DecisionProviderOllama, Model: "tev1:0.8b"},
 		Threshold: 0.6,
 		Routes: []ModelAutoRoute{
 			{ID: "code", Description: "coding tasks", Model: models.Claude35Haiku},
 		},
+	}
+}
+
+func validDecision() DecisionModelConfig {
+	return DecisionModelConfig{Router: DecisionRouterConfig{Provider: DecisionProviderOllama, Model: "tev1:0.8b"}}
+}
+
+// seedDecisionModel stores a valid shared decision model in the loaded config.
+func seedDecisionModel(t *testing.T) {
+	t.Helper()
+	if err := UpdateDecisionModel(validDecision()); err != nil {
+		t.Fatalf("UpdateDecisionModel: %v", err)
 	}
 }
 
@@ -62,18 +72,6 @@ func TestModelAutoModeProviderDefaults(t *testing.T) {
 		t.Fatalf("custom base = %q", got)
 	}
 
-	m := ModelAutoModeConfig{}
-	if m.EffectiveTimeout() != 1500*time.Millisecond {
-		t.Fatalf("ollama timeout = %v", m.EffectiveTimeout())
-	}
-	m.Router.Provider = DecisionProviderTypeSafe
-	if m.EffectiveTimeout() != 3*time.Second {
-		t.Fatalf("remote timeout = %v", m.EffectiveTimeout())
-	}
-	m.TimeoutMs = 700
-	if m.EffectiveTimeout() != 700*time.Millisecond {
-		t.Fatalf("explicit timeout = %v", m.EffectiveTimeout())
-	}
 	if (ModelAutoModeConfig{}).EffectiveThreshold() != 0.60 {
 		t.Fatal("default threshold must be 0.60")
 	}
@@ -102,84 +100,23 @@ func TestModelAutoModeProviderDefaults(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	got := Get().ModelAutoMode
-	if got.Enabled || !got.DefaultAuto || got.Threshold != 0.6 || got.Router.Provider != DecisionProviderOllama {
+	if got.Enabled || !got.DefaultAuto || got.Threshold != 0.6 || got.LegacyRouter != nil {
 		t.Fatalf("unexpected defaults: %+v", got)
+	}
+	if Get().DecisionModel.Router.Provider != DecisionProviderOllama {
+		t.Fatalf("unexpected decisionModel defaults: %+v", Get().DecisionModel)
 	}
 }
 
-func TestModelAutoModeProviderValidation(t *testing.T) {
-	isolateGlobalConfig(t)
-	t.Setenv("TYPESAFE_API_KEY", "")
-
-	errs, _ := ValidateModelAutoMode(validAutoMode())
-	if len(errs) != 0 {
-		t.Fatalf("valid config rejected: %v", errs)
-	}
-
+func TestModelAutoModeRequiresSharedDecisionModel(t *testing.T) {
 	m := validAutoMode()
-	m.Router.Provider = "gemini"
-	errs, _ = ValidateModelAutoMode(m)
-	if !hasField(errs, "router.provider") || !strings.Contains(errs[0].Message, "ollama, typesafe, custom") {
-		t.Fatalf("unknown provider errs = %v", errs)
-	}
-
-	m = validAutoMode()
-	m.Router.Provider = DecisionProviderCustom
-	errs, _ = ValidateModelAutoMode(m)
-	if !hasField(errs, "router.baseURL") {
-		t.Fatalf("custom without baseURL errs = %v", errs)
-	}
-	m.Router.BaseURL = "ftp://x"
-	if errs, _ = ValidateModelAutoMode(m); !hasField(errs, "router.baseURL") {
-		t.Fatalf("non-http baseURL errs = %v", errs)
-	}
-	m.Router.BaseURL = "https://gw.example.com"
-	if errs, _ = ValidateModelAutoMode(m); len(errs) != 0 {
-		t.Fatalf("valid custom rejected: %v", errs)
-	}
-
-	m = validAutoMode()
-	m.Router.Model = ""
-	if errs, _ = ValidateModelAutoMode(m); !hasField(errs, "router.model") {
-		t.Fatalf("enabled without model errs = %v", errs)
+	errs, _ := ValidateModelAutoMode(m, DecisionModelConfig{})
+	if !hasField(errs, "router.model") || !strings.Contains(errs[0].Message, "decisionModel.router.model is required") {
+		t.Fatalf("enabled without shared model errs = %v", errs)
 	}
 	m.Enabled = false
-	if errs, _ = ValidateModelAutoMode(m); hasField(errs, "router.model") {
-		t.Fatalf("disabled must not require model: %v", errs)
-	}
-
-	m = validAutoMode()
-	m.Router.Model = "qwen3.5:cloud"
-	errs, _ = ValidateModelAutoMode(m)
-	if !hasField(errs, "router.model") || !strings.Contains(errs[0].Message, "local") {
-		t.Fatalf("cloud model errs = %v", errs)
-	}
-
-	m = validAutoMode()
-	m.Router = DecisionRouterConfig{Provider: DecisionProviderTypeSafe, Model: "jev-latest"}
-	errs, warns := ValidateModelAutoMode(m)
-	if len(errs) != 0 || len(warns) == 0 {
-		t.Fatalf("typesafe without key: errs=%v warns=%v (want warning only)", errs, warns)
-	}
-	t.Setenv("TYPESAFE_API_KEY", "abc")
-	if _, warns = ValidateModelAutoMode(m); len(warns) != 0 {
-		t.Fatalf("env fallback must silence warning: %v", warns)
-	}
-	if got := m.Router.EffectiveAPIKey(); got != "abc" {
-		t.Fatalf("env fallback key = %q", got)
-	}
-
-	for _, th := range []float64{1.5, -0.1} {
-		m = validAutoMode()
-		m.Threshold = th
-		if errs, _ = ValidateModelAutoMode(m); !hasField(errs, "threshold") {
-			t.Fatalf("threshold %v accepted", th)
-		}
-	}
-	m = validAutoMode()
-	m.Threshold = 1
-	if errs, _ = ValidateModelAutoMode(m); len(errs) != 0 {
-		t.Fatalf("threshold 1 rejected: %v", errs)
+	if errs, _ = ValidateModelAutoMode(m, DecisionModelConfig{}); hasField(errs, "router.model") {
+		t.Fatalf("disabled must not require the model: %v", errs)
 	}
 }
 
@@ -190,7 +127,7 @@ func TestModelAutoModeRouteValidation(t *testing.T) {
 	}
 	check := func(name string, m ModelAutoModeConfig, field string) {
 		t.Helper()
-		errs, _ := ValidateModelAutoMode(m)
+		errs, _ := ValidateModelAutoMode(m, validDecision())
 		if !hasField(errs, field) {
 			t.Fatalf("%s: want error on %q, got %v", name, field, errs)
 		}
@@ -202,12 +139,12 @@ func TestModelAutoModeRouteValidation(t *testing.T) {
 	for i := 0; i < 26; i++ {
 		m.Routes = append(m.Routes, route("r"+string(rune('a'+i)), string(models.Claude35Haiku)))
 	}
-	errs, _ := ValidateModelAutoMode(m)
+	errs, _ := ValidateModelAutoMode(m, validDecision())
 	if !hasField(errs, "routes") || !strings.Contains(errs[0].Message, "25") {
 		t.Fatalf("26 routes errs = %v", errs)
 	}
 	m.Routes[25].Disabled = true
-	if errs, _ = ValidateModelAutoMode(m); hasField(errs, "routes") {
+	if errs, _ = ValidateModelAutoMode(m, validDecision()); hasField(errs, "routes") {
 		t.Fatalf("25 enabled routes must pass: %v", errs)
 	}
 
@@ -221,7 +158,7 @@ func TestModelAutoModeRouteValidation(t *testing.T) {
 	check("duplicate fallback", m, "routes[0].fallbacks")
 
 	m.Routes = []ModelAutoRoute{route("none", "x")}
-	errs, _ = ValidateModelAutoMode(m)
+	errs, _ = ValidateModelAutoMode(m, validDecision())
 	if !hasField(errs, "routes[0].id") || !strings.Contains(errs[0].Message, "reserved") {
 		t.Fatalf("reserved id errs = %v", errs)
 	}
@@ -234,7 +171,7 @@ func TestModelAutoModeRouteValidation(t *testing.T) {
 	m.Routes = []ModelAutoRoute{{ID: "a", Description: strings.Repeat("é", 501), Model: "x"}}
 	check("long description", m, "routes[0].description")
 	m.Routes = []ModelAutoRoute{{ID: "a", Description: strings.Repeat("é", 500), Model: "x"}}
-	if errs, _ = ValidateModelAutoMode(m); hasField(errs, "routes[0].description") {
+	if errs, _ = ValidateModelAutoMode(m, validDecision()); hasField(errs, "routes[0].description") {
 		t.Fatal("500 chars must be accepted")
 	}
 	m.Routes = []ModelAutoRoute{{ID: "a", Description: "d"}}
@@ -242,72 +179,9 @@ func TestModelAutoModeRouteValidation(t *testing.T) {
 
 	// Unknown model is a warning only.
 	m.Routes = []ModelAutoRoute{route("a", "no.such-model", "also.missing")}
-	errs, warns := ValidateModelAutoMode(m)
+	errs, warns := ValidateModelAutoMode(m, validDecision())
 	if len(errs) != 0 || len(warns) != 2 || !strings.Contains(warns[0], "no.such-model") {
 		t.Fatalf("unknown model: errs=%v warns=%v", errs, warns)
-	}
-}
-
-func TestModelAutoModeAPIKeyEncryption(t *testing.T) {
-	isolateGlobalConfig(t)
-	dir := t.TempDir()
-	if _, err := Load(dir, false); err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	m := validAutoMode()
-	m.Router.APIKey = "sk-test-123"
-	if err := UpdateModelAutoMode(m); err != nil {
-		t.Fatalf("UpdateModelAutoMode: %v", err)
-	}
-	path, err := ResolveConfigFilePath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(raw), "sk-test-123") || !strings.Contains(string(raw), encryptedValuePrefix) {
-		t.Fatalf("api key not encrypted on disk:\n%s", raw)
-	}
-	if got := Get().ModelAutoMode.Router.APIKey; got != "sk-test-123" {
-		t.Fatalf("in-memory key = %q", got)
-	}
-	ResetForTests()
-	if _, err := Load(dir, false); err != nil {
-		t.Fatalf("reload: %v", err)
-	}
-	if got := Get().ModelAutoMode.Router.EffectiveAPIKey(); got != "sk-test-123" {
-		t.Fatalf("reloaded key = %q", got)
-	}
-
-	// Empty incoming key keeps the stored one.
-	m2 := validAutoMode()
-	m2.Threshold = 0.7
-	if err := UpdateModelAutoMode(m2); err != nil {
-		t.Fatal(err)
-	}
-	if got := Get().ModelAutoMode.Router.APIKey; got != "sk-test-123" {
-		t.Fatalf("key not kept: %q", got)
-	}
-	raw, _ = os.ReadFile(path)
-	if !strings.Contains(string(raw), encryptedValuePrefix) {
-		t.Fatal("stored key lost from disk")
-	}
-	if err := ClearModelAutoModeAPIKey(); err != nil || Get().ModelAutoMode.Router.APIKey != "" {
-		t.Fatalf("clear key: err=%v key=%q", err, Get().ModelAutoMode.Router.APIKey)
-	}
-
-	// $ENV references and masking.
-	t.Setenv("MY_ROUTER_KEY", "from-env")
-	if got := (DecisionRouterConfig{APIKey: "$MY_ROUTER_KEY"}).EffectiveAPIKey(); got != "from-env" {
-		t.Fatalf("env key = %q", got)
-	}
-	if got := MaskAPIKey("sk-test-1234"); got != "••••1234" {
-		t.Fatalf("mask = %q", got)
-	}
-	if MaskAPIKey("") != "" || MaskAPIKey("abc") != "••••" {
-		t.Fatal("short/empty mask wrong")
 	}
 }
 
@@ -317,12 +191,12 @@ func TestUpdateModelAutoModePersistReload(t *testing.T) {
 	if _, err := Load(dir, false); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
+	seedDecisionModel(t)
 	ch := make(chan ConfigChangeEvent, 8)
 	Bus.Subscribe(ch)
 	defer Bus.Unsubscribe(ch)
 
 	m := validAutoMode()
-	m.Router.Headers = map[string]string{"x-team": "a"}
 	m.Routes = []ModelAutoRoute{
 		{ID: "code", Description: "coding", Model: models.Claude35Haiku, Fallbacks: []models.ModelID{"b", "c"}},
 		{ID: "chat", Description: "chit chat", Model: "z", Disabled: true},
@@ -384,6 +258,7 @@ func TestUpdateModelAutoModeRevertsOnWriteFailure(t *testing.T) {
 	if _, err := Load(dir, false); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
+	seedDecisionModel(t)
 	if err := UpdateModelAutoMode(validAutoMode()); err != nil {
 		t.Fatal(err)
 	}
@@ -410,14 +285,15 @@ func TestUpdateModelAutoModeLocked(t *testing.T) {
 	if _, err := Load(dir, false); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
+	seedDecisionModel(t)
 	before := Get().ModelAutoMode
 
 	overlayMu.Lock()
-	lockedKeys = []string{"modelAutoMode.router"}
+	lockedKeys = []string{"modelAutoMode.routes"}
 	overlayMu.Unlock()
 
 	m := validAutoMode()
-	m.Router.Model = "other"
+	m.Threshold = 0.9
 	err := UpdateModelAutoMode(m)
 	if !errors.Is(err, ErrKeyLocked) {
 		t.Fatalf("err = %v, want a lock error", err)

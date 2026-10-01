@@ -25,7 +25,9 @@ func withAutoDialogConfig(t *testing.T, enabled bool, selected *bool) {
 		ModelAutoMode: config.ModelAutoModeConfig{
 			Enabled:  enabled,
 			Selected: selected,
-			Router:   config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, Model: "tev1:0.8b"},
+		},
+		DecisionModel: config.DecisionModelConfig{
+			Router: config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, Model: "tev1:0.8b"},
 		},
 	})
 }

@@ -54,6 +54,27 @@ export interface RoutingInfo {
   notice?: string
 }
 
+/** Kept/dropped counts of one source of the context filter. */
+export interface ContextFilterCounts {
+  kept: number
+  dropped: number
+}
+
+/** Structured context-filter notice (mirrors agent.ContextFilterInfo). */
+export interface ContextFilterInfo {
+  kept: number
+  dropped: number
+  /** Keys: code, kb, events, memory; only sources with candidates are present. */
+  bySource?: Record<string, ContextFilterCounts>
+  threshold?: number
+  latencyMs?: number
+  routerProvider?: string
+  routerModel?: string
+  /** Empty on full success, otherwise `partial:<class>`. */
+  reason?: string
+  notice?: string
+}
+
 /** GET /api/v1/personas/active. The auto fields are absent on older servers. */
 export interface ActivePersonaResponse {
   /** manually selected persona, '' when Auto */
@@ -77,6 +98,8 @@ export interface Message {
   created_at: string
   /** Set on client-side routing rows (model auto mode); rendered as a chip. */
   routing?: RoutingInfo
+  /** Set on client-side context-filter rows; rendered as a collapsible chip. */
+  contextFilter?: ContextFilterInfo
   /** True for client-side generic system notices rendered as a muted row. */
   notice?: boolean
   /** i18n key of a client-side notice whose text is translated at render time. */
@@ -203,6 +226,7 @@ export interface SSEEvent {
   permission_request?: PermissionRequest
   question_request?: QuestionRequest
   routing?: RoutingInfo
+  context_filter?: ContextFilterInfo
 }
 
 // PermissionRequest is a pending tool permission prompt surfaced by the agent
@@ -1121,6 +1145,13 @@ export interface RemembrancesConfig {
   context_enrichment_agent_loop_silent?: boolean
   context_enrichment_agent_loop_fallback_disabled?: boolean
   context_enrichment_agent_loop_hidden_in_chat?: boolean
+  // Decision-model relevance filter (optional: absent on older servers)
+  context_enrichment_decision_filter_enabled?: boolean
+  memory_context_decision_filter_enabled?: boolean
+  context_enrichment_decision_filter_threshold?: number
+  context_enrichment_decision_filter_max_candidates?: number
+  context_enrichment_decision_filter_max_candidate_chars?: number
+  context_enrichment_decision_filter_allow_hosted?: boolean
   // Memory System
   memory_enabled: boolean
   memory_context_enrichment_enabled: boolean

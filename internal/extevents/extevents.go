@@ -321,3 +321,45 @@ func PersonaRouted(info PersonaRoutedInfo) {
 		Payload:   payload,
 	})
 }
+
+// ContextFilteredInfo describes one relevance filtering of the injected
+// context. Like ModelRoutedInfo it has no field for prompt or snippet text.
+type ContextFilteredInfo struct {
+	SessionID string
+	Kept      int
+	Dropped   int
+	// BySource maps a source ("code", "kb", "events", "memory") to {kept, dropped}.
+	BySource       map[string][2]int
+	Threshold      float64
+	LatencyMs      int64
+	RouterProvider string
+	RouterModel    string
+	Reason         string
+}
+
+// ContextFiltered reports that the decision model dropped part of the context
+// retrieved for a turn.
+func ContextFiltered(info ContextFilteredInfo) {
+	if !Enabled() {
+		return
+	}
+	bySource := make(map[string]any, len(info.BySource))
+	for src, kd := range info.BySource {
+		bySource[src] = map[string]any{"kept": float64(kd[0]), "dropped": float64(kd[1])}
+	}
+	Publish(extension.Event{
+		Topic:     extension.TopicContextFilter,
+		Type:      extension.EventFiltered,
+		SessionID: info.SessionID,
+		Payload: map[string]any{
+			"kept":           float64(info.Kept),
+			"dropped":        float64(info.Dropped),
+			"bySource":       bySource,
+			"threshold":      info.Threshold,
+			"latencyMs":      float64(info.LatencyMs),
+			"routerProvider": info.RouterProvider,
+			"routerModel":    info.RouterModel,
+			"reason":         info.Reason,
+		},
+	})
+}

@@ -1,36 +1,14 @@
 import { useEffect, useState } from 'react'
-import {
-  AUTO_MODEL_ID,
-  useModelAutoModeStore,
-  type DecisionProviderKind,
-  type ModelAutoRoute,
-} from '@pando/client/stores/modelAutoModeStore'
+import { AUTO_MODEL_ID, useModelAutoModeStore, type ModelAutoRoute } from '@pando/client/stores/modelAutoModeStore'
 import { useUnsavedChangesGuard } from './unsavedChanges'
+import DecisionModelInUse from './DecisionModelInUse'
 import ModelCombobox from '@/components/shared/ModelCombobox'
 import { useDialogs } from '@/components/shared/useDialogs'
-import { Badge, Button, Input, SettingsRow, SettingsSection, Select, Switch, Textarea } from '@/components/ui'
-import { ArrowDown, ArrowUp, CircleAlert, CircleCheck, Play, Plus, Trash2, X, TriangleAlert } from '@/components/ui/icons'
+import { Badge, Button, Input, SettingsRow, SettingsSection, Switch, Textarea } from '@/components/ui'
+import { ArrowDown, ArrowUp, Play, Plus, Trash2, X, TriangleAlert } from '@/components/ui/icons'
 
 const MAX_ROUTES = 25
 const MAX_DESCRIPTION = 500
-
-const PROVIDER_OPTIONS: { value: DecisionProviderKind; label: string }[] = [
-  { value: 'ollama', label: 'Ollama (local)' },
-  { value: 'typesafe', label: 'TypeSafe Jev' },
-  { value: 'custom', label: 'Custom Jev-compatible gateway' },
-]
-
-const PROVIDER_DEFAULT_URL: Record<DecisionProviderKind, string> = {
-  ollama: 'http://localhost:11434',
-  typesafe: 'https://api.typesafe.ai',
-  custom: '',
-}
-
-const CUSTOM_PRESETS: { id: string; label: string; baseURL: string; model: string }[] = [
-  { id: 'openrouter', label: 'OpenRouter', baseURL: 'https://openrouter.ai/api', model: 'typesafe/jev-1.13' },
-  { id: 'litellm', label: 'LiteLLM', baseURL: 'http://localhost:4000/typesafe', model: '' },
-  { id: 'kev', label: 'Kev', baseURL: 'http://localhost:8009', model: '' },
-]
 
 const STARTER_ROUTES: Omit<ModelAutoRoute, 'model' | 'fallbacks' | 'disabled'>[] = [
   { id: 'quick_question', description: 'A short factual or conceptual question that needs no code changes or tool use.' },
@@ -43,15 +21,6 @@ const MAX_FALLBACKS = 2
 // The synthetic "auto" entry must never be routed to.
 const HIDDEN_MODELS = [AUTO_MODEL_ID]
 
-function isLocalURL(url: string): boolean {
-  try {
-    const h = new URL(url).hostname
-    return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '[::1]'
-  } catch {
-    return true
-  }
-}
-
 function FieldErrors({ errors }: { errors: string[] }) {
   if (errors.length === 0) return null
   return (
@@ -60,19 +29,6 @@ function FieldErrors({ errors }: { errors: string[] }) {
         <div key={i}>{m}</div>
       ))}
     </div>
-  )
-}
-
-function Check({ ok, label }: { ok: boolean; label: string }) {
-  return (
-    <li className="flex items-center gap-2 text-sm">
-      {ok ? (
-        <CircleCheck size={14} style={{ color: 'var(--success)' }} aria-label="ok" />
-      ) : (
-        <CircleAlert size={14} style={{ color: 'var(--danger)' }} aria-label="failed" />
-      )}
-      <span>{label}</span>
-    </li>
   )
 }
 
@@ -158,12 +114,10 @@ function RouteModelFields({
 
 export default function ModelAutoModeSettings() {
   const s = useModelAutoModeStore()
-  const { draft, original, info, fieldErrors } = s
+  const { draft, fieldErrors } = s
   const { confirm, dialogs } = useDialogs()
   const [prompt, setPrompt] = useState('')
   const [history, setHistory] = useState('')
-  const [headerKey, setHeaderKey] = useState('')
-  const [headerValue, setHeaderValue] = useState('')
 
   useUnsavedChangesGuard({
     id: 'model-auto-mode',
@@ -180,14 +134,6 @@ export default function ModelAutoModeSettings() {
   const errs = (field: string) =>
     fieldErrors.filter((e) => e.field === `modelAutoMode.${field}` || e.field === field).map((e) => e.message)
 
-  const router = draft.router
-  // The server's effective URL only applies to the provider it was computed for.
-  const defaultURL =
-    router.provider === original.router.provider && info.effectiveBaseURL
-      ? info.effectiveBaseURL
-      : PROVIDER_DEFAULT_URL[router.provider]
-  const effectiveURL = router.baseURL || defaultURL
-  const remote = !!effectiveURL && !isLocalURL(effectiveURL)
   const coderLabel = 'the coder model'
 
   const updateRoute = (i: number, patch: Partial<ModelAutoRoute>) =>
@@ -225,14 +171,6 @@ export default function ModelAutoModeSettings() {
     s.setRoutes([...draft.routes, ...fresh].slice(0, MAX_ROUTES))
   }
 
-  const applyPreset = (id: string) => {
-    const p = CUSTOM_PRESETS.find((x) => x.id === id)
-    if (!p) return
-    s.updateRouter({ baseURL: p.baseURL, ...(p.model ? { model: p.model } : {}) })
-  }
-
-  const rm = s.routerModels
-  const dm = rm?.models ?? []
   const pd = s.playground?.decision
 
   return (
@@ -264,250 +202,18 @@ export default function ModelAutoModeSettings() {
         </SettingsRow>
       </SettingsSection>
 
-      <SettingsSection title="Decision provider" description="The provider that answers the routing question for each prompt.">
-        <SettingsRow label="Provider" htmlFor="ama-provider">
-          <Select
-            id="ama-provider"
-            value={router.provider}
-            onChange={(e) => {
-              s.updateRouter({ provider: e.target.value as DecisionProviderKind, model: '' })
-            }}
-            options={PROVIDER_OPTIONS}
+      <SettingsSection
+        title="Decision model"
+        description="Auto mode asks the shared decision model which route fits each prompt."
+      >
+        <div className="p-4 flex flex-col gap-2">
+          <DecisionModelInUse
+            consumerEnabled={draft.enabled}
+            missingNote="Until one is configured, prompts use the coder model."
+            testId="ama-decision-in-use"
           />
-        </SettingsRow>
-
-        {router.provider === 'custom' && (
-          <SettingsRow label="Preset" htmlFor="ama-preset" description="Fills the base URL (and model when known).">
-            <Select
-              id="ama-preset"
-              value=""
-              onChange={(e) => applyPreset(e.target.value)}
-              options={[{ value: '', label: 'Choose a preset…' }, ...CUSTOM_PRESETS.map((p) => ({ value: p.id, label: p.label }))]}
-            />
-          </SettingsRow>
-        )}
-
-        <SettingsRow label="Base URL" htmlFor="ama-baseurl" stacked description="Leave empty to use the provider default.">
-          <Input
-            id="ama-baseurl"
-            value={router.baseURL}
-            placeholder={defaultURL}
-            invalid={errs('router.baseURL').length > 0}
-            onChange={(e) => s.updateRouter({ baseURL: e.target.value })}
-          />
-          <FieldErrors errors={errs('router.baseURL')} />
-        </SettingsRow>
-
-        {router.provider !== 'ollama' && (
-          <SettingsRow
-            label="API key"
-            htmlFor="ama-apikey"
-            stacked
-            description={
-              info.apiKeySet && !s.clearApiKey
-                ? <>A key is stored: <code data-testid="ama-key-masked">{info.apiKeyMasked}</code>. Type a new key to replace it.</>
-                : 'No key stored.'
-            }
-          >
-            <div className="flex gap-2">
-              <Input
-                id="ama-apikey"
-                type="password"
-                autoComplete="off"
-                value={router.apiKey}
-                placeholder={info.apiKeySet && !s.clearApiKey ? info.apiKeyMasked : 'API key'}
-                onChange={(e) => s.updateRouter({ apiKey: e.target.value })}
-              />
-              {info.apiKeySet && (
-                <Button
-                  variant="secondary"
-                  onClick={() => s.setClearApiKey(!s.clearApiKey)}
-                >
-                  {s.clearApiKey ? 'Keep key' : 'Clear key'}
-                </Button>
-              )}
-            </div>
-            <FieldErrors errors={errs('router.apiKey')} />
-          </SettingsRow>
-        )}
-
-        {router.provider === 'custom' && (
-          <SettingsRow label="Extra headers" stacked description="Optional headers sent with every request to the gateway.">
-            <div className="flex flex-col gap-2">
-              {Object.entries(router.headers).map(([k, v]) => (
-                <div key={k} className="flex gap-2">
-                  <Input aria-label={`Header ${k} name`} value={k} readOnly />
-                  <Input
-                    aria-label={`Header ${k} value`}
-                    value={v}
-                    onChange={(e) => s.updateRouter({ headers: { ...router.headers, [k]: e.target.value } })}
-                  />
-                  <Button
-                    variant="secondary"
-                    aria-label={`Remove header ${k}`}
-                    onClick={() => {
-                      const h = { ...router.headers }
-                      delete h[k]
-                      s.updateRouter({ headers: h })
-                    }}
-                  >
-                    <Trash2 size={14} />
-                  </Button>
-                </div>
-              ))}
-              <div className="flex gap-2">
-                <Input aria-label="New header name" placeholder="Header name" value={headerKey} onChange={(e) => setHeaderKey(e.target.value)} />
-                <Input aria-label="New header value" placeholder="Value" value={headerValue} onChange={(e) => setHeaderValue(e.target.value)} />
-                <Button
-                  variant="secondary"
-                  disabled={!headerKey.trim()}
-                  onClick={() => {
-                    s.updateRouter({ headers: { ...router.headers, [headerKey.trim()]: headerValue } })
-                    setHeaderKey('')
-                    setHeaderValue('')
-                  }}
-                >
-                  <Plus size={14} /> Add
-                </Button>
-              </div>
-            </div>
-          </SettingsRow>
-        )}
-
-        {router.provider === 'ollama' && (
-          <SettingsRow label="Keep alive" htmlFor="ama-keepalive" description="How long Ollama keeps the decision model loaded (e.g. 30m).">
-            <Input id="ama-keepalive" value={router.keepAlive} placeholder="30m" onChange={(e) => s.updateRouter({ keepAlive: e.target.value })} />
-          </SettingsRow>
-        )}
-
-        <SettingsRow label="Decision model" htmlFor="ama-model" stacked>
-          <div className="flex gap-2 items-center">
-            {rm && rm.status !== 'unsupported' ? (
-              <Select
-                id="ama-model"
-                value={router.model}
-                invalid={errs('router.model').length > 0}
-                onChange={(e) => s.updateRouter({ model: e.target.value })}
-                options={[
-                  { value: '', label: '— select a model —' },
-                  ...(router.model && !dm.some((m) => m.id === router.model) ? [{ value: router.model, label: router.model }] : []),
-                  ...dm.map((m) => ({ value: m.id, label: m.id })),
-                ]}
-              />
-            ) : (
-              <Input
-                id="ama-model"
-                value={router.model}
-                placeholder="model id"
-                invalid={errs('router.model').length > 0}
-                onChange={(e) => s.updateRouter({ model: e.target.value })}
-              />
-            )}
-            <Button variant="secondary" loading={s.routerModelsLoading} onClick={() => void s.loadRouterModels()}>
-              Load models
-            </Button>
-          </div>
           <FieldErrors errors={errs('router.model')} />
-          {rm?.status === 'unsupported' && (
-            <p className="text-xs text-fg-muted">This provider cannot list models; type the model id manually.</p>
-          )}
-          {rm?.status === 'unfiltered' && (
-            <p className="text-xs text-fg-muted">
-              This provider cannot tell which models support decisions; all models are listed.
-            </p>
-          )}
-          {rm?.status === 'filtered' && (
-            <label className="flex items-center gap-2 text-xs">
-              <Switch
-                aria-label="Show all models"
-                checked={s.showAllModels}
-                onCheckedChange={(v) => {
-                  s.setShowAllModels(v)
-                  void s.loadRouterModels(v)
-                }}
-              />
-              Show all models
-            </label>
-          )}
-          {rm && dm.length === 0 && router.provider === 'ollama' && rm.status !== 'unsupported' && (
-            <p className="text-xs text-fg-muted">
-              No decision models found. Install one with <code>ollama pull tev1:0.8b</code>.
-            </p>
-          )}
-          {router.provider === 'ollama' && (rm?.suggestions?.length ?? 0) > 0 && (
-            <div className="flex flex-col gap-2 text-xs mt-2" data-testid="pull-suggestions">
-              <span className="text-fg-muted">Suggested decision models:</span>
-              <ul className="flex flex-col gap-2">
-                {rm?.suggestions?.map((name) => {
-                  const job = s.pulls[name]
-                  const running = job?.state === 'running'
-                  const pct = job && job.total > 0 ? Math.round((job.completed / job.total) * 100) : null
-                  return (
-                    <li key={name} data-testid={`pull-row-${name}`} className="flex items-center gap-3">
-                      <code className="flex-1 min-w-0 truncate">{name}</code>
-                      <Button
-                        variant="secondary"
-                        aria-label={`Pull ${name}`}
-                        loading={running}
-                        disabled={running}
-                        onClick={() => void s.pullModel(name)}
-                      >
-                        Pull
-                      </Button>
-                      <span className="w-40 text-fg-muted truncate">
-                        {running && (
-                          <>
-                            {job.status ?? 'starting'}
-                            {pct !== null ? ` ${pct}%` : ''}
-                          </>
-                        )}
-                        {job?.state === 'error' && <span style={{ color: 'var(--danger)' }}>{job.error}</span>}
-                      </span>
-                    </li>
-                  )
-                })}
-              </ul>
-            </div>
-          )}
-          {rm?.hint && <p className="text-xs text-fg-muted">{rm.hint}</p>}
-          {rm?.error && <p className="text-xs" style={{ color: 'var(--danger)' }}>{rm.error}</p>}
-        </SettingsRow>
-
-        {remote && (
-          <div className="settings-banner settings-banner--warning" role="note" style={{ margin: 12 }}>
-            <TriangleAlert size={14} />
-            <div>This provider is remote: your prompts leave your machine to be classified.</div>
-          </div>
-        )}
-
-        <SettingsRow label="Connection" stacked>
-          <div>
-            <Button variant="secondary" loading={s.testing} onClick={() => void s.testConnection()}>
-              Test connection
-            </Button>
-          </div>
-          {s.testResult && (
-            <div data-testid="ama-test-report" className="flex flex-col gap-2">
-              {s.testResult.error && <FieldErrors errors={[s.testResult.error]} />}
-              {s.testResult.report && (
-                <ul className="flex flex-col gap-1">
-                  <Check ok={s.testResult.report.reachable} label="Reachable" />
-                  <Check ok={s.testResult.report.authorized} label="Authorized" />
-                  {s.testResult.report.kind === 'ollama' && (
-                    <Check ok={s.testResult.report.versionOK} label={`Version ≥ 0.35${s.testResult.report.version ? ` (found ${s.testResult.report.version})` : ''}`} />
-                  )}
-                  <Check ok={s.testResult.report.modelPresent} label="Model present" />
-                  <Check ok={s.testResult.report.isDecisionModel} label="Decision-capable model" />
-                  <li className="text-sm text-fg-muted">Latency: {s.testResult.report.latencyMs} ms</li>
-                </ul>
-              )}
-              {(s.testResult.problems ?? []).map((p, i) => (
-                <div key={i} className="text-sm" style={{ color: 'var(--danger)' }}>{p}</div>
-              ))}
-              {s.testResult.ok && <Badge tone="success">Healthy</Badge>}
-            </div>
-          )}
-        </SettingsRow>
+        </div>
       </SettingsSection>
 
       <SettingsSection title="Routing tuning">
@@ -538,10 +244,6 @@ export default function ModelAutoModeSettings() {
         <SettingsRow label="Minimum confidence" htmlFor="ama-minconf" description="0 disables the extra confidence check.">
           <Input id="ama-minconf" type="number" min={0} max={1} step={0.05} value={draft.minConfidence} onChange={(e) => s.update({ minConfidence: Number(e.target.value) })} />
           <FieldErrors errors={errs('minConfidence')} />
-        </SettingsRow>
-        <SettingsRow label="Timeout (ms)" htmlFor="ama-timeout" description="0 uses the default.">
-          <Input id="ama-timeout" type="number" min={0} step={100} value={draft.timeoutMs} onChange={(e) => s.update({ timeoutMs: Number(e.target.value) })} />
-          <FieldErrors errors={errs('timeoutMs')} />
         </SettingsRow>
         <SettingsRow label="History prompts" htmlFor="ama-history" description="Previous user prompts included as context for the decision.">
           <Input id="ama-history" type="number" min={0} step={1} value={draft.historyPrompts} onChange={(e) => s.update({ historyPrompts: Number(e.target.value) })} />
@@ -605,7 +307,7 @@ export default function ModelAutoModeSettings() {
         </div>
       </SettingsSection>
 
-      <SettingsSection title="Playground" description="Try a prompt against the current (unsaved) configuration. Nothing is sent to a chat model.">
+      <SettingsSection title="Playground" description="Try a prompt against the current (unsaved) routes and the saved decision model. Nothing is sent to a chat model.">
         <div className="p-4 flex flex-col gap-2">
           <Textarea aria-label="Playground prompt" rows={3} value={prompt} placeholder="Type a prompt to route…" onChange={(e) => setPrompt(e.target.value)} />
           <Textarea aria-label="Playground history" rows={2} value={history} placeholder="Optional previous prompts, one per line" onChange={(e) => setHistory(e.target.value)} />

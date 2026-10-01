@@ -54,6 +54,7 @@ const (
 	dbCompactCommandToken             = "db-compact"
 	ponytailCommandToken              = "ponytail"
 	improveAgentsMdCommandToken       = "improve-agents-md"
+	decisionModelCommandToken         = "decision-model"
 	superpowersCommandToken           = "superpowers"
 	superpowersFinishCommandToken     = "superpowers-finish"
 	cavemanCommandToken               = "caveman"
@@ -576,7 +577,7 @@ func autoModelDescription() string {
 	if cfg == nil {
 		return desc
 	}
-	router := cfg.ModelAutoMode.Router
+	router := cfg.DecisionModel.Router
 	model := strings.TrimSpace(router.Model)
 	if model == "" {
 		return desc

@@ -414,9 +414,18 @@ func encryptSensitiveConfigFields(in *Config) (*Config, error) {
 		}
 	}
 	// Encrypt the model auto mode decision router API key
-	out.ModelAutoMode.Router.APIKey, err = encryptSecretString(in.ModelAutoMode.Router.APIKey)
+	out.DecisionModel.Router.APIKey, err = encryptSecretString(in.DecisionModel.Router.APIKey)
 	if err != nil {
-		return nil, fmt.Errorf("encrypt modelAutoMode router APIKey: %w", err)
+		return nil, fmt.Errorf("encrypt decisionModel router APIKey: %w", err)
+	}
+	// A legacy router (pre-decisionModel files) is kept encrypted until migrated.
+	if in.ModelAutoMode.LegacyRouter != nil {
+		legacy := *in.ModelAutoMode.LegacyRouter
+		legacy.APIKey, err = encryptSecretString(legacy.APIKey)
+		if err != nil {
+			return nil, fmt.Errorf("encrypt legacy modelAutoMode router APIKey: %w", err)
+		}
+		out.ModelAutoMode.LegacyRouter = &legacy
 	}
 	// Encrypt remembrances embedding API keys
 	out.Remembrances.DocumentEmbeddingAPIKey, err = encryptSecretString(in.Remembrances.DocumentEmbeddingAPIKey)
@@ -485,9 +494,17 @@ func decryptSensitiveConfigFields(in *Config) error {
 		in.Server.BasicAuth.Users[i].Password = decrypted
 	}
 	// Decrypt the model auto mode decision router API key
-	in.ModelAutoMode.Router.APIKey, err = decryptSecretString(in.ModelAutoMode.Router.APIKey)
+	in.DecisionModel.Router.APIKey, err = decryptSecretString(in.DecisionModel.Router.APIKey)
 	if err != nil {
-		return fmt.Errorf("decrypt modelAutoMode router APIKey: %w", err)
+		return fmt.Errorf("decrypt decisionModel router APIKey: %w", err)
+	}
+	if in.ModelAutoMode.LegacyRouter != nil {
+		legacy := *in.ModelAutoMode.LegacyRouter
+		legacy.APIKey, err = decryptSecretString(legacy.APIKey)
+		if err != nil {
+			return fmt.Errorf("decrypt legacy modelAutoMode router APIKey: %w", err)
+		}
+		in.ModelAutoMode.LegacyRouter = &legacy
 	}
 	// Decrypt remembrances embedding API keys
 	in.Remembrances.DocumentEmbeddingAPIKey, err = decryptSecretString(in.Remembrances.DocumentEmbeddingAPIKey)

@@ -1141,3 +1141,25 @@ button.chat-banner-head:hover { background: var(--bg-hover); }
   background: var(--bg-subtle, rgba(128, 128, 128, 0.12));
   border: 1px solid var(--border-strong);
 }
+
+/* Context filter notice: expand toggle and per-source details. */
+.chat-routing-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-sm, 4px);
+}
+.chat-routing-toggle:hover { color: var(--fg-muted); }
+.chat-routing-details {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  margin: 0;
+  list-style: none;
+  padding-left: 28px;
+}

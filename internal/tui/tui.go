@@ -733,6 +733,14 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, tea.Batch(cmds...)
 		}
 
+		// Context relevance filter notice: informational status-bar line.
+		if payload.Type == agent.AgentEventTypeSystemMessage && payload.ContextFilter != nil {
+			if payload.SessionID == a.selectedSession.ID {
+				cmds = append(cmds, util.ReportInfo(strings.TrimSpace(payload.SystemMessage)))
+			}
+			return a, tea.Batch(cmds...)
+		}
+
 		if payload.Type == agent.AgentEventTypeTodosUpdated && len(payload.Todos) > 0 {
 			// Forward plan updates to all pages so the sidebar can re-render.
 			todosMsg := chat.TodosUpdatedMsg{SessionID: payload.SessionID, Todos: payload.Todos}

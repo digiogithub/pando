@@ -111,12 +111,30 @@
       "webuiAccess": "WebUI 访问",
       "containerRuntime": "容器运行时",
       "tokenOptimization": "Token 优化",
-      "sandbox": "沙箱"
+      "sandbox": "沙箱",
+      "decisionModel": "决策模型"
     },
     "remembrances": {
       "hero": {
         "title": "记忆库",
         "tagline": "跨会话持久保存的知识库、事件与已索引代码。"
+      },
+      "decisionFilter": {
+        "title": "使用决策模型的相关性过滤",
+        "description": "小型决策模型会在注入前丢弃与提示词无关的检索片段。若其不可用，上下文将不经过滤直接注入。",
+        "missing": "在配置之前，上下文将不经过滤直接注入。",
+        "hostedNote": "此提供商为远程服务：检索到的片段会发送给它进行排序。仅当你在下方允许时才会使用托管提供商。",
+        "enabled": "使用决策模型过滤检索到的上下文",
+        "enabledHint": "适用于上下文增强添加的 KB、代码和事件片段。",
+        "memoryEnabled": "使用决策模型过滤注入的记忆",
+        "memoryEnabledHint": "适用于“自动注入上下文”注入的已存储记忆。",
+        "threshold": "相关性阈值",
+        "thresholdInvalid": "阈值必须大于 0 且不超过 1。",
+        "thresholdHint": "得分低于该值的片段将被丢弃（0–1，默认 0.6）。",
+        "maxCandidates": "最大候选数",
+        "maxCandidateChars": "每个候选的最大字符数",
+        "allowHosted": "允许托管的决策提供商（会将片段发送给提供商）",
+        "allowHostedHint": "关闭：仅使用本地提供商进行过滤，因此片段不会离开你的机器。"
       }
     },
     "mesnada": {
@@ -344,6 +362,80 @@
       "accent": "强调色",
       "accentDescription": "用于主要操作、焦点和选中状态。其他部分保持中性。",
       "accentDefault": "主题默认"
+    },
+    "decisionModel": {
+      "title": "决策模型",
+      "description": "一个为 Pando 快速回答决策问题的小型模型：Auto 模式路由、角色自动选择和上下文过滤。在此配置一次，所有功能共用。",
+      "sections": {
+        "provider": "决策提供商",
+        "providerDescription": "回答决策问题的提供商。"
+      },
+      "provider": "提供商",
+      "providers": {
+        "ollama": "Ollama（本地）",
+        "typesafe": "TypeSafe Jev",
+        "custom": "自定义 Jev 兼容网关"
+      },
+      "preset": "预设",
+      "presetHint": "填入基础 URL（已知时同时填入模型）。",
+      "presetChoose": "选择预设…",
+      "baseUrl": "基础 URL",
+      "baseUrlHint": "留空则使用提供商默认值。",
+      "apiKey": "API 密钥",
+      "apiKeyStored": "已保存密钥：",
+      "apiKeyReplace": "输入新密钥即可替换。",
+      "apiKeyNone": "未保存密钥。",
+      "apiKeyPlaceholder": "API 密钥",
+      "keepKey": "保留密钥",
+      "clearKey": "清除密钥",
+      "headers": "额外请求头",
+      "headersHint": "随每个发往网关的请求发送的可选请求头。",
+      "headerNameOf": "请求头 {{name}} 的名称",
+      "headerValueOf": "请求头 {{name}} 的值",
+      "removeHeader": "删除请求头 {{name}}",
+      "newHeaderName": "新请求头名称",
+      "newHeaderValue": "新请求头的值",
+      "headerName": "请求头名称",
+      "headerValue": "值",
+      "addHeader": "添加",
+      "keepAlive": "保持加载",
+      "keepAliveHint": "Ollama 保持决策模型加载的时长（例如 30m）。",
+      "model": "决策模型",
+      "modelSelect": "— 选择模型 —",
+      "modelPlaceholder": "模型 ID",
+      "loadModels": "加载模型",
+      "unsupportedHint": "此提供商无法列出模型；请手动输入模型 ID。",
+      "unfilteredHint": "此提供商无法判断哪些模型支持决策，因此列出了全部模型。",
+      "showAll": "显示所有模型",
+      "noModels": "未找到决策模型。可使用以下命令安装：",
+      "suggested": "推荐的决策模型：",
+      "pullAria": "拉取 {{name}}",
+      "pull": "拉取",
+      "pullStarting": "正在开始",
+      "timeout": "超时（毫秒）",
+      "timeoutHint": "单次决策调用的上限。0 表示使用默认值（本地 1500 毫秒，远程 3000 毫秒）。",
+      "connection": "连接",
+      "testConnection": "测试连接",
+      "report": {
+        "reachable": "可访问",
+        "authorized": "已授权",
+        "version": "版本 ≥ 0.35",
+        "found": "检测到 {{version}}",
+        "modelPresent": "模型已存在",
+        "decisionCapable": "支持决策的模型",
+        "latency": "延迟"
+      },
+      "health": {
+        "healthy": "正常",
+        "unhealthy": "异常"
+      },
+      "inUse": {
+        "label": "决策模型",
+        "configure": "配置",
+        "notConfigured": "尚未配置决策模型。",
+        "none": "未配置",
+        "hosted": "此提供商为远程服务：你的提示词会离开本机，由决策模型处理。"
+      }
     }
   },
   "chat": {
@@ -515,6 +607,21 @@
       "noSessions": "暂无会话",
       "commands": "命令",
       "openCommands": "打开命令启动器"
+    },
+    "contextFilter": {
+      "summary": "上下文过滤：保留 {{kept}}/{{total}}",
+      "keptOf": "保留 {{kept}}/{{total}}",
+      "threshold": "阈值：{{value}}",
+      "router": "决策模型",
+      "partial": "部分结果：{{reason}}",
+      "showDetails": "显示详情",
+      "hideDetails": "隐藏详情",
+      "sources": {
+        "code": "代码",
+        "kb": "KB",
+        "events": "事件",
+        "memory": "记忆"
+      }
     }
   },
   "pwa": {

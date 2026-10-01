@@ -19,6 +19,30 @@ KBConvertDocuments = true            # default; convert documents in the KB fold
 # KBConvertExtensions = ["docx", "pdf", "xlsx"]   # optional: override the curated set
 ```
 
+## Filtering injected context with the decision model
+
+Context enrichment (KB, events and code snippets added to the user message) and memory
+injection pick snippets by embedding score. Two opt-in switches under `[Remembrances]` let the
+shared [decision model](decision-model.md) additionally drop snippets that are similar but not
+useful for the current prompt:
+
+```toml
+[Remembrances]
+ContextEnrichmentDecisionFilterEnabled = false       # KB / events / code snippets (default off)
+MemoryContextDecisionFilterEnabled     = false       # injected memories (default off)
+ContextEnrichmentDecisionFilterThreshold = 0.60      # keep when p(useful) >= threshold
+ContextEnrichmentDecisionFilterMaxCandidates = 32    # candidates judged per turn
+ContextEnrichmentDecisionFilterMaxCandidateChars = 400
+ContextEnrichmentDecisionFilterAllowHosted = false   # false: only local (Ollama) providers see snippets
+```
+
+The filter is fail-open (any problem keeps the unfiltered result), never drops memories from
+`MemoryPinnedScopes`, keeps candidates it did not ask about and reports a notice only when it
+dropped something. Measured quality and a threshold recommendation are in
+[tests/decision_model/REPORT.md](../tests/decision_model/REPORT.md); details in
+[decision-model.md](decision-model.md#context-relevance-filter). In the WebUI the toggles live under
+Settings > Remembrances.
+
 ## Wiki links in the Knowledge Base
 
 KB documents link each other with `[[wiki links]]`, turning the knowledge base into a

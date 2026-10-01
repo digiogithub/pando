@@ -13,17 +13,16 @@ vi.mock('@pando/client/services/api', () => ({
 import AgentsSettings from './AgentsSettings'
 import { SETTINGS_CATEGORY_EVENT } from './settingsEvents'
 import { useAgentsStore } from '@pando/client/stores/settingsStore'
-import { EMPTY_DRAFT, useModelAutoModeStore } from '@pando/client/stores/modelAutoModeStore'
+import { EMPTY_DECISION_DRAFT, useDecisionModelStore } from '@pando/client/stores/decisionModelStore'
 
 function agent(name: string, over: Record<string, unknown> = {}) {
   return { name, model: '', maxTokens: 0, reasoningEffort: '', thinkingMode: '', autoCompact: false, autoCompactThreshold: 0, ...over }
 }
 
-function autoMode(provider: string, model: string) {
+function decisionConfig(provider: string, model: string) {
   return {
-    enabled: true, defaultAuto: false, autoSelected: false,
     router: { provider, baseURL: '', effectiveBaseURL: '', model, keepAlive: '', headers: {}, apiKeySet: false, apiKeyMasked: '' },
-    threshold: 0.6, minConfidence: 0, timeoutMs: 0, historyPrompts: 0, routes: [], warnings: [],
+    timeoutMs: 0, warnings: [],
   }
 }
 
@@ -32,9 +31,9 @@ function setup(opts: { useDecisionModel?: boolean; provider?: string; model?: st
     if (path === '/api/v1/config/agents') {
       return { agents: [agent('coder'), agent('persona-selector', { useDecisionModel: !!opts.useDecisionModel })] }
     }
-    if (path === '/api/v1/config/model-auto-mode') return autoMode(opts.provider ?? 'ollama', opts.model ?? '')
+    if (path === '/api/v1/config/decision-model') return decisionConfig(opts.provider ?? 'ollama', opts.model ?? '')
     if (path === '/api/v1/models') return { models: [] }
-    if (path === '/api/v1/model-auto-mode/router/health') return { ok: true, report: { ok: true, reachable: true } }
+    if (path === '/api/v1/decision-model/router/health') return { ok: true, report: { ok: true, reachable: true } }
     return {}
   })
 }
@@ -46,7 +45,7 @@ async function openAgent(label: string) {
 beforeEach(() => {
   get.mockReset(); post.mockReset(); put.mockReset()
   useAgentsStore.setState({ agents: [], original: [], dirty: false, loading: false, saving: false, error: null })
-  useModelAutoModeStore.setState({ draft: EMPTY_DRAFT, original: EMPTY_DRAFT, dirty: false })
+  useDecisionModelStore.setState({ draft: EMPTY_DECISION_DRAFT, original: EMPTY_DECISION_DRAFT, dirty: false, loaded: false, health: null, healthError: '' })
 })
 
 describe('AgentsSettings persona-selector decision model', () => {
@@ -75,22 +74,24 @@ describe('AgentsSettings persona-selector decision model', () => {
     expect(body.agents.find((a) => a.name === 'coder')).not.toHaveProperty('useDecisionModel')
   })
 
-  it('warns when no router model is configured', async () => {
+  it('warns with a link when no decision model is configured', async () => {
     setup({ useDecisionModel: true, model: '' })
     render(<AgentsSettings />)
     await openAgent('Persona Selector')
-    expect(await screen.findByText(/No router model is configured/)).toBeInTheDocument()
+    expect(await screen.findByText(/No decision model is configured/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Configure/ })).toBeInTheDocument()
   })
 
-  it('shows the privacy note only for a hosted router and links to Model auto mode', async () => {
+  it('shows the privacy note only for a hosted router and links to the Decision model page', async () => {
     setup({ useDecisionModel: true, provider: 'typesafe', model: 'jev-latest' })
     const jump = vi.fn()
     window.addEventListener(SETTINGS_CATEGORY_EVENT, jump)
     render(<AgentsSettings />)
     await openAgent('Persona Selector')
     expect(await screen.findByText(/prompts leave your machine/i)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /Open Model auto mode settings/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Configure/ }))
     expect(jump).toHaveBeenCalled()
+    expect((jump.mock.calls[0][0] as CustomEvent).detail).toBe('decision-model')
     window.removeEventListener(SETTINGS_CATEGORY_EVENT, jump)
   })
 

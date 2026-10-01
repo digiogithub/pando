@@ -46,9 +46,17 @@ func sessionMemoryBlock(ctx context.Context) string {
 	if injector == nil {
 		return ""
 	}
+	build := func() string {
+		if fi, ok := injector.(FilteredMemoryInjector); ok {
+			block, res := fi.BuildMemoryBlockWithResult(ctx, memoryQueryFromContext(ctx))
+			filterCollectorFrom(ctx).add(res)
+			return block
+		}
+		return injector.BuildMemoryBlock(ctx, memoryQueryFromContext(ctx))
+	}
 	sessionID := sessionIDFromContext(ctx)
 	if sessionID == "" {
-		return injector.BuildMemoryBlock(ctx, memoryQueryFromContext(ctx))
+		return build()
 	}
 
 	frozenMemoryBlocks.Lock()
@@ -58,7 +66,7 @@ func sessionMemoryBlock(ctx context.Context) string {
 		return block
 	}
 
-	block = injector.BuildMemoryBlock(ctx, memoryQueryFromContext(ctx))
+	block = build()
 
 	frozenMemoryBlocks.Lock()
 	defer frozenMemoryBlocks.Unlock()

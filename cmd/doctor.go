@@ -23,10 +23,9 @@ var doctorCmd = &cobra.Command{
 	Short: "Check the health of optional Pando features",
 	Long: `Runs read-only diagnostics and prints actionable hints.
 
-Currently checks model auto mode: whether the decision provider is reachable
-and authorized, the Ollama version (0.35 or newer), whether the router model is
-installed and decision-capable, and whether the models used by the routes are
-known and usable.
+Checks the shared decision model (provider, URL, model, health and the features
+that use it: model auto mode, persona selector, context filter, memory filter),
+then model auto mode (routes and their models) and persona auto-select.
 
 Examples:
   pando doctor`,
@@ -45,7 +44,9 @@ Examples:
 		if ctx == nil {
 			ctx = context.Background()
 		}
-		problems := doctorModelAutoMode(ctx, cfg, cmd.OutOrStdout())
+		problems := doctorDecisionModel(ctx, cfg, cmd.OutOrStdout())
+		fmt.Fprintln(cmd.OutOrStdout())
+		problems += doctorModelAutoMode(ctx, cfg, cmd.OutOrStdout())
 		fmt.Fprintln(cmd.OutOrStdout())
 		problems += doctorPersonaAutoSelect(ctx, cfg, doctorPersonaManager(cfg), cmd.OutOrStdout())
 		if problems > 0 {
@@ -57,6 +58,92 @@ Examples:
 
 func init() {
 	rootCmd.AddCommand(doctorCmd)
+}
+
+// onOff renders a consumer flag.
+func onOff(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
+}
+
+// doctorDecisionModel prints the shared decision model block to w: the
+// provider, the effective URL, the model, the timeout, the health of the
+// provider and which features use it. It returns the number of problems found
+// (warnings are not problems). Model auto mode and persona auto-select refer to
+// this block instead of repeating the router lines.
+func doctorDecisionModel(ctx context.Context, cfg *config.Config, w io.Writer) int {
+	problems := 0
+	fail := func(format string, args ...any) {
+		problems++
+		fmt.Fprintf(w, "  [FAIL] "+format+"\n", args...)
+	}
+	ok := func(format string, args ...any) { fmt.Fprintf(w, "  [ OK ] "+format+"\n", args...) }
+	warn := func(format string, args ...any) { fmt.Fprintf(w, "  [WARN] "+format+"\n", args...) }
+	hint := func(format string, args ...any) { fmt.Fprintf(w, "         hint: "+format+"\n", args...) }
+
+	fmt.Fprintln(w, "Decision model")
+	d := cfg.DecisionModel
+	rem := cfg.Remembrances
+	auto := cfg.ModelAutoMode.Enabled
+	personaOn := cfg.Agents[config.AgentPersonaSelector].UseDecisionModel
+	ctxFilter := rem.ContextEnrichmentDecisionFilterEnabled
+	memFilter := rem.MemoryContextDecisionFilterEnabled
+
+	kind := d.Router.EffectiveProvider()
+	fmt.Fprintf(w, "  provider: %s\n", kind)
+	fmt.Fprintf(w, "  base URL: %s\n", d.Router.EffectiveBaseURL())
+	fmt.Fprintf(w, "  model:    %q\n", d.Router.Model)
+	fmt.Fprintf(w, "  timeout:  %d ms\n", d.EffectiveTimeout().Milliseconds())
+	fmt.Fprintln(w, "  consumers:")
+	fmt.Fprintf(w, "    model auto mode:  %s\n", onOff(auto))
+	fmt.Fprintf(w, "    persona selector: %s\n", onOff(personaOn))
+	filterDetail := func(on bool) string {
+		if !on {
+			return "off"
+		}
+		scope := "local only"
+		if !rem.DecisionFilterLocalOnly() {
+			scope = "hosted allowed"
+		}
+		return fmt.Sprintf("on (threshold %.2f, max candidates %d, %s)",
+			rem.DecisionFilterThreshold(), rem.DecisionFilterMaxCandidates(), scope)
+	}
+	fmt.Fprintf(w, "    context filter:   %s\n", filterDetail(ctxFilter))
+	fmt.Fprintf(w, "    memory filter:    %s\n", filterDetail(memFilter))
+
+	if !cfg.AnyDecisionConsumerEnabled() {
+		fmt.Fprintln(w, "  not used: no feature that needs a decision model is enabled")
+		return 0
+	}
+
+	dErrs, dWarnings := config.ValidateDecisionModel(d)
+	for _, e := range dErrs {
+		fail("config decisionModel.%s: %s", e.Field, e.Message)
+	}
+	for _, msg := range dWarnings {
+		warn("%s", msg)
+	}
+	if strings.TrimSpace(d.Router.Model) == "" {
+		fail("no decision model configured under Settings > Decision model")
+		hint("set the provider and model, e.g. Ollama with tev1:0.8b (%s)", systemone.OllamaPullHint)
+		return problems
+	}
+	if (ctxFilter || memFilter) && rem.DecisionFilterLocalOnly() && kind != config.DecisionProviderOllama {
+		warn("context/memory filter is local-only and the provider is hosted: the filter is skipped")
+		hint("use a local Ollama decision model or allow hosted providers for the filter")
+	}
+
+	p, err := modelrouter.ProviderWithTimeout(d.Router, 10*time.Second)
+	if err != nil {
+		fail("cannot build the decision provider: %v", err)
+		return problems
+	}
+	hctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	doctorReport(p.Health(hctx, d.Router.Model), kind, d.Router.Model, ok, fail, hint)
+	return problems
 }
 
 // doctorModelAutoMode prints the model auto mode diagnostics to w and returns
@@ -78,7 +165,7 @@ func doctorModelAutoMode(ctx context.Context, cfg *config.Config, w io.Writer) i
 		return 0
 	}
 
-	errs, warnings := config.ValidateModelAutoMode(m)
+	errs, warnings := config.ValidateModelAutoMode(m, cfg.DecisionModel)
 	for _, e := range errs {
 		fail("config %s: %s", e.Field, e.Message)
 	}
@@ -90,18 +177,7 @@ func doctorModelAutoMode(ctx context.Context, cfg *config.Config, w io.Writer) i
 	} else {
 		ok("%d enabled route(s), threshold %.2f", len(m.EnabledRoutes()), m.EffectiveThreshold())
 	}
-
-	kind := m.Router.EffectiveProvider()
-	fmt.Fprintf(w, "  router: %s at %s, model %q\n", kind, m.Router.EffectiveBaseURL(), m.Router.Model)
-	p, err := modelrouter.ProviderFor(m.Router, 10*time.Second)
-	if err != nil {
-		fail("cannot build the decision provider: %v", err)
-		return problems
-	}
-	hctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	rep := p.Health(hctx, m.Router.Model)
-	doctorReport(rep, kind, m.Router.Model, ok, fail, hint)
+	fmt.Fprintln(w, "  decision provider: see the Decision model block")
 
 	// Routes: each model must be known and its provider usable.
 	lookup := modelrouter.DefaultLookup(cfg)
@@ -218,22 +294,7 @@ func doctorPersonaAutoSelect(ctx context.Context, cfg *config.Config, mgr *perso
 	}
 	ok("decision model option on")
 
-	m := cfg.ModelAutoMode
-	if strings.TrimSpace(m.Router.Model) == "" {
-		fail("no router model configured under Model auto mode > Router")
-		hint("set the router provider and model in Settings > Model auto mode")
-		return problems
-	}
-	kind := m.Router.EffectiveProvider()
-	fmt.Fprintf(w, "  router: %s at %s, model %q (shared with model auto mode)\n", kind, m.Router.EffectiveBaseURL(), m.Router.Model)
-	p, err := modelrouter.ProviderFor(m.Router, 10*time.Second)
-	if err != nil {
-		fail("cannot build the decision provider: %v", err)
-		return problems
-	}
-	hctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	doctorReport(p.Health(hctx, m.Router.Model), kind, m.Router.Model, ok, fail, hint)
+	fmt.Fprintln(w, "  decision provider: see the Decision model block")
 	return problems
 }
 

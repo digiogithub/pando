@@ -43,6 +43,9 @@ type PersonaInput struct {
 	Prompt   string
 	History  []string // previous user prompts, newest last (may be empty)
 	Personas []PersonaOption
+	// HistoryPrompts caps how many History entries reach the state (the
+	// auto mode policy value; 0 sends none).
+	HistoryPrompts int
 }
 
 // PersonaDecision is the outcome of classifying one prompt into a persona.
@@ -85,7 +88,7 @@ func (e *Engine) RoutePersona(ctx context.Context, in PersonaInput) PersonaDecis
 		return pd
 	}
 	task := Input{Prompt: in.Prompt, History: in.History}
-	resp, latency, err := e.ask(ctx, task, map[string]systemone.Question{personaQuestionName: pq.q}, pq.overhead)
+	resp, latency, err := e.ask(ctx, task, in.HistoryPrompts, map[string]systemone.Question{personaQuestionName: pq.q}, pq.overhead)
 	pd.LatencyMs = latency
 	e.finishPersona(&pd, pq, resp, err)
 	return pd
@@ -99,14 +102,14 @@ func (e *Engine) RoutePersona(ctx context.Context, in PersonaInput) PersonaDecis
 // counted twice; LatencyMs is reported on both. When either question has nothing to ask (no enabled routes, no
 // personas, no router model) the decisions are taken separately, which sends
 // at most one question.
-func (e *Engine) RouteWithPersona(ctx context.Context, in Input, p PersonaInput) (Decision, PersonaDecision) {
-	routes := e.cfg.EnabledRoutes()
+func (e *Engine) RouteWithPersona(ctx context.Context, policy config.ModelAutoModeConfig, in Input, p PersonaInput) (Decision, PersonaDecision) {
+	routes := policy.EnabledRoutes()
 	pd, pq, ok := e.personaBase(p)
 	if len(routes) == 0 || !ok {
 		if ok {
-			pd = e.RoutePersona(ctx, PersonaInput{Prompt: in.Prompt, History: in.History, Personas: p.Personas})
+			pd = e.RoutePersona(ctx, PersonaInput{Prompt: in.Prompt, History: in.History, Personas: p.Personas, HistoryPrompts: policy.HistoryPrompts})
 		}
-		return e.Route(ctx, in), pd
+		return e.Route(ctx, policy, in), pd
 	}
 
 	d := Decision{
@@ -123,7 +126,7 @@ func (e *Engine) RouteWithPersona(ctx context.Context, in Input, p PersonaInput)
 	criteria = append(criteria, systemone.NewCriterion(noneKey, noneDescription))
 	tq := systemone.Question{Type: "choice", Instructions: instructionsText, Criteria: criteria}
 
-	resp, latency, err := e.ask(ctx, in, map[string]systemone.Question{
+	resp, latency, err := e.ask(ctx, in, policy.HistoryPrompts, map[string]systemone.Question{
 		questionName:        tq,
 		personaQuestionName: pq.q,
 	}, overhead)
@@ -137,7 +140,7 @@ func (e *Engine) RouteWithPersona(ctx context.Context, in Input, p PersonaInput)
 	if terr != nil {
 		d.Reason, d.Err, d.ErrClass = ReasonRouterError, terr, classify(terr)
 	} else {
-		e.applyTaskAnswer(&d, routes, resp, ans)
+		applyTaskAnswer(&d, policy, routes, resp, ans)
 	}
 	e.finishPersona(&pd, pq, resp, err)
 	pd.CostUSD, pd.InputTokens = nil, 0
@@ -148,10 +151,10 @@ func (e *Engine) RouteWithPersona(ctx context.Context, in Input, p PersonaInput)
 // question can be asked; pd then already carries the final reason.
 func (e *Engine) personaBase(in PersonaInput) (pd PersonaDecision, pq personaQuestion, ok bool) {
 	pd = PersonaDecision{
-		RouterProvider: string(e.cfg.Router.EffectiveProvider()),
-		RouterModel:    e.cfg.Router.Model,
+		RouterProvider: string(e.dec.Router.EffectiveProvider()),
+		RouterModel:    e.dec.Router.Model,
 	}
-	if strings.TrimSpace(e.cfg.Router.Model) == "" {
+	if strings.TrimSpace(e.dec.Router.Model) == "" {
 		pd.Reason = ReasonNoRouter
 		return pd, pq, false
 	}
@@ -200,14 +203,6 @@ func (e *Engine) finishPersona(pd *PersonaDecision, pq personaQuestion, resp *sy
 		pd.Matched = true
 		pd.Persona = name
 	}
-}
-
-// PersonaEngineFor returns an engine usable for persona decisions from the
-// model auto mode config, regardless of cfg.Enabled: only the router block
-// and the timeout are used, and no model route is required. It shares the
-// process-wide engine cache with ForConfig.
-func PersonaEngineFor(cfg config.ModelAutoModeConfig) (*Engine, error) {
-	return ForConfig(cfg)
 }
 
 // PersonaCap reports how many of n personas are offered to the decision model

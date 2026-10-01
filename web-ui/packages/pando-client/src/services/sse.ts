@@ -1,5 +1,5 @@
 import api, { notifyNetworkError } from './api'
-import type { SSEEvent, RoutingInfo } from '../types'
+import type { SSEEvent, RoutingInfo, ContextFilterInfo } from '../types'
 
 type ToolCallKind = NonNullable<NonNullable<SSEEvent['tool_call']>['kind']>
 type ToolCallStatus = NonNullable<NonNullable<SSEEvent['tool_call']>['status']>
@@ -146,7 +146,7 @@ export function createSSEStream(
   return controller
 }
 
-function parseSSEPayload(eventType: SSEEvent['type'], raw: Record<string, unknown>): SSEEvent {
+export function parseSSEPayload(eventType: SSEEvent['type'], raw: Record<string, unknown>): SSEEvent {
   const base: SSEEvent = {
     type: eventType,
     session_id: typeof raw.sessionId === 'string' ? raw.sessionId : undefined,
@@ -295,6 +295,8 @@ function parseSSEPayload(eventType: SSEEvent['type'], raw: Record<string, unknow
       base.session_id = typeof raw.session_id === 'string' ? raw.session_id : base.session_id
       base.message = typeof raw.text === 'string' ? raw.text : undefined
       base.routing = raw.routing && typeof raw.routing === 'object' ? (raw.routing as RoutingInfo) : undefined
+      base.context_filter =
+        raw.context_filter && typeof raw.context_filter === 'object' ? (raw.context_filter as ContextFilterInfo) : undefined
       break
 
     default:

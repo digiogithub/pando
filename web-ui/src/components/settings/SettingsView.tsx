@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { useBlocker, useNavigate, type BlockerFunction } from 'react-router-dom'
+import { useBlocker, useNavigate, useSearchParams, type BlockerFunction } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import GeneralSettings from './GeneralSettings'
 import AppearanceSettings from './AppearanceSettings'
@@ -24,6 +24,7 @@ import ProviderAccountsSettings from './ProviderAccountsSettings'
 import ContainerRuntimeSettings from './ContainerRuntimeSettings'
 import { SETTINGS_CATEGORY_EVENT } from './settingsEvents'
 import ModelAutoModeSettings from './ModelAutoModeSettings'
+import DecisionModelSettings from './DecisionModelSettings'
 import UnsavedChangesDialog from './UnsavedChangesDialog'
 import { useUnsavedChangesStore } from './unsavedChanges'
 import { useConfigEventsStore } from '@pando/client/stores/configEventsStore'
@@ -38,6 +39,7 @@ import {
   Bot,
   Boxes,
   Brain,
+  BrainCircuit,
   Code,
   FileCode,
   Gauge,
@@ -65,6 +67,7 @@ type SettingsCategory =
   | 'providers'
   | 'agents'
   | 'model-auto-mode'
+  | 'decision-model'
   | 'mcp-servers'
   | 'mcp-gateway'
   | 'lsp'
@@ -96,6 +99,7 @@ const CATEGORY_KEYS: { id: SettingsCategory; labelKey: string; icon: LucideIcon;
   { id: 'providers', labelKey: 'settings.categories.providers', icon: Plug, path: 'providerAccounts' },
   { id: 'agents', labelKey: 'settings.categories.agents', icon: Bot, path: 'agents' },
   { id: 'model-auto-mode', labelKey: 'settings.categories.modelAutoMode', icon: Sparkles, path: 'modelAutoMode' },
+  { id: 'decision-model', labelKey: 'settings.categories.decisionModel', icon: BrainCircuit, path: 'decisionModel' },
   { id: 'mcp-servers', labelKey: 'settings.categories.mcpServers', icon: Server, path: 'mcpServers' },
   { id: 'mcp-gateway', labelKey: 'settings.categories.mcpGateway', icon: Network, path: 'mcpGateway' },
   { id: 'lsp', labelKey: 'settings.categories.lsp', icon: Code, path: 'lsp' },
@@ -121,6 +125,7 @@ const PANELS: Partial<Record<SettingsCategory, ReactNode>> = {
   providers: <ProviderAccountsSettings />,
   agents: <AgentsSettings />,
   'model-auto-mode': <ModelAutoModeSettings />,
+  'decision-model': <DecisionModelSettings />,
   'mcp-servers': <MCPServersSettings />,
   'mcp-gateway': <MCPGatewaySettings />,
   lsp: <LSPSettings />,
@@ -174,7 +179,10 @@ const MOBILE_QUERY = '(max-width: 768px)'
 
 export default function SettingsView() {
   const { t } = useTranslation()
-  const [activeCategory, setActiveCategory] = useState<ActiveCategory>('general')
+  // Deep link: /settings?section=<category id> opens that category directly.
+  const [searchParams] = useSearchParams()
+  const deepLinked = CATEGORY_KEYS.find((c) => c.id === searchParams.get('section'))?.id
+  const [activeCategory, setActiveCategory] = useState<ActiveCategory>(deepLinked ?? 'general')
   const { connect, disconnect } = useConfigEventsStore()
   const extensionSections = useExtensionPanelsStore((s) => s.panels).filter((p) => p.slot === 'settings')
 
@@ -210,7 +218,7 @@ export default function SettingsView() {
 
   // Mobile only: the category list is the landing screen; picking a category
   // swaps it for the section, which offers a control to bring the list back.
-  const [menuOpen, setMenuOpen] = useState(true)
+  const [menuOpen, setMenuOpen] = useState(!deepLinked)
   const showMenu = !isMobile || menuOpen
   const showContent = !isMobile || !menuOpen
 

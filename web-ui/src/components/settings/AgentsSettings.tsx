@@ -3,11 +3,9 @@ import { useAgentsStore } from '@pando/client/stores/settingsStore'
 import { useUnsavedChangesGuard } from './unsavedChanges'
 import ModelCombobox from '@/components/shared/ModelCombobox'
 import type { AgentConfigItem } from '@pando/client/types'
-import { SETTINGS_CATEGORY_EVENT } from './settingsEvents'
-import api from '@pando/client/services/api'
-import { useModelAutoModeStore, type HealthReportDTO } from '@pando/client/stores/modelAutoModeStore'
+import DecisionModelInUse from './DecisionModelInUse'
 import { Badge, Button, Card, Input, Select, Switch } from '@/components/ui'
-import { ChevronDown, ChevronUp, TriangleAlert } from '@/components/ui/icons'
+import { ChevronDown, ChevronUp } from '@/components/ui/icons'
 
 const AGENT_NAMES = ['coder', 'summarizer', 'task', 'title', 'cli-assist', 'persona-selector', 'context-enricher']
 
@@ -69,75 +67,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 
 
-/** Decision-model option of the persona-selector agent (read-only router info + warnings). */
-function DecisionModelInfo() {
-  const router = useModelAutoModeStore((s) => s.original.router)
-  const fetchConfig = useModelAutoModeStore((s) => s.fetchConfig)
-  const [health, setHealth] = useState<HealthReportDTO | null>(null)
-  const [healthErr, setHealthErr] = useState('')
-  const model = router.model.trim()
-
-  useEffect(() => {
-    void fetchConfig()
-  }, [fetchConfig])
-
-  useEffect(() => {
-    if (!model) {
-      setHealth(null)
-      return
-    }
-    let cancelled = false
-    api
-      .get<{ ok: boolean; report?: HealthReportDTO; error?: string }>('/api/v1/model-auto-mode/router/health')
-      .then((r) => {
-        if (cancelled) return
-        setHealth(r.report ?? null)
-        setHealthErr(r.report ? '' : (r.error ?? ''))
-      })
-      .catch((e) => {
-        if (!cancelled) setHealthErr(e instanceof Error ? e.message : 'Health check failed')
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [model, router.provider])
-
-  const openModelAutoMode = () =>
-    window.dispatchEvent(new CustomEvent(SETTINGS_CATEGORY_EVENT, { detail: 'model-auto-mode' }))
-  const remote = router.provider !== 'ollama'
-
-  return (
-    <div className="flex flex-col gap-2" data-testid="persona-decision-info">
-      {model ? (
-        <div className="flex items-center gap-2 flex-wrap text-sm">
-          <span className="text-muted">Router:</span>
-          <span className="font-mono">{router.provider}/{model}</span>
-          {health && <Badge tone={health.ok ? 'success' : 'danger'}>{health.ok ? 'Healthy' : 'Unhealthy'}</Badge>}
-          {!health && healthErr && <Badge tone="danger">{healthErr}</Badge>}
-          <Button variant="secondary" onClick={openModelAutoMode}>Open Model auto mode settings</Button>
-        </div>
-      ) : (
-        <div className="settings-banner settings-banner--warning" role="alert">
-          <TriangleAlert size={14} />
-          <div>
-            No router model is configured in Model auto mode, so the fallback model is used.{' '}
-            <Button variant="secondary" onClick={openModelAutoMode}>Open Model auto mode settings</Button>
-          </div>
-        </div>
-      )}
-      {model && health && !health.ok && health.problems && health.problems.length > 0 && (
-        <div className="text-xs text-muted">{health.problems.join('; ')}</div>
-      )}
-      {model && remote && (
-        <div className="settings-banner settings-banner--warning" role="note">
-          <TriangleAlert size={14} />
-          <div>This provider is remote: your prompts leave your machine to be classified.</div>
-        </div>
-      )}
-    </div>
-  )
-}
-
 function AgentCard({
   agent,
   onUpdate,
@@ -188,13 +117,19 @@ function AgentCard({
                   onCheckedChange={(v) => onUpdate({ useDecisionModel: v })}
                 />
                 <label htmlFor="agent-use-decision-model" className="cursor-pointer">
-                  <div className="text-sm font-medium text-fg">Use decision model (from model auto mode)</div>
+                  <div className="text-sm font-medium text-fg">Use decision model</div>
                   <div className="text-xs text-muted">
-                    Pick the persona with the model auto mode router instead of this agent&apos;s model.
+                    Pick the persona with the shared decision model instead of this agent&apos;s model.
                   </div>
                 </label>
               </div>
-              {useDecisionModel && <DecisionModelInfo />}
+              {useDecisionModel && (
+                <DecisionModelInUse
+                  consumerEnabled
+                  missingNote="The fallback model is used instead."
+                  testId="persona-decision-info"
+                />
+              )}
             </div>
           )}
 

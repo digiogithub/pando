@@ -17,7 +17,6 @@ import (
 	"sync"
 	"time"
 
-
 	"github.com/digiogithub/pando/internal/agentvcs"
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/caveman"
@@ -365,6 +364,10 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 				app.initKBEmbeddingStalenessCheck(ctx, remembrances, &cfg.Remembrances)
 				app.initRemembrancesSessionIndexing(ctx, remembrances, &cfg.Remembrances)
 
+				// Decision-model relevance filter targets, wired after both injection
+				// points are built (see startRelevanceFilterWiring).
+				var relevance relevanceTargets
+
 				// Initialize context enricher if enabled: searches KB and code index
 				// before every user prompt and prepends relevant context.
 				if cfg.Remembrances.ContextEnrichmentEnabled {
@@ -416,6 +419,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 					}
 
 					app.ContextEnricher = enricher
+					relevance.enricher = enricher
 
 					// Agent-loop enrichment: a separate agent running on the context-enricher
 					// model gathers memory, KB and code-index context iteratively. The main
@@ -458,10 +462,15 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 						cfg:   cfg.Remembrances,
 					}
 					agent.SetMemoryInjector(injector)
+					relevance.injector = injector
 					logging.Info("remembrances: memory context injection enabled",
 						"max_items", cfg.Remembrances.MemoryContextMaxItems,
 						"max_chars", cfg.Remembrances.MemoryContextMaxChars,
 					)
+				}
+
+				if relevance.enricher != nil || relevance.injector != nil {
+					startRelevanceFilterWiring(ctx, relevance)
 				}
 
 				// Memory GC service — periodically marks expired memories as outdated.
@@ -2856,9 +2865,11 @@ func (a *appACPAgentAdapter) LearningFinish(ctx context.Context, sessionID strin
 	return a.forwardEvents(ctx, realCh), nil
 }
 
-func (a *appACPAgentAdapter) ListPersonas() []string             { return agent.ListAvailablePersonas() }
-func (a *appACPAgentAdapter) GetActivePersona() string           { return agent.GetActivePersona() }
-func (a *appACPAgentAdapter) SetActivePersona(name string) error { return agent.SetAndPersistActivePersona(name) }
+func (a *appACPAgentAdapter) ListPersonas() []string   { return agent.ListAvailablePersonas() }
+func (a *appACPAgentAdapter) GetActivePersona() string { return agent.GetActivePersona() }
+func (a *appACPAgentAdapter) SetActivePersona(name string) error {
+	return agent.SetAndPersistActivePersona(name)
+}
 func (a *appACPAgentAdapter) Summarize(ctx context.Context, sessionID string) (<-chan mesnadaACP.AgentEvent, error) {
 	realCh, err := a.svc.SummarizeStream(ctx, sessionID)
 	if err != nil {

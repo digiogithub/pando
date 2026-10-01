@@ -104,7 +104,7 @@ func TestAutoRouterDownUsesCoder(t *testing.T) {
 	})
 
 	t.Run("timeout bound", func(t *testing.T) {
-		env := newAutoEnv(t, withAutoConfig(func(m *config.ModelAutoModeConfig) { m.TimeoutMs = 500 }))
+		env := newAutoEnv(t, withDecisionConfig(func(d *config.DecisionModelConfig) { d.TimeoutMs = 500 }))
 		sid := env.session("auto-slow", autoCoder)
 		env.srv.Delay(5 * time.Second)
 
@@ -400,8 +400,9 @@ func (c *logCapture) Handle(_ context.Context, r slog.Record) error {
 func TestAutoTelemetryPrivacy(t *testing.T) {
 	const marker = "SECRET-PROMPT-MARKER"
 	const apiKey = "sk-router-secret-key-123"
-	env := newAutoEnv(t, withAutoConfig(func(m *config.ModelAutoModeConfig) {
-		m.Router.APIKey = apiKey
+	env := newAutoEnv(t, withDecisionConfig(func(d *config.DecisionModelConfig) {
+		d.Router.APIKey = apiKey
+	}), withAutoConfig(func(m *config.ModelAutoModeConfig) {
 		m.HistoryPrompts = 2
 	}))
 	sid := env.session("auto-privacy", autoCoder)

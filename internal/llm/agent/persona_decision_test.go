@@ -611,7 +611,7 @@ func TestPersonaCancelledRunDoesNotPoisonCooldown(t *testing.T) {
 }
 
 func TestPersonaRouterTimeoutStillCoolsDownAndFallsBack(t *testing.T) {
-	env := newPersonaEnv(t, true, withAutoConfig(func(m *config.ModelAutoModeConfig) { m.TimeoutMs = 100 }))
+	env := newPersonaEnv(t, true, withDecisionConfig(func(d *config.DecisionModelConfig) { d.TimeoutMs = 100 }))
 	sid := env.personaSession("p-timeout")
 	env.srv.Delay(600 * time.Millisecond)
 	env.llm.answer = "qa"

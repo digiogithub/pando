@@ -102,7 +102,7 @@ func autoHealthCmd() tea.Cmd {
 	if c == nil || !c.ModelAutoMode.Enabled {
 		return nil
 	}
-	cfg := c.ModelAutoMode
+	cfg := c.DecisionModel
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -247,8 +247,8 @@ func (m *modelDialogCmp) selectedModelDetails() string {
 // autoDetails renders the metadata line of the Auto entry.
 func (m *modelDialogCmp) autoDetails() string {
 	parts := []string{"routes each prompt"}
-	if c := config.Get(); c != nil && c.ModelAutoMode.Router.Model != "" {
-		parts = append(parts, string(c.ModelAutoMode.Router.EffectiveProvider())+"/"+c.ModelAutoMode.Router.Model)
+	if c := config.Get(); c != nil && c.DecisionModel.Router.Model != "" {
+		parts = append(parts, string(c.DecisionModel.Router.EffectiveProvider())+"/"+c.DecisionModel.Router.Model)
 	}
 	if m.autoHealth != "" {
 		parts = append(parts, m.autoHealth)

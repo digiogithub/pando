@@ -18,15 +18,15 @@ func defaultPersonas() []PersonaOption {
 	}
 }
 
-func personaCfg(srv *systemonetest.Server) config.ModelAutoModeConfig {
+func personaCfg(srv *systemonetest.Server) testConfig {
 	cfg := testCfg(srv)
 	cfg.Enabled = false
 	return cfg
 }
 
-func routePersona(t *testing.T, cfg config.ModelAutoModeConfig, in PersonaInput) PersonaDecision {
+func routePersona(t *testing.T, cfg testConfig, in PersonaInput) PersonaDecision {
 	t.Helper()
-	e, err := PersonaEngineFor(cfg)
+	e, err := personaTestEngine(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,12 +101,12 @@ func TestRoutePersonaSinglePersona(t *testing.T) {
 func TestRoutePersonaErrorClasses(t *testing.T) {
 	cases := []struct {
 		name  string
-		setup func(*systemonetest.Server, *config.ModelAutoModeConfig)
+		setup func(*systemonetest.Server, *testConfig)
 		want  string
 	}{
-		{"unauthorized", func(s *systemonetest.Server, _ *config.ModelAutoModeConfig) { s.FailNext(401) }, ErrClassUnauthorized},
-		{"malformed", func(s *systemonetest.Server, _ *config.ModelAutoModeConfig) { s.SetRawResponse("{nope") }, ErrClassMalformed},
-		{"timeout", func(s *systemonetest.Server, c *config.ModelAutoModeConfig) {
+		{"unauthorized", func(s *systemonetest.Server, _ *testConfig) { s.FailNext(401) }, ErrClassUnauthorized},
+		{"malformed", func(s *systemonetest.Server, _ *testConfig) { s.SetRawResponse("{nope") }, ErrClassMalformed},
+		{"timeout", func(s *systemonetest.Server, c *testConfig) {
 			s.Delay(2 * time.Second)
 			c.TimeoutMs = 150
 		}, ErrClassTimeout},
@@ -116,7 +116,7 @@ func TestRoutePersonaErrorClasses(t *testing.T) {
 			srv := systemonetest.NewOllama035(t)
 			cfg := personaCfg(srv)
 			tc.setup(srv, &cfg)
-			e, err := NewEngine(cfg, WithProvider(mustProvider(t, cfg)))
+			e, err := newTestEngine(cfg, WithProvider(mustProvider(t, cfg)))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -223,13 +223,13 @@ func TestRoutePersonaDisabledZeroRoutesCustomProvider(t *testing.T) {
 	}
 }
 
-func combined(t *testing.T, cfg config.ModelAutoModeConfig, p []PersonaOption) (Decision, PersonaDecision) {
+func combined(t *testing.T, cfg testConfig, p []PersonaOption) (Decision, PersonaDecision) {
 	t.Helper()
-	e, err := NewEngine(cfg)
+	e, err := newTestEngine(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return e.RouteWithPersona(context.Background(), Input{Prompt: "refactor this", CoderModel: coder}, PersonaInput{Personas: p})
+	return e.RouteWithPersona(context.Background(), cfg.ModelAutoModeConfig, Input{Prompt: "refactor this", CoderModel: coder}, PersonaInput{Personas: p})
 }
 
 func TestRouteWithPersonaOneRequest(t *testing.T) {
@@ -310,12 +310,12 @@ func TestRouteWithPersonaMissingAnswer(t *testing.T) {
 func TestRouteWithPersonaTransportFailure(t *testing.T) {
 	srv := systemonetest.NewOllama035(t)
 	srv.FailNext(500)
-	e, err := NewEngine(testCfg(srv, defaultRoutes()...))
+	e, err := newTestEngine(testCfg(srv, defaultRoutes()...))
 	if err != nil {
 		t.Fatal(err)
 	}
 	e.budgetSet, e.budget, e.budgetAt = true, 2050, time.Now() // keep the failure for systemone
-	d, pd := e.RouteWithPersona(context.Background(), Input{Prompt: "x", CoderModel: coder}, PersonaInput{Personas: defaultPersonas()})
+	d, pd := e.RouteWithPersona(context.Background(), config.ModelAutoModeConfig{Enabled: true, Threshold: 0.6, Routes: defaultRoutes()}, Input{Prompt: "x", CoderModel: coder}, PersonaInput{Personas: defaultPersonas()})
 	if d.Reason != ReasonRouterError || pd.Reason != ReasonRouterError || d.ErrClass != ErrClassServer || pd.ErrClass != ErrClassServer {
 		t.Fatalf("d=%+v pd=%+v", d, pd)
 	}

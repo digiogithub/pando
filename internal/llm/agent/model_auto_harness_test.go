@@ -243,6 +243,10 @@ type autoEnv struct {
 
 type autoEnvOption func(*config.Config)
 
+func withDecisionConfig(fn func(*config.DecisionModelConfig)) autoEnvOption {
+	return func(c *config.Config) { fn(&c.DecisionModel) }
+}
+
 func withAutoConfig(fn func(*config.ModelAutoModeConfig)) autoEnvOption {
 	return func(c *config.Config) { fn(&c.ModelAutoMode) }
 }
@@ -277,16 +281,18 @@ func newAutoEnv(t *testing.T, opts ...autoEnvOption) *autoEnv {
 		ModelAutoMode: config.ModelAutoModeConfig{
 			Enabled:     true,
 			DefaultAuto: true,
-			Router: config.DecisionRouterConfig{
-				Provider: config.DecisionProviderOllama, BaseURL: srv.URL, Model: "tev1:0.8b",
-			},
-			Threshold: 0.6,
-			TimeoutMs: 2000,
+			Threshold:   0.6,
 			Routes: []config.ModelAutoRoute{
 				{ID: "implementation", Description: "write or change code", Model: autoImpl,
 					Fallbacks: []models.ModelID{autoFb1, autoFb2}},
 				{ID: "planning", Description: "plan or design", Model: autoPlan},
 			},
+		},
+		DecisionModel: config.DecisionModelConfig{
+			Router: config.DecisionRouterConfig{
+				Provider: config.DecisionProviderOllama, BaseURL: srv.URL, Model: "tev1:0.8b",
+			},
+			TimeoutMs: 2000,
 		},
 	}
 	for _, o := range opts {

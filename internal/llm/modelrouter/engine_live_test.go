@@ -16,18 +16,18 @@ func TestEngineLiveOllama(t *testing.T) {
 	if base == "" {
 		base = "http://localhost:11434"
 	}
-	cfg := config.ModelAutoModeConfig{
+	cfg := testConfig{ModelAutoModeConfig: config.ModelAutoModeConfig{
 		Enabled:   true,
-		Router:    config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, BaseURL: base, Model: "tev1:0.8b"},
 		Threshold: 0.6,
-		TimeoutMs: 20000,
 		Routes: []config.ModelAutoRoute{
 			{ID: "implementation", Description: "Write, modify, fix or refactor source code", Model: "m-impl"},
 			{ID: "planning", Description: "Plan, design or analyse architecture before coding", Model: "m-plan"},
 			{ID: "quick_question", Description: "Short factual question about a tool or concept", Model: "m-quick"},
 		},
-	}
-	e, err := NewEngine(cfg)
+	}}
+	cfg.Router = config.DecisionRouterConfig{Provider: config.DecisionProviderOllama, BaseURL: base, Model: "tev1:0.8b"}
+	cfg.TimeoutMs = 20000
+	e, err := newTestEngine(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func TestEngineLiveOllama(t *testing.T) {
 		"Design the architecture for a plugin system before we write anything",
 		"What does the -race flag do in go test?",
 	} {
-		d := e.Route(context.Background(), Input{Prompt: p, CoderModel: coder})
+		d := e.Route(context.Background(), cfg.ModelAutoModeConfig, Input{Prompt: p, CoderModel: coder})
 		if d.Err != nil {
 			t.Fatalf("%q: router error (%s): %v", p, d.ErrClass, d.Err)
 		}

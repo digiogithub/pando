@@ -418,6 +418,15 @@ ContextEnrichmentKBResults = 3
 ContextEnrichmentCodeResults = 5
 ContextEnrichmentCodeProject = ''
 ContextEnrichmentMinScore = 0.45
+# Ask the shared decision model (see [DecisionModel]) which retrieved snippets are useful
+# for the request before they are injected. Fail-open: errors keep everything.
+ContextEnrichmentDecisionFilterEnabled = false
+MemoryContextDecisionFilterEnabled = false
+ContextEnrichmentDecisionFilterThreshold = 0.60
+ContextEnrichmentDecisionFilterMaxCandidates = 32
+ContextEnrichmentDecisionFilterMaxCandidateChars = 400
+# Inverted flag: false = only a local (ollama) decision model sees the snippets.
+ContextEnrichmentDecisionFilterAllowHosted = false
 # Run context enrichment as a separate agent loop on the 'context-enricher' model
 # (see [Agents.context-enricher]) instead of the single-shot search pipeline.
 # The loop calls the memory, knowledge-base and code-index tools iteratively and
@@ -618,19 +627,25 @@ Enabled       = false
 DefaultAuto   = true
 Threshold     = 0.6
 MinConfidence = 0.0
-TimeoutMs     = 0
 HistoryPrompts = 0
-
-[ModelAutoMode.Router]
-Provider  = 'ollama'
-Model     = ''
-KeepAlive = '30m'
 
 # [[ModelAutoMode.Routes]]
 # ID          = 'hard-coding'
 # Description = 'Complex refactors, architecture and debugging'
 # Model       = 'anthropic.claude-sonnet-4'
 # Fallbacks   = []
+
+# =============================================================================
+# Decision Model — shared System One / Jev decision provider (model auto mode,
+# persona auto-select). Ollama >= 0.35, TypeSafe Jev or a custom Jev gateway.
+# =============================================================================
+[DecisionModel]
+TimeoutMs = 0
+
+[DecisionModel.Router]
+Provider  = 'ollama'
+Model     = ''
+KeepAlive = '30m'
 
 # =============================================================================
 # ACP (Agent Client Protocol)

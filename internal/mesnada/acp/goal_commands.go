@@ -88,6 +88,8 @@ func (a *PandoACPAgent) handleSlashCommand(
 		return a.processVulnhunterCommand(ctx, acpSession, "Starting test-driven remediation (vulnhunter-fix)...", vulnhunter.FixPrompt(command.Objective))
 	case slashCommandVulnhuntFixVerify:
 		return a.processVulnhunterCommand(ctx, acpSession, "Verifying claimed security fixes (vulnhunt-fix-verify)...", vulnhunter.VerifyPrompt(command.Objective))
+	case slashCommandDecisionModel:
+		return a.processDecisionModelCommand(ctx, acpSession, command.Objective)
 	case slashCommandDesign:
 		return a.processDesignCommand(ctx, acpSession, command.Objective)
 	case slashCommandDesignOpen:

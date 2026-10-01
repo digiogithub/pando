@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -83,8 +84,12 @@ func WithProvider(p systemone.DecisionProvider) EngineOption {
 }
 
 // Engine routes prompts. It is safe for concurrent use.
+//
+// The engine is keyed only on the shared decision model (provider, model,
+// timeout); the per-consumer policy (threshold, routes, history) is passed to
+// each call.
 type Engine struct {
-	cfg      config.ModelAutoModeConfig
+	dec      config.DecisionModelConfig
 	provider systemone.DecisionProvider
 
 	mu        sync.Mutex
@@ -93,19 +98,20 @@ type Engine struct {
 	budgetSet bool
 }
 
-// NewEngine builds an engine from the auto mode configuration.
-func NewEngine(cfg config.ModelAutoModeConfig, opts ...EngineOption) (*Engine, error) {
-	e := &Engine{cfg: cfg}
+// NewEngine builds an engine from the shared decision model (provider, model
+// and timeout).
+func NewEngine(dec config.DecisionModelConfig, opts ...EngineOption) (*Engine, error) {
+	e := &Engine{dec: dec}
 	for _, o := range opts {
 		o(e)
 	}
 	if e.provider == nil {
-		p, err := systemone.NewProvider(systemone.ProviderKind(cfg.Router.EffectiveProvider()), systemone.Options{
-			BaseURL:   cfg.Router.EffectiveBaseURL(),
-			APIKey:    cfg.Router.EffectiveAPIKey(),
-			Headers:   cfg.Router.Headers,
-			Timeout:   cfg.EffectiveTimeout(),
-			KeepAlive: cfg.Router.KeepAlive,
+		p, err := systemone.NewProvider(systemone.ProviderKind(dec.Router.EffectiveProvider()), systemone.Options{
+			BaseURL:   dec.Router.EffectiveBaseURL(),
+			APIKey:    dec.Router.EffectiveAPIKey(),
+			Headers:   dec.Router.Headers,
+			Timeout:   dec.EffectiveTimeout(),
+			KeepAlive: dec.Router.KeepAlive,
 		})
 		if err != nil {
 			return nil, err
@@ -124,16 +130,16 @@ var (
 	cacheEng *Engine
 )
 
-// ForConfig returns the process-wide engine for cfg, rebuilding it when the
-// configuration content changes (hot reload).
-func ForConfig(cfg config.ModelAutoModeConfig) (*Engine, error) {
-	key := configKey(cfg)
+// ForConfig returns the process-wide engine for dec, rebuilding it when the
+// decision model content changes (hot reload).
+func ForConfig(dec config.DecisionModelConfig) (*Engine, error) {
+	key := configKey(dec)
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
 	if cacheEng != nil && cacheKey == key {
 		return cacheEng, nil
 	}
-	e, err := NewEngine(cfg)
+	e, err := NewEngine(dec)
 	if err != nil {
 		return nil, err
 	}
@@ -141,25 +147,27 @@ func ForConfig(cfg config.ModelAutoModeConfig) (*Engine, error) {
 	return e, nil
 }
 
-func configKey(cfg config.ModelAutoModeConfig) string {
+func configKey(dec config.DecisionModelConfig) string {
 	b, _ := json.Marshal(struct {
-		C   config.ModelAutoModeConfig
-		Key string
-		URL string
-	}{cfg, cfg.Router.EffectiveAPIKey(), cfg.Router.EffectiveBaseURL()})
+		D       config.DecisionModelConfig
+		Key     string
+		URL     string
+		Timeout time.Duration
+	}{dec, dec.Router.EffectiveAPIKey(), dec.Router.EffectiveBaseURL(), dec.EffectiveTimeout()})
 	return string(b)
 }
 
-// Route classifies in.Prompt. It never fails: on any router failure it returns
-// the coder model with Reason "router_error".
-func (e *Engine) Route(ctx context.Context, in Input) Decision {
-	routerModel := e.cfg.Router.Model
+// Route classifies in.Prompt against the routes and thresholds of policy. It
+// never fails: on any router failure it returns the coder model with Reason
+// "router_error".
+func (e *Engine) Route(ctx context.Context, policy config.ModelAutoModeConfig, in Input) Decision {
+	routerModel := e.dec.Router.Model
 	d := Decision{
-		RouterProvider: string(e.cfg.Router.EffectiveProvider()),
+		RouterProvider: string(e.dec.Router.EffectiveProvider()),
 		RouterModel:    routerModel,
 		Candidates:     coderOnly(in.CoderModel),
 	}
-	routes := e.cfg.EnabledRoutes()
+	routes := policy.EnabledRoutes()
 	if len(routes) == 0 {
 		d.Reason = ReasonNoRoutes
 		return d
@@ -174,7 +182,7 @@ func (e *Engine) Route(ctx context.Context, in Input) Decision {
 	criteria = append(criteria, systemone.NewCriterion(noneKey, noneDescription))
 
 	q := systemone.Question{Type: "choice", Instructions: instructionsText, Criteria: criteria}
-	resp, latency, err := e.ask(ctx, in, map[string]systemone.Question{questionName: q}, overhead)
+	resp, latency, err := e.ask(ctx, in, policy.HistoryPrompts, map[string]systemone.Question{questionName: q}, overhead)
 	d.LatencyMs = latency
 	var ans systemone.Answer
 	if err == nil {
@@ -186,12 +194,12 @@ func (e *Engine) Route(ctx context.Context, in Input) Decision {
 		d.ErrClass = classify(err)
 		return d
 	}
-	e.applyTaskAnswer(&d, routes, resp, ans)
+	applyTaskAnswer(&d, policy, routes, resp, ans)
 	return d
 }
 
 // applyTaskAnswer fills d from the answer to the task question.
-func (e *Engine) applyTaskAnswer(d *Decision, routes []config.ModelAutoRoute, resp *systemone.Response, ans systemone.Answer) {
+func applyTaskAnswer(d *Decision, policy config.ModelAutoModeConfig, routes []config.ModelAutoRoute, resp *systemone.Response, ans systemone.Answer) {
 	d.InputTokens = resp.Usage.InputTokens
 	d.CostUSD = resp.Usage.Cost
 	d.Probabilities = ans.Probabilities
@@ -212,9 +220,9 @@ func (e *Engine) applyTaskAnswer(d *Decision, routes []config.ModelAutoRoute, re
 	switch {
 	case route == nil:
 		d.Reason = ReasonNoMatch
-	case d.Probability < e.cfg.EffectiveThreshold():
+	case d.Probability < policy.EffectiveThreshold():
 		d.Reason = ReasonLowProbability
-	case e.cfg.MinConfidence > 0 && d.Confidence < e.cfg.MinConfidence:
+	case policy.MinConfidence > 0 && d.Confidence < policy.MinConfidence:
 		d.Reason = ReasonLowConfidence
 	default:
 		d.Reason = ReasonMatched
@@ -235,25 +243,46 @@ func questionOverhead(instructions string) int {
 // all questions and criteria). The answers are NOT validated: callers judge
 // each one with answerFor. A non-nil error is a transport/protocol failure
 // that affects every question.
-func (e *Engine) ask(ctx context.Context, in Input, qs map[string]systemone.Question, overhead int) (*systemone.Response, int64, error) {
-	routerModel := e.cfg.Router.Model
-	budget := e.contextBudget(ctx, routerModel) - overhead
-	stateJSON := BuildState(in, e.cfg.HistoryPrompts, budget)
+func (e *Engine) ask(ctx context.Context, in Input, historyPrompts int, qs map[string]systemone.Question, overhead int) (*systemone.Response, int64, error) {
+	budget := e.ContextBudget(ctx) - overhead
+	stateJSON := BuildState(in, historyPrompts, budget)
+	resp, latency, err := e.Ask(ctx, stateJSON, qs)
+	return resp, latency.Milliseconds(), err
+}
 
+// Ask is the generic entry point for any consumer: it sends one System One
+// request with the given JSON state (a JSON object string) and questions to the
+// configured decision model. Answers are NOT validated (the lenient decode is
+// used) so the caller judges each one. The caller is responsible for keeping
+// state within ContextBudget (BuildState does that for the routing state).
+// More than systemone.MaxQuestions questions, or a state/request over
+// systemone.MaxBodyBytes, is rejected before anything is sent, with an error
+// that ClassifyError maps to "bad_request" / "too_large". A non-nil error is a
+// transport/protocol failure that affects every question.
+func (e *Engine) Ask(ctx context.Context, state string, qs map[string]systemone.Question) (*systemone.Response, time.Duration, error) {
+	if len(qs) > systemone.MaxQuestions {
+		return nil, 0, fmt.Errorf("%w: %d questions, limit is %d", systemone.ErrBadRequest, len(qs), systemone.MaxQuestions)
+	}
+	if len(state) > systemone.MaxBodyBytes {
+		return nil, 0, fmt.Errorf("%w: state is %d bytes, limit is %d", systemone.ErrTooLarge, len(state), systemone.MaxBodyBytes)
+	}
+	if state == "" {
+		state = "{}"
+	}
 	req := systemone.Request{
-		Model:     routerModel,
-		State:     json.RawMessage(stateJSON),
+		Model:     e.dec.Router.Model,
+		State:     json.RawMessage(state),
 		Questions: qs,
 	}
 	if e.provider.Kind() == systemone.KindOllama {
 		req.KeepAlive = e.provider.Client().KeepAlive()
 	}
 
-	callCtx, cancel := context.WithTimeout(ctx, e.cfg.EffectiveTimeout())
+	callCtx, cancel := context.WithTimeout(ctx, e.dec.EffectiveTimeout())
 	defer cancel()
 	start := time.Now()
 	resp, err := e.provider.Client().DecideLenient(callCtx, req)
-	latency := time.Since(start).Milliseconds()
+	latency := time.Since(start)
 	if err == nil && resp == nil {
 		err = systemone.ErrMalformedResponse
 	}
@@ -295,7 +324,12 @@ func routeCandidates(r config.ModelAutoRoute) []models.ModelID {
 	return out
 }
 
-func (e *Engine) contextBudget(ctx context.Context, model string) int {
+// ContextBudget returns the context window, in tokens, of the configured
+// decision model (cached for a few minutes, with a conservative default when
+// the provider cannot tell). Callers subtract their question overhead and keep
+// SafetyMargin free.
+func (e *Engine) ContextBudget(ctx context.Context) int {
+	model := e.dec.Router.Model
 	e.mu.Lock()
 	if e.budgetSet && time.Since(e.budgetAt) < budgetTTL {
 		b := e.budget
@@ -312,6 +346,9 @@ func (e *Engine) contextBudget(ctx context.Context, model string) int {
 	e.mu.Unlock()
 	return b
 }
+
+// ClassifyError maps a decision-model failure to one of the ErrClass* values.
+func ClassifyError(err error) string { return classify(err) }
 
 func classify(err error) string {
 	switch {

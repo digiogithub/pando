@@ -20,6 +20,7 @@ const (
 	slashCommandPonytail        slashCommandKind = "ponytail"
 	slashCommandImproveAgentsMd slashCommandKind = "improve-agents-md"
 	slashCommandSuperpowers     slashCommandKind = "superpowers"
+	slashCommandDecisionModel   slashCommandKind = "decision-model"
 
 	slashCommandSuperpowersFinish slashCommandKind = "superpowers-finish"
 
@@ -138,6 +139,13 @@ func slashCommandSpecs() []slashCommandSpec {
 			Kind:        slashCommandLearningFinish,
 			Description: "Consolidate what was learned into KB/memory and return to normal mode",
 			Usage:       "Usage: /learning-finish",
+		},
+		{
+			Token:       decisionModelCommandToken,
+			Kind:        slashCommandDecisionModel,
+			Description: "Show the shared decision model (provider, model, health, consumers), or test it",
+			InputHint:   "optional: test",
+			Usage:       "Usage: /decision-model [test]\nNo argument shows the configuration and a health verdict; \"test\" is the same probe by name. Change it with pando_setup decision-model set.",
 		},
 		{
 			Token:       improveAgentsMdCommandToken,

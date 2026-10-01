@@ -239,6 +239,13 @@ func (t *translator) protocol(ev agent.AgentEvent) []Event {
 				"routing": ev.Routing,
 			})}
 		}
+		if ev.ContextFilter != nil {
+			// Context relevance filter notice: counts per source plus the text.
+			return []Event{NewCustom("pando.context_filtered", map[string]any{
+				"text":          ev.SystemMessage,
+				"contextFilter": ev.ContextFilter,
+			})}
+		}
 		if ev.SystemMessage == "" {
 			return nil
 		}

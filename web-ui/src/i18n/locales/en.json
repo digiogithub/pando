@@ -111,12 +111,30 @@
       "apiServer": "API Server",
       "webuiAccess": "WebUI Access",
       "tokenOptimization": "Token Optimization",
-      "sandbox": "Sandbox"
+      "sandbox": "Sandbox",
+      "decisionModel": "Decision model"
     },
     "remembrances": {
       "hero": {
         "title": "Remembrances",
         "tagline": "Knowledge base, events and indexed code that persist across sessions."
+      },
+      "decisionFilter": {
+        "title": "Decision model relevance filter",
+        "description": "A small decision model drops retrieved snippets that are not relevant to the prompt before they are injected. If it is unavailable, the context is injected unfiltered.",
+        "missing": "Until one is configured, the context is injected unfiltered.",
+        "hostedNote": "This provider is remote: retrieved snippets are sent to it to be ranked. Hosted providers are only used when you allow them below.",
+        "enabled": "Filter retrieved context with the decision model",
+        "enabledHint": "Applies to the KB, code and event snippets added by context enrichment.",
+        "memoryEnabled": "Filter injected memories with the decision model",
+        "memoryEnabledHint": "Applies to the stored memories injected by Auto-inject in context.",
+        "threshold": "Relevance threshold",
+        "thresholdInvalid": "The threshold must be greater than 0 and at most 1.",
+        "thresholdHint": "Snippets scoring below it are dropped (0–1, default 0.6).",
+        "maxCandidates": "Max candidates",
+        "maxCandidateChars": "Max characters per candidate",
+        "allowHosted": "Allow hosted decision providers (sends snippets to the provider)",
+        "allowHostedHint": "Off: only local providers are used for filtering, so snippets never leave your machine."
       }
     },
     "mesnada": {
@@ -344,6 +362,80 @@
       "accent": "Accent colour",
       "accentDescription": "Used for the primary action, focus and selection. Everything else stays neutral.",
       "accentDefault": "Theme default"
+    },
+    "decisionModel": {
+      "title": "Decision model",
+      "description": "A small model that answers quick decision questions for Pando: Auto mode routing, persona auto-select and the context filter. Configure it once here; every feature reuses it.",
+      "sections": {
+        "provider": "Decision provider",
+        "providerDescription": "The provider that answers the decision questions."
+      },
+      "provider": "Provider",
+      "providers": {
+        "ollama": "Ollama (local)",
+        "typesafe": "TypeSafe Jev",
+        "custom": "Custom Jev-compatible gateway"
+      },
+      "preset": "Preset",
+      "presetHint": "Fills the base URL (and model when known).",
+      "presetChoose": "Choose a preset…",
+      "baseUrl": "Base URL",
+      "baseUrlHint": "Leave empty to use the provider default.",
+      "apiKey": "API key",
+      "apiKeyStored": "A key is stored:",
+      "apiKeyReplace": "Type a new key to replace it.",
+      "apiKeyNone": "No key stored.",
+      "apiKeyPlaceholder": "API key",
+      "keepKey": "Keep key",
+      "clearKey": "Clear key",
+      "headers": "Extra headers",
+      "headersHint": "Optional headers sent with every request to the gateway.",
+      "headerNameOf": "Header {{name}} name",
+      "headerValueOf": "Header {{name}} value",
+      "removeHeader": "Remove header {{name}}",
+      "newHeaderName": "New header name",
+      "newHeaderValue": "New header value",
+      "headerName": "Header name",
+      "headerValue": "Value",
+      "addHeader": "Add",
+      "keepAlive": "Keep alive",
+      "keepAliveHint": "How long Ollama keeps the decision model loaded (e.g. 30m).",
+      "model": "Decision model",
+      "modelSelect": "— select a model —",
+      "modelPlaceholder": "model id",
+      "loadModels": "Load models",
+      "unsupportedHint": "This provider cannot list models; type the model id manually.",
+      "unfilteredHint": "This provider cannot tell which models support decisions; all models are listed.",
+      "showAll": "Show all models",
+      "noModels": "No decision models found. Install one with",
+      "suggested": "Suggested decision models:",
+      "pullAria": "Pull {{name}}",
+      "pull": "Pull",
+      "pullStarting": "starting",
+      "timeout": "Timeout (ms)",
+      "timeoutHint": "Upper bound of one decision call. 0 uses the default (1500 ms local, 3000 ms remote).",
+      "connection": "Connection",
+      "testConnection": "Test connection",
+      "report": {
+        "reachable": "Reachable",
+        "authorized": "Authorized",
+        "version": "Version ≥ 0.35",
+        "found": "found {{version}}",
+        "modelPresent": "Model present",
+        "decisionCapable": "Decision-capable model",
+        "latency": "Latency"
+      },
+      "health": {
+        "healthy": "Healthy",
+        "unhealthy": "Unhealthy"
+      },
+      "inUse": {
+        "label": "Decision model",
+        "configure": "Configure",
+        "notConfigured": "No decision model is configured.",
+        "none": "not configured",
+        "hosted": "This provider is remote: your prompts leave your machine to be processed by the decision model."
+      }
     }
   },
   "chat": {
@@ -515,6 +607,21 @@
       "noSessions": "No sessions yet",
       "commands": "Commands",
       "openCommands": "Open command launcher"
+    },
+    "contextFilter": {
+      "summary": "Context filter: kept {{kept}}/{{total}}",
+      "keptOf": "kept {{kept}}/{{total}}",
+      "threshold": "Threshold: {{value}}",
+      "router": "Decision model",
+      "partial": "Partial result: {{reason}}",
+      "showDetails": "Show details",
+      "hideDetails": "Hide details",
+      "sources": {
+        "code": "Code",
+        "kb": "KB",
+        "events": "Events",
+        "memory": "Memories"
+      }
     }
   },
   "terminal": {

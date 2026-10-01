@@ -139,8 +139,16 @@ func (e *agentLoopEnricher) EnrichContext(ctx context.Context, query string) str
 // EnrichContextForSession runs the enrichment loop for the given chat session and
 // returns the context block to append to the user prompt (empty when nothing helps).
 func (e *agentLoopEnricher) EnrichContextForSession(ctx context.Context, sessionID, query string) string {
+	out, _ := e.EnrichContextForSessionWithResult(ctx, sessionID, query)
+	return out
+}
+
+// EnrichContextForSessionWithResult is EnrichContextForSession that also reports
+// what the relevance filter did. The loop's own output is not filtered, so the
+// result is the zero FilterResult unless the classic fallback produced the block.
+func (e *agentLoopEnricher) EnrichContextForSessionWithResult(ctx context.Context, sessionID, query string) (string, rag.FilterResult) {
 	if e == nil || strings.TrimSpace(query) == "" {
-		return ""
+		return "", rag.FilterResult{}
 	}
 
 	block, err := e.runLoop(ctx, sessionID, query)
@@ -148,13 +156,13 @@ func (e *agentLoopEnricher) EnrichContextForSession(ctx context.Context, session
 		logging.Warn("context enrichment agent loop failed", "error", err)
 	}
 	if block != "" {
-		return block
+		return block, rag.FilterResult{}
 	}
 	if e.fallbackOff || e.fallback == nil {
-		return ""
+		return "", rag.FilterResult{}
 	}
 	logging.Debug("context enrichment: falling back to search pipeline")
-	return e.fallback.EnrichContext(ctx, query)
+	return e.fallback.EnrichContextWithResult(ctx, query)
 }
 
 func (e *agentLoopEnricher) runLoop(ctx context.Context, sessionID, query string) (string, error) {

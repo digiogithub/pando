@@ -5,20 +5,22 @@ import type { Message, SSEEvent } from '../types'
 
 /**
  * Handle a `system_message` SSE event: a model auto mode routing notice (with a
- * structured `routing` payload) or a generic system notice. Both become a
+ * structured `routing` payload), a context-filter notice (structured
+ * `context_filter` payload) or a generic system notice. Both become a
  * muted row inserted before the streaming assistant bubble; a routing notice
  * also updates the model shown as `Auto · <model>` in the model switcher.
  */
 export function handleSystemMessageEvent(event: SSEEvent, fallbackSessionId: string): void {
   const text = (event.message ?? '').trim()
   const routing = event.routing
-  if (!text && !routing) return
+  const contextFilter = event.context_filter
+  if (!text && !routing && !contextFilter) return
 
   if (routing?.model) {
     useModelAutoModeStore.getState().setLastRoutedModel(routing.model)
   }
 
-  const appliedPersona = !routing ? parsePersonaNotice(text) : null
+  const appliedPersona = !routing && !contextFilter ? parsePersonaNotice(text) : null
   if (appliedPersona) {
     usePersonaRoutingStore.getState().setApplied(appliedPersona)
   }
@@ -27,10 +29,11 @@ export function handleSystemMessageEvent(event: SSEEvent, fallbackSessionId: str
     id: `notice-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     session_id: event.session_id ?? fallbackSessionId,
     role: 'system',
-    content: [{ type: 'text', text: text || routing?.notice || '' }],
+    content: [{ type: 'text', text: text || routing?.notice || contextFilter?.notice || '' }],
     created_at: new Date().toISOString(),
     routing,
-    notice: !routing,
+    contextFilter,
+    notice: !routing && !contextFilter,
   }
   useSessionStore.getState().insertBeforeLast(msg)
 }
