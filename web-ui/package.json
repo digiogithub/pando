@@ -39,8 +39,8 @@
   },
   "overrides": {
     "@babel/plugin-transform-modules-systemjs": ">=7.29.4",
-    "brace-expansion": ">=5.0.6",
-    "dompurify": ">=3.4.0",
+    "brace-expansion": ">=5.0.12",
+    "dompurify": ">=3.4.16",
     "fast-uri": ">=4.1.4",
     "postcss": ">=8.5.10",
     "serialize-javascript": ">=7.0.5"
