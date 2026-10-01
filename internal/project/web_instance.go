@@ -239,10 +239,10 @@ func defaultSpawnWebProcess(_ context.Context, pandoBin string, cfg webProcessCo
 	cmd := exec.Command(pandoBin, "serve",
 		"--host", webLoopbackHost,
 		"--port", strconv.Itoa(port),
-		"--cwd", proj.Path,
 		"--tls-cert", cfg.TLSCertFile,
 		"--tls-key", cfg.TLSKeyFile,
 	)
+	// pando serve has no --cwd flag: it works in its process working directory.
 	cmd.Dir = proj.Path
 	cmd.Env = append(os.Environ(),
 		"NO_COLOR=1",
