@@ -677,7 +677,9 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		if !s.hasValidToken(r) {
+		// A project frame and its assets are loaded by the browser itself and
+		// authenticate with the proxy cookie instead of the header.
+		if !s.hasValidToken(r) && !(isProjectWebCookiePath(r.Method, r.URL.Path) && s.hasValidProjectWebCookie(r)) {
 			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 			return
 		}

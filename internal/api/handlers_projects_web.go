@@ -2,11 +2,77 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
 )
+
+// projectWebCookieName is the cookie that authenticates browser-initiated
+// loads of a project's WebUI through the proxy: the iframe navigation and the
+// scripts, styles and images it pulls cannot carry the X-Pando-Token header.
+// It holds the parent's API token, is HttpOnly and SameSite=Strict, is scoped
+// to projectWebCookiePath, and is honoured only on proxy paths (see
+// isProjectWebCookiePath); it is never forwarded to the child.
+const (
+	projectWebCookieName = "pando_project_web"
+	projectWebCookiePath = "/api/v1/projects/"
+)
+
+// setProjectWebCookie issues the proxy cookie. It is called by the endpoints
+// the WebUI uses right before showing project frames (open and list).
+func (s *Server) setProjectWebCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     projectWebCookieName,
+		Value:    s.token,
+		Path:     projectWebCookiePath,
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// isProjectWebCookiePath reports whether path is served by the project web
+// proxy, where the proxy cookie may stand in for the API token. The open and
+// close control endpoints are excluded: the WebUI calls them with the header.
+func isProjectWebCookiePath(method, path string) bool {
+	rest, ok := strings.CutPrefix(path, "/api/v1/projects/")
+	if !ok {
+		return false
+	}
+	slash := strings.IndexByte(rest, '/')
+	if slash <= 0 {
+		return false
+	}
+	tail := rest[slash:]
+	if method == http.MethodPost && (tail == "/web/open" || tail == "/web/close") {
+		return false
+	}
+	return tail == "/web" || strings.HasPrefix(tail, "/web/")
+}
+
+// hasValidProjectWebCookie reports whether r carries the proxy cookie with this
+// server's token.
+func (s *Server) hasValidProjectWebCookie(r *http.Request) bool {
+	c, err := r.Cookie(projectWebCookieName)
+	if err != nil || c.Value == "" || s.token == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(c.Value), []byte(s.token)) == 1
+}
+
+// stripProjectWebCookie removes the proxy cookie from a request bound for a
+// child, keeping any other cookie intact.
+func stripProjectWebCookie(req *http.Request) {
+	cookies := req.Cookies()
+	req.Header.Del("Cookie")
+	for _, c := range cookies {
+		if c.Name != projectWebCookieName {
+			req.AddCookie(c)
+		}
+	}
+}
 
 type projectWebProxyTarget struct {
 	baseURL   string
@@ -69,6 +135,7 @@ func (s *Server) handleProjectWebProxy(w http.ResponseWriter, r *http.Request) {
 
 			req.Header.Del("X-Pando-Token")
 			req.Header.Del("Authorization")
+			stripProjectWebCookie(req)
 			req.Header.Set("X-Pando-Token", target.apiToken)
 			req.Header.Set("X-Pando-Client", "web")
 		},

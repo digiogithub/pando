@@ -540,6 +540,7 @@ func (s *Server) handleOpenProjectWeb(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	s.setProjectWebCookie(w, r)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":     status,
 		"project_id": id,
@@ -591,6 +592,9 @@ func (s *Server) handleListProjectWebInstances(w http.ResponseWriter, r *http.Re
 		s.writeChildModeUnavailable(w)
 		return
 	}
+	// Restoring tabs after a reload (or a parent restart, which mints a new
+	// token) must refresh the cookie the frames load with.
+	s.setProjectWebCookie(w, r)
 
 	mgr := s.projectManagerAPI()
 	if mgr == nil {

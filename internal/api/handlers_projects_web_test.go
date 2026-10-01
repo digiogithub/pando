@@ -511,3 +511,103 @@ func readAllString(t *testing.T, r io.Reader) string {
 	}
 	return string(data)
 }
+
+func TestProjectsWebProxyAcceptsCookieAndNeverForwardsIt(t *testing.T) {
+	var sawCookie, sawOther, sawToken string
+	child := newChildTLSServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if c, err := r.Cookie(projectWebCookieName); err == nil {
+			sawCookie = c.Value
+		}
+		if c, err := r.Cookie("other"); err == nil {
+			sawOther = c.Value
+		}
+		sawToken = r.Header.Get("X-Pando-Token")
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	_, parent := newProjectsWebServer(t, func(projectID string) (string, string, http.RoundTripper, bool) {
+		return child.URL, "child-token", child.Client().Transport, projectID == "p1"
+	})
+
+	req, err := http.NewRequest(http.MethodGet, parent.URL+"/api/v1/projects/p1/web/assets/app.js", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.AddCookie(&http.Cookie{Name: projectWebCookieName, Value: "parent-token"})
+	req.AddCookie(&http.Cookie{Name: "other", Value: "kept"})
+	resp, err := parent.Client().Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if sawCookie != "" {
+		t.Fatalf("child saw the proxy cookie %q", sawCookie)
+	}
+	if sawOther != "kept" {
+		t.Fatalf("child saw other cookie %q, want kept", sawOther)
+	}
+	if sawToken != "child-token" {
+		t.Fatalf("child token = %q, want child-token", sawToken)
+	}
+}
+
+func TestProjectsWebCookieIsScopedToProxyPaths(t *testing.T) {
+	_, parent := newProjectsWebServer(t, func(string) (string, string, http.RoundTripper, bool) {
+		return "", "", nil, false
+	})
+
+	cases := []struct {
+		name, method, path, cookie string
+		wantUnauthorized           bool
+	}{
+		{"proxy path, valid cookie", http.MethodGet, "/api/v1/projects/p1/web/", "parent-token", false},
+		{"proxy path, wrong cookie", http.MethodGet, "/api/v1/projects/p1/web/", "nope", true},
+		{"proxy path, no cookie", http.MethodGet, "/api/v1/projects/p1/web/", "", true},
+		{"open control endpoint", http.MethodPost, "/api/v1/projects/p1/web/open", "parent-token", true},
+		{"close control endpoint", http.MethodPost, "/api/v1/projects/p1/web/close", "parent-token", true},
+		{"project resource", http.MethodGet, "/api/v1/projects/p1", "parent-token", true},
+		{"web instance list", http.MethodGet, "/api/v1/projects/web", "parent-token", true},
+		{"unrelated api", http.MethodGet, "/api/v1/sessions", "parent-token", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequest(tc.method, parent.URL+tc.path, nil)
+			if err != nil {
+				t.Fatalf("NewRequest: %v", err)
+			}
+			if tc.cookie != "" {
+				req.AddCookie(&http.Cookie{Name: projectWebCookieName, Value: tc.cookie})
+			}
+			resp, err := parent.Client().Do(req)
+			if err != nil {
+				t.Fatalf("Do: %v", err)
+			}
+			defer resp.Body.Close()
+			if got := resp.StatusCode == http.StatusUnauthorized; got != tc.wantUnauthorized {
+				t.Fatalf("status = %d, unauthorized = %v, want %v", resp.StatusCode, got, tc.wantUnauthorized)
+			}
+		})
+	}
+}
+
+func TestSetProjectWebCookieAttributes(t *testing.T) {
+	s := &Server{token: "parent-token"}
+	rec := httptest.NewRecorder()
+	s.setProjectWebCookie(rec, httptest.NewRequest(http.MethodGet, "https://localhost/api/v1/projects/web", nil))
+
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("cookies = %d, want 1", len(cookies))
+	}
+	c := cookies[0]
+	if c.Name != projectWebCookieName || c.Value != "parent-token" {
+		t.Fatalf("cookie = %s=%s", c.Name, c.Value)
+	}
+	if !c.HttpOnly || !c.Secure || c.SameSite != http.SameSiteStrictMode || c.Path != projectWebCookiePath {
+		t.Fatalf("attributes: HttpOnly=%v Secure=%v SameSite=%v Path=%q", c.HttpOnly, c.Secure, c.SameSite, c.Path)
+	}
+}
