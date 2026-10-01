@@ -175,8 +175,10 @@ func TestPTYResizeIsAppliedToShell(t *testing.T) {
 func TestCheckPtyOrigin(t *testing.T) {
 	tests := []struct {
 		name   string
+		server *Server
 		origin string
 		host   string
+		token  string
 		want   bool
 	}{
 		{name: "no origin (non-browser client)", origin: "", host: "localhost:8080", want: true},
@@ -189,6 +191,22 @@ func TestCheckPtyOrigin(t *testing.T) {
 		{name: "hostile cross origin over https", origin: "https://evil.example", host: "pando.internal:8080", want: false},
 		// A hostname merely containing "localhost" must not pass.
 		{name: "lookalike host", origin: "http://localhost.evil.example", host: "localhost:8080", want: false},
+		{
+			name:   "project child accepts proxied parent origin with valid token",
+			server: &Server{token: "child-token", config: ServerConfig{StartupMode: "project-child"}},
+			origin: "https://parent.example",
+			host:   "127.0.0.1:43123",
+			token:  "child-token",
+			want:   true,
+		},
+		{
+			name:   "project child rejects proxied parent origin with invalid token",
+			server: &Server{token: "child-token", config: ServerConfig{StartupMode: "project-child"}},
+			origin: "https://parent.example",
+			host:   "127.0.0.1:43123",
+			token:  "wrong-token",
+			want:   false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -197,7 +215,10 @@ func TestCheckPtyOrigin(t *testing.T) {
 			if tt.origin != "" {
 				r.Header.Set("Origin", tt.origin)
 			}
-			if got := checkPtyOrigin(r); got != tt.want {
+			if tt.token != "" {
+				r.Header.Set("X-Pando-Token", tt.token)
+			}
+			if got := checkPtyOriginForServer(tt.server, r); got != tt.want {
 				t.Fatalf("checkPtyOrigin(origin=%q, host=%q) = %v, want %v", tt.origin, tt.host, got, tt.want)
 			}
 		})

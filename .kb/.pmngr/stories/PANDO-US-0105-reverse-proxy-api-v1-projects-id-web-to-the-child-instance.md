@@ -2,14 +2,15 @@
 id: PANDO-US-0105
 type: story
 title: Reverse proxy `/api/v1/projects/{id}/web/*` to the child instance (REST, SSE, WebSocket, UI bootstrap rewrite)
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0019
 author: mcp
 labels: [projects, api, security]
 estimate: 8
 created: 2026-10-01T19:23:08Z
-updated: 2026-10-01T19:23:08Z
+updated: 2026-10-01T20:41:21Z
+closed: 2026-10-01T20:41:21Z
 ---
 
 ## Description

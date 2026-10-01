@@ -41,7 +41,6 @@ type ptyControlMessage struct {
 var ptyUpgrader = websocket.Upgrader{
 	ReadBufferSize:  4096,
 	WriteBufferSize: 4096,
-	CheckOrigin:     checkPtyOrigin,
 }
 
 // checkPtyOrigin gates websocket handshakes by Origin. WebSockets are not
@@ -53,6 +52,10 @@ var ptyUpgrader = websocket.Upgrader{
 // origins are allowed so the Vite dev server (:5173 against the API on :8080)
 // keeps working.
 func checkPtyOrigin(r *http.Request) bool {
+	return checkPtyOriginForServer(nil, r)
+}
+
+func checkPtyOriginForServer(s *Server, r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		// Non-browser client (CLI, tests): no ambient credentials to abuse.
@@ -65,7 +68,10 @@ func checkPtyOrigin(r *http.Request) bool {
 	if strings.EqualFold(parsed.Host, r.Host) {
 		return true
 	}
-	return isLoopbackHost(parsed.Hostname())
+	if isLoopbackHost(parsed.Hostname()) {
+		return true
+	}
+	return s != nil && s.isProjectChildMode() && s.hasValidToken(r)
 }
 
 func atoiDefault(value string, fallback int) int {
@@ -96,7 +102,11 @@ func (s *Server) handleTerminalPTY(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := ptyUpgrader.Upgrade(w, r, nil)
+	upgrader := ptyUpgrader
+	upgrader.CheckOrigin = func(req *http.Request) bool {
+		return checkPtyOriginForServer(s, req)
+	}
+	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		// Upgrade already wrote the error response.
 		logging.Error("terminal.pty: upgrade failed", "error", err)

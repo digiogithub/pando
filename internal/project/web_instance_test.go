@@ -176,6 +176,38 @@ func newPinnedLoopbackServer(t *testing.T, certPaths tlsutil.CertPaths, token st
 	return server, port
 }
 
+func TestDefaultSpawnWebProcessSetsPublicBaseEnv(t *testing.T) {
+	projDir := t.TempDir()
+	writeProjectConfig(t, projDir)
+
+	envFile := filepath.Join(t.TempDir(), "env.txt")
+	script := filepath.Join(t.TempDir(), "capture-env.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nenv >"+envFile+"\n"), 0o755); err != nil {
+		t.Fatalf("write helper script: %v", err)
+	}
+
+	started, err := defaultSpawnWebProcess(context.Background(), script, webProcessConfig{
+		ParentInstanceID: "parent-1",
+		TLSCertFile:      "cert.pem",
+		TLSKeyFile:       "key.pem",
+	}, Project{ID: "proj-123", Path: projDir}, 43123)
+	if err != nil {
+		t.Fatalf("defaultSpawnWebProcess: %v", err)
+	}
+	if err := started.cmd.Wait(); err != nil {
+		t.Fatalf("wait helper script: %v", err)
+	}
+
+	data, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatalf("read env capture: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "PANDO_PUBLIC_BASE=/api/v1/projects/proj-123/web") {
+		t.Fatalf("missing PANDO_PUBLIC_BASE in env: %q", text)
+	}
+}
+
 func TestOpenWebReuseAndClose(t *testing.T) {
 	mgr, svc := newWebTestManager(t)
 	ctx := context.Background()

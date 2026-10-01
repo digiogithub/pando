@@ -250,6 +250,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/projects", s.handleCreateProject)
 	mux.HandleFunc("GET /api/v1/projects/active", s.handleGetActiveProject)
 	mux.HandleFunc("GET /api/v1/projects/events", s.handleProjectEvents)
+	mux.HandleFunc("/api/v1/projects/{id}/web", s.handleProjectWebRedirect)
+	mux.HandleFunc("/api/v1/projects/{id}/web/", s.handleProjectWebProxy)
 	mux.HandleFunc("GET /api/v1/projects/{id}", s.handleGetProject)
 	mux.HandleFunc("DELETE /api/v1/projects/{id}", s.handleDeleteProject)
 	mux.HandleFunc("PATCH /api/v1/projects/{id}", s.handleRenameProject)

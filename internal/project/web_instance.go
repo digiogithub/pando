@@ -247,6 +247,7 @@ func defaultSpawnWebProcess(_ context.Context, pandoBin string, cfg webProcessCo
 	cmd.Env = append(os.Environ(),
 		"NO_COLOR=1",
 		"PANDO_PROJECT_ID="+proj.ID,
+		"PANDO_PUBLIC_BASE=/api/v1/projects/"+proj.ID+"/web",
 	)
 	if cfg.ParentInstanceID != "" {
 		cmd.Env = append(cmd.Env, "PANDO_PARENT_INSTANCE="+cfg.ParentInstanceID)

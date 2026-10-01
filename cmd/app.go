@@ -142,6 +142,7 @@ func runAppMode(cmd *cobra.Command) error {
 		ParentInstanceID:    startup.ParentInstanceID,
 		ProjectID:           startup.ProjectID,
 		ProjectName:         startup.ProjectName,
+		PublicBasePath:      startup.PublicBasePath,
 		WebChildTLSCertFile: tlsCert,
 		WebChildTLSKeyFile:  tlsKey,
 		WebChildTLSDataDir:  dataDir,

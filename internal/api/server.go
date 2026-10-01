@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -69,7 +70,10 @@ type Server struct {
 	token         string
 	staticFS      fs.FS
 	staticHandler http.Handler
-	bgRunner      *BackgroundSessionManager
+	// projectWebProxyLookup lets tests inject a fake child transport/target
+	// without constructing a full app.ProjectManager.
+	projectWebProxyLookup func(projectID string) (baseURL, apiToken string, transport http.RoundTripper, ok bool)
+	bgRunner              *BackgroundSessionManager
 	// unregisterResume removes the server from the resumed-run owners (see
 	// registerResumeHandler) when it shuts down.
 	unregisterResume func()
@@ -617,7 +621,11 @@ func (s *Server) serveStaticAsset(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func (s *Server) serveIndexHTML(w http.ResponseWriter, r *http.Request) {
-	encoding, assetPath := s.resolveEncodedAsset("index.html", r.Header.Get("Accept-Encoding"))
+	encoding := ""
+	assetPath := "index.html"
+	if strings.TrimSpace(s.config.PublicBasePath) == "" {
+		encoding, assetPath = s.resolveEncodedAsset("index.html", r.Header.Get("Accept-Encoding"))
+	}
 	if assetPath == "" {
 		http.NotFound(w, r)
 		return
@@ -666,14 +674,56 @@ func (s *Server) resolveEncodedAsset(name, acceptEncoding string) (string, strin
 }
 
 func (s *Server) InjectRuntimeConfig(html []byte) []byte {
-	if s.config.UIBaseURL == "" {
+	script := s.runtimeConfigScript()
+	if script == "" && strings.TrimSpace(s.config.PublicBasePath) == "" {
 		return html
 	}
 
-	injection := fmt.Sprintf(`<script>window.__PANDO_API_BASE__=%q;</script>`, s.config.UIBaseURL)
 	content := string(html)
-	if strings.Contains(content, "</head>") {
-		return []byte(strings.Replace(content, "</head>", injection+"</head>", 1))
+	if basePath := strings.TrimSpace(s.config.PublicBasePath); basePath != "" {
+		content = strings.Replace(content, `<base href="/" />`, `<base href="`+basePath+`/" />`, 1)
+		content = strings.Replace(content, `<base href="/">`, `<base href="`+basePath+`/">`, 1)
 	}
-	return append([]byte(injection), html...)
+	if script == "" {
+		return []byte(content)
+	}
+	if strings.Contains(content, "<head>") {
+		return []byte(strings.Replace(content, "<head>", "<head>"+script, 1))
+	}
+	return append([]byte(script), []byte(content)...)
+}
+
+func (s *Server) runtimeConfigScript() string {
+	apiBase := strings.TrimSpace(s.config.UIBaseURL)
+	routerBase := ""
+	if basePath := strings.TrimSpace(s.config.PublicBasePath); basePath != "" {
+		apiBase = basePath
+		routerBase = basePath
+	}
+	if apiBase == "" && routerBase == "" {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("<script>")
+	if apiBase != "" {
+		b.WriteString("window.__PANDO_API_BASE__=")
+		b.WriteString(mustMarshalRuntimeString(apiBase))
+		b.WriteString(";")
+	}
+	if routerBase != "" {
+		b.WriteString("window.__PANDO_ROUTER_BASENAME__=")
+		b.WriteString(mustMarshalRuntimeString(routerBase))
+		b.WriteString(";")
+	}
+	b.WriteString("</script>")
+	return b.String()
+}
+
+func mustMarshalRuntimeString(value string) string {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		panic(fmt.Sprintf("marshal runtime config string: %v", err))
+	}
+	return string(encoded)
 }
