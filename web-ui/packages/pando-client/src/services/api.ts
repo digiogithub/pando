@@ -1,3 +1,5 @@
+import { localBrowserStorage } from './storage'
+
 const TOKEN_KEY = 'pando_token'
 
 // Network error handler — registered by serverStore to get immediate notification
@@ -14,8 +16,8 @@ export function notifyNetworkError(): void {
 // Resolve initial base URL from injected runtime config or dev-mode env var.
 // Priority: window.__PANDO_API_BASE__ (injected by backend) > VITE_API_BASE_URL (dev override) > '' (same origin)
 function resolveInitialBaseURL(): string {
-  if (typeof window !== 'undefined' && (window as Window & { __PANDO_API_BASE__?: string }).__PANDO_API_BASE__) {
-    return (window as Window & { __PANDO_API_BASE__?: string }).__PANDO_API_BASE__!
+  if (typeof window !== 'undefined' && window.__PANDO_API_BASE__) {
+    return window.__PANDO_API_BASE__
   }
   if (import.meta.env.VITE_API_BASE_URL) {
     return import.meta.env.VITE_API_BASE_URL as string
@@ -23,14 +25,37 @@ function resolveInitialBaseURL(): string {
   return ''
 }
 
-let baseURL = resolveInitialBaseURL()
+function normalizeBaseURL(url: string): string {
+  const trimmed = url.trim()
+  if (!trimmed || trimmed === '/') return ''
+
+  try {
+    const parsed = new URL(trimmed)
+    const pathname = parsed.pathname.replace(/\/+$/, '') || '/'
+    return `${parsed.origin}${pathname === '/' ? '' : pathname}`
+  } catch {
+    return trimmed.replace(/\/+$/, '')
+  }
+}
+
+let baseURL = normalizeBaseURL(resolveInitialBaseURL())
 
 export function setBaseURL(url: string): void {
-  baseURL = url
+  baseURL = normalizeBaseURL(url)
 }
 
 export function getBaseURL(): string {
   return baseURL
+}
+
+export function resolveAPIURL(path: string): string {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(path)) {
+    return path
+  }
+  if (!baseURL) {
+    return path
+  }
+  return path.startsWith('/') ? `${baseURL}${path}` : `${baseURL}/${path}`
 }
 
 export function initDesktopMode(config: { apiBase: string; token: string }): void {
@@ -41,15 +66,15 @@ export function initDesktopMode(config: { apiBase: string; token: string }): voi
 }
 
 function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY)
+  return localBrowserStorage.getItem(TOKEN_KEY)
 }
 
 function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token)
+  localBrowserStorage.setItem(TOKEN_KEY, token)
 }
 
 function removeToken(): void {
-  localStorage.removeItem(TOKEN_KEY)
+  localBrowserStorage.removeItem(TOKEN_KEY)
 }
 
 interface FetchOptions extends RequestInit {
@@ -86,7 +111,7 @@ async function fetchApi<T>(path: string, options: FetchOptions = {}): Promise<T>
 
   let response: Response
   try {
-    response = await fetch(baseURL + path, { ...init, headers })
+    response = await fetch(resolveAPIURL(path), { ...init, headers })
   } catch (err) {
     // Network-level failure (server unreachable) — notify handler immediately
     _networkErrorHandler?.()

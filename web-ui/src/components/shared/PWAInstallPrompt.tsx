@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { usePWAInstall } from '@/hooks/usePWAInstall'
 import { Button, IconButton } from '@/components/ui'
 import { X } from '@/components/ui/icons'
+import { localBrowserStorage } from '@pando/client/services/storage'
 
 const DISMISSED_KEY = 'pwa-install-dismissed'
 
@@ -10,9 +11,10 @@ export default function PWAInstallPrompt() {
   const { t } = useTranslation()
   const { canInstall, isInstalled, isInstalling, install } = usePWAInstall()
   const [dismissed, setDismissed] = useState(() => {
-    return localStorage.getItem(DISMISSED_KEY) === 'true'
+    return localBrowserStorage.getItem(DISMISSED_KEY) === 'true'
   })
   const [visible, setVisible] = useState(false)
+  const iconSrc = new URL('pwa-icon-192.png', window.location.href).toString()
 
   // Delay appearance so it doesn't compete with the splash screen
   useEffect(() => {
@@ -23,7 +25,7 @@ export default function PWAInstallPrompt() {
 
   const handleDismiss = () => {
     setVisible(false)
-    localStorage.setItem(DISMISSED_KEY, 'true')
+    localBrowserStorage.setItem(DISMISSED_KEY, 'true')
     setDismissed(true)
   }
 
@@ -36,7 +38,7 @@ export default function PWAInstallPrompt() {
 
   return (
     <div role="dialog" aria-label={t('pwa.installTitle')} className="pwa-prompt">
-      <img src="/pwa-icon-192.png" alt="Pando" className="h-12 w-12 shrink-0 rounded-sm" />
+      <img src={iconSrc} alt="Pando" className="h-12 w-12 shrink-0 rounded-sm" />
 
       <div className="min-w-0 flex-1">
         <p className="mb-1 text-sm font-semibold text-fg">{t('pwa.installTitle')}</p>

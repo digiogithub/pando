@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import api from '../services/api'
+import { localBrowserStorage } from '../services/storage'
 
 const CHAT_MODE_KEY = 'pando_chat_mode'
 const INFO_SIDEBAR_KEY = 'pando_info_sidebar_open'
@@ -25,11 +26,7 @@ interface LayoutStore {
 }
 
 function readStoredChatMode(): ChatMode {
-  try {
-    return localStorage.getItem(CHAT_MODE_KEY) === 'simple' ? 'simple' : 'advanced'
-  } catch {
-    return 'advanced'
-  }
+  return localBrowserStorage.getItem(CHAT_MODE_KEY) === 'simple' ? 'simple' : 'advanced'
 }
 
 // Set once the user picks a mode in this page load, so a slower server read
@@ -37,16 +34,12 @@ function readStoredChatMode(): ChatMode {
 let chatModeChosen = false
 
 function writeStoredChatMode(mode: ChatMode) {
-  try {
-    localStorage.setItem(CHAT_MODE_KEY, mode)
-  } catch {
-    // ignore unavailable storage
-  }
+  localBrowserStorage.setItem(CHAT_MODE_KEY, mode)
 }
 
 // The info panel defaults to open on wide viewports only; the stored preference
 // wins once the user has toggled it at least once.
-const storedInfoSidebar = localStorage.getItem(INFO_SIDEBAR_KEY)
+const storedInfoSidebar = localBrowserStorage.getItem(INFO_SIDEBAR_KEY)
 const initialInfoSidebarOpen =
   storedInfoSidebar === null ? window.innerWidth > 1100 : storedInfoSidebar === 'true'
 
@@ -61,11 +54,11 @@ export const useLayoutStore = create<LayoutStore>((set) => ({
   toggleInfoSidebar: () =>
     set((s) => {
       const open = !s.infoSidebarOpen
-      localStorage.setItem(INFO_SIDEBAR_KEY, String(open))
+      localBrowserStorage.setItem(INFO_SIDEBAR_KEY, String(open))
       return { infoSidebarOpen: open }
     }),
   setInfoSidebarOpen: (open) => {
-    localStorage.setItem(INFO_SIDEBAR_KEY, String(open))
+    localBrowserStorage.setItem(INFO_SIDEBAR_KEY, String(open))
     set({ infoSidebarOpen: open })
   },
   setQuickMenuOpen: (open) => set({ quickMenuOpen: open }),

@@ -10,6 +10,7 @@ import '@/hooks/useTheme'
 import '@/i18n'
 import App from './App'
 import { IconProvider, ICON_DEFAULTS } from '@/components/ui/icons'
+import { isRootRouterBasename } from '@/lib/runtimeConfig'
 
 // Register the PWA service worker with auto-update behaviour. `immediate: true`
 // checks for a new service worker as soon as the page loads; combined with the
@@ -19,7 +20,9 @@ import { IconProvider, ICON_DEFAULTS } from '@/components/ui/icons'
 // injects a bare register script with no reload logic, so a freshly updated
 // binary keeps serving the previous UI from the old worker until the desktop
 // window is closed and reopened.
-registerSW({ immediate: true })
+if (isRootRouterBasename()) {
+  registerSW({ immediate: true })
+}
 
 const root = document.getElementById('root')!
 createRoot(root).render(

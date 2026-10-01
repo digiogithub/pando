@@ -1,16 +1,13 @@
 import { create } from 'zustand'
 import api from '../services/api'
+import { localBrowserStorage } from '../services/storage'
 import type { SettingsConfig, ProviderConfigItem, AgentConfigItem, ToolsConfig, BashConfig, TokenOptimizationConfig, SandboxConfig, SandboxConfigResponse } from '../types'
 import { useToastStore } from './toastStore'
 
 const LANGUAGE_KEY = 'pando_language'
 
 function readStoredLanguage(): string {
-  try {
-    return localStorage.getItem(LANGUAGE_KEY) || 'en'
-  } catch {
-    return 'en'
-  }
+  return localBrowserStorage.getItem(LANGUAGE_KEY) || 'en'
 }
 
 // Set once the user picks a language in this page load, so a slower server
@@ -133,11 +130,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   setLanguage: (lang) => {
     languageChosen = true
-    try {
-      localStorage.setItem(LANGUAGE_KEY, lang)
-    } catch {
-      // ignore unavailable storage
-    }
+    localBrowserStorage.setItem(LANGUAGE_KEY, lang)
     set((s) => ({
       config: { ...s.config, language: lang },
       original: { ...s.original, language: lang },
@@ -151,11 +144,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     try {
       const prefs = await api.get<{ language?: string }>('/api/v1/ui/preferences')
       if (languageChosen || !prefs.language) return
-      try {
-        localStorage.setItem(LANGUAGE_KEY, prefs.language)
-      } catch {
-        // ignore unavailable storage
-      }
+      localBrowserStorage.setItem(LANGUAGE_KEY, prefs.language)
       const lang = prefs.language
       set((s) => ({
         config: { ...s.config, language: lang },

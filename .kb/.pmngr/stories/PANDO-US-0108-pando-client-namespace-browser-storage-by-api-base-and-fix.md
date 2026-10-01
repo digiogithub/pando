@@ -2,14 +2,15 @@
 id: PANDO-US-0108
 type: story
 title: "pando-client: namespace browser storage by API base and fix base-URL bypasses so the child UI can run under the proxy path"
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0019
 author: mcp
 labels: [projects, webui, pando-client]
 estimate: 5
 created: 2026-10-01T19:24:42Z
-updated: 2026-10-01T19:24:42Z
+updated: 2026-10-01T19:52:21Z
+closed: 2026-10-01T19:52:21Z
 ---
 
 ## Description

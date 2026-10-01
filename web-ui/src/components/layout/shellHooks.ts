@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { isDesktop } from '@/services/desktop'
+import { localBrowserStorage } from '@pando/client/services/storage'
 
 /** Viewport width at or below which the sidebar becomes an overlay drawer. */
 export const MOBILE_QUERY = '(max-width: 768px)'
@@ -27,20 +28,12 @@ export function useMediaQuery(query: string): boolean {
 }
 
 export function readSidebarPref(): boolean | null {
-  try {
-    const v = localStorage.getItem(SIDEBAR_KEY)
-    return v === null ? null : v === 'true'
-  } catch {
-    return null
-  }
+  const v = localBrowserStorage.getItem(SIDEBAR_KEY)
+  return v === null ? null : v === 'true'
 }
 
 export function writeSidebarPref(open: boolean): void {
-  try {
-    localStorage.setItem(SIDEBAR_KEY, String(open))
-  } catch {
-    // Storage unavailable (private mode): the preference just is not kept.
-  }
+  localBrowserStorage.setItem(SIDEBAR_KEY, String(open))
 }
 
 /** True on Apple platforms (used for the Cmd/Ctrl shortcut hint). */

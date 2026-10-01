@@ -18,6 +18,7 @@ export * from './services/host'
 export * from './services/mappers'
 export * from './services/runSeq'
 export * from './services/sse'
+export * from './services/storage'
 export * from './services/terminalPty'
 export * from './services/uiPolicy'
 
@@ -54,4 +55,3 @@ export * from './stores/uiPolicyStore'
 // hooks
 export * from './hooks/useChat'
 export * from './hooks/useGoal'
-

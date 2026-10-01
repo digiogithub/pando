@@ -5,6 +5,7 @@ import { format } from 'date-fns'
 import { useSessionStore } from '@pando/client/stores/sessionStore'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useExtensionPanelsStore } from '@pando/client/stores/extensionPanelsStore'
+import { localBrowserStorage } from '@pando/client/services/storage'
 import { IconButton, Input, Tooltip } from '@/components/ui'
 import { BrandMark } from '@/components/brand'
 import {
@@ -21,21 +22,19 @@ const SECTIONS_KEY = 'pando_sidebar_sections'
 interface SectionState { nav: boolean; recents: boolean }
 
 function readSections(): SectionState {
-  try {
-    const raw = localStorage.getItem(SECTIONS_KEY)
-    if (raw) return { nav: true, recents: true, ...(JSON.parse(raw) as Partial<SectionState>) }
-  } catch {
-    // ignore unreadable storage
+  const raw = localBrowserStorage.getItem(SECTIONS_KEY)
+  if (raw) {
+    try {
+      return { nav: true, recents: true, ...(JSON.parse(raw) as Partial<SectionState>) }
+    } catch {
+      // ignore unreadable storage
+    }
   }
   return { nav: true, recents: true }
 }
 
 function writeSections(s: SectionState) {
-  try {
-    localStorage.setItem(SECTIONS_KEY, JSON.stringify(s))
-  } catch {
-    // ignore
-  }
+  localBrowserStorage.setItem(SECTIONS_KEY, JSON.stringify(s))
 }
 
 interface NavItem { path: string; label: string; icon: LucideIcon; end?: boolean }

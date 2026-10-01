@@ -1,23 +1,16 @@
 import { useCallback, useEffect, useState, type RefObject } from 'react'
+import { localBrowserStorage } from '@pando/client/services/storage'
 
 function readStoredWidth(key: string | undefined): number | null {
   if (!key) return null
-  try {
-    const raw = localStorage.getItem(key)
-    const n = raw ? Number(raw) : NaN
-    return Number.isFinite(n) && n > 0 ? n : null
-  } catch {
-    return null
-  }
+  const raw = localBrowserStorage.getItem(key)
+  const n = raw ? Number(raw) : NaN
+  return Number.isFinite(n) && n > 0 ? n : null
 }
 
 function writeStoredWidth(key: string | undefined, width: number) {
   if (!key) return
-  try {
-    localStorage.setItem(key, String(Math.round(width)))
-  } catch {
-    // storage unavailable (private mode, blocked site data) — width just won't persist
-  }
+  localBrowserStorage.setItem(key, String(Math.round(width)))
 }
 
 /**

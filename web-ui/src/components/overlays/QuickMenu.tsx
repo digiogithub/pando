@@ -4,6 +4,7 @@ import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useTheme } from '@/hooks/useTheme'
 import { useToast } from '@pando/client/stores/toastStore'
 import { loadLauncherCommands, type LauncherCommand } from '@pando/client/services/commandLauncher'
+import { localBrowserStorage } from '@pando/client/services/storage'
 import { Kbd } from '@/components/ui'
 import {
   Search,
@@ -51,18 +52,14 @@ const VIEWS: Omit<MenuItem, 'group'>[] = [
 
 function loadRecent(): string[] {
   try {
-    return JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]')
+    return JSON.parse(localBrowserStorage.getItem(RECENT_KEY) ?? '[]')
   } catch {
     return []
   }
 }
 
 function saveRecent(ids: string[]) {
-  try {
-    localStorage.setItem(RECENT_KEY, JSON.stringify(ids.slice(0, 5)))
-  } catch {
-    // ignore
-  }
+  localBrowserStorage.setItem(RECENT_KEY, JSON.stringify(ids.slice(0, 5)))
 }
 
 function addToRecent(id: string) {

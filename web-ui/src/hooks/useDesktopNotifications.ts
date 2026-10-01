@@ -33,7 +33,7 @@ export function useDesktopNotifications() {
       const notification = new Notification(title, {
         body: options?.body,
         // PNG, not the SVG mark: Notification.icon has inconsistent SVG support.
-        icon: options?.icon ?? '/pwa-icon-192.png',
+        icon: options?.icon ?? new URL('pwa-icon-192.png', window.location.href).toString(),
       })
 
       notification.onclick = () => {

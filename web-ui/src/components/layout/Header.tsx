@@ -9,6 +9,7 @@ import { useAgentBusy } from '@/hooks/useAgentBusy'
 import { BrandMark } from '@/components/brand'
 import PersonaSelector from '@/components/shared/PersonaSelector'
 import { IconButton, Tooltip } from '@/components/ui'
+import { getBaseURL } from '@pando/client/services/api'
 import {
   CircleQuestionMark, LayoutDashboard, MessageSquare, Moon, PanelLeft, PanelLeftClose, Settings, Sun,
 } from '@/components/ui/icons'
@@ -53,7 +54,7 @@ export default function Header({ isMobile = false, simple = false }: { isMobile?
   const desktopShell = useDesktopShell()
 
   useEffect(() => {
-    fetch('/health')
+    fetch(`${getBaseURL()}/health`)
       .then((r) => r.json())
       .then((d) => {
         if (d.version && d.version !== 'unknown') {

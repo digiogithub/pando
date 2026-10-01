@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import api from '../services/api'
+import { sessionBrowserStorage } from '../services/storage'
 import { terminatePtyConnection, type PtyReadyInfo } from '../services/terminalPty'
 
 export interface TerminalEntry {
@@ -91,19 +92,15 @@ interface PersistedTab {
  * Scrollback is not persisted: the server replays it on reattach.
  */
 function persistTabs(tabs: TerminalTab[]): void {
-  try {
-    const payload: PersistedTab[] = tabs
-      .filter((tab) => tab.mode === 'pty' && tab.ptySessionId)
-      .map((tab) => ({ id: tab.id, title: tab.title, ptySessionId: tab.ptySessionId }))
-    sessionStorage.setItem(PTY_TABS_KEY, JSON.stringify(payload))
-  } catch {
-    // Private browsing or a full quota: reattach is a nicety, never fail on it.
-  }
+  const payload: PersistedTab[] = tabs
+    .filter((tab) => tab.mode === 'pty' && tab.ptySessionId)
+    .map((tab) => ({ id: tab.id, title: tab.title, ptySessionId: tab.ptySessionId }))
+  sessionBrowserStorage.setItem(PTY_TABS_KEY, JSON.stringify(payload))
 }
 
 function loadPersistedTabs(): TerminalTab[] {
   try {
-    const raw = sessionStorage.getItem(PTY_TABS_KEY)
+    const raw = sessionBrowserStorage.getItem(PTY_TABS_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw) as PersistedTab[]
     if (!Array.isArray(parsed)) return []

@@ -1,3 +1,5 @@
+import { localBrowserStorage, storageKey } from '@pando/client/services/storage'
+
 /**
  * Interface font size ("UI scale") — small | default | large.
  *
@@ -25,12 +27,8 @@ function isUIScale(v: string | null): v is UIScale {
 }
 
 function readStorage(): UIScale {
-  try {
-    const v = localStorage.getItem(KEY)
-    return isUIScale(v) ? v : 'default'
-  } catch {
-    return 'default'
-  }
+  const v = localBrowserStorage.getItem(KEY)
+  return isUIScale(v) ? v : 'default'
 }
 
 function apply(scale: UIScale) {
@@ -46,12 +44,8 @@ export function getUIScale(): UIScale {
 
 /** Persists and immediately applies the UI scale. */
 export function setUIScale(scale: UIScale) {
-  try {
-    if (scale === 'default') localStorage.removeItem(KEY)
-    else localStorage.setItem(KEY, scale)
-  } catch {
-    /* storage unavailable (private mode) — still applies for this session */
-  }
+  if (scale === 'default') localBrowserStorage.removeItem(KEY)
+  else localBrowserStorage.setItem(KEY, scale)
   apply(scale)
 }
 
@@ -64,6 +58,6 @@ if (typeof document !== 'undefined') {
 if (typeof window !== 'undefined') {
   // Keep multiple tabs/windows in sync, like useTheme.ts does for the theme.
   window.addEventListener('storage', (e) => {
-    if (e.key === KEY) apply(readStorage())
+    if (e.key === storageKey(KEY)) apply(readStorage())
   })
 }

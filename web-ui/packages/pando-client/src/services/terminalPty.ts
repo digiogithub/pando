@@ -1,4 +1,4 @@
-import api, { getBaseURL } from '../services/api'
+import api, { resolveAPIURL } from '../services/api'
 
 export interface PtyReadyInfo {
   sessionId: string
@@ -67,9 +67,8 @@ interface PtyControlMessage {
  * accepts `?token=` in authMiddleware for exactly this reason.
  */
 function buildPtyURL(params: { sessionId?: string; cols: number; rows: number }): string {
-  const base = getBaseURL()
-  const httpOrigin = base || (typeof window !== 'undefined' ? window.location.origin : '')
-  const url = new URL('/api/v1/terminal/pty', httpOrigin)
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
+  const url = new URL(resolveAPIURL('/api/v1/terminal/pty'), origin)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
 
   url.searchParams.set('cols', String(params.cols))

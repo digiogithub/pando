@@ -8,6 +8,7 @@ import de from './locales/de.json'
 import pt from './locales/pt.json'
 import ja from './locales/ja.json'
 import zh from './locales/zh.json'
+import { localBrowserStorage } from '@pando/client/services/storage'
 
 export const SUPPORTED_LANGUAGES = [
   { value: 'en', label: 'English' },
@@ -22,11 +23,7 @@ export const SUPPORTED_LANGUAGES = [
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number]['value']
 
 function readStoredLanguage(): string {
-  try {
-    return localStorage.getItem('pando_language') || 'en'
-  } catch {
-    return 'en'
-  }
+  return localBrowserStorage.getItem('pando_language') || 'en'
 }
 
 i18n.use(initReactI18next).init({

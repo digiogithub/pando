@@ -3,7 +3,7 @@ import { MessageSquare, CircleStop, SendHorizontal } from '@/components/ui/icons
 import { Button, Spinner } from '@/components/ui'
 import { format } from 'date-fns'
 import { useInstancesStore, type RemoteSession, type RemoteMessage, type InstanceInfo } from '@pando/client/stores/instancesStore'
-import api from '@pando/client/services/api'
+import api, { getBaseURL } from '@pando/client/services/api'
 
 interface StreamEvent {
   topic: string
@@ -85,7 +85,7 @@ export default function RemoteSessionView({ instance }: RemoteSessionViewProps) 
     setAutoScroll(true)
 
     const token = api.getToken()
-    const baseURL = (window as Window & { __PANDO_API_BASE__?: string }).__PANDO_API_BASE__ || ''
+    const baseURL = getBaseURL()
     const url = `${baseURL}/api/v1/instances/${instance.instance_id}/sessions/${selectedSessionId}/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`
 
     const es = new EventSource(url)

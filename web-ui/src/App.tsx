@@ -38,6 +38,7 @@ import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useExtensionPanelsStore } from '@pando/client/stores/extensionPanelsStore'
 import ExtensionPanelPage from '@/components/extensions/ExtensionPanelPage'
 import { installPandoUI } from '@/lib/pandoUI'
+import { getRouterBasename, isRootRouterBasename } from '@/lib/runtimeConfig'
 import { useThemeStore } from '@/hooks/useTheme'
 import { DesktopFrameBar } from '@/components/layout/DesktopWindowControls'
 import { useDesktopNavigation } from '@/services/desktopWindow'
@@ -113,6 +114,8 @@ function RootLayout() {
  * e.g. Settings guarding unsaved changes on in-app navigation. It is created
  * once at module load; it is only rendered once the splash/login gate passes.
  */
+const routerBasename = getRouterBasename()
+
 const router = createBrowserRouter(
   createRoutesFromElements(
     <Route element={<RootLayout />}>
@@ -145,6 +148,7 @@ const router = createBrowserRouter(
       <Route path="*" element={<NotFound />} />
     </Route>,
   ),
+  { basename: routerBasename },
 )
 
 function App() {
@@ -227,7 +231,7 @@ function App() {
       {!showSplash && !needsLogin && <RouterProvider router={router} />}
 
       <ToastContainer />
-      <PWAInstallPrompt />
+      {isRootRouterBasename() && <PWAInstallPrompt />}
     </>
   )
 }

@@ -2,20 +2,50 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="alternate icon" href="/pando-icon.svg" />
+    <!-- Assets are built with relative URLs (Vite base "./") so the same bundle
+         also works behind a path prefix. This base keeps them resolving from the
+         site root on deep links; a server that serves the UI under a prefix
+         rewrites the href to that prefix. -->
+    <base href="/" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="alternate icon" href="pando-icon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0c1f18" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Pando" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
     <meta name="description" content="AI assistant designed to improve the workflow of software developers" />
     <title>Pando</title>
     <script>
       // Apply the persisted theme before first paint (no flash). Mirrors the
       // parsing in src/hooks/useTheme.ts; keep both in sync.
       (function () {
+        function normalizeBasePath(baseURL) {
+          if (!baseURL) return '';
+          try {
+            var parsed = new URL(baseURL, 'http://pando.local');
+            var pathname = parsed.pathname.replace(/\/+$/, '') || '/';
+            return pathname === '/' ? '' : pathname;
+          } catch (e) {
+            var withoutQuery = String(baseURL).split(/[?#]/, 1)[0] || '';
+            var normalized = withoutQuery.charAt(0) === '/' ? withoutQuery : '/' + withoutQuery;
+            var pathname = normalized.replace(/\/+$/, '') || '/';
+            return pathname === '/' ? '' : pathname;
+          }
+        }
+        function shortStableHash(value) {
+          var hash = 0x811c9dc5;
+          for (var i = 0; i < value.length; i++) {
+            hash ^= value.charCodeAt(i);
+            hash = Math.imul(hash, 0x01000193);
+          }
+          return ('00000000' + (hash >>> 0).toString(16)).slice(-8);
+        }
+        function storageKey(name) {
+          var basePath = normalizeBasePath(window.__PANDO_API_BASE__ || '');
+          return basePath ? name + '@' + shortStableHash(basePath) : name;
+        }
         var bgs = {
           pando: ['#fdfcf8', '#0c1f18'],
           paper: ['#faf9f5', '#262624'],
@@ -26,8 +56,8 @@
         var accents = ['gold', 'terracotta', 'violet', 'blue', 'green', 'rose', 'graphite'];
         var id = null, accent = null;
         try {
-          id = localStorage.getItem('pando_theme');
-          accent = localStorage.getItem('pando_accent');
+          id = localStorage.getItem(storageKey('pando_theme'));
+          accent = localStorage.getItem(storageKey('pando_accent'));
         } catch (e) {}
         var family = 'pando', mode = 'system';
         if (id) {
@@ -56,7 +86,7 @@
         // Interface font size ("UI scale"), same no-flash treatment. Mirrors
         // src/components/settings/uiScale.ts; keep both in sync.
         try {
-          var uiSize = localStorage.getItem('pando_ui_size');
+          var uiSize = localStorage.getItem(storageKey('pando_ui_size'));
           if (uiSize === 'small' || uiSize === 'large') root.setAttribute('data-ui-size', uiSize);
         } catch (e) {}
       })();

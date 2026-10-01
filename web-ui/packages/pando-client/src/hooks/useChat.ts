@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react'
 import { createSSEStream, createGETSSEStream } from '../services/sse'
-import { api } from '../services/api'
+import { api, getBaseURL } from '../services/api'
 import { useSessionStore } from '../stores/sessionStore'
 import { RUN_SEQ_STALE } from '../services/runSeq'
 import { useFileChangesStore } from '../stores/fileChangesStore'
@@ -549,8 +549,9 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
       }
       addMessage(assistantMsg)
 
+      const baseURL = getBaseURL()
       abortRef.current = createSSEStream(
-        '/api/v1/chat/stream',
+        `${baseURL}/api/v1/chat/stream`,
         { sessionId: sessionId ?? undefined, prompt: text },
         (event: SSEEvent) => handleEvent(event),
         (err) => {
@@ -599,7 +600,7 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
         addMessage(assistantMsg)
       }
 
-      const baseURL = (window as Window & { __PANDO_API_BASE__?: string }).__PANDO_API_BASE__ ?? ''
+      const baseURL = getBaseURL()
       abortRef.current = createGETSSEStream(
         `${baseURL}/api/v1/sessions/${sessionId}/stream`,
         (event: SSEEvent) => handleEvent(event),

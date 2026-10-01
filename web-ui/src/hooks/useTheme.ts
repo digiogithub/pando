@@ -16,6 +16,7 @@
  */
 import { create } from 'zustand'
 import { useShallow } from 'zustand/react/shallow'
+import { localBrowserStorage, storageKey } from '@pando/client/services/storage'
 
 import {
   ACCENT_PALETTES,
@@ -107,20 +108,12 @@ function resolve(mode: ThemeModePref): ResolvedMode {
 }
 
 function readStorage(key: string): string | null {
-  try {
-    return localStorage.getItem(key)
-  } catch {
-    return null
-  }
+  return localBrowserStorage.getItem(key)
 }
 
 function writeStorage(key: string, value: string | null) {
-  try {
-    if (value === null) localStorage.removeItem(key)
-    else localStorage.setItem(key, value)
-  } catch {
-    /* storage unavailable (private mode) — theme still applies for this session */
-  }
+  if (value === null) localBrowserStorage.removeItem(key)
+  else localBrowserStorage.setItem(key, value)
 }
 
 /** Keeps the native window chrome (Wails) and mobile browser UI in sync. */
@@ -220,7 +213,7 @@ darkQuery?.addEventListener?.('change', () => {
 // Keep multiple tabs/windows in sync.
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (e) => {
-    if (e.key !== THEME_KEY && e.key !== ACCENT_KEY) return
+    if (e.key !== storageKey(THEME_KEY) && e.key !== storageKey(ACCENT_KEY)) return
     const { family, mode } = parseThemeId(readStorage(THEME_KEY))
     useThemeStore.setState(commit(family, mode, normalizeAccent(readStorage(ACCENT_KEY)), false))
   })
