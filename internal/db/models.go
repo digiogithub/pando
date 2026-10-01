@@ -16,6 +16,8 @@ type Project struct {
 	Initialized int64         `json:"initialized"`
 	AcpPid      sql.NullInt64 `json:"acp_pid"`
 	AcpPort     sql.NullInt64 `json:"acp_port"`
+	WebPid      sql.NullInt64 `json:"web_pid"`
+	WebPort     int64         `json:"web_port"`
 	LastOpened  sql.NullInt64 `json:"last_opened"`
 	CreatedAt   int64         `json:"created_at"`
 	UpdatedAt   int64         `json:"updated_at"`

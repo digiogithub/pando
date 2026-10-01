@@ -2,14 +2,15 @@
 id: PANDO-US-0103
 type: story
 title: "ProjectManager: spawn and track a background `pando serve` web instance per project"
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0019
 author: mcp
 labels: [projects, backend]
 estimate: 8
 created: 2026-10-01T19:23:08Z
-updated: 2026-10-01T19:23:08Z
+updated: 2026-10-01T19:52:20Z
+closed: 2026-10-01T19:52:20Z
 ---
 
 ## Description

@@ -192,6 +192,9 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.updateProjectStatusStmt, err = db.PrepareContext(ctx, updateProjectStatus); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateProjectStatus: %w", err)
 	}
+	if q.updateProjectWebRuntimeStmt, err = db.PrepareContext(ctx, updateProjectWebRuntime); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateProjectWebRuntime: %w", err)
+	}
 	if q.updateProjectLastOpenedStmt, err = db.PrepareContext(ctx, updateProjectLastOpened); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateProjectLastOpened: %w", err)
 	}
@@ -486,6 +489,11 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing updateProjectStatusStmt: %w", cerr)
 		}
 	}
+	if q.updateProjectWebRuntimeStmt != nil {
+		if cerr := q.updateProjectWebRuntimeStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateProjectWebRuntimeStmt: %w", cerr)
+		}
+	}
 	if q.updateProjectLastOpenedStmt != nil {
 		if cerr := q.updateProjectLastOpenedStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing updateProjectLastOpenedStmt: %w", cerr)
@@ -596,6 +604,7 @@ type Queries struct {
 	getProjectByPathStmt                 *sql.Stmt
 	listProjectsStmt                     *sql.Stmt
 	updateProjectStatusStmt              *sql.Stmt
+	updateProjectWebRuntimeStmt          *sql.Stmt
 	updateProjectLastOpenedStmt          *sql.Stmt
 	markProjectInitializedStmt           *sql.Stmt
 	deleteProjectStmt                    *sql.Stmt
@@ -661,6 +670,7 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		getProjectByPathStmt:                 q.getProjectByPathStmt,
 		listProjectsStmt:                     q.listProjectsStmt,
 		updateProjectStatusStmt:              q.updateProjectStatusStmt,
+		updateProjectWebRuntimeStmt:          q.updateProjectWebRuntimeStmt,
 		updateProjectLastOpenedStmt:          q.updateProjectLastOpenedStmt,
 		markProjectInitializedStmt:           q.markProjectInitializedStmt,
 		deleteProjectStmt:                    q.deleteProjectStmt,

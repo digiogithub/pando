@@ -213,6 +213,9 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 
 		// --- IPC bootstrap: determine primary/secondary role, open DB, wire services ---
 		instanceID := uuid.New().String()
+		if err := os.Setenv("PANDO_INSTANCE_ID", instanceID); err != nil {
+			return fmt.Errorf("failed to set PANDO_INSTANCE_ID: %w", err)
+		}
 		rt, err := ipcruntime.Bootstrap(ctx, cwd, instanceID)
 		if err != nil {
 			return fmt.Errorf("IPC bootstrap failed: %w", err)
@@ -609,6 +612,9 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 
 	// --- IPC bootstrap: determine primary/secondary role, open DB, wire services ---
 	acpInstanceID := uuid.New().String()
+	if err := os.Setenv("PANDO_INSTANCE_ID", acpInstanceID); err != nil {
+		return fmt.Errorf("failed to set PANDO_INSTANCE_ID: %w", err)
+	}
 	rt, bootstrapErr := ipcruntime.Bootstrap(ctx, cwd, acpInstanceID)
 	if bootstrapErr != nil {
 		return fmt.Errorf("IPC bootstrap failed: %w", bootstrapErr)

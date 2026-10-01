@@ -34,6 +34,8 @@ type Project struct {
 	DelegationSpawned bool
 	ACPPID            int
 	ACPPort           int
+	WebPID            int
+	WebPort           int
 	LastOpened        *time.Time
 	CreatedAt         time.Time
 	UpdatedAt         time.Time

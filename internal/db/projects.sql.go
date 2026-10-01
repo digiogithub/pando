@@ -19,6 +19,8 @@ INSERT INTO projects (
     initialized,
     acp_pid,
     acp_port,
+    web_pid,
+    web_port,
     last_opened,
     created_at,
     updated_at
@@ -31,9 +33,11 @@ INSERT INTO projects (
     ?,
     ?,
     ?,
+    ? ,
+    ? ,
     strftime('%s', 'now'),
     strftime('%s', 'now')
-) RETURNING id, name, path, status, initialized, acp_pid, acp_port, last_opened, created_at, updated_at
+) RETURNING id, name, path, status, initialized, acp_pid, acp_port, web_pid, web_port, last_opened, created_at, updated_at
 `
 
 type CreateProjectParams struct {
@@ -44,6 +48,8 @@ type CreateProjectParams struct {
 	Initialized int64         `json:"initialized"`
 	AcpPid      sql.NullInt64 `json:"acp_pid"`
 	AcpPort     sql.NullInt64 `json:"acp_port"`
+	WebPid      sql.NullInt64 `json:"web_pid"`
+	WebPort     int64         `json:"web_port"`
 	LastOpened  sql.NullInt64 `json:"last_opened"`
 }
 
@@ -56,6 +62,8 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		arg.Initialized,
 		arg.AcpPid,
 		arg.AcpPort,
+		arg.WebPid,
+		arg.WebPort,
 		arg.LastOpened,
 	)
 	var i Project
@@ -67,6 +75,8 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.Initialized,
 		&i.AcpPid,
 		&i.AcpPort,
+		&i.WebPid,
+		&i.WebPort,
 		&i.LastOpened,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -75,7 +85,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 }
 
 const getProject = `-- name: GetProject :one
-SELECT id, name, path, status, initialized, acp_pid, acp_port, last_opened, created_at, updated_at
+SELECT id, name, path, status, initialized, acp_pid, acp_port, web_pid, web_port, last_opened, created_at, updated_at
 FROM projects
 WHERE id = ? LIMIT 1
 `
@@ -91,6 +101,8 @@ func (q *Queries) GetProject(ctx context.Context, id string) (Project, error) {
 		&i.Initialized,
 		&i.AcpPid,
 		&i.AcpPort,
+		&i.WebPid,
+		&i.WebPort,
 		&i.LastOpened,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -99,7 +111,7 @@ func (q *Queries) GetProject(ctx context.Context, id string) (Project, error) {
 }
 
 const getProjectByPath = `-- name: GetProjectByPath :one
-SELECT id, name, path, status, initialized, acp_pid, acp_port, last_opened, created_at, updated_at
+SELECT id, name, path, status, initialized, acp_pid, acp_port, web_pid, web_port, last_opened, created_at, updated_at
 FROM projects
 WHERE path = ? LIMIT 1
 `
@@ -115,6 +127,8 @@ func (q *Queries) GetProjectByPath(ctx context.Context, path string) (Project, e
 		&i.Initialized,
 		&i.AcpPid,
 		&i.AcpPort,
+		&i.WebPid,
+		&i.WebPort,
 		&i.LastOpened,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -123,7 +137,7 @@ func (q *Queries) GetProjectByPath(ctx context.Context, path string) (Project, e
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT id, name, path, status, initialized, acp_pid, acp_port, last_opened, created_at, updated_at
+SELECT id, name, path, status, initialized, acp_pid, acp_port, web_pid, web_port, last_opened, created_at, updated_at
 FROM projects
 ORDER BY last_opened DESC NULLS LAST, created_at DESC
 `
@@ -145,6 +159,8 @@ func (q *Queries) ListProjects(ctx context.Context) ([]Project, error) {
 			&i.Initialized,
 			&i.AcpPid,
 			&i.AcpPort,
+			&i.WebPid,
+			&i.WebPort,
 			&i.LastOpened,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -184,6 +200,30 @@ func (q *Queries) UpdateProjectStatus(ctx context.Context, arg UpdateProjectStat
 		arg.Status,
 		arg.AcpPid,
 		arg.AcpPort,
+		arg.ID,
+	)
+	return err
+}
+
+const updateProjectWebRuntime = `-- name: UpdateProjectWebRuntime :exec
+UPDATE projects
+SET
+    web_pid    = ?,
+    web_port   = ?,
+    updated_at = strftime('%s', 'now')
+WHERE id = ?
+`
+
+type UpdateProjectWebRuntimeParams struct {
+	WebPid  sql.NullInt64 `json:"web_pid"`
+	WebPort int64         `json:"web_port"`
+	ID      string        `json:"id"`
+}
+
+func (q *Queries) UpdateProjectWebRuntime(ctx context.Context, arg UpdateProjectWebRuntimeParams) error {
+	_, err := q.exec(ctx, q.updateProjectWebRuntimeStmt, updateProjectWebRuntime,
+		arg.WebPid,
+		arg.WebPort,
 		arg.ID,
 	)
 	return err

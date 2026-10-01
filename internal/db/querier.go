@@ -89,6 +89,7 @@ type Querier interface {
 	GetProjectByPath(ctx context.Context, path string) (Project, error)
 	ListProjects(ctx context.Context) ([]Project, error)
 	UpdateProjectStatus(ctx context.Context, arg UpdateProjectStatusParams) error
+	UpdateProjectWebRuntime(ctx context.Context, arg UpdateProjectWebRuntimeParams) error
 	UpdateProjectLastOpened(ctx context.Context, arg UpdateProjectLastOpenedParams) error
 	MarkProjectInitialized(ctx context.Context, id string) error
 	DeleteProject(ctx context.Context, id string) error

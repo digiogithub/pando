@@ -2,12 +2,13 @@
 id: PANDO-EP-0019
 type: epic
 title: "Project workspaces in the WebUI: open a project in a background Pando instance and drive it from a bottom tab bar in the unified WebUI"
-status: backlog
+status: in_progress
 priority: high
 author: mcp
 labels: [projects, webui, api, ipc, desktop, delegation]
 created: 2026-10-01T19:22:00Z
-updated: 2026-10-01T19:22:00Z
+updated: 2026-10-01T19:52:21Z
+started: 2026-10-01T19:52:21Z
 ---
 
 ## Description

@@ -45,3 +45,7 @@ var ErrExternalUnreachable = errors.New("external instance is unreachable over I
 // subagent as a hidden session inside the parent instance instead of a separate
 // agent loop — so warm routing refuses it and the caller takes the cold path.
 var ErrSelfInstance = errors.New("project is served by this instance; warm delegation to self is not allowed")
+
+// ErrChildStartupTimeout is returned when a spawned background child never
+// becomes healthy within the startup timeout window.
+var ErrChildStartupTimeout = errors.New("child startup timed out")

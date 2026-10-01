@@ -31,6 +31,10 @@ type Service interface {
 	// pid and port should be 0 when not applicable.
 	UpdateStatus(ctx context.Context, id, status string, pid, port int) error
 
+	// UpdateWebRuntime updates the background WebUI child runtime info.
+	// pid and port should both be 0 when no web child is alive.
+	UpdateWebRuntime(ctx context.Context, id string, pid, port int) error
+
 	// MarkInitialized marks the project's config as having been initialized.
 	MarkInitialized(ctx context.Context, id string) error
 
@@ -74,6 +78,8 @@ func (s *service) Create(ctx context.Context, name, path string) (*Project, erro
 		Initialized: 0,
 		AcpPid:      sql.NullInt64{},
 		AcpPort:     sql.NullInt64{},
+		WebPid:      sql.NullInt64{},
+		WebPort:     0,
 		LastOpened:  sql.NullInt64{},
 	})
 	if err != nil {
@@ -135,6 +141,19 @@ func (s *service) UpdateStatus(ctx context.Context, id, status string, pid, port
 	})
 }
 
+// UpdateWebRuntime updates the stored background WebUI child runtime info.
+func (s *service) UpdateWebRuntime(ctx context.Context, id string, pid, port int) error {
+	var webPid sql.NullInt64
+	if pid != 0 {
+		webPid = sql.NullInt64{Int64: int64(pid), Valid: true}
+	}
+	return s.q.UpdateProjectWebRuntime(ctx, db.UpdateProjectWebRuntimeParams{
+		ID:      id,
+		WebPid:  webPid,
+		WebPort: int64(port),
+	})
+}
+
 // MarkInitialized marks the project's config as having been initialized.
 func (s *service) MarkInitialized(ctx context.Context, id string) error {
 	return s.q.MarkProjectInitialized(ctx, id)
@@ -177,6 +196,12 @@ func fromDB(row db.Project) Project {
 	}
 	if row.AcpPort.Valid {
 		p.ACPPort = int(row.AcpPort.Int64)
+	}
+	if row.WebPid.Valid {
+		p.WebPID = int(row.WebPid.Int64)
+	}
+	if row.WebPort != 0 {
+		p.WebPort = int(row.WebPort)
 	}
 	if row.LastOpened.Valid {
 		t := time.Unix(row.LastOpened.Int64, 0)

@@ -769,5 +769,8 @@ func (f *fakeExtService) Rename(_ context.Context, _, _ string) error { return n
 func (f *fakeExtService) UpdateStatus(_ context.Context, _, _ string, _, _ int) error {
 	return nil
 }
+func (f *fakeExtService) UpdateWebRuntime(_ context.Context, _ string, _, _ int) error {
+	return nil
+}
 func (f *fakeExtService) MarkInitialized(_ context.Context, _ string) error { return nil }
 func (f *fakeExtService) TouchLastOpened(_ context.Context, _ string) error { return nil }

@@ -7,10 +7,14 @@ INSERT INTO projects (
     initialized,
     acp_pid,
     acp_port,
+    web_pid,
+    web_port,
     last_opened,
     created_at,
     updated_at
 ) VALUES (
+    ?,
+    ?,
     ?,
     ?,
     ?,
@@ -44,6 +48,14 @@ SET
     status     = ?,
     acp_pid    = ?,
     acp_port   = ?,
+    updated_at = strftime('%s', 'now')
+WHERE id = ?;
+
+-- name: UpdateProjectWebRuntime :exec
+UPDATE projects
+SET
+    web_pid    = ?,
+    web_port   = ?,
     updated_at = strftime('%s', 'now')
 WHERE id = ?;
 

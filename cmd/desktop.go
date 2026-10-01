@@ -123,6 +123,9 @@ func runDesktopMode(cmd *cobra.Command) error {
 
 	// --- IPC bootstrap: determine primary/secondary role, open DB, wire services ---
 	instanceID := uuid.New().String()
+	if err := os.Setenv("PANDO_INSTANCE_ID", instanceID); err != nil {
+		return fmt.Errorf("failed to set PANDO_INSTANCE_ID: %w", err)
+	}
 	rt, err := ipcruntime.Bootstrap(ctx, cwd, instanceID)
 	if err != nil {
 		return fmt.Errorf("IPC bootstrap failed: %w", err)

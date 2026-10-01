@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/instanceregistry"
 	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/pubsub"
@@ -33,6 +34,14 @@ const (
 	// sessions running inside a warm instance changes (start/end). The current
 	// count is carried in ManagerEvent.Count.
 	EvDelegationChanged ManagerEventType = "delegation_changed"
+	// EvWebStarted is published when a project background WebUI child becomes healthy.
+	EvWebStarted ManagerEventType = "web_started"
+	// EvWebStopped is published when a project background WebUI child stops.
+	EvWebStopped ManagerEventType = "web_stopped"
+	// EvWebError is published when a project background WebUI child crashes or
+	// fails to start. Error carries the diagnostic tail, and Port carries the
+	// last known loopback port when available.
+	EvWebError ManagerEventType = "web_error"
 )
 
 // ManagerEvent is the union event type published by Manager.
@@ -41,23 +50,33 @@ type ManagerEvent struct {
 	ProjectID string
 	Status    string
 	Error     string
+	Port      int
 	// Count carries the current in-flight delegated-session count for
 	// EvDelegationChanged events; zero for other event types.
 	Count int
 }
 
+type registryLister interface {
+	List() ([]*instanceregistry.Entry, error)
+}
+
+var newInstanceRegistry = func() registryLister { return instanceregistry.New() }
+
 // Manager tracks child Pando ACP processes for registered project directories
 // and routes lifecycle events to subscribers via a generic pubsub broker.
 type Manager struct {
-	service   Service
-	instances map[string]*Instance // keyed by project ID
-	activeID  string               // currently active project ("" = main instance)
-	mu        sync.RWMutex
+	service      Service
+	instances    map[string]*Instance // keyed by project ID
+	webInstances map[string]*WebInstance
+	activeID     string // currently active project ("" = main instance)
+	mu           sync.RWMutex
 
-	broker *pubsub.Broker[ManagerEvent]
+	broker   *pubsub.Broker[ManagerEvent]
+	registry registryLister
 
 	// pandoBin is the path to the current pando executable.
-	pandoBin string
+	pandoBin         string
+	parentInstanceID string
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -74,13 +93,17 @@ func NewManager(ctx context.Context, service Service) (*Manager, error) {
 	mgrCtx, cancel := context.WithCancel(ctx)
 
 	m := &Manager{
-		service:   service,
-		instances: make(map[string]*Instance),
-		broker:    pubsub.NewBroker[ManagerEvent](),
-		pandoBin:  pandoBin,
-		ctx:       mgrCtx,
-		cancel:    cancel,
+		service:          service,
+		instances:        make(map[string]*Instance),
+		webInstances:     make(map[string]*WebInstance),
+		broker:           pubsub.NewBroker[ManagerEvent](),
+		registry:         newInstanceRegistry(),
+		pandoBin:         pandoBin,
+		parentInstanceID: managerParentInstanceID(),
+		ctx:              mgrCtx,
+		cancel:           cancel,
 	}
+	m.adoptExistingWebInstances(mgrCtx)
 	return m, nil
 }
 
@@ -351,6 +374,10 @@ func (m *Manager) Stop(ctx context.Context, projectID string) error {
 // parent loop never hangs. The count lets the UI warn the user how many
 // delegated loops were interrupted.
 func (m *Manager) StopReport(ctx context.Context, projectID string) (cancelled int, err error) {
+	if closeErr := m.CloseWeb(ctx, projectID); closeErr != nil {
+		return 0, closeErr
+	}
+
 	m.mu.Lock()
 	inst, ours := m.instances[projectID]
 	if ours {
@@ -468,6 +495,10 @@ func (m *Manager) Register(ctx context.Context, name, path string) (*Project, er
 // Unregister removes a project from the registry and stops its running instance
 // (if any).
 func (m *Manager) Unregister(ctx context.Context, projectID string) error {
+	if err := m.CloseWeb(ctx, projectID); err != nil {
+		return fmt.Errorf("project manager: close web instance %s: %w", projectID, err)
+	}
+
 	// Stop the child process first if it is running.
 	m.mu.Lock()
 	inst, running := m.instances[projectID]
@@ -649,7 +680,12 @@ func (m *Manager) Shutdown() {
 	for _, inst := range m.instances {
 		instances = append(instances, inst)
 	}
+	webInstances := make([]*WebInstance, 0, len(m.webInstances))
+	for _, inst := range m.webInstances {
+		webInstances = append(webInstances, inst)
+	}
 	m.instances = make(map[string]*Instance)
+	m.webInstances = make(map[string]*WebInstance)
 	m.activeID = ""
 	m.mu.Unlock()
 
@@ -671,5 +707,24 @@ func (m *Manager) Shutdown() {
 		}
 	}
 
+	for _, inst := range webInstances {
+		inst.markStopping()
+		terminateWebProcess(inst, syscall.SIGTERM)
+	}
+	for _, inst := range webInstances {
+		select {
+		case <-inst.done:
+		case <-time.After(10 * time.Second):
+			terminateWebProcess(inst, syscall.SIGKILL)
+		}
+	}
+
 	m.broker.Shutdown()
+}
+
+func managerParentInstanceID() string {
+	if instanceID := os.Getenv("PANDO_INSTANCE_ID"); instanceID != "" {
+		return instanceID
+	}
+	return fmt.Sprintf("pid-%d", os.Getpid())
 }

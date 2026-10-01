@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS projects (
     initialized INTEGER NOT NULL DEFAULT 0,
     acp_pid     INTEGER,
     acp_port    INTEGER,
+    web_pid     INTEGER,
+    web_port    INTEGER NOT NULL DEFAULT 0,
     last_opened INTEGER,
     created_at  INTEGER NOT NULL,
     updated_at  INTEGER NOT NULL
@@ -207,6 +209,33 @@ func TestUpdateStatus(t *testing.T) {
 	}
 	if got.ACPPort != 9000 {
 		t.Fatalf("expected ACPPort 9000, got %d", got.ACPPort)
+	}
+}
+
+func TestUpdateWebRuntime(t *testing.T) {
+	conn := setupDB(t)
+	svc := project.NewService(db.New(conn))
+	ctx := context.Background()
+
+	wd, _ := os.Getwd()
+	p, err := svc.Create(ctx, "test", wd)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if err := svc.UpdateWebRuntime(ctx, p.ID, 4321, 8800); err != nil {
+		t.Fatalf("UpdateWebRuntime: %v", err)
+	}
+
+	got, err := svc.Get(ctx, p.ID)
+	if err != nil {
+		t.Fatalf("Get after UpdateWebRuntime: %v", err)
+	}
+	if got.WebPID != 4321 {
+		t.Fatalf("expected WebPID 4321, got %d", got.WebPID)
+	}
+	if got.WebPort != 8800 {
+		t.Fatalf("expected WebPort 8800, got %d", got.WebPort)
 	}
 }
 

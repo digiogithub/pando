@@ -122,10 +122,11 @@ func (s *stubService) List(context.Context) ([]Project, error)                  
 func (s *stubService) UpdateStatus(context.Context, string, string, int, int) error {
 	return nil
 }
-func (s *stubService) MarkInitialized(context.Context, string) error { return nil }
-func (s *stubService) TouchLastOpened(context.Context, string) error { return nil }
-func (s *stubService) Rename(context.Context, string, string) error  { return nil }
-func (s *stubService) Delete(context.Context, string) error          { return nil }
+func (s *stubService) UpdateWebRuntime(context.Context, string, int, int) error { return nil }
+func (s *stubService) MarkInitialized(context.Context, string) error            { return nil }
+func (s *stubService) TouchLastOpened(context.Context, string) error            { return nil }
+func (s *stubService) Rename(context.Context, string, string) error             { return nil }
+func (s *stubService) Delete(context.Context, string) error                     { return nil }
 
 // TestActivatePromotesDelegationSpawnedInstance verifies C2: a user-driven
 // Activate of a project currently served by a delegation-spawned (warm) instance
