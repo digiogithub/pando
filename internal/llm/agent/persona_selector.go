@@ -2,9 +2,13 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/provider"
@@ -139,7 +143,18 @@ func personaSelector() *PersonaSelector {
 // Priority: per-session persona override > manually set active persona >
 // auto-selector > empty string. The returned content is intended to be injected
 // into the system prompt, not prepended to the user message.
+//
+// It treats the call as one eligible user prompt without history; the agent
+// loop uses resolvePersonaContent directly so it can pass the turn's history,
+// the combined-request hook and announce the outcome.
 func getPersonaContent(ctx context.Context, userPrompt string) string {
+	return resolvePersonaContent(ctx, personaRequest{Prompt: userPrompt, Eligible: true}).Content
+}
+
+// resolvePersonaContent applies the persona priority for one run. Only the
+// auto-selection step ever makes a decision or an LLM call; an explicit or
+// manual persona triggers neither.
+func resolvePersonaContent(ctx context.Context, req personaRequest) personaOutcome {
 	// Per-session persona override takes top priority so that concurrent ACP /
 	// delegated sessions can each use a different persona without clobbering the
 	// package-global active persona. When a session is PersonaScoped, it manages
@@ -153,29 +168,24 @@ func getPersonaContent(ctx context.Context, userPrompt string) string {
 		if ov.Persona != "" {
 			if mgr := personaManager(); mgr != nil && mgr.HasPersona(ov.Persona) {
 				logging.Debug("Persona: using per-session persona", "persona", ov.Persona)
-				return appendSessionPrompt(mgr.GetPersona(ov.Persona), ov.Prompt)
+				return personaOutcome{Content: appendSessionPrompt(mgr.GetPersona(ov.Persona), ov.Prompt)}
 			}
 		}
-		if selector := personaSelector(); selector != nil {
-			return appendSessionPrompt(selector.SelectPersonaContent(ctx, userPrompt), ov.Prompt)
-		}
-		return appendSessionPrompt("", ov.Prompt)
+		out := autoSelectPersona(ctx, req)
+		out.Content = appendSessionPrompt(out.Content, ov.Prompt)
+		return out
 	}
 
 	// Manual persona takes priority over auto-selection.
 	if active := GetActivePersona(); active != "" {
 		if mgr := personaManager(); mgr != nil {
 			logging.Debug("Persona: using manually set persona", "persona", active)
-			return mgr.GetPersona(active)
+			return personaOutcome{Content: mgr.GetPersona(active)}
 		}
 	}
 
 	// Fall back to automatic persona selection.
-	if selector := personaSelector(); selector != nil {
-		return selector.SelectPersonaContent(ctx, userPrompt)
-	}
-
-	return ""
+	return autoSelectPersona(ctx, req)
 }
 
 // appendSessionPrompt joins persona content with a session's extra Prompt
@@ -202,14 +212,37 @@ func effectiveActivePersona(ctx context.Context) string {
 	return GetActivePersona()
 }
 
-// PersonaSelector automatically selects and applies a persona for each user prompt.
-// It uses a lite LLM provider (configured via agents["persona-selector"]) to pick the
-// best matching persona from the personas directory, then prepends its content to the
-// user message before it reaches the main conversation model.
+// PersonaSelector is the LLM based persona classifier. It uses a lite LLM
+// provider (configured via agents["persona-selector"]) to pick the best
+// matching persona from the personas directory. It is the selection path when
+// the decision model option is off, and the fallback when the decision model
+// cannot answer.
 type PersonaSelector struct {
-	manager          *persona.Manager
+	// manager is the persona set to choose from. When nil the global persona
+	// manager is used, so a persona path change takes effect without rebuilding
+	// the selector.
+	manager *persona.Manager
+
+	// selectorProvider is a fixed provider (NewPersonaSelector, tests). A lazy
+	// selector leaves it nil and builds the provider from the persona-selector
+	// agent configuration on first use, rebuilding it when that changes.
 	selectorProvider provider.Provider
+
+	// lazy selectors follow personaAutoSelect.enabled live; an explicit
+	// selector (SetPersonaSelector with NewPersonaSelector) is always active.
+	lazy bool
+
+	mu          sync.Mutex
+	cached      provider.Provider
+	cachedKey   string
+	cachedError error     // last build error for cachedKey (retried after personaProviderRetry)
+	failedAt    time.Time // when cachedError was recorded (autoClock)
 }
+
+// personaProviderRetry is the minimum time between provider build attempts for
+// the same configuration after a failure, so a transient error is not cached
+// forever but a broken setup is not rebuilt on every prompt.
+const personaProviderRetry = 30 * time.Second
 
 const personaSelectorMaxPromptLen = 600
 
@@ -242,21 +275,101 @@ func NewPersonaSelector(personaPath string) (*PersonaSelector, error) {
 	}, nil
 }
 
-// SelectPersonaContent selects the best persona for userPrompt and returns its raw
-// content (the persona instructions). Returns an empty string if no persona matches,
-// the selector is disabled, or an error occurs. The content is intended to be injected
-// into the system prompt rather than prepended to the user message.
-func (ps *PersonaSelector) SelectPersonaContent(ctx context.Context, userPrompt string) string {
-	personas := ps.manager.ListPersonas()
-	if len(personas) == 0 {
+// NewLazyPersonaSelector creates a selector that can always be installed: it is
+// only active while personaAutoSelect.enabled is on, resolves personas from the
+// global persona manager and builds its LLM provider on first use from the
+// current persona-selector agent configuration (rebuilt when that changes).
+func NewLazyPersonaSelector() *PersonaSelector {
+	return &PersonaSelector{lazy: true}
+}
+
+// personaMgr returns the persona set this selector chooses from.
+func (ps *PersonaSelector) personaMgr() *persona.Manager {
+	if ps.manager != nil {
+		return ps.manager
+	}
+	return personaManager()
+}
+
+// llmProvider returns the provider used for the LLM selection.
+func (ps *PersonaSelector) llmProvider(ctx context.Context) (provider.Provider, error) {
+	if ps.selectorProvider != nil {
+		return ps.selectorProvider, nil
+	}
+	if !ps.lazy {
+		return nil, fmt.Errorf("persona-selector provider not available")
+	}
+	return ps.cachedProvider(personaProviderKey(), func() (provider.Provider, error) {
+		return createAgentProvider(context.WithoutCancel(ctx), config.AgentPersonaSelector, nil, nil, nil)
+	})
+}
+
+// cachedProvider returns the provider for key, building it with build when
+// there is none. Only successes are cached for good; a failure is remembered
+// for personaProviderRetry. build runs outside ps.mu.
+func (ps *PersonaSelector) cachedProvider(key string, build func() (provider.Provider, error)) (provider.Provider, error) {
+	ps.mu.Lock()
+	if ps.cachedKey == key {
+		if ps.cached != nil {
+			p := ps.cached
+			ps.mu.Unlock()
+			return p, nil
+		}
+		if ps.cachedError != nil && autoClock().Sub(ps.failedAt) < personaProviderRetry {
+			err := ps.cachedError
+			ps.mu.Unlock()
+			return nil, err
+		}
+	}
+	ps.mu.Unlock()
+
+	// Build outside the lock; a concurrent duplicate build is tolerated.
+	p, err := build()
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	if err != nil {
+		err = fmt.Errorf("persona-selector agent not available: %w", err)
+		ps.cached, ps.cachedKey, ps.cachedError, ps.failedAt = nil, key, err, autoClock()
+		return nil, err
+	}
+	ps.cached, ps.cachedKey, ps.cachedError = p, key, nil
+	return p, nil
+}
+
+// personaProviderKey identifies the configuration the persona-selector
+// provider is built from: the agent entry and the provider accounts.
+func personaProviderKey() string {
+	cfg := config.Get()
+	if cfg == nil {
 		return ""
 	}
+	h := sha256.New()
+	agentCfg, _ := json.Marshal(cfg.Agents[config.AgentPersonaSelector])
+	accounts, _ := json.Marshal(cfg.ProviderAccounts)
+	h.Write(agentCfg)
+	h.Write([]byte{0})
+	h.Write(accounts)
+	return hex.EncodeToString(h.Sum(nil))
+}
 
-	// Build a compact persona listing: "- name: first heading/line"
+// SelectPersonaName asks the persona-selector LLM which persona fits userPrompt.
+// It returns "" with a nil error when the model answered "none" or an unknown
+// name, and a non-nil error when the model could not be consulted (no usable
+// model, provider creation failed, the call failed).
+func (ps *PersonaSelector) SelectPersonaName(ctx context.Context, userPrompt string) (string, error) {
+	mgr := ps.personaMgr()
+	if mgr == nil {
+		return "", nil
+	}
+	personas := mgr.ListPersonas()
+	if len(personas) == 0 {
+		return "", nil
+	}
+
+	// Build a compact persona listing: "- name: description"
 	var personaList strings.Builder
 	for _, name := range personas {
-		content := ps.manager.GetPersona(name)
-		if desc := extractPersonaTitle(content); desc != "" {
+		if desc := mgr.Description(name); desc != "" {
 			personaList.WriteString(fmt.Sprintf("- %s: %s\n", name, desc))
 		} else {
 			personaList.WriteString(fmt.Sprintf("- %s\n", name))
@@ -270,7 +383,11 @@ func (ps *PersonaSelector) SelectPersonaContent(ctx context.Context, userPrompt 
 
 	selectionRequest := fmt.Sprintf(personaSelectorInstruction, personaList.String(), truncatedPrompt)
 
-	response, err := ps.selectorProvider.SendMessages(
+	selectorProvider, err := ps.llmProvider(ctx)
+	if err != nil {
+		return "", err
+	}
+	response, err := selectorProvider.SendMessages(
 		ctx,
 		[]message.Message{
 			{
@@ -281,27 +398,42 @@ func (ps *PersonaSelector) SelectPersonaContent(ctx context.Context, userPrompt 
 		make([]tools.BaseTool, 0),
 	)
 	if err != nil {
-		logging.Debug("PersonaSelector: selection call failed", "error", err)
-		return ""
+		return "", err
 	}
 
 	selected := strings.TrimSpace(strings.ToLower(response.Content))
 	// Strip any surrounding quotes or punctuation the model may add
 	selected = strings.Trim(selected, `"'`+"`.,;!?")
 	if selected == "" || selected == "none" {
-		return ""
+		return "", nil
 	}
 
 	// Match case-insensitively against the available names
 	for _, name := range personas {
 		if strings.ToLower(name) == selected {
-			logging.Debug("PersonaSelector: applying persona", "persona", name)
-			return ps.manager.GetPersona(name)
+			return name, nil
 		}
 	}
 
 	logging.Debug("PersonaSelector: model returned unknown persona", "returned", selected)
-	return ""
+	return "", nil
+}
+
+// SelectPersonaContent selects the best persona for userPrompt and returns its raw
+// content (the persona instructions). Returns an empty string if no persona matches,
+// the selector is disabled, or an error occurs. The content is intended to be injected
+// into the system prompt rather than prepended to the user message.
+func (ps *PersonaSelector) SelectPersonaContent(ctx context.Context, userPrompt string) string {
+	name, err := ps.SelectPersonaName(ctx, userPrompt)
+	if err != nil {
+		logging.Debug("PersonaSelector: selection call failed", "error", err)
+		return ""
+	}
+	if name == "" {
+		return ""
+	}
+	logging.Debug("PersonaSelector: applying persona", "persona", name)
+	return ps.personaMgr().GetPersona(name)
 }
 
 // SelectAndApply selects the best persona for userPrompt and returns the prompt with the
@@ -313,15 +445,4 @@ func (ps *PersonaSelector) SelectAndApply(ctx context.Context, userPrompt string
 		return userPrompt
 	}
 	return content + "\n\n" + userPrompt
-}
-
-// extractPersonaTitle returns the first meaningful line of a persona's markdown content,
-// stripping leading heading markers (#) so it can serve as a short description.
-func extractPersonaTitle(content string) string {
-	content = strings.TrimSpace(content)
-	if idx := strings.IndexByte(content, '\n'); idx >= 0 {
-		content = content[:idx]
-	}
-	content = strings.TrimLeft(content, "# ")
-	return strings.TrimSpace(content)
 }

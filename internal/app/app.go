@@ -834,38 +834,32 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	// Initialize the global persona manager with built-in personas, then overlay
 	// any user-defined personas from the configured path. This is always done so
 	// that built-in personas are available even without auto-selection configured.
-	{
-		userPersonaPath := cfg.PersonaAutoSelect.PersonaPath
-		if userPersonaPath == "" {
-			userPersonaPath = expandMesnadaPath(cfg.Mesnada.Orchestrator.PersonaPath)
-		}
-		personaMgr, pmErr := persona.NewManagerWithBuiltins(builtin.FS, userPersonaPath)
-		if pmErr != nil {
-			logging.Warn("Failed to initialize persona manager", "reason", pmErr)
-		} else {
-			agent.SetPersonaManager(personaMgr)
-			logging.Debug("Persona manager initialized", "userPath", userPersonaPath, "count", len(personaMgr.ListPersonas()))
-		}
-	}
+	// The same function reloads the manager when the persona path changes (it is
+	// called on config changes and before every auto-selection), so a new path
+	// needs no restart.
+	reloadPersonas, reloadPersonasNow := newPersonaManagerLoader()
+	reloadPersonasNow()
+	agent.SetPersonaManagerRefresher(reloadPersonas)
 
-	// Initialize automatic persona selector for the main session when enabled.
-	if cfg.PersonaAutoSelect.Enabled {
-		personaPath := cfg.PersonaAutoSelect.PersonaPath
-		if personaPath == "" {
-			personaPath = expandMesnadaPath(cfg.Mesnada.Orchestrator.PersonaPath)
-		}
-		if personaPath != "" {
-			ps, psErr := agent.NewPersonaSelector(personaPath)
-			if psErr != nil {
-				logging.Warn("Auto persona selector disabled", "reason", psErr)
-			} else {
-				agent.SetPersonaSelector(ps)
-				logging.Debug("Auto persona selector enabled", "personaPath", personaPath)
+	// Automatic persona selection is read live from the configuration on every
+	// prompt (personaAutoSelect.enabled, the persona-selector agent's
+	// useDecisionModel and model, modelAutoMode.router), so the selector is
+	// always installed; it builds its LLM provider lazily and rebuilds it when
+	// the agent's model or the provider accounts change.
+	agent.SetPersonaSelector(agent.NewLazyPersonaSelector())
+	go func() {
+		ch := make(chan config.ConfigChangeEvent, 16)
+		config.Bus.Subscribe(ch)
+		defer config.Bus.Unsubscribe(ch)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ch:
+				reloadPersonasNow()
 			}
-		} else {
-			logging.Warn("Auto persona selector enabled but no personaPath configured")
 		}
-	}
+	}()
 
 	// Restore the persisted persona (project config > global config), falling
 	// back to "assistant" when nothing was saved or the saved persona no longer
@@ -908,6 +902,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	provider.SetRequestDecorator(extensions.ProviderRequestDecorator(app.Extensions))
 	app.startExtensionEventFanout(ctx)
 	app.startExtensionMemoryHooks(cfg)
+	app.startSessionPersonaCleanup(ctx)
 
 	logging.Debug("App created", "workingDir", config.WorkingDirectory())
 	return app, nil
@@ -1342,6 +1337,66 @@ func convertToMesnadaAppConfig(cfg *config.Config) *mesnadaConfig.Config {
 	mesnadaCfg.ACP.Server.RequireAuth = cfg.Mesnada.ACP.Server.RequireAuth
 
 	return mesnadaCfg
+}
+
+// newPersonaManagerLoader returns functions that (re)build the global persona
+// manager from the configured persona path and install it. refresh is meant for
+// every prompt: it is a no-op while the path is unchanged and loaded, and
+// retries a failed load at most every personaLoadRetry. onConfigChange retries
+// a failed load immediately. A failed load keeps the previous manager.
+func newPersonaManagerLoader() (refresh, onConfigChange func()) {
+	var (
+		mu       sync.Mutex
+		loadedOK bool // the manager for lastPath was loaded successfully
+		last     string
+		failedAt time.Time
+	)
+	load := func(force bool) {
+		cfg := config.Get()
+		if cfg == nil {
+			return
+		}
+		path := cfg.PersonaAutoSelect.PersonaPath
+		if path == "" {
+			path = expandMesnadaPath(cfg.Mesnada.Orchestrator.PersonaPath)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		now := time.Now()
+		if !personaLoadDue(loadedOK, last, path, failedAt, now, force) {
+			return
+		}
+		mgr, err := persona.NewManagerWithBuiltins(builtin.FS, path)
+		if err != nil {
+			logging.Warn("Failed to initialize persona manager", "reason", err)
+			// Keep the previous manager; retry on a config event or after
+			// personaLoadRetry on a later prompt.
+			loadedOK, last, failedAt = false, path, now
+			return
+		}
+		agent.SetPersonaManager(mgr)
+		loadedOK, last = true, path
+		logging.Debug("Persona manager initialized", "userPath", path, "count", len(mgr.ListPersonas()))
+	}
+	return func() { load(false) }, func() { load(true) }
+}
+
+// personaLoadRetry is the minimum time between failed persona manager loads
+// triggered by prompts.
+const personaLoadRetry = 30 * time.Second
+
+// personaLoadDue decides whether the persona manager must be (re)loaded: a
+// successfully loaded, unchanged path never reloads (no disk I/O per prompt); a
+// new path or a config event (force) always does; a path whose load failed is
+// retried from prompts no more often than personaLoadRetry.
+func personaLoadDue(loadedOK bool, last, path string, failedAt, now time.Time, force bool) bool {
+	if loadedOK && path == last {
+		return false
+	}
+	if force || path != last || failedAt.IsZero() {
+		return true
+	}
+	return now.Sub(failedAt) >= personaLoadRetry
 }
 
 func expandMesnadaPath(value string) string {
@@ -2101,6 +2156,29 @@ func RefreshDynamicModels(ctx context.Context) {
 	}
 }
 
+// startSessionPersonaCleanup drops the persona auto-selection state (sticky
+// persona and last routing) of a session when the session is deleted, so the
+// per-process maps do not grow in a long-lived server. It is tied to the
+// watcher cancel funcs like the other background loops.
+func (app *App) startSessionPersonaCleanup(ctx context.Context) {
+	if app.Sessions == nil {
+		return
+	}
+	cleanCtx, cancel := context.WithCancel(ctx)
+	app.cancelFuncsMutex.Lock()
+	app.watcherCancelFuncs = append(app.watcherCancelFuncs, cancel)
+	app.cancelFuncsMutex.Unlock()
+
+	events := app.Sessions.Subscribe(cleanCtx)
+	go func() {
+		for ev := range events {
+			if ev.Type == pubsub.DeletedEvent {
+				agent.ForgetSessionPersona(ev.Payload.ID)
+			}
+		}
+	}()
+}
+
 // startExtensionEventFanout forwards core resource lifecycle events to the
 // extensions that subscribed to them. Nothing starts when no extension
 // subscribes, so a standard build gains no goroutines.
@@ -2715,6 +2793,12 @@ func (a *appACPAgentAdapter) SetSessionLLMOverrides(sessionID string, overrides 
 		// session's Auto flag.
 		AutoMode: overrides.AutoMode,
 	})
+}
+
+// AppliedAutoPersona reports the persona persona auto-selection applied to the
+// session on its last turn.
+func (a *appACPAgentAdapter) AppliedAutoPersona(sessionID string) (string, string) {
+	return agent.AppliedAutoPersona(sessionID)
 }
 
 // SessionAutoMode reports whether the session runs in model auto mode.

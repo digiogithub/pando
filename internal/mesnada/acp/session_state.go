@@ -279,7 +279,7 @@ func buildSessionConfigOptions(svc AgentService, session *ACPServerSession) []ac
 		))
 	}
 
-	if personaOption := buildPersonaConfigOption(svc, currentPersona); personaOption != nil {
+	if personaOption := buildPersonaConfigOption(svc, currentPersona, session); personaOption != nil {
 		options = append(options, *personaOption)
 	}
 
@@ -404,17 +404,53 @@ func newSelectConfigOption(id, name, description, category, currentValue string,
 	return opt
 }
 
-func buildPersonaConfigOption(svc AgentService, currentPersona string) *acpsdk.SessionConfigOption {
+// personaAutoValue is the persona option value of the Auto entry: the persona
+// is chosen per prompt by persona auto-selection. It is stored on the session
+// as "no manual persona" (empty).
+const personaAutoValue = "auto"
+
+// personaAutoEnabled reports whether persona auto-select is enabled in the config.
+func personaAutoEnabled() bool {
+	cfg := config.Get()
+	return cfg != nil && cfg.PersonaAutoSelect.Enabled
+}
+
+// appliedAutoPersona returns the persona auto-selection applied to the session
+// on its last turn, or "" when none was applied yet.
+func appliedAutoPersona(svc AgentService, session *ACPServerSession) string {
+	if session == nil {
+		return ""
+	}
+	if auto, ok := svc.(PersonaAutoService); ok {
+		name, _ := auto.AppliedAutoPersona(session.PandoSessionID())
+		return strings.TrimSpace(name)
+	}
+	return ""
+}
+
+// normalizePersonaValue maps the Auto entry to "no manual persona".
+func normalizePersonaValue(value string) string {
+	if strings.TrimSpace(value) == personaAutoValue && personaAutoEnabled() {
+		return ""
+	}
+	return value
+}
+
+func buildPersonaConfigOption(svc AgentService, currentPersona string, session *ACPServerSession) *acpsdk.SessionConfigOption {
 	personas := svc.ListPersonas()
 	if len(personas) == 0 {
 		return nil
 	}
 
-	values := make([]configOptionValue, 0, len(personas))
+	values := make([]configOptionValue, 0, len(personas)+1)
+	hasAutoName := false
 	for _, persona := range personas {
 		persona = strings.TrimSpace(persona)
 		if persona == "" {
 			continue
+		}
+		if persona == personaAutoValue {
+			hasAutoName = true
 		}
 		values = append(values, configOptionValue{
 			Value:       persona,
@@ -426,7 +462,29 @@ func buildPersonaConfigOption(svc AgentService, currentPersona string) *acpsdk.S
 		return nil
 	}
 
-	current := resolvedPersonaValue(svc, currentPersona)
+	// The Auto entry picks the persona per prompt. It names the persona
+	// currently applied to the session, e.g. "Auto (software-engineer)". A
+	// persona literally named "auto" wins the value.
+	autoEntry := personaAutoEnabled() && !hasAutoName
+	if autoEntry {
+		name := "Auto"
+		if applied := appliedAutoPersona(svc, session); applied != "" {
+			name = "Auto (" + applied + ")"
+		}
+		values = append([]configOptionValue{{
+			Value:       personaAutoValue,
+			Name:        name,
+			Description: "Choose the persona automatically for each prompt",
+		}}, values...)
+	}
+
+	current := ""
+	switch {
+	case strings.TrimSpace(currentPersona) == "" && autoEntry && strings.TrimSpace(svc.GetActivePersona()) == "":
+		current = personaAutoValue
+	default:
+		current = resolvedPersonaValue(svc, currentPersona)
+	}
 	if current == "" {
 		current = values[0].Value
 	}
@@ -921,6 +979,13 @@ func (a *PandoACPAgent) streamSessionHistory(ctx context.Context, sessionID acps
 	}
 
 	a.logger.Printf("[ACP AGENT] streamSessionHistory: completed replaying history for session %s", sessionID)
+}
+
+// isPersonaNoticeText reports whether a system message is the persona
+// auto-selection notice ("Persona: <name> (...)"), which is only emitted when
+// the applied persona changes.
+func isPersonaNoticeText(msg string) bool {
+	return strings.HasPrefix(strings.TrimSpace(msg), "Persona: ")
 }
 
 // isRoutingNoticeText reports whether a system message is a model auto mode

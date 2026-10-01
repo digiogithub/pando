@@ -51,6 +51,7 @@ type Server struct {
 	delay    time.Duration
 	choice   string
 	probs    map[string]float64
+	perQ     map[string]scripted
 	cost     *float64
 	rawResp  string
 }
@@ -129,6 +130,22 @@ func (s *Server) SetDecision(choice string, probs map[string]float64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.choice, s.probs, s.rawResp = choice, probs, ""
+}
+
+type scripted struct {
+	choice string
+	probs  map[string]float64
+}
+
+// SetQuestionDecision scripts the answer for one named question, overriding
+// SetDecision for that question only.
+func (s *Server) SetQuestionDecision(question, choice string, probs map[string]float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.perQ == nil {
+		s.perQ = map[string]scripted{}
+	}
+	s.perQ[question] = scripted{choice, probs}
 }
 
 // SetRawResponse scripts a verbatim 200 body for /v1/systemone.
@@ -328,6 +345,10 @@ func (s *Server) systemOne(w http.ResponseWriter, body []byte) {
 
 	s.mu.Lock()
 	raw, choice, probs, cost := s.rawResp, s.choice, s.probs, s.cost
+	perQ := make(map[string]scripted, len(s.perQ))
+	for k, v := range s.perQ {
+		perQ[k] = v
+	}
 	s.mu.Unlock()
 	if raw != "" {
 		writeJSON(w, 200, raw)
@@ -348,6 +369,9 @@ func (s *Server) systemOne(w http.ResponseWriter, body []byte) {
 			return
 		}
 		c, p := choice, probs
+		if sc, ok := perQ[n]; ok {
+			c, p = sc.choice, sc.probs
+		}
 		if c == "" && len(keys) > 0 {
 			c = keys[0]
 		}

@@ -63,6 +63,11 @@
             "high"
           ],
           "type": "string"
+        },
+        "useDecisionModel": {
+          "default": false,
+          "description": "Only for the persona-selector agent: pick the persona with a model auto mode decision model, using the agent's own model as fallback",
+          "type": "boolean"
         }
       },
       "required": [
@@ -174,6 +179,11 @@
               "high"
             ],
             "type": "string"
+          },
+          "useDecisionModel": {
+            "default": false,
+            "description": "Only for the persona-selector agent: pick the persona with a model auto mode decision model, using the agent's own model as fallback",
+            "type": "boolean"
           }
         },
         "required": [

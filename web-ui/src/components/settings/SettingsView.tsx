@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useBlocker, useNavigate, type BlockerFunction } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import GeneralSettings from './GeneralSettings'
@@ -22,6 +22,7 @@ import APIServerSettings from './APIServerSettings'
 import WebUIAccessSettings from './WebUIAccessSettings'
 import ProviderAccountsSettings from './ProviderAccountsSettings'
 import ContainerRuntimeSettings from './ContainerRuntimeSettings'
+import { SETTINGS_CATEGORY_EVENT } from './settingsEvents'
 import ModelAutoModeSettings from './ModelAutoModeSettings'
 import UnsavedChangesDialog from './UnsavedChangesDialog'
 import { useUnsavedChangesStore } from './unsavedChanges'
@@ -297,6 +298,20 @@ export default function SettingsView() {
       setMenuOpen(false)
     })
   }
+
+  // Other settings panels (e.g. Agents) can ask to jump to a category.
+  const selectCategoryRef = useRef(selectCategory)
+  useEffect(() => {
+    selectCategoryRef.current = selectCategory
+  })
+  useEffect(() => {
+    const onJump = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail
+      if (typeof id === 'string' && CATEGORY_KEYS.some((c) => c.id === id)) selectCategoryRef.current(id as ActiveCategory)
+    }
+    window.addEventListener(SETTINGS_CATEGORY_EVENT, onJump)
+    return () => window.removeEventListener(SETTINGS_CATEGORY_EVENT, onJump)
+  }, [])
 
   // Connect to the config hot-reload SSE stream while this view is mounted.
   useEffect(() => {

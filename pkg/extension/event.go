@@ -149,6 +149,21 @@ const (
 	//
 	// Prompt text, history and API keys are never published.
 	TopicModelRoute = "model_route"
+
+	// TopicPersonaRoute reports one persona auto-selection decision, with the
+	// persona name as ID and EventRouted as Type. Payload:
+	//
+	//	"persona"     string   the applied persona, "" when none
+	//	"source"      string   decision, llm, sticky or default
+	//	"reason"      string   matched, no_match, low_probability, router_error, ...
+	//	"probability" float64  decision model probability of the winner
+	//	"latencyMs"   float64  decision model round trip
+	//	"costUsd"     float64  present only when the gateway reported a cost
+	//	"errorClass"  string   present only when the decision model failed
+	//	"changed"     bool     true when the persona differs from the previous turn
+	//
+	// Prompt text, history and API keys are never published.
+	TopicPersonaRoute = "persona_route"
 )
 
 // Event is one resource lifecycle notification.

@@ -136,6 +136,12 @@ type AgentConfigItem struct {
 	// The web-UI hides them when false; the values are still returned so a TOML
 	// override remains inspectable, and PUT ignores them for those agents.
 	ContextControls bool `json:"contextControls"`
+	// UseDecisionModel is only meaningful for the persona-selector agent: when
+	// true the persona is picked by a model-auto-mode decision model and the
+	// agent's own model is the fallback. Only reported for persona-selector; on
+	// PUT it is ignored for any other agent, and an omitted value keeps the
+	// stored one.
+	UseDecisionModel *bool `json:"useDecisionModel,omitempty"`
 }
 
 func (s *Server) handleConfigAgents(w http.ResponseWriter, r *http.Request) {
@@ -163,6 +169,11 @@ func (s *Server) handleGetConfigAgents(w http.ResponseWriter, r *http.Request) {
 	for _, name := range config.KnownAgentNames {
 		a := cfg.Agents[name]
 		model := models.SupportedModels()[a.Model]
+		var useDecisionModel *bool
+		if name == config.AgentPersonaSelector {
+			v := a.UseDecisionModel
+			useDecisionModel = &v
+		}
 		items = append(items, AgentConfigItem{
 			Name:                 string(name),
 			Model:                a.Model,
@@ -173,6 +184,7 @@ func (s *Server) handleGetConfigAgents(w http.ResponseWriter, r *http.Request) {
 			AutoCompact:          config.ResolveAutoCompact(cfg.AutoCompact, a),
 			AutoCompactThreshold: a.AutoCompactThreshold,
 			ContextControls:      config.AgentExposesContextControls(name),
+			UseDecisionModel:     useDecisionModel,
 		})
 	}
 
@@ -204,8 +216,16 @@ func (s *Server) handlePutConfigAgents(w http.ResponseWriter, r *http.Request) {
 			ThinkingMode:         item.ThinkingMode,
 			AutoCompactThreshold: item.AutoCompactThreshold,
 		}
+		// Only persona-selector carries the flag; for every other agent the
+		// payload value is ignored (and any stored value is cleared on load).
 		if cfg := config.Get(); cfg != nil {
 			existing := cfg.Agents[name]
+			if name == config.AgentPersonaSelector {
+				agent.UseDecisionModel = existing.UseDecisionModel
+				if item.UseDecisionModel != nil {
+					agent.UseDecisionModel = *item.UseDecisionModel
+				}
+			}
 			// GET reports the effective value, so only persist a per-agent
 			// override when the payload differs from what is already in effect;
 			// otherwise the agent keeps inheriting (or keeps its own) setting.
@@ -229,6 +249,9 @@ func (s *Server) handlePutConfigAgents(w http.ResponseWriter, r *http.Request) {
 		} else {
 			v := item.AutoCompact
 			agent.AutoCompact = &v
+			if name == config.AgentPersonaSelector && item.UseDecisionModel != nil {
+				agent.UseDecisionModel = *item.UseDecisionModel
+			}
 		}
 		if err := config.UpdateAgent(name, agent); err != nil {
 			writeConfigError(w, http.StatusBadRequest, "failed to update agent "+item.Name+": "+err.Error(), err)

@@ -463,6 +463,11 @@ func generateSchema() map[string]any {
 					"description": "Reasoning effort for models that support it (OpenAI, Anthropic)",
 					"enum":        []string{"low", "medium", "high"},
 				},
+				"useDecisionModel": map[string]any{
+					"type":        "boolean",
+					"description": "Only for the persona-selector agent: pick the persona with a model auto mode decision model, using the agent's own model as fallback",
+					"default":     false,
+				},
 			},
 			"required": []string{"model"},
 		},

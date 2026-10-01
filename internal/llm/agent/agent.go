@@ -20,6 +20,7 @@ import (
 	"github.com/digiogithub/pando/internal/extevents"
 	"github.com/digiogithub/pando/internal/imageopt"
 	"github.com/digiogithub/pando/internal/learning"
+	"github.com/digiogithub/pando/internal/llm/modelrouter"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/prompt"
 	"github.com/digiogithub/pando/internal/llm/provider"
@@ -1331,9 +1332,20 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 	// Resolve persona content to inject into the system prompt.
 	// This is done before creating the user message so the content (user query)
 	// can be used for auto-selection without modifying the user message itself.
-	personaContent := getPersonaContent(promptCtx, content)
-	if isCleanModeContext(ctx) {
-		personaContent = ""
+	// When the turn is also an Auto model mode turn and the persona decision
+	// model is on, one router request carries both questions: the persona
+	// decision is used here and the model decision by beginAutoTurn below.
+	autoEligible := a.autoTurnEligible(ctx, sessionID)
+	var combined *combinedRoute
+	personaContent := ""
+	if !isCleanModeContext(ctx) {
+		if autoEligible && config.PersonaSelectorUsesDecisionModel() {
+			if cfg := config.Get(); cfg != nil {
+				in, _ := autoRouteInput(cfg.ModelAutoMode, memoryQuery, msgs, attachmentParts)
+				combined = &combinedRoute{In: in}
+			}
+		}
+		personaContent = a.resolvePersona(promptCtx, sessionID, session.ParentSessionID, content, memoryQuery, msgs, combined, eventCh)
 	}
 	if activePersona := strings.TrimSpace(effectiveActivePersona(promptCtx)); activePersona != "" {
 		a.addRunStatusMessage(sessionID, fmt.Sprintf("Selected persona: %s", activePersona))
@@ -1377,8 +1389,12 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 	// run the turn on the routed model through a turn-scoped session override.
 	// It sits after persona auto-select and before prepareProvider.
 	var autoTurn *autoTurnState
-	if a.autoTurnEligible(ctx, sessionID) {
-		autoTurn, attachmentParts = a.beginAutoTurn(ctx, sessionID, memoryQuery, msgs, attachmentParts, eventCh)
+	if autoEligible {
+		var preDecision *modelrouter.Decision
+		if combined != nil && combined.Done {
+			preDecision = &combined.Dec
+		}
+		autoTurn, attachmentParts = a.beginAutoTurn(ctx, sessionID, memoryQuery, msgs, attachmentParts, eventCh, preDecision)
 		if autoTurn != nil {
 			defer a.endAutoTurn(sessionID, autoTurn)
 		}

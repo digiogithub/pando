@@ -204,6 +204,17 @@ func (r *Request) validate() error {
 
 // Decide sends one System One request. No internal retry is performed.
 func (c *Client) Decide(ctx context.Context, req Request) (*Response, error) {
+	return c.decide(ctx, req, true)
+}
+
+// DecideLenient is Decide without the per-question answer check: a missing
+// answer or a choice outside the criteria is returned as is, so a caller that
+// asked several questions can judge each answer on its own.
+func (c *Client) DecideLenient(ctx context.Context, req Request) (*Response, error) {
+	return c.decide(ctx, req, false)
+}
+
+func (c *Client) decide(ctx context.Context, req Request, check bool) (*Response, error) {
 	if err := req.validate(); err != nil {
 		return nil, err
 	}
@@ -230,8 +241,10 @@ func (c *Client) Decide(ctx context.Context, req Request) (*Response, error) {
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, newAPIError(status, ErrMalformedResponse, "invalid JSON: "+err.Error())
 	}
-	if err := checkAnswers(req, &resp); err != nil {
-		return nil, err
+	if check {
+		if err := checkAnswers(req, &resp); err != nil {
+			return nil, err
+		}
 	}
 	return &resp, nil
 }

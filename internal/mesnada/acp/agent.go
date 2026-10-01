@@ -721,6 +721,7 @@ func (a *PandoACPAgent) SetSessionConfigOption(ctx context.Context, req acpsdk.S
 		}
 		acpSession.SetThinkingMode(mode)
 	case sessionConfigAgentID:
+		value = normalizePersonaValue(value)
 		if err := a.validatePersona(value); err != nil {
 			return acpsdk.SetSessionConfigOptionResponse{}, err
 		}
@@ -905,6 +906,7 @@ func (a *PandoACPAgent) SetSessionPersona(ctx context.Context, sessionID acpsdk.
 	if err != nil {
 		return err
 	}
+	personaName = normalizePersonaValue(personaName)
 	if err := a.validatePersona(personaName); err != nil {
 		return err
 	}

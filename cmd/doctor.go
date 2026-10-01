@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 	"github.com/digiogithub/pando/internal/llm/modelrouter"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/systemone"
+	"github.com/digiogithub/pando/internal/mesnada/persona"
+	"github.com/digiogithub/pando/internal/mesnada/persona/builtin"
 	"github.com/spf13/cobra"
 )
 
@@ -42,8 +45,11 @@ Examples:
 		if ctx == nil {
 			ctx = context.Background()
 		}
-		if n := doctorModelAutoMode(ctx, cfg, cmd.OutOrStdout()); n > 0 {
-			return fmt.Errorf("%d problem(s) found", n)
+		problems := doctorModelAutoMode(ctx, cfg, cmd.OutOrStdout())
+		fmt.Fprintln(cmd.OutOrStdout())
+		problems += doctorPersonaAutoSelect(ctx, cfg, doctorPersonaManager(cfg), cmd.OutOrStdout())
+		if problems > 0 {
+			return fmt.Errorf("%d problem(s) found", problems)
 		}
 		return nil
 	},
@@ -118,6 +124,116 @@ func doctorModelAutoMode(ctx context.Context, cfg *config.Config, w io.Writer) i
 			}
 		}
 	}
+	return problems
+}
+
+// doctorPersonaManager loads the personas the way the app does: built-ins plus
+// the user persona path. It returns nil when they cannot be loaded.
+func doctorPersonaManager(cfg *config.Config) *persona.Manager {
+	path := cfg.PersonaAutoSelect.PersonaPath
+	if path == "" {
+		path = cfg.Mesnada.Orchestrator.PersonaPath
+	}
+	if strings.HasPrefix(path, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			path = filepath.Join(home, path[2:])
+		}
+	}
+	mgr, err := persona.NewManagerWithBuiltins(builtin.FS, path)
+	if err != nil {
+		return nil
+	}
+	return mgr
+}
+
+// doctorPersonaAutoSelect prints the persona auto-select diagnostics to w and
+// returns the number of problems found (warnings are not problems).
+func doctorPersonaAutoSelect(ctx context.Context, cfg *config.Config, mgr *persona.Manager, w io.Writer) int {
+	problems := 0
+	fail := func(format string, args ...any) {
+		problems++
+		fmt.Fprintf(w, "  [FAIL] "+format+"\n", args...)
+	}
+	ok := func(format string, args ...any) { fmt.Fprintf(w, "  [ OK ] "+format+"\n", args...) }
+	warn := func(format string, args ...any) { fmt.Fprintf(w, "  [WARN] "+format+"\n", args...) }
+	hint := func(format string, args ...any) { fmt.Fprintf(w, "         hint: "+format+"\n", args...) }
+
+	fmt.Fprintln(w, "Persona auto-select")
+	if !cfg.PersonaAutoSelect.Enabled {
+		fmt.Fprintln(w, "  disabled (enable it in Settings > Agents or set [PersonaAutoSelect] Enabled = true)")
+		return 0
+	}
+	ok("enabled")
+
+	agentCfg := cfg.Agents[config.AgentPersonaSelector]
+	useDecision := agentCfg.UseDecisionModel
+
+	// Personas offered to the classifier.
+	if mgr == nil {
+		warn("personas could not be loaded")
+	} else {
+		total := len(mgr.Descriptions())
+		offered, dropped := modelrouter.PersonaCap(total)
+		if dropped > 0 {
+			warn("%d personas available, %d offered to the decision model, %d dropped by the 25-persona cap (first 25 in name order)", total, offered, dropped)
+		} else {
+			ok("%d persona(s) offered", total)
+		}
+	}
+
+	// Fallback (or main, when the option is off) selector model.
+	lookup := modelrouter.DefaultLookup(cfg)
+	role := "selector model"
+	if useDecision {
+		role = "fallback model"
+	}
+	if id := agentCfg.Model; id != "" {
+		info, found := lookup(id)
+		if modelOK := found && info.Known && info.Enabled; !modelOK {
+			problemMsg := "is not a known model"
+			if found && info.Known {
+				problemMsg = "belongs to a disabled or unconfigured provider"
+			}
+			if useDecision {
+				warn("persona-selector %s %q %s (the previous or default persona is used when the decision model fails)", role, id, problemMsg)
+			} else {
+				fail("persona-selector %s %q %s", role, id, problemMsg)
+			}
+		} else {
+			ok("persona-selector %s %q", role, id)
+		}
+	}
+	if agentCfg.Model == "" {
+		if useDecision {
+			warn("persona-selector agent has no fallback model: the previous or default persona is used when the decision model fails")
+		} else {
+			fail("persona-selector agent has no model: nothing selects the persona")
+			hint("pick a model for the persona-selector agent in Settings > Agents")
+		}
+	}
+
+	if !useDecision {
+		fmt.Fprintln(w, "  decision model: off (persona-selector > Use decision model is disabled; the agent's LLM selects the persona)")
+		return problems
+	}
+	ok("decision model option on")
+
+	m := cfg.ModelAutoMode
+	if strings.TrimSpace(m.Router.Model) == "" {
+		fail("no router model configured under Model auto mode > Router")
+		hint("set the router provider and model in Settings > Model auto mode")
+		return problems
+	}
+	kind := m.Router.EffectiveProvider()
+	fmt.Fprintf(w, "  router: %s at %s, model %q (shared with model auto mode)\n", kind, m.Router.EffectiveBaseURL(), m.Router.Model)
+	p, err := modelrouter.ProviderFor(m.Router, 10*time.Second)
+	if err != nil {
+		fail("cannot build the decision provider: %v", err)
+		return problems
+	}
+	hctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	doctorReport(p.Health(hctx, m.Router.Model), kind, m.Router.Model, ok, fail, hint)
 	return problems
 }
 

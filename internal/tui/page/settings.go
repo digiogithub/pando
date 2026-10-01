@@ -108,7 +108,7 @@ func (p *settingsPage) Init() tea.Cmd {
 	// Subscribe to the config event bus so external changes are reflected live.
 	p.configChangeCh = make(chan config.ConfigChangeEvent, 8)
 	config.Bus.Subscribe(p.configChangeCh)
-	return tea.Batch(p.settings.Init(), waitForConfigChange(p.configChangeCh))
+	return tea.Batch(p.settings.Init(), waitForConfigChange(p.configChangeCh), checkPersonaRouterHealth())
 }
 
 func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -180,7 +180,15 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Field.Key == "action:telemetry_regenerate_id" {
 			return p, p.regenerateTelemetryID()
 		}
+		if msg.Field.Key == "agents."+string(config.AgentPersonaSelector)+".useDecisionModel" {
+			return p, tea.Batch(p.saveField(msg), checkPersonaRouterHealth())
+		}
 		return p, p.saveField(msg)
+	case personaRouterHealthMsg:
+		setPersonaRouterHealth(msg.key, msg.status)
+		p.settings.SetSections(buildSections(p.app))
+		p.settings.SetSize(p.width, p.height)
+		return p, nil
 	case skillUninstalledMsg:
 		p.settings.SetSections(buildSections(p.app))
 		p.settings.SetSize(p.width, p.height)
@@ -325,7 +333,7 @@ func (p *settingsPage) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if p.configChangeCh != nil {
 			rearm = waitForConfigChange(p.configChangeCh)
 		}
-		return p, rearm
+		return p, tea.Batch(rearm, checkPersonaRouterHealth())
 	}
 
 	// Forward ALL events to catalog dialog when active (keys, ticks, search results, blinks)
@@ -1606,9 +1614,14 @@ func buildAgentsSection(cfg *config.Config) settings.Section {
 		agentCfg := cfg.Agents[agentName]
 		modelID := string(agentCfg.Model)
 
+		modelLabel := "Model"
+		if agentName == config.AgentPersonaSelector && agentCfg.UseDecisionModel {
+			modelLabel = "Fallback Model"
+		}
+
 		fields = append(fields,
 			settings.Field{
-				Label:            fmt.Sprintf("%s Model", string(agentName)),
+				Label:            fmt.Sprintf("%s %s", string(agentName), modelLabel),
 				Key:              fmt.Sprintf("agents.%s.model", agentName),
 				Value:            modelID,
 				Type:             settings.FieldSelect,
@@ -1631,6 +1644,10 @@ func buildAgentsSection(cfg *config.Config) settings.Section {
 				Options: []string{"", "disabled", "low", "medium", "high"},
 			},
 		)
+
+		if agentName == config.AgentPersonaSelector {
+			fields = append(fields, personaSelectorDecisionFields(cfg, agentCfg)...)
+		}
 
 		// Token budget and context management knobs are only meaningful for the
 		// agent that runs the long agent loop (coder). For the auxiliary agents
@@ -1666,6 +1683,47 @@ func buildAgentsSection(cfg *config.Config) settings.Section {
 		Title:  "Agents/Models",
 		Fields: fields,
 	}
+}
+
+// personaSelectorDecisionFields returns the "use decision model" toggle of the
+// persona-selector agent plus read-only info lines about the router in use.
+func personaSelectorDecisionFields(cfg *config.Config, agentCfg config.Agent) []settings.Field {
+	name := config.AgentPersonaSelector
+	fields := []settings.Field{{
+		Label: fmt.Sprintf("%s Use Decision Model (from model auto mode)", string(name)),
+		Key:   fmt.Sprintf("agents.%s.useDecisionModel", name),
+		Value: boolString(agentCfg.UseDecisionModel),
+		Type:  settings.FieldToggle,
+	}}
+	if !agentCfg.UseDecisionModel {
+		return fields
+	}
+	info := func(suffix, label, value string) settings.Field {
+		return settings.Field{
+			Label:    label,
+			Key:      fmt.Sprintf("agents.%s.%s", name, suffix),
+			Value:    value,
+			Type:     settings.FieldText,
+			Disabled: true,
+		}
+	}
+	router := cfg.ModelAutoMode.Router
+	routerModel := strings.TrimSpace(router.Model)
+	if routerModel == "" {
+		return append(fields, info("routerWarning", "Warning",
+			"No router model is configured in Model auto mode, so the fallback model is used. Configure it in the Auto mode section."))
+	}
+	provider := string(router.Provider)
+	if provider == "" {
+		provider = string(config.DecisionProviderOllama)
+	}
+	fields = append(fields, info("routerInfo", "Router", provider+"/"+routerModel+" (configured in Auto mode)"))
+	fields = append(fields, info("routerHealth", "Router health", personaRouterHealthStatus(cfg.ModelAutoMode)))
+	if provider != string(config.DecisionProviderOllama) {
+		fields = append(fields, info("routerPrivacy", "Privacy",
+			"This provider is remote: your prompts leave your machine to be classified."))
+	}
+	return fields
 }
 
 // agentTokensHint returns a hint string for the MaxTokens field of an agent.
@@ -4205,6 +4263,12 @@ func saveAgent(field settings.Field) error {
 			return fmt.Errorf("thinking mode must be one of: empty, disabled, low, medium, high")
 		}
 		agentCfg.ThinkingMode = mode
+	case "useDecisionModel":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid use decision model value: %w", err)
+		}
+		return config.UpdateAgentUseDecisionModel(agentName, v)
 	case "autoCompact":
 		v, err := parseBoolValue(field.Value)
 		if err != nil {

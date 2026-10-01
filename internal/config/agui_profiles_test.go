@@ -116,6 +116,7 @@ func TestAgentStructAndKnownAgentNamesUnchangedByProfileStory(t *testing.T) {
 	wantAgentFields := []string{
 		"Model", "MaxTokens", "ReasoningEffort", "ThinkingMode",
 		"AutoCompact", "AutoCompactThreshold", "ContextWindowOverride",
+		"UseDecisionModel", // PANDO-EP-0017
 	}
 	typ := reflect.TypeOf(Agent{})
 	if typ.NumField() != len(wantAgentFields) {

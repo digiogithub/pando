@@ -839,6 +839,12 @@ func (a *acpAgentAdapter) SetSessionLLMOverrides(sessionID string, overrides acp
 	})
 }
 
+// AppliedAutoPersona reports the persona persona auto-selection applied to the
+// session on its last turn.
+func (a *acpAgentAdapter) AppliedAutoPersona(sessionID string) (string, string) {
+	return agent.AppliedAutoPersona(sessionID)
+}
+
 // SessionAutoMode reports whether the session runs in model auto mode.
 func (a *acpAgentAdapter) SessionAutoMode(sessionID string) bool {
 	return agent.SessionAutoMode(sessionID)

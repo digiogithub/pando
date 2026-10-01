@@ -166,34 +166,19 @@ func (e *Engine) Route(ctx context.Context, in Input) Decision {
 	}
 
 	criteria := make([]systemone.Criterion, 0, len(routes)+1)
-	overhead := EstimateTokens(instructionsText) + EstimateTokens(noneDescription) + 32
+	overhead := questionOverhead(instructionsText)
 	for _, r := range routes {
 		criteria = append(criteria, systemone.NewCriterion(r.ID, r.Description))
 		overhead += EstimateTokens(r.ID) + EstimateTokens(r.Description) + 4
 	}
 	criteria = append(criteria, systemone.NewCriterion(noneKey, noneDescription))
 
-	budget := e.contextBudget(ctx, routerModel) - overhead
-	stateJSON := BuildState(in, e.cfg.HistoryPrompts, budget)
-
-	req := systemone.Request{
-		Model: routerModel,
-		State: json.RawMessage(stateJSON),
-		Questions: map[string]systemone.Question{
-			questionName: {Type: "choice", Instructions: instructionsText, Criteria: criteria},
-		},
-	}
-	if e.provider.Kind() == systemone.KindOllama {
-		req.KeepAlive = e.provider.Client().KeepAlive()
-	}
-
-	callCtx, cancel := context.WithTimeout(ctx, e.cfg.EffectiveTimeout())
-	defer cancel()
-	start := time.Now()
-	resp, err := e.provider.Client().Decide(callCtx, req)
-	d.LatencyMs = time.Since(start).Milliseconds()
-	if err == nil && (resp == nil || resp.Answers[questionName].Choice == "") {
-		err = systemone.ErrMalformedResponse
+	q := systemone.Question{Type: "choice", Instructions: instructionsText, Criteria: criteria}
+	resp, latency, err := e.ask(ctx, in, map[string]systemone.Question{questionName: q}, overhead)
+	d.LatencyMs = latency
+	var ans systemone.Answer
+	if err == nil {
+		ans, err = answerFor(resp, questionName, q)
 	}
 	if err != nil {
 		d.Reason = ReasonRouterError
@@ -201,17 +186,21 @@ func (e *Engine) Route(ctx context.Context, in Input) Decision {
 		d.ErrClass = classify(err)
 		return d
 	}
+	e.applyTaskAnswer(&d, routes, resp, ans)
+	return d
+}
 
+// applyTaskAnswer fills d from the answer to the task question.
+func (e *Engine) applyTaskAnswer(d *Decision, routes []config.ModelAutoRoute, resp *systemone.Response, ans systemone.Answer) {
 	d.InputTokens = resp.Usage.InputTokens
 	d.CostUSD = resp.Usage.Cost
-	ans := resp.Answers[questionName]
 	d.Probabilities = ans.Probabilities
 	d.Confidence = ans.Confidence
 	d.Probability = ans.Probabilities[ans.Choice]
 
 	if ans.Choice == noneKey {
 		d.Reason = ReasonNoMatch
-		return d
+		return
 	}
 	var route *config.ModelAutoRoute
 	for i := range routes {
@@ -233,7 +222,57 @@ func (e *Engine) Route(ctx context.Context, in Input) Decision {
 		d.RouteID = route.ID
 		d.Candidates = routeCandidates(*route)
 	}
-	return d
+}
+
+// questionOverhead estimates the tokens a choice question costs besides its
+// per-criterion text: instructions, the "none" criterion and request framing.
+func questionOverhead(instructions string) int {
+	return EstimateTokens(instructions) + EstimateTokens(noneDescription) + 32
+}
+
+// ask sends one System One request carrying qs. The shared state is built from
+// in with a token budget that accounts for overhead (the estimated tokens of
+// all questions and criteria). The answers are NOT validated: callers judge
+// each one with answerFor. A non-nil error is a transport/protocol failure
+// that affects every question.
+func (e *Engine) ask(ctx context.Context, in Input, qs map[string]systemone.Question, overhead int) (*systemone.Response, int64, error) {
+	routerModel := e.cfg.Router.Model
+	budget := e.contextBudget(ctx, routerModel) - overhead
+	stateJSON := BuildState(in, e.cfg.HistoryPrompts, budget)
+
+	req := systemone.Request{
+		Model:     routerModel,
+		State:     json.RawMessage(stateJSON),
+		Questions: qs,
+	}
+	if e.provider.Kind() == systemone.KindOllama {
+		req.KeepAlive = e.provider.Client().KeepAlive()
+	}
+
+	callCtx, cancel := context.WithTimeout(ctx, e.cfg.EffectiveTimeout())
+	defer cancel()
+	start := time.Now()
+	resp, err := e.provider.Client().DecideLenient(callCtx, req)
+	latency := time.Since(start).Milliseconds()
+	if err == nil && resp == nil {
+		err = systemone.ErrMalformedResponse
+	}
+	return resp, latency, err
+}
+
+// answerFor returns the answer to the named choice question or
+// ErrMalformedResponse when it is missing or its choice is not a criterion.
+func answerFor(resp *systemone.Response, name string, q systemone.Question) (systemone.Answer, error) {
+	ans, ok := resp.Answers[name]
+	if !ok || ans.Choice == "" {
+		return ans, systemone.ErrMalformedResponse
+	}
+	for _, c := range q.Criteria {
+		if c.Key == ans.Choice {
+			return ans, nil
+		}
+	}
+	return ans, systemone.ErrMalformedResponse
 }
 
 func coderOnly(coder models.ModelID) []models.ModelID {

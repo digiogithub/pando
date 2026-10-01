@@ -236,26 +236,17 @@ func routerErrorWording(class string) string {
 	return strings.ReplaceAll(class, "_", " ")
 }
 
-// beginAutoTurn routes the prompt, builds the candidate chain, applies the
-// first candidate as the turn's session model override and announces the
-// decision. The returned parts are the attachments to send (dropped when the
-// chosen model cannot read them). It never fails: any problem degrades to the
-// coder model.
-func (a *agent) beginAutoTurn(
-	ctx context.Context,
-	sessionID, userPrompt string,
+// autoRouteInput builds the decision input of a turn: the prompt, the recent
+// user prompts, the attachment names and the coder model. hasAttachments tells
+// whether the turn carries attachments the chosen model must be able to read.
+func autoRouteInput(
+	auto config.ModelAutoModeConfig,
+	userPrompt string,
 	priorMsgs []message.Message,
 	attachmentParts []message.ContentPart,
-	eventCh chan<- AgentEvent,
-) (*autoTurnState, []message.ContentPart) {
-	cfg := config.Get()
-	if cfg == nil {
-		return nil, attachmentParts
-	}
-	auto := cfg.ModelAutoMode
+) (in modelrouter.Input, hasAttachments bool) {
 	coder, _ := configuredAgentModel()
 
-	hasAttachments := false
 	var attachmentNames []string
 	for _, part := range attachmentParts {
 		switch p := part.(type) {
@@ -272,17 +263,42 @@ func (a *agent) beginAutoTurn(
 		}
 	}
 
-	in := modelrouter.Input{
+	return modelrouter.Input{
 		Prompt:          userPrompt,
 		History:         recentUserPrompts(priorMsgs, auto.HistoryPrompts),
 		AttachmentNames: attachmentNames,
 		HasAttachments:  hasAttachments,
 		CoderModel:      coder,
+	}, hasAttachments
+}
+
+// beginAutoTurn routes the prompt, builds the candidate chain, applies the
+// first candidate as the turn's session model override and announces the
+// decision. The returned parts are the attachments to send (dropped when the
+// chosen model cannot read them). It never fails: any problem degrades to the
+// coder model. pre, when non-nil, is a decision already taken for this turn
+// (the combined persona + model request); the router is then not called again.
+func (a *agent) beginAutoTurn(
+	ctx context.Context,
+	sessionID, userPrompt string,
+	priorMsgs []message.Message,
+	attachmentParts []message.ContentPart,
+	eventCh chan<- AgentEvent,
+	pre *modelrouter.Decision,
+) (*autoTurnState, []message.ContentPart) {
+	cfg := config.Get()
+	if cfg == nil {
+		return nil, attachmentParts
 	}
+	auto := cfg.ModelAutoMode
+	coder, _ := configuredAgentModel()
+
+	in, hasAttachments := autoRouteInput(auto, userPrompt, priorMsgs, attachmentParts)
 
 	var dec modelrouter.Decision
-	engine, err := modelrouter.ForConfig(auto)
-	if err != nil {
+	if pre != nil {
+		dec = *pre
+	} else if engine, err := modelrouter.ForConfig(auto); err != nil {
 		dec = modelrouter.Decision{
 			Reason:         modelrouter.ReasonRouterError,
 			Err:            err,

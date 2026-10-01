@@ -279,3 +279,45 @@ func ModelRouted(info ModelRoutedInfo) {
 		Payload:   payload,
 	})
 }
+
+// PersonaRoutedInfo describes one persona auto-selection decision. Like
+// ModelRoutedInfo it has no field for prompt text.
+type PersonaRoutedInfo struct {
+	SessionID   string
+	Persona     string
+	Source      string
+	Reason      string
+	Probability float64
+	LatencyMs   int64
+	CostUSD     *float64
+	ErrorClass  string
+	Changed     bool
+}
+
+// PersonaRouted reports the persona the auto-selection applied for a turn.
+func PersonaRouted(info PersonaRoutedInfo) {
+	if !Enabled() {
+		return
+	}
+	payload := map[string]any{
+		"persona":     info.Persona,
+		"source":      info.Source,
+		"reason":      info.Reason,
+		"probability": info.Probability,
+		"latencyMs":   float64(info.LatencyMs),
+		"changed":     info.Changed,
+	}
+	if info.CostUSD != nil {
+		payload["costUsd"] = *info.CostUSD
+	}
+	if info.ErrorClass != "" {
+		payload["errorClass"] = info.ErrorClass
+	}
+	Publish(extension.Event{
+		Topic:     extension.TopicPersonaRoute,
+		Type:      extension.EventRouted,
+		ID:        info.Persona,
+		SessionID: info.SessionID,
+		Payload:   payload,
+	})
+}

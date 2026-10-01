@@ -279,3 +279,46 @@ func TestModelRoutedPayload(t *testing.T) {
 		t.Errorf("fallback flag lost: %v", got[1].Payload)
 	}
 }
+
+func TestPersonaRoutedPayload(t *testing.T) {
+	c := installSink(t)
+
+	cost := 0.0001
+	PersonaRouted(PersonaRoutedInfo{
+		SessionID: "s1", Persona: "qa", Source: "decision", Reason: "matched",
+		Probability: 0.88, LatencyMs: 41, CostUSD: &cost, Changed: true,
+	})
+	PersonaRouted(PersonaRoutedInfo{SessionID: "s1", Persona: "assistant", Source: "llm", Reason: "router_error", ErrorClass: "timeout"})
+
+	if !waitFor(t, func() bool { return len(c.seen()) == 2 }) {
+		t.Fatalf("expected two events, got %d", len(c.seen()))
+	}
+	got := c.seen()
+	ev := got[0]
+	if ev.Topic != extension.TopicPersonaRoute || ev.Type != extension.EventRouted || ev.ID != "qa" || ev.SessionID != "s1" {
+		t.Fatalf("event = %+v", ev)
+	}
+	want := map[string]any{
+		"persona": "qa", "source": "decision", "reason": "matched",
+		"probability": 0.88, "latencyMs": float64(41), "costUsd": cost, "changed": true,
+	}
+	for k, v := range want {
+		if ev.Payload[k] != v {
+			t.Errorf("payload[%q] = %v, want %v", k, ev.Payload[k], v)
+		}
+	}
+	for _, forbidden := range []string{"prompt", "state", "apiKey", "api_key", "text", "history"} {
+		if _, has := ev.Payload[forbidden]; has {
+			t.Errorf("payload carries %q", forbidden)
+		}
+	}
+	if _, has := ev.Payload["errorClass"]; has {
+		t.Errorf("errorClass must be omitted when empty")
+	}
+	if _, has := got[1].Payload["costUsd"]; has {
+		t.Errorf("cost must be omitted when the gateway reported none")
+	}
+	if got[1].Payload["errorClass"] != "timeout" {
+		t.Errorf("errorClass lost: %v", got[1].Payload)
+	}
+}

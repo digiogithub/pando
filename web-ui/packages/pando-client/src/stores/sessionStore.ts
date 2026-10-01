@@ -1,4 +1,5 @@
 import { useModelAutoModeStore } from './modelAutoModeStore'
+import { usePersonaRoutingStore } from './personaRoutingStore'
 import { create } from 'zustand'
 import type { Session, Message, PermissionRequest, PermissionAction, QuestionRequest, QuestionAnswer } from '../types'
 import api from '../services/api'
@@ -134,6 +135,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       return { activeSessionId: id, seenRunSeq, messages: [], pendingPermissions: [], pendingQuestions: [] }
     })
     useModelAutoModeStore.getState().setLastRoutedModel(null)
+    usePersonaRoutingStore.getState().setApplied(null)
     // Load the session's auto-approve state (best effort).
     void (async () => {
       try {

@@ -1,5 +1,6 @@
 import { useSessionStore } from '../stores/sessionStore'
 import { useModelAutoModeStore } from '../stores/modelAutoModeStore'
+import { usePersonaRoutingStore, parsePersonaNotice } from '../stores/personaRoutingStore'
 import type { Message, SSEEvent } from '../types'
 
 /**
@@ -15,6 +16,11 @@ export function handleSystemMessageEvent(event: SSEEvent, fallbackSessionId: str
 
   if (routing?.model) {
     useModelAutoModeStore.getState().setLastRoutedModel(routing.model)
+  }
+
+  const appliedPersona = !routing ? parsePersonaNotice(text) : null
+  if (appliedPersona) {
+    usePersonaRoutingStore.getState().setApplied(appliedPersona)
   }
 
   const msg: Message = {

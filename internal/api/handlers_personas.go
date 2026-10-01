@@ -28,14 +28,33 @@ func (s *Server) handleListPersonas(w http.ResponseWriter, r *http.Request) {
 
 // handleGetActivePersona handles GET /api/v1/personas/active.
 // Returns the currently active persona name (empty string if none is active).
+//
+// Additive fields describe persona auto-selection: auto is true when no persona
+// is selected manually and auto-select is enabled; decisionModel reports the
+// persona-selector "use decision model" option; with an optional sessionId
+// query parameter, applied and source name the persona auto-selection applied
+// to that session on its last turn (empty before the first turn).
 func (s *Server) handleGetActivePersona(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{
-		"active": agentpkg.GetActivePersona(),
+	active := agentpkg.GetActivePersona()
+	auto := false
+	if cfg := config.Get(); cfg != nil {
+		auto = active == "" && cfg.PersonaAutoSelect.Enabled
+	}
+	applied, source := "", ""
+	if auto {
+		applied, source = agentpkg.AppliedAutoPersona(r.URL.Query().Get("sessionId"))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"active":        active,
+		"auto":          auto,
+		"decisionModel": auto && config.PersonaSelectorUsesDecisionModel(),
+		"applied":       applied,
+		"source":        source,
 	})
 }
 

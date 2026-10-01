@@ -1600,6 +1600,11 @@ func (a *appModel) openPersonaDialog() tea.Cmd {
 	personas := agent.ListAvailablePersonas()
 	active := agent.GetActivePersona()
 	a.personaDialog.SetPersonas(personas, active)
+	applied := ""
+	if active == "" {
+		applied, _ = agent.AppliedAutoPersona(a.selectedSession.ID)
+	}
+	a.personaDialog.SetAutoApplied(applied)
 	a.showPersonaDialog = true
 	return a.personaDialog.Init()
 }

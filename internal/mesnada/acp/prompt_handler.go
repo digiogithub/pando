@@ -503,6 +503,11 @@ func (a *PandoACPAgent) processAgentEventStream(
 					a.logger.Printf("[ACP AGENT] Failed to persist routing notice: %v", err)
 				}
 			}
+			if isPersonaNoticeText(msg) {
+				// The applied persona changed: refresh the "Auto (<persona>)"
+				// label of the persona option.
+				a.sendSessionConfigOptionsUpdate(ctx, acpSession.ID)
+			}
 			if usageUpdate, normalized, suppress := a.normalizeSystemMessage(ctx, acpSession, msg); !suppress {
 				if usageUpdate != nil {
 					if err := acpSession.SendUpdate(*usageUpdate); err != nil {

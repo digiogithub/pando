@@ -255,3 +255,93 @@ func TestModelAutoModePullAction(t *testing.T) {
 		t.Fatalf("fake pulls = %d", fake.Count("/api/pull"))
 	}
 }
+
+func agentFieldByKey(cfg *config.Config, key string) (settings.Field, bool) {
+	for _, f := range buildAgentsSection(cfg).Fields {
+		if f.Key == key {
+			return f, true
+		}
+	}
+	return settings.Field{}, false
+}
+
+func TestPersonaSelectorDecisionModelFields(t *testing.T) {
+	cfg := withModelAutoTUIConfig(t)
+	key := "agents.persona-selector.useDecisionModel"
+
+	if _, ok := agentFieldByKey(cfg, key); !ok {
+		t.Fatal("persona-selector must expose the decision model toggle")
+	}
+	if _, ok := agentFieldByKey(cfg, "agents.coder.useDecisionModel"); ok {
+		t.Error("toggle must exist only for persona-selector")
+	}
+	if _, ok := agentFieldByKey(cfg, "agents.persona-selector.routerInfo"); ok {
+		t.Error("router info must be hidden while the toggle is off")
+	}
+
+	if err := saveAgent(settings.Field{Key: key, Value: "true"}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if !config.Get().Agents[config.AgentPersonaSelector].UseDecisionModel {
+		t.Fatal("flag not persisted")
+	}
+	if err := saveAgent(settings.Field{Key: "agents.coder.useDecisionModel", Value: "true"}); err == nil {
+		t.Error("other agents must be rejected")
+	}
+
+	cfg = config.Get()
+	f, ok := agentFieldByKey(cfg, "agents.persona-selector.routerInfo")
+	if !ok || !strings.Contains(f.Value, "tev1:0.8b") {
+		t.Fatalf("router info = %+v ok=%v", f, ok)
+	}
+	if _, ok := agentFieldByKey(cfg, "agents.persona-selector.routerPrivacy"); ok {
+		t.Error("no privacy note for local ollama")
+	}
+	setPersonaRouterHealth("", "")
+	if f, ok := agentFieldByKey(cfg, "agents.persona-selector.routerHealth"); !ok || f.Value != "checking..." {
+		t.Fatalf("router health before the probe = %+v ok=%v", f, ok)
+	}
+	setPersonaRouterHealth(personaRouterHealthKey(cfg.ModelAutoMode), "Healthy")
+	if f, _ := agentFieldByKey(cfg, "agents.persona-selector.routerHealth"); f.Value != "Healthy" {
+		t.Fatalf("router health = %q, want Healthy", f.Value)
+	}
+	t.Cleanup(func() { setPersonaRouterHealth("", "") })
+	if _, ok := agentFieldByKey(cfg, "agents.persona-selector.model"); !ok {
+		t.Error("model field missing")
+	}
+
+	cfg.ModelAutoMode.Router.Provider = config.DecisionProviderTypeSafe
+	if _, ok := agentFieldByKey(cfg, "agents.persona-selector.routerPrivacy"); !ok {
+		t.Error("hosted router must show the privacy note")
+	}
+	cfg.ModelAutoMode.Router.Model = ""
+	if f, ok := agentFieldByKey(cfg, "agents.persona-selector.routerWarning"); !ok || !strings.Contains(f.Value, "No router model") {
+		t.Errorf("warning missing: %+v", f)
+	}
+}
+
+func TestCheckPersonaRouterHealthCmd(t *testing.T) {
+	cfg := withModelAutoTUIConfig(t)
+
+	// Option off or no router model: no probe at all.
+	if checkPersonaRouterHealth() != nil {
+		t.Fatal("no probe expected while the toggle is off")
+	}
+	cfg.Agents[config.AgentPersonaSelector] = config.Agent{UseDecisionModel: true}
+	cfg.ModelAutoMode.Router.Model = ""
+	if checkPersonaRouterHealth() != nil {
+		t.Fatal("no probe expected without a router model")
+	}
+
+	// An unreachable router reports Unhealthy without blocking the caller.
+	cfg.ModelAutoMode.Router.Model = "tev1:0.8b"
+	cfg.ModelAutoMode.Router.BaseURL = "http://127.0.0.1:1"
+	cmd := checkPersonaRouterHealth()
+	if cmd == nil {
+		t.Fatal("probe expected")
+	}
+	msg, ok := cmd().(personaRouterHealthMsg)
+	if !ok || !strings.HasPrefix(msg.status, "Unhealthy") || msg.key != personaRouterHealthKey(cfg.ModelAutoMode) {
+		t.Fatalf("msg = %+v ok=%v", msg, ok)
+	}
+}

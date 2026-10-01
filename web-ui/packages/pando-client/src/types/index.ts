@@ -54,6 +54,20 @@ export interface RoutingInfo {
   notice?: string
 }
 
+/** GET /api/v1/personas/active. The auto fields are absent on older servers. */
+export interface ActivePersonaResponse {
+  /** manually selected persona, '' when Auto */
+  active: string
+  /** true when no persona is selected manually and auto-select is enabled */
+  auto?: boolean
+  /** the persona-selector "use decision model" option is on (only while auto) */
+  decisionModel?: boolean
+  /** persona auto-selection applied to the session on its last turn */
+  applied?: string
+  /** decision, llm, sticky or default */
+  source?: string
+}
+
 export interface Message {
   id: string
   session_id: string
@@ -506,6 +520,9 @@ export interface AgentConfigItem {
   // …), whose token budget is resolved automatically: the UI hides the
   // maxTokens / autoCompact knobs for them.
   contextControls?: boolean
+  // useDecisionModel is only reported/sent for persona-selector: when on, the
+  // persona is chosen by the model auto mode decision model.
+  useDecisionModel?: boolean
 }
 
 export interface AgentsConfigResponse {

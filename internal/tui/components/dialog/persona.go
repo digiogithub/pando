@@ -39,6 +39,9 @@ type PersonaDialog interface {
 	tea.Model
 	layout.Bindings
 	SetPersonas(personas []string, active string)
+	// SetAutoApplied sets the persona auto-selection applied to the current
+	// session, shown in the Auto entry. Empty means none applied yet.
+	SetAutoApplied(name string)
 }
 
 type personaMatch struct {
@@ -51,6 +54,7 @@ type personaDialogCmp struct {
 	personas    []string
 	filtered    []personaMatch
 	active      string
+	autoApplied string
 	selectedIdx int
 	width       int
 	height      int
@@ -195,7 +199,7 @@ func (p *personaDialogCmp) visibleMatches() []personaMatch {
 func (p *personaDialogCmp) maxContentWidth() int {
 	maxWidth := personaDialogMinWidth
 	for _, match := range p.filtered {
-		lineWidth := lipgloss.Width(match.name) + 4
+		lineWidth := lipgloss.Width(p.displayName(match.name)) + 4
 		maxWidth = max(maxWidth, lineWidth)
 	}
 
@@ -287,11 +291,23 @@ func (p *personaDialogCmp) renderPersonaItem(match personaMatch, selected bool, 
 	if len(match.matchedIndexes) > 0 {
 		name = renderMatchedText(match.name, match.matchedIndexes, nameStyle, matchStyle)
 	} else {
-		name = nameStyle.Render(match.name)
+		name = nameStyle.Render(p.displayName(match.name))
 	}
 
 	return itemStyle.Render(name)
 }
+
+// displayName is the label of an entry. The Auto entry names the persona that
+// auto-selection applied to the session, e.g. "Auto (software-engineer)".
+func (p *personaDialogCmp) displayName(name string) string {
+	if name == personaNoneOption && p.autoApplied != "" {
+		return "Auto (" + p.autoApplied + ")"
+	}
+	return name
+}
+
+// SetAutoApplied implements PersonaDialog.
+func (p *personaDialogCmp) SetAutoApplied(name string) { p.autoApplied = strings.TrimSpace(name) }
 
 func (p *personaDialogCmp) BindingKeys() []key.Binding {
 	return layout.KeyMapToSlice(personaKeys)

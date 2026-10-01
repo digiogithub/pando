@@ -58,6 +58,14 @@ type AutoModeService interface {
 	SessionAutoMode(sessionID string) bool
 }
 
+// PersonaAutoService is an optional capability of an AgentService: it reports
+// the persona that persona auto-selection applied to a session on its last
+// user turn (agent.AppliedAutoPersona), with the source of the choice. The
+// adapters implement it; services that do not never show an applied persona.
+type PersonaAutoService interface {
+	AppliedAutoPersona(sessionID string) (name, source string)
+}
+
 // ACPModelInfo holds minimal model metadata for ACP responses.
 // Defined here to avoid importing internal/llm/models from this package.
 type ACPModelInfo struct {

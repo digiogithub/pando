@@ -130,6 +130,11 @@ type Agent struct {
 	AutoCompact           *bool          `json:"autoCompact,omitempty" toml:"AutoCompact,omitempty"` // per-agent override of the global AutoCompact; nil = inherit the global value
 	AutoCompactThreshold  float64        `json:"autoCompactThreshold,omitempty"`                     // 0.0-1.0, default 0.85
 	ContextWindowOverride int64          `json:"contextWindowOverride,omitempty"`                    // override model's reported context window (tokens); 0 = use model default
+	// UseDecisionModel makes the persona selector pick the persona with a
+	// decision model from model auto mode, keeping the agent's own LLM model
+	// as the fallback. Only honoured for the persona-selector agent (cleared
+	// with a warning on any other agent); default false.
+	UseDecisionModel bool `json:"useDecisionModel,omitempty"`
 }
 
 // Provider defines configuration for an LLM provider.
@@ -3472,6 +3477,16 @@ func Validate() error {
 		}
 	}
 
+	// UseDecisionModel is only meaningful for the persona-selector agent; drop
+	// it elsewhere instead of failing the load.
+	for name, agent := range cfg.Agents {
+		if agent.UseDecisionModel && name != AgentPersonaSelector {
+			logging.Warn("ignoring useDecisionModel on agent that does not support it", "agent", name)
+			agent.UseDecisionModel = false
+			cfg.Agents[name] = agent
+		}
+	}
+
 	// Validate agent models
 	for name, agent := range cfg.Agents {
 		if err := validateAgent(cfg, name, agent); err != nil {
@@ -5651,6 +5666,57 @@ func UpdateAgent(agentName AgentName, agent Agent) error {
 		return err
 	}
 
+	return nil
+}
+
+// PersonaSelectorUsesDecisionModel reports whether the persona-selector agent
+// is configured to pick the persona with a decision model (model auto mode),
+// falling back to the agent's own LLM model. It is false when the
+// configuration is not loaded.
+func PersonaSelectorUsesDecisionModel() bool {
+	if cfg == nil {
+		return false
+	}
+	return cfg.Agents[AgentPersonaSelector].UseDecisionModel
+}
+
+// UpdateAgentUseDecisionModel sets and persists the UseDecisionModel flag of
+// the persona-selector agent. Any other agent is rejected. The agent's model
+// and other settings are left untouched; the model may stay empty.
+func UpdateAgentUseDecisionModel(name AgentName, on bool) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+	if name != AgentPersonaSelector {
+		return fmt.Errorf("useDecisionModel is only supported for the %s agent", AgentPersonaSelector)
+	}
+	if err := ErrIfLocked("agents." + string(name) + ".useDecisionModel"); err != nil {
+		return err
+	}
+
+	if cfg.Agents == nil {
+		cfg.Agents = make(map[AgentName]Agent)
+	}
+	oldAgent, hadAgent := cfg.Agents[name]
+	next := oldAgent
+	next.UseDecisionModel = on
+	cfg.Agents[name] = next
+
+	if err := updateCfgFile(func(config *Config) {
+		if config.Agents == nil {
+			config.Agents = make(map[AgentName]Agent)
+		}
+		a := config.Agents[name]
+		a.UseDecisionModel = on
+		config.Agents[name] = a
+	}); err != nil {
+		if hadAgent {
+			cfg.Agents[name] = oldAgent
+		} else {
+			delete(cfg.Agents, name)
+		}
+		return err
+	}
 	return nil
 }
 
