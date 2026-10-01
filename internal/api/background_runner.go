@@ -36,6 +36,10 @@ type bgSession struct {
 type BackgroundSessionManager struct {
 	mu       sync.RWMutex
 	sessions map[string]*bgSession
+	// runSeq is a per-session monotonic run counter. It is kept apart from
+	// sessions on purpose: the GC drops finished runs after bgSessionTTL, and a
+	// later run must still compare greater than any sequence a client has seen.
+	runSeq map[string]uint64
 }
 
 // NewBackgroundSessionManager creates a manager and starts the background
@@ -43,6 +47,7 @@ type BackgroundSessionManager struct {
 func NewBackgroundSessionManager() *BackgroundSessionManager {
 	m := &BackgroundSessionManager{
 		sessions: make(map[string]*bgSession),
+		runSeq:   make(map[string]uint64),
 	}
 	go m.gcLoop()
 	return m
@@ -55,6 +60,15 @@ func (m *BackgroundSessionManager) IsRunning(sessionID string) bool {
 	defer m.mu.RUnlock()
 	_, ok := m.sessions[sessionID]
 	return ok
+}
+
+// RunSeq returns how many runs were accepted by Submit for the session (0 when
+// none). It only ever grows, so a client that remembers the last value it
+// streamed can tell that a newer run exists, running or already finished.
+func (m *BackgroundSessionManager) RunSeq(sessionID string) uint64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.runSeq[sessionID]
 }
 
 // IsBusy reports whether the session is actively processing (not yet done).
@@ -73,6 +87,7 @@ func (m *BackgroundSessionManager) IsBusy(sessionID string) bool {
 // Submit starts an agent run for sessionID in the background.
 // agentRunFn is called with a background-derived context and must return the
 // event channel produced by agent.Service.Run().
+// Every accepted call increments the session's RunSeq.
 // Returns agent.ErrSessionBusy if the session is already actively running.
 func (m *BackgroundSessionManager) Submit(
 	sessionID string,
@@ -90,6 +105,11 @@ func (m *BackgroundSessionManager) Submit(
 		cancel: cancel,
 	}
 	m.sessions[sessionID] = s
+	// Bumped together with the registration so that any observer that sees the
+	// run (IsBusy, Subscribe) also sees its sequence. A run whose start fails
+	// keeps its number: sequences are never reused, and a client that replays
+	// such a run just gets an immediate done.
+	m.runSeq[sessionID]++
 	m.mu.Unlock()
 
 	eventCh, err := agentRunFn(ctx)

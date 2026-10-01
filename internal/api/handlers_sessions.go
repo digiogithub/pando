@@ -59,13 +59,15 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	type sessionWithStatus struct {
 		session.Session
 		IsRunning     bool   `json:"is_running"`
+		RunSeq        uint64 `json:"run_seq"`
 		PromptPreview string `json:"prompt_preview,omitempty"`
 	}
 	result := make([]sessionWithStatus, len(page))
 	for i, sess := range page {
 		result[i] = sessionWithStatus{
 			Session:   sess,
-			IsRunning: s.bgRunner.IsBusy(sess.ID),
+			IsRunning: s.sessionRunning(sess.ID),
+			RunSeq:    s.bgRunner.RunSeq(sess.ID),
 		}
 		// Sessions that still carry a placeholder title (or a delegated marker
 		// without a prompt snippet) get a display title derived from their
@@ -120,6 +122,10 @@ func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request, id str
 		return
 	}
 
+	// Read the sequence before the history: a run that lands in between is then
+	// reported as newer than what the client loaded and gets replayed, instead of
+	// being silently considered part of the history.
+	runSeq := s.bgRunner.RunSeq(id)
 	messages, err := s.app.Messages.List(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -129,7 +135,8 @@ func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request, id str
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"session":    sess,
 		"messages":   messages,
-		"is_running": s.bgRunner.IsBusy(id),
+		"is_running": s.sessionRunning(id),
+		"run_seq":    runSeq,
 	})
 }
 

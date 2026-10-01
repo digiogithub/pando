@@ -349,6 +349,11 @@
   "chat": {
     "agentDoneTitle": "代理已完成",
     "agentDoneBody": "点击返回会话",
+    "notice": {
+      "resurrected": "委派任务完成后继续运行",
+      "conclusionQueued": "委派任务结果已排队，将在下一步注入",
+      "conclusionInjected": "委派任务结果已注入当前运行"
+    },
     "info": {
       "show": "显示信息面板",
       "hide": "隐藏信息面板",

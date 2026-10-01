@@ -103,6 +103,9 @@ func (s *Server) handleSessionPending(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"permissions": permissions,
 		"questions":   questions,
-		"running":     s.bgRunner.IsBusy(sessionID),
+		"running":     s.sessionRunning(sessionID),
+		// run_seq lets the client notice a run it never streamed, even one that
+		// started and finished between two polls.
+		"run_seq": s.bgRunner.RunSeq(sessionID),
 	})
 }

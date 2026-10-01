@@ -349,6 +349,11 @@
   "chat": {
     "agentDoneTitle": "エージェント完了",
     "agentDoneBody": "クリックしてセッションに戻る",
+    "notice": {
+      "resurrected": "委任タスクの完了後に再開しています",
+      "conclusionQueued": "委任タスクの結果をキューに追加しました。次のステップで挿入されます",
+      "conclusionInjected": "委任タスクの結果を実行に挿入しました"
+    },
     "info": {
       "show": "情報パネルを表示",
       "hide": "情報パネルを隠す",

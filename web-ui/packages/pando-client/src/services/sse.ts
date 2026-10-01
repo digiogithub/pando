@@ -155,6 +155,10 @@ function parseSSEPayload(eventType: SSEEvent['type'], raw: Record<string, unknow
   }
 
   switch (eventType) {
+    case 'run':
+      base.run_seq = typeof raw.runSeq === 'number' ? raw.runSeq : undefined
+      break
+
     case 'tool_call':
       if (raw.id && raw.name) {
         base.tool_call = {
@@ -280,6 +284,9 @@ function parseSSEPayload(eventType: SSEEvent['type'], raw: Record<string, unknow
 
     case 'steering_queued':
     case 'steering_injected':
+    case 'resurrected':
+    case 'conclusion_queued':
+    case 'conclusion_injected':
       base.session_id = typeof raw.session_id === 'string' ? raw.session_id : base.session_id
       base.message = typeof raw.message === 'string' ? raw.message : undefined
       break

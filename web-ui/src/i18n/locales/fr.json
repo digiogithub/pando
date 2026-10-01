@@ -349,6 +349,11 @@
   "chat": {
     "agentDoneTitle": "Agent terminé",
     "agentDoneBody": "Cliquez pour revenir à la session",
+    "notice": {
+      "resurrected": "Reprise après une tâche déléguée",
+      "conclusionQueued": "Résultat délégué en file d'attente, il sera injecté à la prochaine étape",
+      "conclusionInjected": "Résultat délégué injecté dans l'exécution"
+    },
     "info": {
       "show": "Afficher le panneau d'informations",
       "hide": "Masquer le panneau d'informations",

@@ -349,6 +349,11 @@
   "chat": {
     "agentDoneTitle": "Agent finished",
     "agentDoneBody": "Click to return to the session",
+    "notice": {
+      "resurrected": "Resuming after a delegated task",
+      "conclusionQueued": "Delegated result queued, it will be injected at the next step",
+      "conclusionInjected": "Delegated result injected into the run"
+    },
     "info": {
       "show": "Show info panel",
       "hide": "Hide info panel",

@@ -63,6 +63,9 @@ type Server struct {
 	staticFS      fs.FS
 	staticHandler http.Handler
 	bgRunner      *BackgroundSessionManager
+	// unregisterResume removes the server from the resumed-run owners (see
+	// registerResumeHandler) when it shuts down.
+	unregisterResume func()
 	// agui is the AG-UI protocol adapter (CopilotKit and other Generative-UI
 	// frontends). It is nil unless [AGUI] Enabled is set. It runs its own agent
 	// instances and its own permission service, so it shares nothing with the
@@ -146,6 +149,7 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
 
 	s.setupAGUI()
 	s.setupPreview()
+	s.registerResumeHandler()
 
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
@@ -384,6 +388,9 @@ func (s *Server) PandoApp() *app.App {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.unregisterResume != nil {
+		s.unregisterResume()
+	}
 	if s.aguiListener != nil {
 		if err := s.aguiListener.Shutdown(ctx); err != nil {
 			logging.Debug("AG-UI listener shutdown", "error", err)

@@ -135,6 +135,15 @@ type App struct {
 	// It is nil when delegation is disabled (default-off).
 	delegationSupervisor *delegationSupervisor
 
+	// ResumeHandlers lets a surface that streams runs (the WebUI API, ACP) own
+	// the runs the delegation supervisor resumes for an idle session, instead of
+	// the agent draining them. Always non-nil; with nothing registered (TUI, CLI)
+	// resumed runs are drained by the agent exactly as before.
+	ResumeHandlers *agent.ResumeRegistry
+
+	// acpResumeUnregister removes the in-app ACP server's resume handler.
+	acpResumeUnregister func()
+
 	// IPCBus is set on the primary instance after calling SetupIPC.
 	// Secondary instances leave this nil.
 	IPCBus *ipc.Bus
@@ -250,6 +259,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	projects := project.NewService(rawQ)
 
 	app := &App{
+		ResumeHandlers: agent.NewResumeRegistry(),
 		Sessions:       sessions,
 		Messages:       messages,
 		History:        files,
@@ -667,6 +677,8 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 					permAdapter,
 				)
 				acpAgent.SetDBCompactor(app.ACPDBCompactor())
+				// Stream runs resumed after delegated tasks to this server's clients.
+				app.acpResumeUnregister = RegisterACPResumeHandler(app.ResumeHandlers, acpAgent)
 
 				// Parse session timeout
 				sessionTimeout := 30 * time.Minute
@@ -814,6 +826,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 					ResurrectionTimeout: resurrectionTimeout,
 				},
 			)
+			app.delegationSupervisor.resumers = app.ResumeHandlers
 			app.delegationSupervisor.Start(ctx)
 		}
 	}
@@ -2396,6 +2409,9 @@ func (app *App) PromoteToPrimary(ctx context.Context, lockFile *os.File) error {
 
 func (app *App) Shutdown() {
 	logging.Debug("App shutdown started")
+	if app.acpResumeUnregister != nil {
+		app.acpResumeUnregister()
+	}
 	// Let in-flight session evaluations finish (bounded) so they are not lost.
 	if app.Evaluator != nil {
 		flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -2580,6 +2596,19 @@ func ForwardACPAgentEvents(ctx context.Context, realCh <-chan agent.AgentEvent) 
 			case agent.AgentEventTypeToolResult:
 				acpEv.Type = mesnadaACP.AgentEventTypeToolResult
 				acpEv.ToolResult = ev.ToolResult
+			case agent.AgentEventTypeResurrected, agent.AgentEventTypeConclusionInjected:
+				// Visible markers for a delegation-driven turn: why the session
+				// woke, and that a subagent's result entered the running loop.
+				// ConclusionQueued is not mapped: it is broker-only and its
+				// "injected" counterpart already tells the user. Each marker gets
+				// its own messageId so Xcode does not merge it into the previous
+				// or next assistant message.
+				if strings.TrimSpace(ev.SystemMessage) == "" {
+					continue
+				}
+				acpEv.Type = mesnadaACP.AgentEventTypeSystemMessage
+				acpEv.SystemMessage = ev.SystemMessage
+				acpEv.MessageID = fmt.Sprintf("%s-notice-%d", ev.SessionID, time.Now().UnixNano())
 			default:
 				continue
 			}
@@ -2591,6 +2620,29 @@ func ForwardACPAgentEvents(ctx context.Context, realCh <-chan agent.AgentEvent) 
 		}
 	}()
 	return acpCh
+}
+
+// RegisterACPResumeHandler makes an ACP agent the owner of the runs the
+// delegation supervisor resumes for the idle sessions it serves, so the client
+// gets them live. It is the single registration used by both ACP adapters (the
+// in-app server and `pando acp` over stdio): the translation to ACP events is
+// ForwardACPAgentEvents, the same one a prompt uses. The handler registers at
+// owner priority and only takes sessions this agent has a live client for, so
+// every other session still reaches the WebUI fallback or the plain drain.
+// The returned function unregisters it.
+func RegisterACPResumeHandler(reg *agent.ResumeRegistry, acpAgent *mesnadaACP.PandoACPAgent) (unregister func()) {
+	if reg == nil || acpAgent == nil {
+		return func() {}
+	}
+	return reg.Register(agent.ResumePriorityOwner, func(sessionID string, start agent.ResumeStart) (bool, error) {
+		return acpAgent.TakeResumedRun(sessionID, func(ctx context.Context) (<-chan mesnadaACP.AgentEvent, error) {
+			realCh, err := start(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return ForwardACPAgentEvents(ctx, realCh), nil
+		})
+	})
 }
 
 func (a *appACPAgentAdapter) Cancel(sessionID string) { a.svc.Cancel(sessionID) }

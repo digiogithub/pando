@@ -327,6 +327,29 @@ func (a *PandoACPAgent) processPromptWithAgent(
 	promptText string,
 	attachments ...message.Attachment,
 ) (acpsdk.StopReason, error) {
+	ctx = a.prepareRun(ctx, acpSession)
+	eventChan, err := a.agentService.Run(ctx, acpSession.PandoSessionID(), promptText, attachments...)
+	if err != nil {
+		return "", fmt.Errorf("failed to start agent: %w", err)
+	}
+	stopReason, streamErr := a.processAgentEventStream(ctx, acpSession, eventChan)
+	a.reconcileModelAfterRun(ctx, acpSession)
+	return stopReason, streamErr
+}
+
+// reconcileModelAfterRun publishes a model switch the run made mid-loop so the
+// picker shows which model actually finished the turn.
+func (a *PandoACPAgent) reconcileModelAfterRun(ctx context.Context, acpSession *ACPServerSession) {
+	if reconcileACPSessionModel(a.agentService, acpSession) {
+		a.sendSessionConfigOptionsUpdate(ctx, acpSession.ID)
+	}
+}
+
+// prepareRun readies a session for an agent run and returns the context to start
+// it with: the ACP/clean context markers plus the session's thinking, model and
+// LLM overrides. It must run before Run/ResumeRun because the context flows into
+// the tools. Shared by prompts and by runs resumed after delegated tasks.
+func (a *PandoACPAgent) prepareRun(ctx context.Context, acpSession *ACPServerSession) context.Context {
 	// Mark the context as ACP so tools without a usable blocking UI (e.g.
 	// AskUserQuestion) switch to their text-mode behavior. This value flows
 	// through agent.Run -> genCtx into each tool's Run call.
@@ -362,17 +385,7 @@ func (a *PandoACPAgent) processPromptWithAgent(
 	)
 	a.agentService.SetSessionLLMOverrides(acpSession.PandoSessionID(), overrides)
 	acpSession.SetAutoPushedOff(overrides.AutoMode != nil && !*overrides.AutoMode)
-	eventChan, err := a.agentService.Run(ctx, acpSession.PandoSessionID(), promptText, attachments...)
-	if err != nil {
-		return "", fmt.Errorf("failed to start agent: %w", err)
-	}
-	stopReason, streamErr := a.processAgentEventStream(ctx, acpSession, eventChan)
-	// The run may have switched model mid-loop; publish it so the picker shows
-	// which model actually finished the turn.
-	if reconcileACPSessionModel(a.agentService, acpSession) {
-		a.sendSessionConfigOptionsUpdate(ctx, acpSession.ID)
-	}
-	return stopReason, streamErr
+	return ctx
 }
 
 func (a *PandoACPAgent) processAgentEventStream(
@@ -496,7 +509,16 @@ func (a *PandoACPAgent) processAgentEventStream(
 						a.logger.Printf("[ACP AGENT] Failed to send system usage update: %v", err)
 					}
 				}
-				if err := acpSession.SendUpdate(updateAgentMessageTextWithID(normalized, currentMessageID)); err != nil {
+				if event.MessageID != "" {
+					// A notice with its own messageId (the "session resumed" marker)
+					// is a standalone message: it must not take the id of the
+					// surrounding assistant message, or Xcode would merge it into
+					// that turn, and it must not stop the next response from being
+					// sent in full.
+					if err := acpSession.SendUpdate(updateAgentMessageTextWithID(normalized, event.MessageID)); err != nil {
+						a.logger.Printf("[ACP AGENT] Failed to send notice update: %v", err)
+					}
+				} else if err := acpSession.SendUpdate(updateAgentMessageTextWithID(normalized, currentMessageID)); err != nil {
 					a.logger.Printf("[ACP AGENT] Failed to send system message update: %v", err)
 				} else {
 					sentContentDeltas = true

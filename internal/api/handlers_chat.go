@@ -192,6 +192,15 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 	submitErr := s.bgRunner.Submit(sessionID, func(ctx context.Context) (<-chan agent.AgentEvent, error) {
 		return agentSvc.Run(ctx, sessionID, req.Prompt)
 	})
+	if errors.Is(submitErr, agent.ErrSessionBusy) {
+		// The session is already running (for instance a run resumed after a
+		// delegated task that this client has not reattached to yet): the prompt
+		// is feedback for that run, not a second run.
+		if steerErr := agentSvc.Steer(sessionID, req.Prompt); steerErr == nil {
+			s.streamRunningSession(w, flusher, r.Context(), sessionID)
+			return
+		}
+	}
 	if submitErr != nil {
 		writeSSEEvent(w, flusher, "error", map[string]string{"error": submitErr.Error()})
 		return
@@ -200,6 +209,22 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 	// Subscribe to receive buffered + live events from the background run.
 	eventChan, unsubFn, _ := s.bgRunner.Subscribe(sessionID)
 	s.streamSessionEvents(w, flusher, r.Context(), sessionID, unsubFn, eventChan)
+}
+
+// streamRunningSession streams the run currently active for the session: the
+// bgRunner run with replay when it owns it, otherwise live from the agent broker.
+func (s *Server) streamRunningSession(w http.ResponseWriter, flusher http.Flusher, clientCtx context.Context, sessionID string) {
+	if !s.bgRunner.IsBusy(sessionID) && s.agentBusy(sessionID) {
+		brokerChan, stop := s.brokerRunEvents(clientCtx, sessionID)
+		s.streamSessionEvents(w, flusher, clientCtx, sessionID, stop, brokerChan)
+		return
+	}
+	eventChan, unsubFn, known := s.bgRunner.Subscribe(sessionID)
+	if !known {
+		writeSSEEvent(w, flusher, "done", map[string]string{})
+		return
+	}
+	s.streamSessionEvents(w, flusher, clientCtx, sessionID, unsubFn, eventChan)
 }
 
 // SteerRequest is the body accepted by POST /api/v1/sessions/{id}/steer.
@@ -269,7 +294,7 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
-	running := s.bgRunner.IsBusy(sessionID)
+	running := s.sessionRunning(sessionID)
 	fmt.Fprintf(w, "event: session\ndata: {\"sessionId\":%q,\"running\":%v}\n\n", sessionID, running)
 	flusher.Flush()
 	if err := s.writeCurrentGoalState(w, flusher, sessionID); err != nil {
@@ -277,15 +302,16 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventChan, unsubFn, knownSession := s.bgRunner.Subscribe(sessionID)
-	if !knownSession {
-		// Session not in runner — already completed long ago or never started here.
+	// Replays the bgRunner run (finished or live) and goes live. When the agent
+	// runs the session outside bgRunner there is no buffer to replay; the stream
+	// then follows the agent broker from now on.
+	if !s.bgRunner.IsRunning(sessionID) && !s.agentBusy(sessionID) {
+		// Not in the runner — already completed long ago or never started here.
 		// Return a done marker so the UI knows there is nothing to stream.
 		writeSSEEvent(w, flusher, "done", map[string]string{})
 		return
 	}
-
-	s.streamSessionEvents(w, flusher, r.Context(), sessionID, unsubFn, eventChan)
+	s.streamRunningSession(w, flusher, r.Context(), sessionID)
 }
 
 // streamSessionEvents reads events from eventChan and writes them as SSE to w.
@@ -300,6 +326,10 @@ func (s *Server) streamSessionEvents(
 	unsubFn func(),
 	eventChan <-chan agent.AgentEvent,
 ) {
+	// Tell the client which run it is about to see, so it does not replay the
+	// same run later when it notices the sequence on a poll.
+	writeSSEEvent(w, flusher, "run", map[string]any{"sessionId": sessionID, "runSeq": s.bgRunner.RunSeq(sessionID)})
+
 	workDir := s.config.CWD
 	var mu sync.Mutex
 	startedToolCalls := map[string]bool{}
@@ -643,6 +673,25 @@ func (s *Server) dispatchSSEEvent(
 
 	case agent.AgentEventTypeSteeringInjected:
 		writeSSEEvent(w, flusher, "steering_injected", map[string]interface{}{
+			"session_id": event.SessionID,
+			"message":    event.SystemMessage,
+		})
+
+	case agent.AgentEventTypeConclusionQueued:
+		writeSSEEvent(w, flusher, "conclusion_queued", map[string]interface{}{
+			"session_id": event.SessionID,
+			"message":    event.SystemMessage,
+		})
+
+	case agent.AgentEventTypeConclusionInjected:
+		writeSSEEvent(w, flusher, "conclusion_injected", map[string]interface{}{
+			"session_id": event.SessionID,
+			"message":    event.SystemMessage,
+		})
+
+	case agent.AgentEventTypeResurrected:
+		// The idle session was resumed after a delegated task reported its result.
+		writeSSEEvent(w, flusher, "resurrected", map[string]interface{}{
 			"session_id": event.SessionID,
 			"message":    event.SystemMessage,
 		})

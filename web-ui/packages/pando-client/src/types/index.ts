@@ -14,6 +14,8 @@ export interface Session {
   updated_at: string
   /** true when the session has an active background agent run */
   is_running?: boolean
+  /** number of agent runs the server accepted for this session (monotonic) */
+  run_seq?: number
   /** effective context window for the active model (from live token updates) */
   context_window?: number
   /** true while prompt/completion tokens are a provisional live estimate */
@@ -63,6 +65,8 @@ export interface Message {
   routing?: RoutingInfo
   /** True for client-side generic system notices rendered as a muted row. */
   notice?: boolean
+  /** i18n key of a client-side notice whose text is translated at render time. */
+  noticeKey?: string
 }
 
 export interface FileNode {
@@ -163,13 +167,16 @@ export interface GoalStatus {
 }
 
 export interface SSEEvent {
-  type: 'session' | 'content' | 'content_delta' | 'thinking_delta'
+  type: 'session' | 'run' | 'content' | 'content_delta' | 'thinking_delta'
       | 'tool_call' | 'tool_call_update' | 'tool_result'
       | 'plan_update' | 'todos_update' | 'goal_status'
       | 'token_usage' | 'permission_request' | 'question_request'
       | 'steering_queued' | 'steering_injected' | 'system_message'
+      | 'resurrected' | 'conclusion_queued' | 'conclusion_injected'
       | 'error' | 'done'
   session_id?: string
+  /** `run` event: sequence of the run this stream is about to deliver */
+  run_seq?: number
   content?: string
   message?: string
   error?: string

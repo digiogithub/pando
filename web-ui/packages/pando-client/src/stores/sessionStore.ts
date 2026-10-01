@@ -3,6 +3,7 @@ import { create } from 'zustand'
 import type { Session, Message, PermissionRequest, PermissionAction, QuestionRequest, QuestionAnswer } from '../types'
 import api from '../services/api'
 import { mapSession, mapMessages } from '../services/mappers'
+import { RUN_SEQ_STALE } from '../services/runSeq'
 
 /** page size used by the session list; the API caps a request at 500 */
 export const SESSIONS_PAGE_SIZE = 100
@@ -16,6 +17,8 @@ interface SessionStore {
   /** true while a "load more" page is in flight */
   sessionsLoadingMore: boolean
   activeSessionId: string | null
+  /** last run_seq streamed or loaded per session (see services/runSeq) */
+  seenRunSeq: Record<string, number>
   messages: Message[]
   loading: boolean
   /** true while the active session has a live background run streaming in */
@@ -31,6 +34,7 @@ interface SessionStore {
   loadMoreSessions: () => Promise<void>
   setActiveSession: (id: string) => Promise<{ isRunning: boolean }>
   setMessages: (msgs: Message[]) => void
+  setSeenRunSeq: (id: string, seq: number) => void
   addMessage: (msg: Message) => void
   /** Insert before the trailing (streaming) message so updateLastMessage* keep targeting it. */
   insertBeforeLast: (msg: Message) => void
@@ -68,7 +72,7 @@ interface SessionStore {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RawSessions = { sessions: any[]; total?: number; has_more?: boolean }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type RawSessionDetail = { session: any; messages: any[]; is_running?: boolean }
+type RawSessionDetail = { session: any; messages: any[]; is_running?: boolean; run_seq?: number }
 
 export const useSessionStore = create<SessionStore>((set, get) => ({
   sessions: [],
@@ -76,6 +80,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   sessionsHasMore: false,
   sessionsLoadingMore: false,
   activeSessionId: null,
+  seenRunSeq: {},
   messages: [],
   loading: false,
   isStreaming: false,
@@ -121,7 +126,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   setActiveSession: async (id: string) => {
-    set({ activeSessionId: id, messages: [], pendingPermissions: [], pendingQuestions: [] })
+    // Forget the baseline until the history below is loaded: a poll must not
+    // compare against a sequence from an earlier visit to this session.
+    set((s) => {
+      const seenRunSeq = { ...s.seenRunSeq }
+      delete seenRunSeq[id]
+      return { activeSessionId: id, seenRunSeq, messages: [], pendingPermissions: [], pendingQuestions: [] }
+    })
     useModelAutoModeStore.getState().setLastRoutedModel(null)
     // Load the session's auto-approve state (best effort).
     void (async () => {
@@ -136,12 +147,17 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const data = await api.get<RawSessionDetail>(`/api/v1/sessions/${id}`)
       const messages = mapMessages(data.messages ?? [])
       const isRunning = data.is_running ?? false
-      set({ messages, isStreaming: isRunning })
-
-      // Reflect running status in the sessions list too
+      const runSeq = data.run_seq ?? 0
+      // History already contains every finished run. A run still in flight is
+      // not in it (or only partly), so leave the baseline stale and let the
+      // reattach effect replay it.
       set((s) => ({
+        messages,
+        isStreaming: isRunning,
+        seenRunSeq: { ...s.seenRunSeq, [id]: isRunning ? RUN_SEQ_STALE : runSeq },
+        // Reflect running status and sequence in the sessions list too
         sessions: s.sessions.map((sess) =>
-          sess.id === id ? { ...sess, is_running: isRunning } : sess
+          sess.id === id ? { ...sess, is_running: isRunning, run_seq: runSeq } : sess
         ),
       }))
 
@@ -153,6 +169,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   setMessages: (messages) => set({ messages }),
+
+  setSeenRunSeq: (id, seq) => set((s) => ({ seenRunSeq: { ...s.seenRunSeq, [id]: seq } })),
 
   addMessage: (msg) =>
     set((s) => ({ messages: [...s.messages, msg] })),
@@ -266,6 +284,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         permissions?: PermissionRequest[]
         questions?: QuestionRequest[]
         running?: boolean
+        run_seq?: number
       }>(`/api/v1/sessions/${sessionId}/pending`)
       set((s) => {
         if (s.activeSessionId !== sessionId) return s
@@ -277,8 +296,14 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         // session marked as finished while the agent keeps working (or stays
         // blocked on a tool). This is what lets the UI reattach to the stream.
         const running = Boolean(data.running)
-        const sessions = s.sessions.some((sess) => sess.id === sessionId && sess.is_running !== running)
-          ? s.sessions.map((sess) => (sess.id === sessionId ? { ...sess, is_running: running } : sess))
+        const runSeq = data.run_seq
+        const changed = s.sessions.some(
+          (sess) => sess.id === sessionId && (sess.is_running !== running || (runSeq !== undefined && sess.run_seq !== runSeq)),
+        )
+        const sessions = changed
+          ? s.sessions.map((sess) =>
+              sess.id === sessionId ? { ...sess, is_running: running, run_seq: runSeq ?? sess.run_seq } : sess,
+            )
           : s.sessions
         if (newPerms.length === 0 && newQuestions.length === 0 && sessions === s.sessions) return s
         return {

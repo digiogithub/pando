@@ -23,6 +23,7 @@ type fakeInjector struct {
 	resumeErr   error
 	resCount    int // value returned by ResurrectionCount (stub)
 	resCountInc bool
+	runOwned    int // resumes started through ResumeRun (a surface owned the run)
 }
 
 func newFakeInjector() *fakeInjector {
@@ -58,6 +59,24 @@ func (f *fakeInjector) Resume(ctx context.Context, sessionID string, content str
 		f.resCount++
 	}
 	return nil
+}
+
+// ResumeRun is the channel-returning resume used when a surface owns the run. It
+// records into the same resumed/resumeArgs lists as Resume (tagged in runOwned)
+// and returns a channel carrying only the Resurrected event.
+func (f *fakeInjector) ResumeRun(ctx context.Context, sessionID string, content string) (<-chan agent.AgentEvent, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.resumeErr != nil {
+		return nil, f.resumeErr
+	}
+	f.resumed = append(f.resumed, sessionID)
+	f.resumeArgs = append(f.resumeArgs, content)
+	f.runOwned++
+	ch := make(chan agent.AgentEvent, 1)
+	ch <- agent.AgentEvent{Type: agent.AgentEventTypeResurrected, SessionID: sessionID}
+	close(ch)
+	return ch, nil
 }
 
 func (f *fakeInjector) ResurrectionCount(sessionID string) int {
@@ -374,5 +393,80 @@ func TestResurrectGatedOffWhenResurrectDisabled(t *testing.T) {
 	}
 	if inj.resumeCount() != 0 {
 		t.Fatalf("expected 0 resumes, got %d", inj.resumeCount())
+	}
+}
+
+func TestResurrectOffersRunToRegisteredHandler(t *testing.T) {
+	inj := newFakeInjector()
+	s := newResurrectSup(inj, &fakeLister{}, resurrectOpts())
+	s.resumers = agent.NewResumeRegistry()
+
+	var gotSession string
+	var firstEvent agent.AgentEventType
+	s.resumers.Register(agent.ResumePriorityFallback, func(sessionID string, start agent.ResumeStart) (bool, error) {
+		gotSession = sessionID
+		ch, err := start(context.Background())
+		if err != nil {
+			return true, err
+		}
+		firstEvent = (<-ch).Type
+		return true, nil
+	})
+
+	if !s.handleCompletion(completedTask("sess-1", "corr-1")) {
+		t.Fatal("expected handleCompletion to resurrect")
+	}
+	if gotSession != "sess-1" {
+		t.Fatalf("handler saw session %q, want sess-1", gotSession)
+	}
+	if firstEvent != agent.AgentEventTypeResurrected {
+		t.Fatalf("first event = %q, want resurrected", firstEvent)
+	}
+	if inj.runOwned != 1 || inj.resumeCount() != 1 {
+		t.Fatalf("expected one handler-owned resume, got owned=%d resumed=%d", inj.runOwned, inj.resumeCount())
+	}
+}
+
+func TestResurrectFallsBackToDrainingResumeWhenNoHandlerTakes(t *testing.T) {
+	for name, registry := range map[string]*agent.ResumeRegistry{
+		"nil registry":      nil,
+		"empty registry":    agent.NewResumeRegistry(),
+		"handler declining": declining(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			inj := newFakeInjector()
+			s := newResurrectSup(inj, &fakeLister{}, resurrectOpts())
+			s.resumers = registry
+
+			if !s.handleCompletion(completedTask("sess-1", "corr-1")) {
+				t.Fatal("expected handleCompletion to resurrect")
+			}
+			if inj.resumeCount() != 1 || inj.runOwned != 0 {
+				t.Fatalf("expected the draining Resume, got resumed=%d owned=%d", inj.resumeCount(), inj.runOwned)
+			}
+		})
+	}
+}
+
+func declining() *agent.ResumeRegistry {
+	r := agent.NewResumeRegistry()
+	r.Register(agent.ResumePriorityFallback, func(string, agent.ResumeStart) (bool, error) { return false, nil })
+	return r
+}
+
+func TestResurrectHandlerBusyFallsBackToInject(t *testing.T) {
+	inj := newFakeInjector()
+	s := newResurrectSup(inj, &fakeLister{}, resurrectOpts())
+	s.resumers = agent.NewResumeRegistry()
+	s.resumers.Register(agent.ResumePriorityFallback, func(string, agent.ResumeStart) (bool, error) {
+		return true, agent.ErrSessionBusy
+	})
+
+	s.handleCompletion(completedTask("sess-1", "corr-1"))
+	if inj.resumeCount() != 0 {
+		t.Fatalf("expected no resume, got %d", inj.resumeCount())
+	}
+	if inj.count() != 1 {
+		t.Fatalf("expected 1 fallback injection, got %d", inj.count())
 	}
 }

@@ -716,6 +716,10 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 	)
 	pandoAgent.SetDBCompactor(pandoApp.ACPDBCompactor())
 
+	// Stream runs the delegation supervisor resumes for this client's sessions
+	// (after a delegated task concludes) instead of leaving them invisible.
+	defer app.RegisterACPResumeHandler(pandoApp.ResumeHandlers, pandoAgent)()
+
 	// Fan out global notify.Bus events to all active ACP sessions.
 	go pandoAgent.StartNotificationBroadcast(ctx)
 

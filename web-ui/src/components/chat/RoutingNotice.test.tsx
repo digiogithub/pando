@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import MessageBubble from './MessageBubble'
-import { handleSystemMessageEvent } from '@pando/client/hooks/routingNotice'
+import { handleSystemMessageEvent, handleDelegationEvent } from '@pando/client/hooks/routingNotice'
 import { useSessionStore } from '@pando/client/stores/sessionStore'
 import { useModelAutoModeStore } from '@pando/client/stores/modelAutoModeStore'
 import type { Message } from '@pando/client/types'
@@ -53,5 +53,32 @@ describe('routing notice', () => {
     expect(useModelAutoModeStore.getState().lastRoutedModel).toBeNull()
     render(<MessageBubble message={m} />)
     expect(screen.getByTestId('notice-row')).toHaveTextContent('hello')
+  })
+})
+
+describe('delegation notices', () => {
+  it('inserts a translatable resuming marker before the streaming bubble', () => {
+    expect(handleDelegationEvent({ type: 'resurrected', session_id: 's' }, 's')).toBe(true)
+    const msgs = useSessionStore.getState().messages
+    expect(msgs.map((m) => m.role)).toEqual(['system', 'assistant'])
+    expect(msgs[0].notice).toBe(true)
+    expect(msgs[0].noticeKey).toBe('chat.notice.resurrected')
+    render(<MessageBubble message={msgs[0]} />)
+    expect(screen.getByTestId('notice-row')).toBeInTheDocument()
+  })
+
+  it('does not stack the resuming marker when the same run is replayed twice', () => {
+    handleDelegationEvent({ type: 'resurrected', session_id: 's' }, 's')
+    handleDelegationEvent({ type: 'resurrected', session_id: 's' }, 's')
+    expect(useSessionStore.getState().messages.filter((m) => m.noticeKey === 'chat.notice.resurrected')).toHaveLength(1)
+  })
+
+  it('maps conclusion events and ignores unrelated ones', () => {
+    expect(handleDelegationEvent({ type: 'conclusion_queued' }, 's')).toBe(true)
+    expect(handleDelegationEvent({ type: 'conclusion_injected' }, 's')).toBe(true)
+    expect(handleDelegationEvent({ type: 'content_delta' }, 's')).toBe(false)
+    expect(useSessionStore.getState().messages.map((m) => m.noticeKey).filter(Boolean)).toEqual([
+      'chat.notice.conclusionQueued', 'chat.notice.conclusionInjected',
+    ])
   })
 })

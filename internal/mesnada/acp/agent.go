@@ -85,6 +85,10 @@ type PandoACPAgent struct {
 	// command. Optional: nil disables the command (the handler reports it is
 	// unavailable). Injected via SetDBCompactor by the entrypoint that owns the App.
 	dbCompactor DBCompactor
+
+	// resumeWG tracks runs resumed after delegated tasks that are still being
+	// forwarded to a client (see TakeResumedRun).
+	resumeWG sync.WaitGroup
 }
 
 // DBCompactResult reports the outcome of a database compaction. Sizes are in bytes.
@@ -390,23 +394,8 @@ func (a *PandoACPAgent) Prompt(ctx context.Context, req acpsdk.PromptRequest) (r
 	// each running a different model/persona never clobber one another. Clean
 	// mode is applied below via the per-session clean flag.
 
-	mode := acpSession.Mode()
-	if mode == "" {
-		mode = defaultACPMode
-	}
-	acpSession.SetCleanMode(mode == cleanModeID)
-
-	// Configure permissions from the dedicated approval selector.
-	askPermission := acpSession.AskPermission()
-	if mode == askModeID && !acpSession.PermissionConfigured() {
-		askPermission = true
-	} else if mode == goalModeID && !acpSession.PermissionConfigured() {
-		askPermission = !goalAutoApproveEnabled()
-	}
-
-	cleanupPermissions := a.configurePermissionMode(req.SessionId, mode, askPermission)
+	mode, cleanupPermissions := a.applyRunMode(req.SessionId, acpSession)
 	defer cleanupPermissions()
-	a.logger.Printf("[ACP AGENT] Session mode=%q askPermission=%t applied for session %s", mode, askPermission, req.SessionId)
 
 	if command, ok := parseSlashCommand(promptText); ok {
 		stopReason, err := a.handleSlashCommand(ctx, req.SessionId, acpSession, command)
@@ -469,7 +458,46 @@ func isPromptCancellation(ctx context.Context, err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "cancelled by user")
 }
 
+// applyRunMode applies the session's mode (clean flag) and approval policy before
+// a run starts and returns the effective mode plus the function that undoes the
+// permission setup. Shared by session/prompt and by runs resumed after delegated
+// tasks, so both honour the same ACP permission settings.
+func (a *PandoACPAgent) applyRunMode(sessionID acpsdk.SessionId, acpSession *ACPServerSession) (string, func()) {
+	mode := acpSession.Mode()
+	if mode == "" {
+		mode = defaultACPMode
+	}
+	acpSession.SetCleanMode(mode == cleanModeID)
+
+	// Configure permissions from the dedicated approval selector.
+	askPermission := acpSession.AskPermission()
+	if mode == askModeID && !acpSession.PermissionConfigured() {
+		askPermission = true
+	} else if mode == goalModeID && !acpSession.PermissionConfigured() {
+		askPermission = !goalAutoApproveEnabled()
+	}
+
+	cleanup := a.configurePermissionMode(sessionID, mode, askPermission)
+	a.logger.Printf("[ACP AGENT] Session mode=%q askPermission=%t applied for session %s", mode, askPermission, sessionID)
+	return mode, cleanup
+}
+
 func (a *PandoACPAgent) finishPrompt(ctx context.Context, sessionID acpsdk.SessionId, acpSession *ACPServerSession, stopReason acpsdk.StopReason) (acpsdk.PromptResponse, error) {
+	a.sendPostRunUpdates(ctx, sessionID, acpSession)
+
+	a.logger.Printf("[ACP AGENT] Prompt completed: SessionID=%s, StopReason=%s",
+		sessionID, stopReason)
+
+	return acpsdk.PromptResponse{
+		StopReason: stopReason,
+	}, nil
+}
+
+// sendPostRunUpdates sends the notifications that follow every finished run: the
+// run status meta, the usage update and the session title. It is the part of
+// finishPrompt that does not depend on a pending PromptResponse, so a run resumed
+// outside any session/prompt can send the same updates.
+func (a *PandoACPAgent) sendPostRunUpdates(ctx context.Context, sessionID acpsdk.SessionId, acpSession *ACPServerSession) {
 	a.sendRunStatusMeta(ctx, sessionID, acpSession)
 
 	var sessionInfo ACPSessionInfo
@@ -497,13 +525,6 @@ func (a *PandoACPAgent) finishPrompt(ctx context.Context, sessionID acpsdk.Sessi
 			a.logger.Printf("[ACP AGENT] Failed to send session_info_update: %v", sendErr)
 		}
 	}
-
-	a.logger.Printf("[ACP AGENT] Prompt completed: SessionID=%s, StopReason=%s",
-		sessionID, stopReason)
-
-	return acpsdk.PromptResponse{
-		StopReason: stopReason,
-	}, nil
 }
 
 // LoadSession implements AgentLoader.

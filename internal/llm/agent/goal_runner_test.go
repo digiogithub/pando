@@ -82,6 +82,9 @@ func (s *stubGoalService) InjectConclusion(sessionID string, content string) err
 func (s *stubGoalService) Resume(ctx context.Context, sessionID string, content string) error {
 	return ErrSessionNotBusy
 }
+func (s *stubGoalService) ResumeRun(ctx context.Context, sessionID string, content string) (<-chan AgentEvent, error) {
+	return nil, ErrSessionNotBusy
+}
 
 func (s *stubGoalService) ResurrectionCount(sessionID string) int { return 0 }
 

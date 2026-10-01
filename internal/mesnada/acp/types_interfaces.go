@@ -42,7 +42,9 @@ type AgentEvent struct {
 	// belongs to (mirrors agent.AgentEvent.MessageID). Populated from the
 	// first delta of a message, it lets live ACP chunks carry the same
 	// messageId used by session/load replay instead of only after the
-	// terminal AgentEventTypeResponse event.
+	// terminal AgentEventTypeResponse event. On an AgentEventTypeSystemMessage
+	// it marks a standalone notice (the "session resumed" marker): it is sent
+	// as its own message under this id instead of joining the current one.
 	MessageID string
 	// Routing is true for a model auto mode routing notice carried by an
 	// AgentEventTypeSystemMessage event (mirrors agent.AgentEvent.Routing != nil).

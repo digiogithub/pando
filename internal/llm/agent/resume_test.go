@@ -230,3 +230,60 @@ func TestCancelledRunGoroutineTerminates(t *testing.T) {
 		t.Fatal("session still busy after its run goroutine returned")
 	}
 }
+
+func TestResumeRunDeliversResurrectedFirstAndClosesChannel(t *testing.T) {
+	a := newResumeTestAgent(t)
+	sub := a.Subscribe(context.Background())
+
+	events, err := a.ResumeRun(context.Background(), "s1", "you are resuming")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if a.ResurrectionCount("s1") != 1 {
+		t.Fatalf("expected count 1 after ResumeRun, got %d", a.ResurrectionCount("s1"))
+	}
+
+	first, ok := <-events
+	if !ok || first.Type != AgentEventTypeResurrected || first.SessionID != "s1" {
+		t.Fatalf("first event = %+v (open=%v), want Resurrected for s1", first, ok)
+	}
+
+	// It is also published on the broker for subscribers that do not own the run.
+	deadline := time.After(time.Second)
+	for seen := false; !seen; {
+		select {
+		case ev := <-sub:
+			seen = ev.Payload.Type == AgentEventTypeResurrected
+		case <-deadline:
+			t.Fatal("expected AgentEventTypeResurrected on the broker too")
+		}
+	}
+
+	a.Cancel("s1")
+	closed := time.After(5 * time.Second)
+	for {
+		select {
+		case _, open := <-events:
+			if !open {
+				waitForRunsOrFail(t, a)
+				return
+			}
+		case <-closed:
+			t.Fatal("run channel was not closed after the run ended")
+		}
+	}
+}
+
+func TestResumeRunRejectsBusyAndEmpty(t *testing.T) {
+	a := newResumeTestAgent(t)
+	if _, err := a.ResumeRun(context.Background(), "s1", " "); err == nil {
+		t.Fatal("expected error for empty content")
+	}
+	a.markBusy("s1")
+	if _, err := a.ResumeRun(context.Background(), "s1", "x"); err != ErrSessionBusy {
+		t.Fatalf("expected ErrSessionBusy, got %v", err)
+	}
+	if a.ResurrectionCount("s1") != 0 {
+		t.Fatalf("expected count 0, got %d", a.ResurrectionCount("s1"))
+	}
+}

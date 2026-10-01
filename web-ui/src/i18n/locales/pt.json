@@ -349,6 +349,11 @@
   "chat": {
     "agentDoneTitle": "Agente concluído",
     "agentDoneBody": "Clique para voltar à sessão",
+    "notice": {
+      "resurrected": "Retomando após uma tarefa delegada",
+      "conclusionQueued": "Resultado delegado na fila, será injetado no próximo passo",
+      "conclusionInjected": "Resultado delegado injetado na execução"
+    },
     "info": {
       "show": "Mostrar painel de informações",
       "hide": "Ocultar painel de informações",

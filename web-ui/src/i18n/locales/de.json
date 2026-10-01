@@ -349,6 +349,11 @@
   "chat": {
     "agentDoneTitle": "Agent beendet",
     "agentDoneBody": "Klicken, um zur Sitzung zurückzukehren",
+    "notice": {
+      "resurrected": "Fortsetzung nach einer delegierten Aufgabe",
+      "conclusionQueued": "Delegiertes Ergebnis eingereiht, es wird im nächsten Schritt eingefügt",
+      "conclusionInjected": "Delegiertes Ergebnis in den Lauf eingefügt"
+    },
     "info": {
       "show": "Infofenster anzeigen",
       "hide": "Infofenster ausblenden",

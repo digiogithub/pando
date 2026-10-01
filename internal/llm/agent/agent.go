@@ -310,6 +310,12 @@ type Service interface {
 	// increments the session's resurrection counter (see ResurrectionCount); a
 	// user-initiated Run resets it.
 	Resume(ctx context.Context, sessionID string, content string) error
+	// ResumeRun is Resume for a surface that owns the run: it returns the run's
+	// event channel instead of draining it, with AgentEventTypeResurrected as the
+	// first event on it. The caller must read the channel until it is closed;
+	// cancelling ctx cancels the run. Same busy/counter semantics as Resume. See
+	// ResumeRegistry for how a surface claims the runs the supervisor resumes.
+	ResumeRun(ctx context.Context, sessionID string, content string) (<-chan AgentEvent, error)
 	// ResurrectionCount reports how many times the session has been resurrected via
 	// Resume since the last user-initiated Run. The supervisor reads it to enforce
 	// the MaxResurrections cap; the count auto-resets whenever the user sends a new
@@ -697,49 +703,82 @@ func (a *agent) InjectConclusion(sessionID string, content string) error {
 	return nil
 }
 
-// Resume starts a new system-initiated run for an idle session, used by the
+// Resume starts a new system-initiated run for an idle session and drains its
+// event channel. It is the variant for surfaces that do not own the run (TUI,
+// CLI, headless): events still reach UIs through the pubsub broker, and draining
+// only prevents the buffered run channel from blocking the run goroutine. A
+// surface that wants the events itself uses ResumeRun instead.
+func (a *agent) Resume(ctx context.Context, sessionID string, content string) error {
+	events, err := a.ResumeRun(ctx, sessionID, content)
+	if err != nil {
+		return err
+	}
+	go func() {
+		for range events {
+		}
+	}()
+	return nil
+}
+
+// ResumeRun starts a new system-initiated run for an idle session, used by the
 // delegation supervisor to "resurrect" a parent loop when one or more delegated
 // tasks finished while the parent was idle (Case B). It reuses the Run machinery
-// so the run's behaviour for user calls stays unchanged: Resume publishes a
-// distinct AgentEventTypeResurrected system message (so UIs can frame the turn),
-// increments the session's resurrection counter, then calls Run and drains the
-// returned channel in a goroutine. Events still reach UIs via the pubsub broker;
-// draining only prevents the buffered run channel from blocking the run goroutine.
-func (a *agent) Resume(ctx context.Context, sessionID string, content string) error {
+// so the run's behaviour for user calls stays unchanged, publishes a distinct
+// AgentEventTypeResurrected system message (so UIs can frame the turn) and
+// increments the session's resurrection counter.
+//
+// Unlike Resume it hands the run's event channel to the caller, who must read it
+// until it is closed. The Resurrected event is delivered as the FIRST event on
+// that channel (so a replay buffer built from the channel keeps it) and is also
+// published on the broker for subscribers that do not own the run. Cancelling
+// ctx cancels the run. Returns ErrSessionBusy if a run is already active.
+func (a *agent) ResumeRun(ctx context.Context, sessionID string, content string) (<-chan AgentEvent, error) {
 	if strings.TrimSpace(content) == "" {
-		return fmt.Errorf("cannot resume with empty content")
+		return nil, fmt.Errorf("cannot resume with empty content")
 	}
 	if a.IsSessionBusy(sessionID) {
-		return ErrSessionBusy
+		return nil, ErrSessionBusy
 	}
 
-	// Frame the turn for the UI before starting the run. Published on the broker so
-	// every subscribed UI sees why the session woke.
-	a.publishEvent(AgentEvent{
+	// Frame the turn for the UI before starting the run. Published on the broker
+	// so every subscribed UI sees why the session woke, and sent first on the
+	// returned channel for the surface that owns the run.
+	resurrected := AgentEvent{
 		Type:          AgentEventTypeResurrected,
 		SessionID:     sessionID,
 		SystemMessage: "🔁 Resuming — a delegated task reported its result.",
-	})
+	}
+	a.publishEvent(resurrected)
 
 	// A resurrection is system initiated: it never re-routes in Auto mode.
 	events, err := a.runInternal(withSystemInitiatedRun(ctx), sessionID, content)
 	if err != nil {
 		// The run failed to start (e.g. ErrSessionBusy from a race, or ErrNoModel);
 		// do not count a resurrection that never started.
-		return err
+		return nil, err
 	}
 
 	// Count the resurrection now that the run actually started. runInternal does
 	// NOT reset the counter (unlike Run), so it accumulates across resurrections.
 	a.incrementResurrectionCount(sessionID)
 
-	// Nobody reads the returned channel; drain it so the run goroutine never blocks
-	// on the buffered(512) channel filling up.
+	out := make(chan AgentEvent, cap(events)+1)
+	out <- resurrected
 	go func() {
-		for range events {
+		defer close(out)
+		for ev := range events {
+			select {
+			case out <- ev:
+			case <-ctx.Done():
+				// The owner may stop reading once the run is cancelled; keep
+				// draining so neither this goroutine nor the run goroutine leaks.
+				for range events {
+				}
+				return
+			}
 		}
 	}()
-	return nil
+	return out, nil
 }
 
 // waitForRuns blocks until every run goroutine started by runInternal has

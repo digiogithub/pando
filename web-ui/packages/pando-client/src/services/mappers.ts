@@ -16,6 +16,9 @@ interface RawSession {
   CreatedAt: number
   UpdatedAt: number
   IsRunning?: boolean
+  // The session list adds these two with snake_case JSON tags.
+  is_running?: boolean
+  run_seq?: number
 }
 
 // RawPart matches what the Go message.Message serializes to JSON via encoding/json.
@@ -83,7 +86,8 @@ export function mapSession(raw: RawSession): Session {
     cost: raw.Cost,
     created_at: unixToISO(raw.CreatedAt),
     updated_at: unixToISO(raw.UpdatedAt),
-    is_running: raw.IsRunning ?? false,
+    is_running: raw.is_running ?? raw.IsRunning ?? false,
+    run_seq: raw.run_seq ?? 0,
   }
 }
 

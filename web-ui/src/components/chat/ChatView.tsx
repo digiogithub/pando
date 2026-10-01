@@ -6,6 +6,7 @@ import { useChat } from '@pando/client/hooks/useChat'
 import { useGoal } from '@pando/client/hooks/useGoal'
 import { useDesktopNotifications } from '@/hooks/useDesktopNotifications'
 import { useSessionStore } from '@pando/client/stores/sessionStore'
+import { shouldReattach } from '@pando/client/services/runSeq'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useFileChangesStore } from '@pando/client/stores/fileChangesStore'
 import MessageList, { ChatEmptyHead, ChatSuggestions } from './MessageList'
@@ -21,17 +22,11 @@ export default function ChatView() {
   const { notify } = useDesktopNotifications()
   const sidebarOpen = useLayoutStore((s) => s.sidebarOpen)
   const { goal, applyGoalEvent, cancelGoal, cancelling } = useGoal(activeSessionId)
-  // Sessions whose run really finished (a `done` event, not a dropped stream).
-  // Guards against a poll response that was already in flight when the run ended
-  // and would otherwise report the session as running and trigger a pointless
-  // reattach — which replays the whole event buffer.
-  const finishedSessionRef = useRef<string | null>(null)
   // Session just created by our own sendMessage (see onNewSession).
   const createdSessionRef = useRef<string | null>(null)
 
   const handleDone = useCallback((completed: boolean) => {
     if (!completed) return
-    if (activeSessionId) finishedSessionRef.current = activeSessionId
     const session = sessions.find((s) => s.id === activeSessionId)
     const title = session?.title ?? t('chat.agentDoneTitle')
     notify(title, {
@@ -88,11 +83,6 @@ export default function ChatView() {
 
   const activePlan = streamingState.plan.length > 0 ? streamingState.plan : persistentPlan
 
-  // Track which session we last reconnected to avoid duplicate connections. The
-  // ref is re-armed whenever the server reports the session as no longer running,
-  // so a later run (or a stream that dropped mid-run) can reattach again.
-  const reconnectedSessionRef = useRef<string | null>(null)
-
   // When the active session changes, load its messages. `is_running` comes from
   // the server (session detail here, then the pending poll below), and the effect
   // after this one turns it into a reconnection.
@@ -106,30 +96,25 @@ export default function ChatView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSessionId])
 
-  // Reattach to a run the server still considers alive. Driven by server state
-  // instead of by stream events: `handleDone` fires both on a real `done` and on
-  // a dropped connection, so the client cannot tell them apart on its own.
-  // `/api/v1/sessions/{id}/stream` replays the buffered events before going live,
-  // so nothing is lost.
-  const sessionRunning = Boolean(sessions.find((s) => s.id === activeSessionId)?.is_running)
+  // Reattach to a run this client has not shown. Driven by server state instead
+  // of stream events: the pending poll reports `run_seq`, a counter of the
+  // session's runs, and the client remembers the last one it streamed or loaded
+  // (`seenRunSeq`). A greater value means a run started after what is on screen,
+  // still running or already finished, e.g. an idle session resumed after a
+  // delegated subagent. A dropped stream marks the baseline stale, which makes
+  // the next poll reattach too. `/api/v1/sessions/{id}/stream` replays the
+  // buffered run before going live, so nothing is lost; the stream's own `run`
+  // event records the sequence, so the same run is never replayed twice.
+  const serverRunSeq = sessions.find((s) => s.id === activeSessionId)?.run_seq
+  const seenRunSeq = useSessionStore((s) => (activeSessionId ? s.seenRunSeq[activeSessionId] : undefined))
   useEffect(() => {
-    if (!sessionRunning) {
-      reconnectedSessionRef.current = null
-      return
-    }
-    if (!activeSessionId || streaming) return
-    if (finishedSessionRef.current === activeSessionId) return
-    if (reconnectedSessionRef.current === activeSessionId) return
-    reconnectedSessionRef.current = activeSessionId
+    if (!activeSessionId || serverRunSeq === undefined) return
+    if (!shouldReattach({ serverSeq: serverRunSeq, seenSeq: seenRunSeq, streaming })) return
+    // Claim the run before attaching so a second poll cannot attach again.
+    useSessionStore.getState().setSeenRunSeq(activeSessionId, serverRunSeq)
     reconnectSession(activeSessionId)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSessionId, sessionRunning, streaming])
-
-  // A new run for the session clears the "finished" guard so it can be reattached
-  // again if its stream drops.
-  useEffect(() => {
-    if (streaming) finishedSessionRef.current = null
-  }, [streaming])
+  }, [activeSessionId, serverRunSeq, seenRunSeq, streaming])
 
   // Load sessions on mount if not already loaded
   useEffect(() => {

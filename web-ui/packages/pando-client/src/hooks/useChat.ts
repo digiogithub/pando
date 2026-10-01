@@ -2,8 +2,9 @@ import { useState, useRef, useCallback } from 'react'
 import { createSSEStream, createGETSSEStream } from '../services/sse'
 import { api } from '../services/api'
 import { useSessionStore } from '../stores/sessionStore'
+import { RUN_SEQ_STALE } from '../services/runSeq'
 import { useFileChangesStore } from '../stores/fileChangesStore'
-import { handleSystemMessageEvent } from './routingNotice'
+import { handleSystemMessageEvent, handleDelegationEvent } from './routingNotice'
 import type {
   Message, SSEEvent, SSEToolCall, SSEToolResult, SSEToolCallUpdate,
   ContentPart, ToolKind, ToolCallStatus, ToolCallLocation, SSEPlanEntry, GoalStatus,
@@ -74,7 +75,9 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
   const [error, setError] = useState<string | null>(null)
   const [streamingState, setStreamingState] = useState<StreamingState>(emptyState())
   const abortRef = useRef<AbortController | null>(null)
-  const { activeSessionId, addMessage, updateLastMessage, updateLastMessageParts, fetchSessions, markSessionRunning } = useSessionStore()
+  // Session the current stream belongs to; known even for a session the stream itself created.
+  const streamSessionRef = useRef<string | null>(null)
+  const { activeSessionId, addMessage, updateLastMessage, updateLastMessageParts, fetchSessions, markSessionRunning, setSeenRunSeq } = useSessionStore()
 
   // Accumulated state shared between sendMessage and reconnectSession.
   // These refs live for the lifetime of the hook instance.
@@ -132,6 +135,14 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
   const handleEvent = useCallback(
     (event: SSEEvent, sessionIdForNewSession?: string) => {
       onEvent?.(event)
+
+      if (event.session_id) streamSessionRef.current = event.session_id
+
+      if (event.type === 'run' && event.session_id && event.run_seq !== undefined) {
+        // Which run this stream delivers: remembering it keeps the reattach
+        // poll from replaying the very run the user is already watching.
+        setSeenRunSeq(event.session_id, event.run_seq)
+      }
 
       if (event.type === 'session' && event.session_id) {
         onNewSession?.(event.session_id)
@@ -424,11 +435,15 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
         handleSystemMessageEvent(event, activeSessionId ?? '')
       }
 
+      // A run the server started on its own (idle session resumed after a
+      // delegated task) or a delegated result queued/injected into this run.
+      handleDelegationEvent(event, activeSessionId ?? '')
+
       if (event.type === 'error') {
         setError(event.error ?? 'Unknown error')
       }
     },
-    [onEvent, onNewSession, updateLastMessage, updateLastMessageParts, addMessage, buildStreamParts, activeSessionId],
+    [onEvent, onNewSession, updateLastMessage, updateLastMessageParts, addMessage, buildStreamParts, setSeenRunSeq, activeSessionId],
   )
 
   /**
@@ -450,10 +465,14 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
       setStreaming(false)
       setStreamingState(emptyState())
       if (sessionId && completed) markSessionRunning(sessionId, false)
+      // A dropped stream leaves an incomplete view of the run: mark it stale so
+      // the next poll reattaches and replays whatever was missed.
+      const streamed = sessionId ?? streamSessionRef.current
+      if (!completed && streamed) setSeenRunSeq(streamed, RUN_SEQ_STALE)
       fetchSessions()
       onDone?.(completed)
     },
-    [buildStreamParts, updateLastMessageParts, fetchSessions, markSessionRunning, onDone],
+    [buildStreamParts, updateLastMessageParts, fetchSessions, markSessionRunning, setSeenRunSeq, onDone],
   )
 
   /**
@@ -510,6 +529,7 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
       setStreamingState(emptyState())
 
       const sessionId = activeSessionId
+      streamSessionRef.current = sessionId
 
       const userMsg: Message = {
         id: `tmp-user-${Date.now()}`,
@@ -554,6 +574,7 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
         abortRef.current?.abort()
       }
 
+      streamSessionRef.current = sessionId
       setError(null)
       setStreaming(true)
       resetAccum()
@@ -587,10 +608,19 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
           setStreaming(false)
           setStreamingState(emptyState())
         },
-        (completed) => handleDone(sessionId, completed),
+        (completed) => {
+          // A replay with nothing in it means the server no longer holds the run
+          // (its buffer expired): the persisted history is then the only source,
+          // so reload it instead of leaving the empty placeholder bubble.
+          const replayedNothing = completed && buildStreamParts().length === 0
+          handleDone(sessionId, completed)
+          if (replayedNothing && useSessionStore.getState().activeSessionId === sessionId) {
+            void useSessionStore.getState().setActiveSession(sessionId)
+          }
+        },
       )
     },
-    [streaming, addMessage, handleEvent, handleDone, resetAccum],
+    [streaming, addMessage, handleEvent, handleDone, buildStreamParts, resetAccum],
   )
 
   const cancelStreaming = useCallback(async () => {
@@ -600,6 +630,14 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
     setStreamingState(emptyState())
     if (sessionId) {
       markSessionRunning(sessionId, false)
+      // Aborting the stream only detaches this client; the run keeps going on the
+      // server (a user prompt and a run resumed after a delegated task alike), so
+      // stop it there too.
+      try {
+        await api.post(`/api/v1/sessions/${sessionId}/cancel`, {})
+      } catch {
+        // Best effort: the goal cancellation below still runs.
+      }
     }
     await onCancelled?.(sessionId)
   }, [activeSessionId, markSessionRunning, onCancelled])

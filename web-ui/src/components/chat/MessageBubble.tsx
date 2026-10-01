@@ -723,7 +723,7 @@ export default function MessageBubble({ message, streaming, streamingState }: Me
     return <RoutingRow routing={message.routing} text={textContent} />
   }
   if (message.role === 'system' && message.notice) {
-    return <NoticeRow text={textContent.trim()} />
+    return <NoticeRow text={message.noticeKey ? t(message.noticeKey) : textContent.trim()} />
   }
   if (message.role === 'system') {
     return <PersonaRow text={textContent} timestamp={timestamp} />

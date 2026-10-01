@@ -45,6 +45,9 @@ func (m *steerMockAgent) InjectConclusion(sessionID string, content string) erro
 func (m *steerMockAgent) Resume(ctx context.Context, sessionID string, content string) error {
 	return nil
 }
+func (m *steerMockAgent) ResumeRun(ctx context.Context, sessionID string, content string) (<-chan agent.AgentEvent, error) {
+	return nil, nil
+}
 func (m *steerMockAgent) ResurrectionCount(sessionID string) int { return 0 }
 
 // Remaining agent.Service methods are no-ops for this test.

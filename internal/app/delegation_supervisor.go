@@ -23,6 +23,7 @@ type delegationAgent interface {
 	IsSessionBusy(sessionID string) bool
 	InjectConclusion(sessionID string, content string) error
 	Resume(ctx context.Context, sessionID string, content string) error
+	ResumeRun(ctx context.Context, sessionID string, content string) (<-chan agent.AgentEvent, error)
 	ResurrectionCount(sessionID string) int
 }
 
@@ -113,8 +114,12 @@ type delegationSupervisor struct {
 	awaits       awaitReader // optional; nil => no await-aware behavior
 	events       eventSource // optional; nil => in-memory bus only
 	agent        delegationAgent
-	opts         delegationSupervisorOptions
-	ctx          context.Context
+	// resumers lets a surface (WebUI API, ACP) own the runs resumed in Case B so
+	// it can stream them. Optional: nil, or no handler taking the session, falls
+	// back to agent.Resume (events reach UIs through the broker only).
+	resumers *agent.ResumeRegistry
+	opts     delegationSupervisorOptions
+	ctx      context.Context
 
 	mu      sync.Mutex
 	seen    map[string]struct{}      // dedupe keys (CorrelationID, or task.ID fallback) already handled
@@ -593,7 +598,7 @@ func (s *delegationSupervisor) flushWith(parentSession string, build func([]*mod
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := s.agent.Resume(ctx, parentSession, content); err != nil {
+	if err := s.resume(ctx, parentSession, content); err != nil {
 		if errors.Is(err, agent.ErrSessionBusy) {
 			// Race: the user/agent became active again. Fall back to Case A live
 			// injection so the results are not lost.
@@ -618,6 +623,22 @@ func (s *delegationSupervisor) flushWith(parentSession string, build func([]*mod
 	}
 	logging.Debug("Delegation: resurrected idle parent loop",
 		"parentSession", parentSession, "tasks", len(tasks))
+}
+
+// resume starts the resumed run of an idle parent session. A surface registered
+// in s.resumers may take ownership (so it can stream the run); when none takes
+// it the run is started and drained by the agent, which is also the path for the
+// TUI and CLI where nothing is registered.
+func (s *delegationSupervisor) resume(ctx context.Context, parentSession, content string) error {
+	if s.resumers != nil {
+		start := func(runCtx context.Context) (<-chan agent.AgentEvent, error) {
+			return s.agent.ResumeRun(runCtx, parentSession, content)
+		}
+		if taken, err := s.resumers.Offer(parentSession, start); taken {
+			return err
+		}
+	}
+	return s.agent.Resume(ctx, parentSession, content)
 }
 
 // dedupeKey returns the idempotency key for a completed task.

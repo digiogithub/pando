@@ -743,6 +743,9 @@ func (f *fakeAgentService) Steer(string, string, ...message.Attachment) error {
 func (f *fakeAgentService) PendingSteering(string) int                   { return 0 }
 func (f *fakeAgentService) InjectConclusion(string, string) error        { return agent.ErrSessionNotBusy }
 func (f *fakeAgentService) Resume(context.Context, string, string) error { return nil }
+func (f *fakeAgentService) ResumeRun(context.Context, string, string) (<-chan agent.AgentEvent, error) {
+	return nil, nil
+}
 func (f *fakeAgentService) ResurrectionCount(string) int                 { return 0 }
 func (f *fakeAgentService) IsSessionBusy(string) bool                    { return false }
 func (f *fakeAgentService) IsBusy() bool                                 { return false }
