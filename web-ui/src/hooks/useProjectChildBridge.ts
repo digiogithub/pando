@@ -72,7 +72,10 @@ export function useProjectChildBridge() {
       const seen = new Set(previous.toasts.map((toast) => toast.id))
       for (const toast of state.toasts) {
         if (seen.has(toast.id)) continue
-        bridge.postNotification(toast.type, toast.message)
+        const message = toast.i18nKey ? i18n.t(toast.i18nKey, toast.i18nValues) : toast.message
+        if (message) {
+          bridge.postNotification(toast.type, message)
+        }
       }
     })
 

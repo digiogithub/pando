@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { CircleCheck, CircleX, TriangleAlert, Info, X } from '@/components/ui/icons'
 import { IconButton } from '@/components/ui'
 import { useToastStore, type Toast } from '@pando/client/stores/toastStore'
@@ -11,6 +12,7 @@ const TOAST_ICONS = {
 }
 
 function ToastItem({ toast }: { toast: Toast }) {
+  const { t } = useTranslation()
   const removeToast = useToastStore((s) => s.removeToast)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -21,11 +23,12 @@ function ToastItem({ toast }: { toast: Toast }) {
   }, [])
 
   const Icon = TOAST_ICONS[toast.type]
+  const message = toast.i18nKey ? t(toast.i18nKey, toast.i18nValues) : toast.message
 
   return (
     <div ref={ref} className="toast">
       <Icon size={16} className={`toast-icon toast-icon--${toast.type}`} />
-      <span className="toast-message">{toast.message}</span>
+      <span className="toast-message">{message}</span>
       <IconButton
         aria-label="Close notification"
         icon={<X size={13} />}

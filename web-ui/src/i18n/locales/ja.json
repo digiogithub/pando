@@ -63,6 +63,18 @@
     "instances": "インスタンス"
   },
   "projects": {
+    "initWizard": {
+      "title": "プロジェクトを初期化",
+      "description": "このパスには Pando の設定が見つかりませんでした。次の項目を作成します。",
+      "confirm": "初期化して開く",
+      "cancel": "キャンセル",
+      "items": {
+        "config": "設定",
+        "database": "データベース",
+        "agents": "エージェントとペルソナ",
+        "skills": "カスタムスキル"
+      }
+    },
     "tabs": {
       "main": "メイン",
       "starting": "プロジェクトのワークスペースを起動しています…",
@@ -104,6 +116,89 @@
       "unknownTitle": "プロジェクトが見つかりません",
       "unknownDescription": "このプロジェクトはこのワークスペースでは利用できなくなりました。",
       "backToProjects": "プロジェクト一覧に戻る"
+    },
+    "view": {
+      "loading": "プロジェクトを読み込んでいます…",
+      "emptyTitle": "まだプロジェクトがありません",
+      "emptyDescription": "開始するにはプロジェクトを追加してください。",
+      "addProject": "プロジェクトを追加",
+      "clearDelegationTarget": "委譲先を解除",
+      "delegationTargetLabel": "委譲先",
+      "delegationTargetTooltip": "これは TUI と委譲タスクの既定の対象だけを変更します。タブを開いたりフォーカスしても変更されません。",
+      "delegationTargetValue": "{{name}}",
+      "delegationTargetUnset": "未選択",
+      "stopConfirmTitle": "このプロジェクトを停止しますか？",
+      "stopConfirmMessage_one": "このプロジェクトを停止すると、{{count}} 件の委譲ループがキャンセルされ、タブも閉じます。",
+      "stopConfirmMessage_other": "このプロジェクトを停止すると、{{count}} 件の委譲ループがキャンセルされ、タブも閉じます。",
+      "columns": {
+        "name": "名前",
+        "path": "パス",
+        "workspace": "ワークスペース",
+        "actions": "操作"
+      },
+      "common": {
+        "cancel": "キャンセル"
+      },
+      "addForm": {
+        "pathPlaceholder": "パス（例: ~/code/myapp）",
+        "browse": "ディレクトリを参照",
+        "namePlaceholder": "名前（任意）",
+        "add": "追加"
+      },
+      "rowTitle": {
+        "openTab": "クリックしてこのプロジェクトのワークスペースタブを開きます",
+        "focusTab": "クリックしてこのプロジェクトのワークスペースタブにフォーカスします"
+      },
+      "workspaceState": {
+        "starting": "起動中",
+        "running": "実行中",
+        "runningWithPort": "実行中 · :{{port}}",
+        "error": "エラー",
+        "stopped": "停止"
+      },
+      "badges": {
+        "delegationTarget": "委譲先",
+        "external": "外部",
+        "auto": "自動",
+        "delegations_one": "{{count}} ループ",
+        "delegations_other": "{{count}} ループ"
+      },
+      "badgeTitles": {
+        "external": "外部から起動されています（例: ACP モードのエディター）",
+        "auto": "委譲ルーターによって、自動的に委譲エージェントループ実行用として起動されました",
+        "delegations_one": "このインスタンス内で {{count}} 件の委譲エージェントループが実行中です",
+        "delegations_other": "このインスタンス内で {{count}} 件の委譲エージェントループが実行中です"
+      },
+      "actions": {
+        "openTab": "タブを開く",
+        "focusTab": "タブにフォーカス",
+        "stop": "停止",
+        "stopDisabled": "停止できるものがありません",
+        "openInNewWindow": "新しいウィンドウで開く",
+        "rename": "名前を変更",
+        "delete": "削除",
+        "confirmDelete": "削除"
+      },
+      "renameDialog": {
+        "title": "\"{{name}}\" の名前を変更",
+        "label": "新しい名前",
+        "confirm": "名前を変更"
+      }
+    },
+    "toasts": {
+      "added": "プロジェクトを追加しました: {{path}}",
+      "activated": "プロジェクトを有効化しました",
+      "stopped": "プロジェクトを停止しました",
+      "cancelledDelegations_one": "プロジェクトを停止しました — {{count}} 件の委譲ループをキャンセルしました（コールドパスにフォールバックします）",
+      "cancelledDelegations_other": "プロジェクトを停止しました — {{count}} 件の委譲ループをキャンセルしました（コールドパスにフォールバックします）",
+      "externalStopBlocked": "このインスタンスは外部から起動されているため（例: ACP モードのエディター）、ここでは停止できません。起動したアプリケーション側で閉じてください。",
+      "desktopCurrent": "このウィンドウはすでにそのプロジェクトで動作しています",
+      "desktopAlreadyOpen": "そのプロジェクトは別の Pando ウィンドウですでに開かれています",
+      "desktopOpening": "新しいウィンドウでプロジェクトを開いています…",
+      "deactivated": "委譲先を解除しました",
+      "initialized": "プロジェクトを初期化しました",
+      "renamed": "プロジェクト名を {{name}} に変更しました",
+      "removed": "プロジェクトを削除しました"
     }
   },
   "orchestrator": {

@@ -63,6 +63,18 @@
     "instances": "实例"
   },
   "projects": {
+    "initWizard": {
+      "title": "初始化项目",
+      "description": "此路径下未找到 Pando 配置。将创建以下内容：",
+      "confirm": "初始化并打开",
+      "cancel": "取消",
+      "items": {
+        "config": "配置",
+        "database": "数据库",
+        "agents": "代理与角色",
+        "skills": "自定义技能"
+      }
+    },
     "tabs": {
       "main": "主界面",
       "starting": "正在启动项目工作区…",
@@ -104,6 +116,89 @@
       "unknownTitle": "未找到项目",
       "unknownDescription": "该项目在当前工作区中已不可用。",
       "backToProjects": "返回项目列表"
+    },
+    "view": {
+      "loading": "正在加载项目…",
+      "emptyTitle": "还没有项目",
+      "emptyDescription": "添加一个项目即可开始。",
+      "addProject": "添加项目",
+      "clearDelegationTarget": "清除委派目标",
+      "delegationTargetLabel": "委派目标",
+      "delegationTargetTooltip": "这只会更改 TUI 和委派任务的默认目标。打开或聚焦标签页不会改变它。",
+      "delegationTargetValue": "{{name}}",
+      "delegationTargetUnset": "未选择",
+      "stopConfirmTitle": "停止此项目？",
+      "stopConfirmMessage_one": "停止此项目将取消 {{count}} 个委派循环并关闭它的标签页。",
+      "stopConfirmMessage_other": "停止此项目将取消 {{count}} 个委派循环并关闭它的标签页。",
+      "columns": {
+        "name": "名称",
+        "path": "路径",
+        "workspace": "工作区",
+        "actions": "操作"
+      },
+      "common": {
+        "cancel": "取消"
+      },
+      "addForm": {
+        "pathPlaceholder": "路径（例如 ~/code/myapp）",
+        "browse": "浏览目录",
+        "namePlaceholder": "名称（可选）",
+        "add": "添加"
+      },
+      "rowTitle": {
+        "openTab": "点击打开该项目的工作区标签页",
+        "focusTab": "点击聚焦该项目的工作区标签页"
+      },
+      "workspaceState": {
+        "starting": "启动中",
+        "running": "运行中",
+        "runningWithPort": "运行中 · :{{port}}",
+        "error": "错误",
+        "stopped": "已停止"
+      },
+      "badges": {
+        "delegationTarget": "委派目标",
+        "external": "外部",
+        "auto": "自动",
+        "delegations_one": "{{count}} 个循环",
+        "delegations_other": "{{count}} 个循环"
+      },
+      "badgeTitles": {
+        "external": "由外部启动（例如 ACP 模式的编辑器）",
+        "auto": "由委派路由器自动启动，用于运行委派代理循环",
+        "delegations_one": "此实例中有 {{count}} 个委派代理循环正在运行",
+        "delegations_other": "此实例中有 {{count}} 个委派代理循环正在运行"
+      },
+      "actions": {
+        "openTab": "打开标签页",
+        "focusTab": "聚焦标签页",
+        "stop": "停止",
+        "stopDisabled": "没有可停止的内容",
+        "openInNewWindow": "在新窗口中打开",
+        "rename": "重命名",
+        "delete": "删除",
+        "confirmDelete": "删除"
+      },
+      "renameDialog": {
+        "title": "重命名“{{name}}”",
+        "label": "新名称",
+        "confirm": "重命名"
+      }
+    },
+    "toasts": {
+      "added": "已添加项目：{{path}}",
+      "activated": "项目已激活",
+      "stopped": "项目已停止",
+      "cancelledDelegations_one": "项目已停止——已取消 {{count}} 个委派循环（将回退到冷路径）",
+      "cancelledDelegations_other": "项目已停止——已取消 {{count}} 个委派循环（将回退到冷路径）",
+      "externalStopBlocked": "该实例由外部启动（例如 ACP 模式的编辑器），无法在此处停止。请从启动它的应用程序中关闭。",
+      "desktopCurrent": "此窗口已在该项目中工作",
+      "desktopAlreadyOpen": "该项目已在另一个 Pando 窗口中打开",
+      "desktopOpening": "正在新窗口中打开项目…",
+      "deactivated": "委派目标已清除",
+      "initialized": "项目已初始化",
+      "renamed": "项目已重命名为 {{name}}",
+      "removed": "项目已移除"
     }
   },
   "orchestrator": {

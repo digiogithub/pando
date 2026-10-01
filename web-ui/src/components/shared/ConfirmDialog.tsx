@@ -4,6 +4,7 @@ interface ConfirmDialogProps {
   title: string
   message: string
   confirmLabel?: string
+  cancelLabel?: string
   onConfirm: () => void
   onCancel: () => void
   dangerous?: boolean
@@ -13,6 +14,7 @@ export default function ConfirmDialog({
   title,
   message,
   confirmLabel = 'Confirm',
+  cancelLabel = 'Cancel',
   onConfirm,
   onCancel,
   dangerous = false,
@@ -23,12 +25,12 @@ export default function ConfirmDialog({
       onClose={onCancel}
       title={title}
       size="sm"
-      closeLabel="Cancel"
+      closeLabel={cancelLabel}
       hideClose
       footer={
         <>
           <Button variant="secondary" onClick={onCancel}>
-            Cancel
+            {cancelLabel}
           </Button>
           <Button variant={dangerous ? 'danger' : 'primary'} onClick={onConfirm} data-autofocus>
             {confirmLabel}

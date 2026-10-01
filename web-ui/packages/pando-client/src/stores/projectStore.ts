@@ -66,6 +66,18 @@ export function waitForProjectInit(projectId: string): Promise<ProjectInitOutcom
   })
 }
 
+function addProjectToast(message: string, type: 'success' | 'error' | 'warning' | 'info') {
+  useToastStore.getState().addToast(message, type)
+}
+
+function addProjectToastKey(
+  key: string,
+  type: 'success' | 'error' | 'warning' | 'info',
+  values?: Record<string, unknown>,
+) {
+  useToastStore.getState().addToastKey(key, type, values)
+}
+
 interface ProjectStore {
   projects: Project[]
   activeProjectId: string | null
@@ -80,10 +92,11 @@ interface ProjectStore {
   fetchWorkspace: () => Promise<void>
   addProject: (path: string, name?: string) => Promise<void>
   activateProject: (id: string) => Promise<'ok' | 'needs_init'>
-  stopProject: (id: string) => Promise<void>
+  stopProject: (id: string) => Promise<boolean>
   openProjectDesktop: (id: string) => Promise<void>
   deactivateProject: () => Promise<void>
   initProject: (id: string, options?: { activateAfter?: boolean }) => Promise<boolean>
+  renameProject: (id: string, name: string) => Promise<boolean>
   removeProject: (id: string) => Promise<void>
   setInitDialogProject: (p: Project | null) => void
   connectEvents: () => void
@@ -138,12 +151,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     try {
       await api.post('/api/v1/projects', { path, name: name ?? '' })
       await get().fetchProjects()
-      useToastStore.getState().addToast(`Project added: ${path}`, 'success')
+      addProjectToastKey('projects.toasts.added', 'success', { path })
     } catch (e) {
-      useToastStore.getState().addToast(
-        e instanceof Error ? e.message : 'Failed to add project',
-        'error',
-      )
+      addProjectToast(e instanceof Error ? e.message : 'Failed to add project', 'error')
     }
   },
 
@@ -151,7 +161,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     try {
       await api.post(`/api/v1/projects/${id}/activate`, {})
       await Promise.all([get().fetchActive(), get().fetchProjects()])
-      useToastStore.getState().addToast('Project activated', 'success')
+      addProjectToastKey('projects.toasts.activated', 'success')
       return 'ok'
     } catch (e) {
       if (e instanceof Error) {
@@ -168,7 +178,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         } catch {
           // Not JSON — fall through to generic error handling.
         }
-        useToastStore.getState().addToast(e.message || 'Failed to activate project', 'error')
+        addProjectToast(e.message || 'Failed to activate project', 'error')
       }
       return 'ok'
     }
@@ -180,32 +190,28 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       await Promise.all([get().fetchActive(), get().fetchProjects()])
       const cancelled = resp?.cancelled_delegations ?? 0
       if (cancelled > 0) {
-        useToastStore.getState().addToast(
-          `Project stopped — cancelled ${cancelled} delegated loop${cancelled === 1 ? '' : 's'} (they fall back to the cold path)`,
-          'info',
-        )
+        addProjectToastKey('projects.toasts.cancelledDelegations', 'info', { count: cancelled })
       } else {
-        useToastStore.getState().addToast('Project stopped', 'success')
+        addProjectToastKey('projects.toasts.stopped', 'success')
       }
+      return true
     } catch (e) {
       if (e instanceof Error) {
         // A 409 "external_instance" response body is JSON we can parse.
         try {
           const body = JSON.parse(e.message) as { error?: string }
           if (body.error === 'external_instance') {
-            useToastStore.getState().addToast(
-              'This instance was launched externally (e.g. from an editor in ACP mode) and cannot be stopped here. Close it from the application that started it.',
-              'error',
-            )
+            addProjectToastKey('projects.toasts.externalStopBlocked', 'error')
             // Refresh so the UI stays in sync with the still-running instance.
             void get().fetchProjects()
-            return
+            return false
           }
         } catch {
           // Not JSON — fall through to generic error handling.
         }
-        useToastStore.getState().addToast(e.message || 'Failed to stop project', 'error')
+        addProjectToast(e.message || 'Failed to stop project', 'error')
       }
+      return false
     }
   },
 
@@ -217,13 +223,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       const toasts = useToastStore.getState()
       switch (resp?.status) {
         case 'current':
-          toasts.addToast('This window already works in that project', 'info')
+          toasts.addToastKey('projects.toasts.desktopCurrent', 'info')
           break
         case 'already_open':
-          toasts.addToast('That project is already open in another Pando window', 'info')
+          toasts.addToastKey('projects.toasts.desktopAlreadyOpen', 'info')
           break
         default:
-          toasts.addToast('Opening project in a new window…', 'success')
+          toasts.addToastKey('projects.toasts.desktopOpening', 'success')
       }
     } catch (e) {
       let message = e instanceof Error ? e.message : ''
@@ -232,7 +238,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       } catch {
         // Not JSON — keep the raw message.
       }
-      useToastStore.getState().addToast(message || 'Failed to open project window', 'error')
+      addProjectToast(message || 'Failed to open project window', 'error')
     }
   },
 
@@ -242,12 +248,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     try {
       await api.post(`/api/v1/projects/${activeProjectId}/deactivate`, {})
       await Promise.all([get().fetchActive(), get().fetchProjects()])
-      useToastStore.getState().addToast('Project deactivated', 'success')
+      addProjectToastKey('projects.toasts.deactivated', 'success')
     } catch (e) {
-      useToastStore.getState().addToast(
-        e instanceof Error ? e.message : 'Failed to deactivate project',
-        'error',
-      )
+      addProjectToast(e instanceof Error ? e.message : 'Failed to deactivate project', 'error')
     }
   },
 
@@ -263,14 +266,30 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         }
       }
       resolveProjectInitWaiters(id, 'initialized')
-      useToastStore.getState().addToast('Project initialized', 'success')
+      addProjectToastKey('projects.toasts.initialized', 'success')
       return true
     } catch (e) {
       resolveProjectInitWaiters(id, 'failed')
-      useToastStore.getState().addToast(
-        e instanceof Error ? e.message : 'Failed to initialize project',
-        'error',
-      )
+      addProjectToast(e instanceof Error ? e.message : 'Failed to initialize project', 'error')
+      return false
+    }
+  },
+
+  renameProject: async (id: string, name: string) => {
+    try {
+      const response = await api.patch<{ project?: Project }>(`/api/v1/projects/${id}`, { name })
+      const renamed = response.project
+      if (renamed) {
+        set((state) => ({
+          projects: state.projects.map((project) => (project.id === id ? renamed : project)),
+        }))
+      } else {
+        await get().fetchProjects()
+      }
+      addProjectToastKey('projects.toasts.renamed', 'success', { name })
+      return true
+    } catch (e) {
+      addProjectToast(e instanceof Error ? e.message : 'Failed to rename project', 'error')
       return false
     }
   },
@@ -283,12 +302,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       if (get().activeProjectId === id) {
         set({ activeProjectId: null })
       }
-      useToastStore.getState().addToast('Project removed', 'success')
+      addProjectToastKey('projects.toasts.removed', 'success')
     } catch (e) {
-      useToastStore.getState().addToast(
-        e instanceof Error ? e.message : 'Failed to remove project',
-        'error',
-      )
+      addProjectToast(e instanceof Error ? e.message : 'Failed to remove project', 'error')
     }
   },
 

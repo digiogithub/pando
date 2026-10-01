@@ -63,6 +63,18 @@
     "instances": "Instanzen"
   },
   "projects": {
+    "initWizard": {
+      "title": "Projekt initialisieren",
+      "description": "An diesem Pfad wurde keine Pando-Konfiguration gefunden. Folgendes wird erstellt:",
+      "confirm": "Initialisieren und öffnen",
+      "cancel": "Abbrechen",
+      "items": {
+        "config": "Konfiguration",
+        "database": "Datenbank",
+        "agents": "Agenten & Personas",
+        "skills": "benutzerdefinierte Skills"
+      }
+    },
     "tabs": {
       "main": "Haupt",
       "starting": "Projektarbeitsbereich wird gestartet…",
@@ -104,6 +116,89 @@
       "unknownTitle": "Projekt nicht gefunden",
       "unknownDescription": "Dieses Projekt ist in diesem Arbeitsbereich nicht mehr verfügbar.",
       "backToProjects": "Zurück zu Projekten"
+    },
+    "view": {
+      "loading": "Projekte werden geladen…",
+      "emptyTitle": "Noch keine Projekte",
+      "emptyDescription": "Fügen Sie eins hinzu, um zu beginnen.",
+      "addProject": "Projekt hinzufügen",
+      "clearDelegationTarget": "Delegationsziel löschen",
+      "delegationTargetLabel": "Delegationsziel",
+      "delegationTargetTooltip": "Dies ändert nur das Standardziel für das TUI und delegierte Aufgaben. Das Öffnen oder Fokussieren eines Tabs ändert es nicht.",
+      "delegationTargetValue": "{{name}}",
+      "delegationTargetUnset": "Nichts ausgewählt",
+      "stopConfirmTitle": "Dieses Projekt stoppen?",
+      "stopConfirmMessage_one": "Wenn Sie dieses Projekt stoppen, wird {{count}} delegierte Schleife abgebrochen und sein Tab geschlossen.",
+      "stopConfirmMessage_other": "Wenn Sie dieses Projekt stoppen, werden {{count}} delegierte Schleifen abgebrochen und sein Tab geschlossen.",
+      "columns": {
+        "name": "Name",
+        "path": "Pfad",
+        "workspace": "Arbeitsbereich",
+        "actions": "Aktionen"
+      },
+      "common": {
+        "cancel": "Abbrechen"
+      },
+      "addForm": {
+        "pathPlaceholder": "Pfad (zum Beispiel ~/code/myapp)",
+        "browse": "Ordner auswählen",
+        "namePlaceholder": "Name (optional)",
+        "add": "Hinzufügen"
+      },
+      "rowTitle": {
+        "openTab": "Klicken Sie, um den Arbeitsbereichs-Tab dieses Projekts zu öffnen",
+        "focusTab": "Klicken Sie, um den Arbeitsbereichs-Tab dieses Projekts zu fokussieren"
+      },
+      "workspaceState": {
+        "starting": "Wird gestartet",
+        "running": "Läuft",
+        "runningWithPort": "Läuft · :{{port}}",
+        "error": "Fehler",
+        "stopped": "Gestoppt"
+      },
+      "badges": {
+        "delegationTarget": "Delegationsziel",
+        "external": "Extern",
+        "auto": "Auto",
+        "delegations_one": "{{count}} Schleife",
+        "delegations_other": "{{count}} Schleifen"
+      },
+      "badgeTitles": {
+        "external": "Extern gestartet (zum Beispiel aus einem Editor im ACP-Modus)",
+        "auto": "Vom Delegationsrouter automatisch gestartet, um delegierte Agentenschleifen auszuführen",
+        "delegations_one": "{{count}} delegierte Agentenschleife läuft in dieser Instanz",
+        "delegations_other": "{{count}} delegierte Agentenschleifen laufen in dieser Instanz"
+      },
+      "actions": {
+        "openTab": "Tab öffnen",
+        "focusTab": "Tab fokussieren",
+        "stop": "Stoppen",
+        "stopDisabled": "Nichts zu stoppen",
+        "openInNewWindow": "In neuem Fenster öffnen",
+        "rename": "Umbenennen",
+        "delete": "Löschen",
+        "confirmDelete": "Löschen"
+      },
+      "renameDialog": {
+        "title": "\"{{name}}\" umbenennen",
+        "label": "Neuer Name",
+        "confirm": "Umbenennen"
+      }
+    },
+    "toasts": {
+      "added": "Projekt hinzugefügt: {{path}}",
+      "activated": "Projekt aktiviert",
+      "stopped": "Projekt gestoppt",
+      "cancelledDelegations_one": "Projekt gestoppt — {{count}} delegierte Schleife abgebrochen (sie fällt auf den Kaltpfad zurück)",
+      "cancelledDelegations_other": "Projekt gestoppt — {{count}} delegierte Schleifen abgebrochen (sie fallen auf den Kaltpfad zurück)",
+      "externalStopBlocked": "Diese Instanz wurde extern gestartet (zum Beispiel aus einem Editor im ACP-Modus) und kann hier nicht gestoppt werden. Schließen Sie sie in der Anwendung, die sie gestartet hat.",
+      "desktopCurrent": "Dieses Fenster arbeitet bereits in diesem Projekt",
+      "desktopAlreadyOpen": "Dieses Projekt ist bereits in einem anderen Pando-Fenster geöffnet",
+      "desktopOpening": "Projekt wird in einem neuen Fenster geöffnet…",
+      "deactivated": "Delegationsziel gelöscht",
+      "initialized": "Projekt initialisiert",
+      "renamed": "Projekt in {{name}} umbenannt",
+      "removed": "Projekt entfernt"
     }
   },
   "orchestrator": {

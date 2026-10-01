@@ -2,14 +2,15 @@
 id: PANDO-US-0112
 type: story
 title: "Projects view: click opens the project tab; status column, row actions and i18n"
-status: backlog
+status: done
 priority: medium
 parent: PANDO-EP-0019
 author: mcp
 labels: [projects, webui]
 estimate: 3
 created: 2026-10-01T19:24:43Z
-updated: 2026-10-01T19:24:43Z
+updated: 2026-10-01T20:53:03Z
+closed: 2026-10-01T20:53:03Z
 ---
 
 ## Description

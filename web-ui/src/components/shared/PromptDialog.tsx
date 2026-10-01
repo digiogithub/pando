@@ -6,6 +6,7 @@ interface PromptDialogProps {
   label?: string
   defaultValue?: string
   confirmLabel?: string
+  cancelLabel?: string
   onSubmit: (value: string) => void
   onCancel: () => void
 }
@@ -16,6 +17,7 @@ export default function PromptDialog({
   label,
   defaultValue = '',
   confirmLabel = 'OK',
+  cancelLabel = 'Cancel',
   onSubmit,
   onCancel,
 }: PromptDialogProps) {
@@ -32,12 +34,12 @@ export default function PromptDialog({
       onClose={onCancel}
       title={title}
       size="sm"
-      closeLabel="Cancel"
+      closeLabel={cancelLabel}
       hideClose
       footer={
         <>
           <Button variant="secondary" onClick={onCancel}>
-            Cancel
+            {cancelLabel}
           </Button>
           <Button variant="primary" onClick={submit} disabled={!trimmed}>
             {confirmLabel}

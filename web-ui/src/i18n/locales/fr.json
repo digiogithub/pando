@@ -63,6 +63,18 @@
     "instances": "Instances"
   },
   "projects": {
+    "initWizard": {
+      "title": "Initialiser le projet",
+      "description": "Aucune configuration Pando n’a été trouvée à cet emplacement. Les éléments suivants seront créés :",
+      "confirm": "Initialiser et ouvrir",
+      "cancel": "Annuler",
+      "items": {
+        "config": "configuration",
+        "database": "base de données",
+        "agents": "agents et personas",
+        "skills": "skills personnalisés"
+      }
+    },
     "tabs": {
       "main": "Principal",
       "starting": "Démarrage de l’espace de travail du projet…",
@@ -104,6 +116,89 @@
       "unknownTitle": "Projet introuvable",
       "unknownDescription": "Ce projet n’est plus disponible dans cet espace de travail.",
       "backToProjects": "Retour aux projets"
+    },
+    "view": {
+      "loading": "Chargement des projets…",
+      "emptyTitle": "Aucun projet pour l’instant",
+      "emptyDescription": "Ajoutez-en un pour commencer.",
+      "addProject": "Ajouter un projet",
+      "clearDelegationTarget": "Effacer la cible de délégation",
+      "delegationTargetLabel": "Cible de délégation",
+      "delegationTargetTooltip": "Cela ne change que la cible par défaut pour le TUI et les tâches déléguées. Ouvrir ou activer un onglet ne la modifie pas.",
+      "delegationTargetValue": "{{name}}",
+      "delegationTargetUnset": "Aucune sélection",
+      "stopConfirmTitle": "Arrêter ce projet ?",
+      "stopConfirmMessage_one": "Arrêter ce projet annulera {{count}} boucle déléguée et fermera son onglet.",
+      "stopConfirmMessage_other": "Arrêter ce projet annulera {{count}} boucles déléguées et fermera son onglet.",
+      "columns": {
+        "name": "Nom",
+        "path": "Chemin",
+        "workspace": "Espace de travail",
+        "actions": "Actions"
+      },
+      "common": {
+        "cancel": "Annuler"
+      },
+      "addForm": {
+        "pathPlaceholder": "Chemin (par exemple ~/code/myapp)",
+        "browse": "Parcourir un dossier",
+        "namePlaceholder": "Nom (optionnel)",
+        "add": "Ajouter"
+      },
+      "rowTitle": {
+        "openTab": "Cliquez pour ouvrir l’onglet d’espace de travail de ce projet",
+        "focusTab": "Cliquez pour activer l’onglet d’espace de travail de ce projet"
+      },
+      "workspaceState": {
+        "starting": "Démarrage",
+        "running": "En cours",
+        "runningWithPort": "En cours · :{{port}}",
+        "error": "Erreur",
+        "stopped": "Arrêté"
+      },
+      "badges": {
+        "delegationTarget": "Cible de délégation",
+        "external": "Externe",
+        "auto": "Auto",
+        "delegations_one": "{{count}} boucle",
+        "delegations_other": "{{count}} boucles"
+      },
+      "badgeTitles": {
+        "external": "Lancé depuis l’extérieur (par exemple depuis un éditeur en mode ACP)",
+        "auto": "Démarré automatiquement par le routeur de délégation pour exécuter des boucles d’agents délégués",
+        "delegations_one": "{{count}} boucle d’agent délégué en cours d’exécution dans cette instance",
+        "delegations_other": "{{count}} boucles d’agents délégués en cours d’exécution dans cette instance"
+      },
+      "actions": {
+        "openTab": "Ouvrir l’onglet",
+        "focusTab": "Activer l’onglet",
+        "stop": "Arrêter",
+        "stopDisabled": "Rien à arrêter",
+        "openInNewWindow": "Ouvrir dans une nouvelle fenêtre",
+        "rename": "Renommer",
+        "delete": "Supprimer",
+        "confirmDelete": "Supprimer"
+      },
+      "renameDialog": {
+        "title": "Renommer \"{{name}}\"",
+        "label": "Nouveau nom",
+        "confirm": "Renommer"
+      }
+    },
+    "toasts": {
+      "added": "Projet ajouté : {{path}}",
+      "activated": "Projet activé",
+      "stopped": "Projet arrêté",
+      "cancelledDelegations_one": "Projet arrêté — {{count}} boucle déléguée annulée (elle revient au chemin à froid)",
+      "cancelledDelegations_other": "Projet arrêté — {{count}} boucles déléguées annulées (elles reviennent au chemin à froid)",
+      "externalStopBlocked": "Cette instance a été lancée depuis l’extérieur (par exemple depuis un éditeur en mode ACP) et ne peut pas être arrêtée ici. Fermez-la depuis l’application qui l’a lancée.",
+      "desktopCurrent": "Cette fenêtre travaille déjà dans ce projet",
+      "desktopAlreadyOpen": "Ce projet est déjà ouvert dans une autre fenêtre Pando",
+      "desktopOpening": "Ouverture du projet dans une nouvelle fenêtre…",
+      "deactivated": "Cible de délégation effacée",
+      "initialized": "Projet initialisé",
+      "renamed": "Projet renommé en {{name}}",
+      "removed": "Projet supprimé"
     }
   },
   "orchestrator": {

@@ -63,6 +63,18 @@
     "noSessionsYet": "Aún no hay sesiones"
   },
   "projects": {
+    "initWizard": {
+      "title": "Inicializar proyecto",
+      "description": "No se encontró una configuración de Pando en esta ruta. Se crearán los siguientes elementos:",
+      "confirm": "Inicializar y abrir",
+      "cancel": "Cancelar",
+      "items": {
+        "config": "configuración",
+        "database": "base de datos",
+        "agents": "agentes y personas",
+        "skills": "skills personalizados"
+      }
+    },
     "tabs": {
       "main": "Principal",
       "starting": "Iniciando el espacio de trabajo del proyecto…",
@@ -104,6 +116,89 @@
       "unknownTitle": "Proyecto no encontrado",
       "unknownDescription": "Ese proyecto ya no está disponible en este espacio de trabajo.",
       "backToProjects": "Volver a proyectos"
+    },
+    "view": {
+      "loading": "Cargando proyectos…",
+      "emptyTitle": "Aún no hay proyectos",
+      "emptyDescription": "Añade uno para empezar.",
+      "addProject": "Añadir proyecto",
+      "clearDelegationTarget": "Borrar destino de delegación",
+      "delegationTargetLabel": "Destino de delegación",
+      "delegationTargetTooltip": "Esto solo cambia el destino predeterminado para el TUI y las tareas delegadas. Abrir o enfocar una pestaña no lo cambia.",
+      "delegationTargetValue": "{{name}}",
+      "delegationTargetUnset": "Ninguno seleccionado",
+      "stopConfirmTitle": "¿Detener este proyecto?",
+      "stopConfirmMessage_one": "Detener este proyecto cancelará {{count}} bucle delegado y cerrará su pestaña.",
+      "stopConfirmMessage_other": "Detener este proyecto cancelará {{count}} bucles delegados y cerrará su pestaña.",
+      "columns": {
+        "name": "Nombre",
+        "path": "Ruta",
+        "workspace": "Espacio de trabajo",
+        "actions": "Acciones"
+      },
+      "common": {
+        "cancel": "Cancelar"
+      },
+      "addForm": {
+        "pathPlaceholder": "Ruta (por ejemplo ~/code/myapp)",
+        "browse": "Buscar carpeta",
+        "namePlaceholder": "Nombre (opcional)",
+        "add": "Añadir"
+      },
+      "rowTitle": {
+        "openTab": "Haz clic para abrir la pestaña del espacio de trabajo de este proyecto",
+        "focusTab": "Haz clic para enfocar la pestaña del espacio de trabajo de este proyecto"
+      },
+      "workspaceState": {
+        "starting": "Iniciando",
+        "running": "En ejecución",
+        "runningWithPort": "En ejecución · :{{port}}",
+        "error": "Error",
+        "stopped": "Detenido"
+      },
+      "badges": {
+        "delegationTarget": "Destino de delegación",
+        "external": "Externo",
+        "auto": "Auto",
+        "delegations_one": "{{count}} bucle",
+        "delegations_other": "{{count}} bucles"
+      },
+      "badgeTitles": {
+        "external": "Iniciado externamente (por ejemplo, desde un editor en modo ACP)",
+        "auto": "Iniciado automáticamente por el enrutador de delegación para ejecutar bucles de agentes delegados",
+        "delegations_one": "{{count}} bucle de agente delegado en ejecución dentro de esta instancia",
+        "delegations_other": "{{count}} bucles de agentes delegados en ejecución dentro de esta instancia"
+      },
+      "actions": {
+        "openTab": "Abrir pestaña",
+        "focusTab": "Enfocar pestaña",
+        "stop": "Detener",
+        "stopDisabled": "Nada que detener",
+        "openInNewWindow": "Abrir en una ventana nueva",
+        "rename": "Renombrar",
+        "delete": "Eliminar",
+        "confirmDelete": "Eliminar"
+      },
+      "renameDialog": {
+        "title": "Renombrar \"{{name}}\"",
+        "label": "Nuevo nombre",
+        "confirm": "Renombrar"
+      }
+    },
+    "toasts": {
+      "added": "Proyecto añadido: {{path}}",
+      "activated": "Proyecto activado",
+      "stopped": "Proyecto detenido",
+      "cancelledDelegations_one": "Proyecto detenido: se canceló {{count}} bucle delegado (volverá a la ruta en frío)",
+      "cancelledDelegations_other": "Proyecto detenido: se cancelaron {{count}} bucles delegados (volverán a la ruta en frío)",
+      "externalStopBlocked": "Esta instancia se inició externamente (por ejemplo, desde un editor en modo ACP) y no puede detenerse aquí. Ciérrala desde la aplicación que la inició.",
+      "desktopCurrent": "Esta ventana ya trabaja en ese proyecto",
+      "desktopAlreadyOpen": "Ese proyecto ya está abierto en otra ventana de Pando",
+      "desktopOpening": "Abriendo el proyecto en una ventana nueva…",
+      "deactivated": "Se borró el destino de delegación",
+      "initialized": "Proyecto inicializado",
+      "renamed": "Proyecto renombrado a {{name}}",
+      "removed": "Proyecto eliminado"
     }
   },
   "orchestrator": {

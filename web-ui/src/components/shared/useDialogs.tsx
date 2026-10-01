@@ -6,6 +6,7 @@ interface ConfirmOptions {
   title: string
   message: string
   confirmLabel?: string
+  cancelLabel?: string
   dangerous?: boolean
 }
 
@@ -14,6 +15,7 @@ interface PromptOptions {
   label?: string
   defaultValue?: string
   confirmLabel?: string
+  cancelLabel?: string
 }
 
 type Pending =

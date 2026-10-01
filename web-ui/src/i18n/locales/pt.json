@@ -63,6 +63,18 @@
     "instances": "Instâncias"
   },
   "projects": {
+    "initWizard": {
+      "title": "Inicializar projeto",
+      "description": "Nenhuma configuração do Pando foi encontrada neste caminho. Os itens a seguir serão criados:",
+      "confirm": "Inicializar e abrir",
+      "cancel": "Cancelar",
+      "items": {
+        "config": "configuração",
+        "database": "banco de dados",
+        "agents": "agentes e personas",
+        "skills": "skills personalizados"
+      }
+    },
     "tabs": {
       "main": "Principal",
       "starting": "Iniciando o espaço de trabalho do projeto…",
@@ -104,6 +116,89 @@
       "unknownTitle": "Projeto não encontrado",
       "unknownDescription": "Esse projeto não está mais disponível neste espaço de trabalho.",
       "backToProjects": "Voltar para projetos"
+    },
+    "view": {
+      "loading": "Carregando projetos…",
+      "emptyTitle": "Ainda não há projetos",
+      "emptyDescription": "Adicione um para começar.",
+      "addProject": "Adicionar projeto",
+      "clearDelegationTarget": "Limpar destino de delegação",
+      "delegationTargetLabel": "Destino de delegação",
+      "delegationTargetTooltip": "Isso só muda o destino padrão para o TUI e para tarefas delegadas. Abrir ou focar uma aba não altera esse valor.",
+      "delegationTargetValue": "{{name}}",
+      "delegationTargetUnset": "Nenhum selecionado",
+      "stopConfirmTitle": "Parar este projeto?",
+      "stopConfirmMessage_one": "Parar este projeto cancelará {{count}} loop delegado e fechará a aba dele.",
+      "stopConfirmMessage_other": "Parar este projeto cancelará {{count}} loops delegados e fechará a aba dele.",
+      "columns": {
+        "name": "Nome",
+        "path": "Caminho",
+        "workspace": "Espaço de trabalho",
+        "actions": "Ações"
+      },
+      "common": {
+        "cancel": "Cancelar"
+      },
+      "addForm": {
+        "pathPlaceholder": "Caminho (por exemplo ~/code/myapp)",
+        "browse": "Procurar diretório",
+        "namePlaceholder": "Nome (opcional)",
+        "add": "Adicionar"
+      },
+      "rowTitle": {
+        "openTab": "Clique para abrir a aba do espaço de trabalho deste projeto",
+        "focusTab": "Clique para focar a aba do espaço de trabalho deste projeto"
+      },
+      "workspaceState": {
+        "starting": "Iniciando",
+        "running": "Em execução",
+        "runningWithPort": "Em execução · :{{port}}",
+        "error": "Erro",
+        "stopped": "Parado"
+      },
+      "badges": {
+        "delegationTarget": "Destino de delegação",
+        "external": "Externo",
+        "auto": "Auto",
+        "delegations_one": "{{count}} loop",
+        "delegations_other": "{{count}} loops"
+      },
+      "badgeTitles": {
+        "external": "Iniciado externamente (por exemplo, a partir de um editor em modo ACP)",
+        "auto": "Iniciado automaticamente pelo roteador de delegação para executar loops de agentes delegados",
+        "delegations_one": "{{count}} loop de agente delegado em execução nesta instância",
+        "delegations_other": "{{count}} loops de agentes delegados em execução nesta instância"
+      },
+      "actions": {
+        "openTab": "Abrir aba",
+        "focusTab": "Focar aba",
+        "stop": "Parar",
+        "stopDisabled": "Nada para parar",
+        "openInNewWindow": "Abrir em uma nova janela",
+        "rename": "Renomear",
+        "delete": "Excluir",
+        "confirmDelete": "Excluir"
+      },
+      "renameDialog": {
+        "title": "Renomear \"{{name}}\"",
+        "label": "Novo nome",
+        "confirm": "Renomear"
+      }
+    },
+    "toasts": {
+      "added": "Projeto adicionado: {{path}}",
+      "activated": "Projeto ativado",
+      "stopped": "Projeto parado",
+      "cancelledDelegations_one": "Projeto parado — {{count}} loop delegado cancelado (ele volta para o caminho frio)",
+      "cancelledDelegations_other": "Projeto parado — {{count}} loops delegados cancelados (eles voltam para o caminho frio)",
+      "externalStopBlocked": "Esta instância foi iniciada externamente (por exemplo, a partir de um editor em modo ACP) e não pode ser parada aqui. Feche-a no aplicativo que a iniciou.",
+      "desktopCurrent": "Esta janela já está trabalhando nesse projeto",
+      "desktopAlreadyOpen": "Esse projeto já está aberto em outra janela do Pando",
+      "desktopOpening": "Abrindo o projeto em uma nova janela…",
+      "deactivated": "Destino de delegação limpo",
+      "initialized": "Projeto inicializado",
+      "renamed": "Projeto renomeado para {{name}}",
+      "removed": "Projeto removido"
     }
   },
   "orchestrator": {

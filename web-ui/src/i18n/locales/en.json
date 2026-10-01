@@ -63,6 +63,18 @@
     "noSessionsYet": "No sessions yet"
   },
   "projects": {
+    "initWizard": {
+      "title": "Initialize project",
+      "description": "No Pando config was found at this path. The following will be created:",
+      "confirm": "Initialize & open",
+      "cancel": "Cancel",
+      "items": {
+        "config": "configuration",
+        "database": "database",
+        "agents": "agents & personas",
+        "skills": "custom skills"
+      }
+    },
     "tabs": {
       "main": "Main",
       "starting": "Starting project workspace…",
@@ -104,6 +116,89 @@
       "unknownTitle": "Project not found",
       "unknownDescription": "That project is not available in this workspace anymore.",
       "backToProjects": "Back to projects"
+    },
+    "view": {
+      "loading": "Loading projects…",
+      "emptyTitle": "No projects yet",
+      "emptyDescription": "Add one to get started.",
+      "addProject": "Add project",
+      "clearDelegationTarget": "Clear delegation target",
+      "delegationTargetLabel": "Delegation target",
+      "delegationTargetTooltip": "This only changes the default target for the TUI and delegated tasks. Opening or focusing a tab does not change it.",
+      "delegationTargetValue": "{{name}}",
+      "delegationTargetUnset": "None selected",
+      "stopConfirmTitle": "Stop this project?",
+      "stopConfirmMessage_one": "Stopping this project will cancel {{count}} delegated loop and close its tab.",
+      "stopConfirmMessage_other": "Stopping this project will cancel {{count}} delegated loops and close its tab.",
+      "columns": {
+        "name": "Name",
+        "path": "Path",
+        "workspace": "Workspace",
+        "actions": "Actions"
+      },
+      "common": {
+        "cancel": "Cancel"
+      },
+      "addForm": {
+        "pathPlaceholder": "Path (for example ~/code/myapp)",
+        "browse": "Browse for directory",
+        "namePlaceholder": "Name (optional)",
+        "add": "Add"
+      },
+      "rowTitle": {
+        "openTab": "Click to open this project's workspace tab",
+        "focusTab": "Click to focus this project's workspace tab"
+      },
+      "workspaceState": {
+        "starting": "Starting",
+        "running": "Running",
+        "runningWithPort": "Running · :{{port}}",
+        "error": "Error",
+        "stopped": "Stopped"
+      },
+      "badges": {
+        "delegationTarget": "Delegation target",
+        "external": "External",
+        "auto": "Auto",
+        "delegations_one": "{{count}} loop",
+        "delegations_other": "{{count}} loops"
+      },
+      "badgeTitles": {
+        "external": "Launched externally (for example from an editor in ACP mode)",
+        "auto": "Auto-started by the delegation router to run delegated agent loops",
+        "delegations_one": "{{count}} delegated agent loop running inside this instance",
+        "delegations_other": "{{count}} delegated agent loops running inside this instance"
+      },
+      "actions": {
+        "openTab": "Open tab",
+        "focusTab": "Focus tab",
+        "stop": "Stop",
+        "stopDisabled": "Nothing to stop",
+        "openInNewWindow": "Open in new window",
+        "rename": "Rename",
+        "delete": "Delete",
+        "confirmDelete": "Delete"
+      },
+      "renameDialog": {
+        "title": "Rename \"{{name}}\"",
+        "label": "New name",
+        "confirm": "Rename"
+      }
+    },
+    "toasts": {
+      "added": "Project added: {{path}}",
+      "activated": "Project activated",
+      "stopped": "Project stopped",
+      "cancelledDelegations_one": "Project stopped — cancelled {{count}} delegated loop (it falls back to the cold path)",
+      "cancelledDelegations_other": "Project stopped — cancelled {{count}} delegated loops (they fall back to the cold path)",
+      "externalStopBlocked": "This instance was launched externally (for example from an editor in ACP mode) and cannot be stopped here. Close it from the application that started it.",
+      "desktopCurrent": "This window already works in that project",
+      "desktopAlreadyOpen": "That project is already open in another Pando window",
+      "desktopOpening": "Opening project in a new window…",
+      "deactivated": "Delegation target cleared",
+      "initialized": "Project initialized",
+      "renamed": "Project renamed to {{name}}",
+      "removed": "Project removed"
     }
   },
   "orchestrator": {
