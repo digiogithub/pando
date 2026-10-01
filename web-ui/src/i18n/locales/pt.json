@@ -73,7 +73,23 @@
       "close": "Fechar aba",
       "closeAndStop": "Fechar e parar o espaço de trabalho",
       "reopen": "Reabrir espaço de trabalho",
-      "needsInit": "Inicialize o projeto antes de abrir o espaço de trabalho"
+      "needsInit": "Inicialize o projeto antes de abrir o espaço de trabalho",
+      "tablistLabel": "Abas de projetos",
+      "stateRunning": "Espaço de trabalho em execução",
+      "stateStopped": "Espaço de trabalho parado",
+      "stateError": "Erro no espaço de trabalho",
+      "delegations_one": "{{count}} loop delegado",
+      "delegations_other": "{{count}} loops delegados",
+      "closeConfirmTitle": "Fechar a aba do projeto?",
+      "closeConfirmMessage": "Deseja também parar o espaço de trabalho em segundo plano deste projeto? O Pando lembrará sua escolha pelo restante desta sessão.",
+      "keepRunningTitle": "Manter o espaço de trabalho em execução?",
+      "keepRunningMessage": "Feche esta aba e mantenha o espaço de trabalho em segundo plano em execução. O Pando lembrará sua escolha pelo restante desta sessão.",
+      "closeCurrent": "Fechar a aba atual do projeto",
+      "openInNewWindow": "Abrir em uma nova janela",
+      "revealInProjects": "Mostrar em Projetos",
+      "shortcutFocusTabs": "Focar a aba principal ou uma aba de projeto",
+      "shortcutCloseTab": "Fechar a aba atual do projeto",
+      "shortcutCycleTabs": "Alternar entre as abas de projeto"
     }
   },
   "orchestrator": {

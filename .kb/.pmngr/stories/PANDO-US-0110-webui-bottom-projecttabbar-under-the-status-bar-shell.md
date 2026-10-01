@@ -2,14 +2,15 @@
 id: PANDO-US-0110
 type: story
 title: "WebUI: bottom `ProjectTabBar` under the status bar (shell integration, states, shortcuts, mobile, i18n)"
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0019
 author: mcp
 labels: [projects, webui, design]
 estimate: 5
 created: 2026-10-01T19:24:43Z
-updated: 2026-10-01T19:24:43Z
+updated: 2026-10-01T20:22:03Z
+closed: 2026-10-01T20:22:03Z
 ---
 
 ## Description

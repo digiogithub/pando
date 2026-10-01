@@ -73,7 +73,23 @@
       "close": "关闭标签页",
       "closeAndStop": "关闭并停止工作区",
       "reopen": "重新打开工作区",
-      "needsInit": "打开项目工作区前请先初始化项目"
+      "needsInit": "打开项目工作区前请先初始化项目",
+      "tablistLabel": "项目标签页",
+      "stateRunning": "工作区运行中",
+      "stateStopped": "工作区已停止",
+      "stateError": "工作区错误",
+      "delegations_one": "{{count}} 个委派循环",
+      "delegations_other": "{{count}} 个委派循环",
+      "closeConfirmTitle": "关闭项目标签页？",
+      "closeConfirmMessage": "是否同时停止此项目的后台工作区？Pando 会在本次会话剩余时间内记住你的选择。",
+      "keepRunningTitle": "保持工作区运行？",
+      "keepRunningMessage": "关闭此标签页，但让后台工作区继续运行。Pando 会在本次会话剩余时间内记住你的选择。",
+      "closeCurrent": "关闭当前项目标签页",
+      "openInNewWindow": "在新窗口中打开",
+      "revealInProjects": "在项目列表中显示",
+      "shortcutFocusTabs": "聚焦主标签页或项目标签页",
+      "shortcutCloseTab": "关闭当前项目标签页",
+      "shortcutCycleTabs": "循环切换项目标签页"
     }
   },
   "orchestrator": {

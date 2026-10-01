@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useTheme } from '@/hooks/useTheme'
 import { useToast } from '@pando/client/stores/toastStore'
 import { loadLauncherCommands, type LauncherCommand } from '@pando/client/services/commandLauncher'
+import { isChildModeRestrictedPath, isProjectChildMode } from '@pando/client/services/api'
 import { localBrowserStorage } from '@pando/client/services/storage'
+import { useServerStore } from '@pando/client/stores/serverStore'
 import { Kbd } from '@/components/ui'
 import {
   Search,
@@ -78,6 +81,7 @@ function iconForCommand(command: LauncherCommand): LucideIcon {
 }
 
 export default function QuickMenu() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { setQuickMenuOpen } = useLayoutStore()
   const { toggleMode: toggleTheme } = useTheme()
@@ -88,6 +92,8 @@ export default function QuickMenu() {
   const listRef = useRef<HTMLDivElement>(null)
   const [recentIds, setRecentIds] = useState<string[]>(loadRecent)
   const [accountCommands, setAccountCommands] = useState<MenuItem[]>([])
+  const startupMode = useServerStore((s) => s.startupMode)
+  const childMode = startupMode === 'project-child' || isProjectChildMode()
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -127,13 +133,13 @@ export default function QuickMenu() {
   }, [toast])
 
   // Build all items
-  const allItems: MenuItem[] = [
+  const allItems = ([
     ...VIEWS.map((v) => ({ ...v, group: 'view' as const })),
     {
       id: 'web-ui-settings',
       label: 'Web UI Settings',
       icon: Settings,
-      group: 'command',
+      group: 'command' as const,
       path: '/settings',
       description: 'Web UI Settings',
     },
@@ -141,18 +147,18 @@ export default function QuickMenu() {
       id: 'toggle-dark-mode',
       label: 'Toggle Dark Mode',
       icon: Moon,
-      group: 'command',
+      group: 'command' as const,
       action: () => { toggleTheme(); close() },
     },
     {
       id: 'reload',
       label: 'Reload',
       icon: RefreshCw,
-      group: 'command',
+      group: 'command' as const,
       action: () => { window.location.reload() },
     },
     ...accountCommands,
-  ]
+  ] as MenuItem[]).filter((item) => !(childMode && item.path && isChildModeRestrictedPath(item.path)))
 
   // Filter by query
   const q = query.toLowerCase()
@@ -292,6 +298,18 @@ export default function QuickMenu() {
               )
             })
           )}
+        </div>
+
+        <div className="ovl-footer">
+          <span>
+            <Kbd>Ctrl</Kbd>+<Kbd>Alt</Kbd>+<Kbd>1</Kbd>…<Kbd>9</Kbd> · {t('projects.tabs.shortcutFocusTabs')}
+          </span>
+          <span>
+            <Kbd>Ctrl</Kbd>+<Kbd>Alt</Kbd>+<Kbd>W</Kbd> · {t('projects.tabs.shortcutCloseTab')}
+          </span>
+          <span>
+            <Kbd>Ctrl</Kbd>+<Kbd>Alt</Kbd>+<Kbd>←</Kbd>/<Kbd>→</Kbd> · {t('projects.tabs.shortcutCycleTabs')}
+          </span>
         </div>
       </div>
     </div>

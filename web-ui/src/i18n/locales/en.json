@@ -73,7 +73,23 @@
       "close": "Close tab",
       "closeAndStop": "Close and stop workspace",
       "reopen": "Reopen workspace",
-      "needsInit": "Initialize the project before opening its workspace"
+      "needsInit": "Initialize the project before opening its workspace",
+      "tablistLabel": "Project tabs",
+      "stateRunning": "Workspace running",
+      "stateStopped": "Workspace stopped",
+      "stateError": "Workspace error",
+      "delegations_one": "{{count}} delegated loop",
+      "delegations_other": "{{count}} delegated loops",
+      "closeConfirmTitle": "Close project tab?",
+      "closeConfirmMessage": "Also stop the background workspace for this project? Pando will remember your choice for the rest of this session.",
+      "keepRunningTitle": "Keep workspace running?",
+      "keepRunningMessage": "Close this tab and keep the background workspace running. Pando will remember your choice for the rest of this session.",
+      "closeCurrent": "Close current project tab",
+      "openInNewWindow": "Open in new window",
+      "revealInProjects": "Reveal in Projects",
+      "shortcutFocusTabs": "Focus main or project tabs",
+      "shortcutCloseTab": "Close the current project tab",
+      "shortcutCycleTabs": "Cycle through project tabs"
     }
   },
   "orchestrator": {

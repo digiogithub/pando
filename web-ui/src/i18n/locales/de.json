@@ -73,7 +73,23 @@
       "close": "Tab schließen",
       "closeAndStop": "Arbeitsbereich schließen und beenden",
       "reopen": "Arbeitsbereich erneut öffnen",
-      "needsInit": "Initialisieren Sie das Projekt, bevor Sie seinen Arbeitsbereich öffnen"
+      "needsInit": "Initialisieren Sie das Projekt, bevor Sie seinen Arbeitsbereich öffnen",
+      "tablistLabel": "Projekt-Tabs",
+      "stateRunning": "Arbeitsbereich läuft",
+      "stateStopped": "Arbeitsbereich gestoppt",
+      "stateError": "Arbeitsbereichsfehler",
+      "delegations_one": "{{count}} delegierte Schleife",
+      "delegations_other": "{{count}} delegierte Schleifen",
+      "closeConfirmTitle": "Projekt-Tab schließen?",
+      "closeConfirmMessage": "Möchtest du auch den Hintergrund-Arbeitsbereich für dieses Projekt stoppen? Pando merkt sich deine Wahl für den Rest dieser Sitzung.",
+      "keepRunningTitle": "Arbeitsbereich weiterlaufen lassen?",
+      "keepRunningMessage": "Schließe diesen Tab und lasse den Hintergrund-Arbeitsbereich weiterlaufen. Pando merkt sich deine Wahl für den Rest dieser Sitzung.",
+      "closeCurrent": "Aktuellen Projekt-Tab schließen",
+      "openInNewWindow": "In neuem Fenster öffnen",
+      "revealInProjects": "In Projekten anzeigen",
+      "shortcutFocusTabs": "Haupt- oder Projekt-Tabs fokussieren",
+      "shortcutCloseTab": "Aktuellen Projekt-Tab schließen",
+      "shortcutCycleTabs": "Zwischen Projekt-Tabs wechseln"
     }
   },
   "orchestrator": {

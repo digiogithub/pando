@@ -73,7 +73,23 @@
       "close": "タブを閉じる",
       "closeAndStop": "閉じてワークスペースを停止",
       "reopen": "ワークスペースを再度開く",
-      "needsInit": "ワークスペースを開く前にプロジェクトを初期化してください"
+      "needsInit": "ワークスペースを開く前にプロジェクトを初期化してください",
+      "tablistLabel": "プロジェクトタブ",
+      "stateRunning": "ワークスペース実行中",
+      "stateStopped": "ワークスペース停止中",
+      "stateError": "ワークスペースエラー",
+      "delegations_one": "{{count}} 件の委譲ループ",
+      "delegations_other": "{{count}} 件の委譲ループ",
+      "closeConfirmTitle": "プロジェクトタブを閉じますか？",
+      "closeConfirmMessage": "このプロジェクトのバックグラウンドワークスペースも停止しますか？Pando はこのセッション中、その選択を記憶します。",
+      "keepRunningTitle": "ワークスペースを実行したままにしますか？",
+      "keepRunningMessage": "このタブを閉じても、バックグラウンドのワークスペースは実行したままにします。Pando はこのセッション中、その選択を記憶します。",
+      "closeCurrent": "現在のプロジェクトタブを閉じる",
+      "openInNewWindow": "新しいウィンドウで開く",
+      "revealInProjects": "プロジェクト一覧で表示",
+      "shortcutFocusTabs": "メインまたはプロジェクトタブにフォーカスする",
+      "shortcutCloseTab": "現在のプロジェクトタブを閉じる",
+      "shortcutCycleTabs": "プロジェクトタブを順に切り替える"
     }
   },
   "orchestrator": {

@@ -475,6 +475,164 @@
 @keyframes shell-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes shell-slide-in { from { transform: translateX(-12px); opacity: 0; } to { transform: none; opacity: 1; } }
 
+/* ── Project tab bar ───────────────────────────────────────────────────── */
+
+.shell-projectbar {
+  --shell-projectbar-h: 32px;
+
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: var(--shell-projectbar-h);
+  flex-shrink: 0;
+  padding: 0 12px;
+  background: var(--bg-shell);
+  border-top: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.shell-projectbar-scrollwrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-projectbar-scrollwrap::before,
+.shell-projectbar-scrollwrap::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 20px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+
+.shell-projectbar-scrollwrap::before {
+  left: 0;
+  background: linear-gradient(90deg, var(--bg-shell), transparent);
+}
+
+.shell-projectbar-scrollwrap::after {
+  right: 0;
+  background: linear-gradient(270deg, var(--bg-shell), transparent);
+}
+
+.shell-projectbar-scrollwrap[data-overflow-left="true"]::before,
+.shell-projectbar-scrollwrap[data-overflow-right="true"]::after { opacity: 1; }
+
+.shell-projectbar-scroll {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-height: var(--shell-projectbar-h);
+  padding: 4px 0;
+  scrollbar-width: none;
+}
+
+.shell-projectbar-scroll::-webkit-scrollbar { display: none; }
+
+.shell-projecttab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: min(280px, 45vw);
+  height: 24px;
+  padding: 0 6px 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+
+.shell-projecttab:hover {
+  background: var(--bg-raised);
+  color: var(--fg);
+}
+
+.shell-projecttab[data-active="true"],
+.shell-projecttab[aria-selected="true"] {
+  background: var(--bg);
+  border-color: var(--border);
+  box-shadow: var(--shadow-sm);
+  color: var(--fg);
+}
+
+.shell-projecttab:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.shell-projecttab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-faint);
+  flex-shrink: 0;
+}
+
+.shell-projecttab[data-active="true"] .shell-projecttab-icon,
+.shell-projecttab[aria-selected="true"] .shell-projecttab-icon { color: var(--accent); }
+
+.shell-projecttab-icon--brand { color: var(--fg); }
+
+.shell-projecttab-label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-xs);
+}
+
+.shell-projecttab-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-faint);
+  flex-shrink: 0;
+}
+
+.shell-projecttab-state-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
+}
+
+.shell-projecttab-state-dot[data-state="running"] { background: var(--success); }
+.shell-projecttab-state-dot[data-state="error"] { background: var(--danger); }
+.shell-projecttab-state-dot[data-state="stopped"] { background: var(--fg-faint); }
+
+.shell-projecttab-badge {
+  min-width: 18px;
+  justify-content: center;
+  padding-inline: 5px;
+}
+
+.shell-projecttab-close {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.shell-projecttab:hover .shell-projecttab-close,
+.shell-projecttab:focus-within .shell-projecttab-close,
+.shell-projecttab[data-menu-open="true"] .shell-projecttab-close {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 @media (max-width: 768px) {
   .shell-main { border-left: 0; border-top-left-radius: 0; }
   .shell-title { justify-content: flex-start; padding: 0 4px; }
@@ -484,6 +642,17 @@
   .shell-drawer-head .shell-brand-name { display: inline; }
   .shell-statusbar { padding: 0 8px; gap: 8px; }
   .shell-status-hide-mobile { display: none !important; }
+  .shell-projectbar {
+    padding: 0 8px max(0px, env(safe-area-inset-bottom));
+  }
+  .shell-projecttab { max-width: min(220px, 72vw); }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .shell-projecttab-close {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -73,7 +73,23 @@
       "close": "Fermer l’onglet",
       "closeAndStop": "Fermer et arrêter l’espace de travail",
       "reopen": "Rouvrir l’espace de travail",
-      "needsInit": "Initialisez le projet avant d’ouvrir son espace de travail"
+      "needsInit": "Initialisez le projet avant d’ouvrir son espace de travail",
+      "tablistLabel": "Onglets de projet",
+      "stateRunning": "Espace de travail en cours d’exécution",
+      "stateStopped": "Espace de travail arrêté",
+      "stateError": "Erreur de l’espace de travail",
+      "delegations_one": "{{count}} boucle déléguée",
+      "delegations_other": "{{count}} boucles déléguées",
+      "closeConfirmTitle": "Fermer l’onglet du projet ?",
+      "closeConfirmMessage": "Voulez-vous aussi arrêter l’espace de travail en arrière-plan pour ce projet ? Pando mémorisera votre choix pour le reste de cette session.",
+      "keepRunningTitle": "Laisser l’espace de travail en cours d’exécution ?",
+      "keepRunningMessage": "Fermez cet onglet et laissez l’espace de travail en arrière-plan continuer à s’exécuter. Pando mémorisera votre choix pour le reste de cette session.",
+      "closeCurrent": "Fermer l’onglet actuel du projet",
+      "openInNewWindow": "Ouvrir dans une nouvelle fenêtre",
+      "revealInProjects": "Afficher dans Projets",
+      "shortcutFocusTabs": "Activer l’onglet principal ou un onglet de projet",
+      "shortcutCloseTab": "Fermer l’onglet de projet actuel",
+      "shortcutCycleTabs": "Parcourir les onglets de projet"
     }
   },
   "orchestrator": {

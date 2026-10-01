@@ -1,13 +1,22 @@
 import { Outlet, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
+import { useProjectStore } from '@pando/client/stores/projectStore'
+import { useProjectTabsStore } from '@pando/client/stores/projectTabsStore'
 import { useSessionStore } from '@pando/client/stores/sessionStore'
 import { useServerStore } from '@pando/client/stores/serverStore'
 import { useSettingsStore } from '@pando/client/stores/settingsStore'
 import { useModelAutoModeStore } from '@pando/client/stores/modelAutoModeStore'
+import { isProjectChildMode } from '@pando/client/services/api'
 import { authenticate } from '@pando/client/services/auth'
 import Sidebar from './Sidebar'
 import Header from './Header'
+import ProjectTabBar from './ProjectTabBar'
+import {
+  SHELL_MAIN_PANEL_ID,
+  handleProjectTabKeyboardShortcut,
+  useProjectTabBarController,
+} from './ProjectTabBarControls'
 import StatusBar from './StatusBar'
 import { MOBILE_QUERY, needsMacTrafficLightInset, readSidebarPref, useMediaQuery, writeSidebarPref } from './shellHooks'
 import QuickMenu from '@/components/overlays/QuickMenu'
@@ -18,6 +27,7 @@ import NetworkErrorBanner from '@/components/shared/NetworkErrorBanner'
 import PermissionDialog from '@/components/chat/PermissionDialog'
 import QuestionDialog from '@/components/chat/QuestionDialog'
 import { useProvidesWindowTitleBar } from '@/services/desktopWindow'
+import { useProjectTabRouteSync } from '@/hooks/useProjectTabRouteSync'
 import '@/styles/shell.css'
 
 export default function MainLayout() {
@@ -30,12 +40,19 @@ export default function MainLayout() {
   const hydrateLanguage = useSettingsStore((s) => s.hydrateLanguage)
   const startHealthCheck = useServerStore((s) => s.startHealthCheck)
   const setConnected = useServerStore((s) => s.setConnected)
+  const connectProjectEvents = useProjectStore((s) => s.connectEvents)
+  const disconnectProjectEvents = useProjectStore((s) => s.disconnectEvents)
+  const fetchWorkspace = useProjectStore((s) => s.fetchWorkspace)
+  const projectEventSource = useProjectStore((s) => s._es)
   const { setQuickMenuOpen, setModelSwitcherOpen, toggleSidebar } = useLayoutStore()
   const location = useLocation()
   const isMobile = useMediaQuery(MOBILE_QUERY)
+  const projectChildMode = isProjectChildMode()
+  const projectTabBar = useProjectTabBarController()
   const [macInset] = useState(needsMacTrafficLightInset)
   // The header carries the desktop window controls; no standalone bar needed.
   useProvidesWindowTitleBar()
+  useProjectTabRouteSync()
 
   // Initialize auth + health check
   useEffect(() => {
@@ -55,6 +72,10 @@ export default function MainLayout() {
   // Keyboard shortcuts (the theme toggle Ctrl/Cmd+Shift+L is global, in App).
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (handleProjectTabKeyboardShortcut(e, projectTabBar)) {
+        e.preventDefault()
+        return
+      }
       if (e.ctrlKey && e.key === 'p') {
         e.preventDefault()
         setQuickMenuOpen(true)
@@ -78,7 +99,23 @@ export default function MainLayout() {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [setModelSwitcherOpen, setQuickMenuOpen, toggleSidebar])
+  }, [projectTabBar, setModelSwitcherOpen, setQuickMenuOpen, toggleSidebar])
+
+  useEffect(() => {
+    if (projectChildMode) return
+    if (!projectEventSource) {
+      connectProjectEvents()
+    }
+  }, [connectProjectEvents, projectChildMode, projectEventSource])
+
+  useEffect(() => {
+    if (projectChildMode) return
+    void fetchWorkspace()
+    void useProjectTabsStore.getState().restore()
+    return () => {
+      disconnectProjectEvents()
+    }
+  }, [disconnectProjectEvents, fetchWorkspace, projectChildMode])
 
   // Desktop: restore the stored expanded/rail preference; mobile: start closed.
   useEffect(() => {
@@ -143,7 +180,7 @@ export default function MainLayout() {
           <Sidebar variant={sidebarVariant} />
         )}
 
-        <main className="shell-main">
+        <main className="shell-main" id={SHELL_MAIN_PANEL_ID}>
           <div className="shell-main-inner">
             <Outlet />
           </div>
@@ -151,6 +188,7 @@ export default function MainLayout() {
       </div>
 
       {!simple && <StatusBar />}
+      <ProjectTabBar simple={simple} controller={projectTabBar} />
 
       {/* Overlays */}
       {quickMenuOpen && <QuickMenu />}
@@ -158,6 +196,7 @@ export default function MainLayout() {
       <PermissionDialog />
       <QuestionDialog />
       <SetupWizard />
+      {projectTabBar.dialogs}
     </div>
   )
 }

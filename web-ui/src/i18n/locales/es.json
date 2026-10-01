@@ -73,7 +73,23 @@
       "close": "Cerrar pestaña",
       "closeAndStop": "Cerrar y detener el espacio de trabajo",
       "reopen": "Reabrir espacio de trabajo",
-      "needsInit": "Inicializa el proyecto antes de abrir su espacio de trabajo"
+      "needsInit": "Inicializa el proyecto antes de abrir su espacio de trabajo",
+      "tablistLabel": "Pestañas de proyectos",
+      "stateRunning": "Espacio de trabajo en ejecución",
+      "stateStopped": "Espacio de trabajo detenido",
+      "stateError": "Error del espacio de trabajo",
+      "delegations_one": "{{count}} bucle delegado",
+      "delegations_other": "{{count}} bucles delegados",
+      "closeConfirmTitle": "¿Cerrar la pestaña del proyecto?",
+      "closeConfirmMessage": "¿También quieres detener el espacio de trabajo en segundo plano de este proyecto? Pando recordará tu elección durante el resto de esta sesión.",
+      "keepRunningTitle": "¿Mantener el espacio de trabajo en ejecución?",
+      "keepRunningMessage": "Cierra esta pestaña y mantén el espacio de trabajo en segundo plano en ejecución. Pando recordará tu elección durante el resto de esta sesión.",
+      "closeCurrent": "Cerrar la pestaña actual del proyecto",
+      "openInNewWindow": "Abrir en una ventana nueva",
+      "revealInProjects": "Mostrar en Proyectos",
+      "shortcutFocusTabs": "Enfocar la pestaña principal o de proyecto",
+      "shortcutCloseTab": "Cerrar la pestaña actual del proyecto",
+      "shortcutCycleTabs": "Recorrer las pestañas de proyectos"
     }
   },
   "orchestrator": {
