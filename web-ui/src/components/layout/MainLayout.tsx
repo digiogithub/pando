@@ -1,5 +1,5 @@
 import { Outlet, useLocation } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useProjectStore } from '@pando/client/stores/projectStore'
 import { useProjectTabsStore } from '@pando/client/stores/projectTabsStore'
@@ -14,7 +14,7 @@ import Header from './Header'
 import ProjectTabBar from './ProjectTabBar'
 import {
   SHELL_MAIN_PANEL_ID,
-  handleProjectTabKeyboardShortcut,
+  handleShellKeyboardShortcut,
   useProjectTabBarController,
 } from './ProjectTabBarControls'
 import StatusBar from './StatusBar'
@@ -27,7 +27,8 @@ import NetworkErrorBanner from '@/components/shared/NetworkErrorBanner'
 import PermissionDialog from '@/components/chat/PermissionDialog'
 import QuestionDialog from '@/components/chat/QuestionDialog'
 import { useProvidesWindowTitleBar } from '@/services/desktopWindow'
-import { useProjectTabRouteSync } from '@/hooks/useProjectTabRouteSync'
+import { readWorkspaceProjectId, useProjectTabRouteSync } from '@/hooks/useProjectTabRouteSync'
+import ProjectFrameHost from './ProjectFrameHost'
 import '@/styles/shell.css'
 
 export default function MainLayout() {
@@ -53,6 +54,21 @@ export default function MainLayout() {
   // The header carries the desktop window controls; no standalone bar needed.
   useProvidesWindowTitleBar()
   useProjectTabRouteSync()
+  const workspaceProjectId = readWorkspaceProjectId(location.pathname)
+  const shortcutActions = useMemo(
+    () => ({
+      openQuickMenu: () => setQuickMenuOpen(true),
+      openModelSwitcher: () => setModelSwitcherOpen(true),
+      toggleSidebar,
+      toggleAutoApprove: () => {
+        const { activeSessionId, toggleAutoApprove } = useSessionStore.getState()
+        if (activeSessionId) {
+          void toggleAutoApprove(activeSessionId)
+        }
+      },
+    }),
+    [setModelSwitcherOpen, setQuickMenuOpen, toggleSidebar],
+  )
 
   // Initialize auth + health check
   useEffect(() => {
@@ -72,34 +88,13 @@ export default function MainLayout() {
   // Keyboard shortcuts (the theme toggle Ctrl/Cmd+Shift+L is global, in App).
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (handleProjectTabKeyboardShortcut(e, projectTabBar)) {
+      if (handleShellKeyboardShortcut(e, projectTabBar, shortcutActions)) {
         e.preventDefault()
-        return
-      }
-      if (e.ctrlKey && e.key === 'p') {
-        e.preventDefault()
-        setQuickMenuOpen(true)
-      }
-      if (e.ctrlKey && e.key === 'o') {
-        e.preventDefault()
-        setModelSwitcherOpen(true)
-      }
-      if (e.ctrlKey && e.key === 'b') {
-        e.preventDefault()
-        toggleSidebar()
-      }
-      // Shift+Tab toggles per-session auto-approve ("auto mode").
-      if (e.shiftKey && e.key === 'Tab') {
-        const { activeSessionId, toggleAutoApprove } = useSessionStore.getState()
-        if (activeSessionId) {
-          e.preventDefault()
-          void toggleAutoApprove(activeSessionId)
-        }
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [projectTabBar, setModelSwitcherOpen, setQuickMenuOpen, toggleSidebar])
+  }, [projectTabBar, shortcutActions])
 
   useEffect(() => {
     if (projectChildMode) return
@@ -181,7 +176,12 @@ export default function MainLayout() {
         )}
 
         <main className="shell-main" id={SHELL_MAIN_PANEL_ID}>
-          <div className="shell-main-inner">
+          {!projectChildMode && (
+            <ProjectFrameHost controller={projectTabBar} shortcutActions={shortcutActions} />
+          )}
+          <div
+            className={workspaceProjectId ? 'shell-main-inner shell-main-inner--workspace' : 'shell-main-inner'}
+          >
             <Outlet />
           </div>
         </main>

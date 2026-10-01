@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useSessionStore } from '@pando/client/stores/sessionStore'
 import { useExtensionPanelsStore } from '@pando/client/stores/extensionPanelsStore'
+import { useProjectTabsStore } from '@pando/client/stores/projectTabsStore'
 import { useServerStore } from '@pando/client/stores/serverStore'
 import { useTheme } from '@/hooks/useTheme'
 import { useAgentBusy } from '@/hooks/useAgentBusy'
@@ -16,24 +17,9 @@ import {
 import { isMacPlatform } from './shellHooks'
 import DesktopWindowControls from './DesktopWindowControls'
 import { onTitleBarDoubleClick, useDesktopShell } from '@/services/desktopWindow'
+import { resolveHeaderSection } from './headerSections'
 
 const DOCS_URL = 'https://madeindigio.github.io/pando-docs/'
-
-/** i18n key of the section shown in the title bar, by first path segment. */
-const SECTION_KEYS: Record<string, string> = {
-  '': 'nav.chat',
-  chat: 'nav.chat',
-  projects: 'nav.projects',
-  orchestrator: 'nav.orchestrator',
-  evaluator: 'nav.selfImprovement',
-  snapshots: 'nav.agentVcs',
-  logs: 'nav.logs',
-  editor: 'nav.codeEditor',
-  terminal: 'nav.terminal',
-  settings: 'nav.settings',
-  design: 'nav.design',
-  instances: 'nav.instances',
-}
 
 /**
  * App title bar. In the simple chat mode (`simple`) it keeps the same chrome
@@ -53,17 +39,18 @@ export default function Header({ isMobile = false, simple = false }: { isMobile?
   const busy = useAgentBusy()
   const activeSession = useSessionStore((s) => s.sessions.find((x) => x.id === s.activeSessionId))
   const extensionPanels = useExtensionPanelsStore((s) => s.panels)
+  const activeTabId = useProjectTabsStore((s) => s.activeTabId)
+  const activeProjectTab = useProjectTabsStore((s) =>
+    s.activeTabId === 'main'
+      ? null
+      : s.tabs.find((tab) => tab.projectId === s.activeTabId) ?? null,
+  )
   const desktopShell = useDesktopShell()
   const childMode = startupMode === 'project-child' || isProjectChildMode()
 
   // Title: section name, plus the active session on chat routes.
-  const segments = location.pathname.split('/').filter(Boolean)
-  const first = segments[0] ?? ''
-  let section = SECTION_KEYS[first] ? t(SECTION_KEYS[first]) : ''
-  if (first === 'ext' && segments[1]) {
-    const panel = extensionPanels.find((p) => p.id === segments[1])
-    section = panel?.title || segments[1]
-  }
+  const section = resolveHeaderSection(location.pathname, (key) => t(key), extensionPanels)
+  const first = location.pathname.split('/').filter(Boolean)[0] ?? ''
   const isChatRoute = first === '' || first === 'chat'
   const sessionTitle = isChatRoute && activeSession
     ? activeSession.title || t('nav.untitledSession')
@@ -84,8 +71,18 @@ export default function Header({ isMobile = false, simple = false }: { isMobile?
     : sidebarOpen
       ? t('shell.collapseSidebar', 'Collapse sidebar')
       : t('shell.expandSidebar', 'Expand sidebar')
-  const titleSection = childMode && projectName ? projectName : section
-  const titleDetail = childMode && projectName ? (sessionTitle || section) : sessionTitle
+  const projectTabSection = activeProjectTab?.name ?? ''
+  const projectTabDetail = activeProjectTab?.childTitle ?? section
+  const titleSection = childMode && projectName
+    ? projectName
+    : activeTabId !== 'main' && projectTabSection
+      ? projectTabSection
+      : section
+  const titleDetail = childMode && projectName
+    ? (sessionTitle || section)
+    : activeTabId !== 'main'
+      ? projectTabDetail
+      : sessionTitle
 
   return (
     <header className="shell-titlebar" onDoubleClick={desktopShell ? onTitleBarDoubleClick : undefined}>

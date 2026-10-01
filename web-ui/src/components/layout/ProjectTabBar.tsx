@@ -12,6 +12,9 @@ import { SHELL_MAIN_PANEL_ID, type ProjectTabBarController } from './ProjectTabB
 const LONG_PRESS_MS = 500
 
 function stateLabel(t: (key: string, options?: Record<string, unknown>) => string, tab: ProjectTab): string {
+  if (tab.busy) {
+    return t('shell.running')
+  }
   switch (tab.state) {
     case 'starting':
       return t('projects.tabs.starting')
@@ -221,7 +224,7 @@ export default function ProjectTabBar({
                 <span className="shell-projecttab-label">{tab.name}</span>
                 <Tooltip content={stateLabel(t, tab)}>
                   <span className="shell-projecttab-state" aria-label={stateLabel(t, tab)}>
-                    {tab.state === 'starting' ? (
+                    {tab.state === 'starting' || tab.busy ? (
                       <Spinner size={11} />
                     ) : (
                       <span

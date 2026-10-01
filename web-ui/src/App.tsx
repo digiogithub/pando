@@ -24,6 +24,7 @@ import AgentVcsView from '@/components/agentvcs/AgentVcsView'
 import SelfImprovementView from '@/components/evaluator/SelfImprovementView'
 import CodeEditorView from '@/components/editor/CodeEditorView'
 import ProjectsView from '@/components/projects/ProjectsView'
+import ProjectWorkspace from '@/components/projects/ProjectWorkspace'
 import DesignView from '@/components/design/DesignView'
 import DesignRouteEffects from '@/components/design/DesignRouteEffects'
 import InstancesPanel from '@/components/instances/InstancesPanel'
@@ -42,6 +43,7 @@ import { getRouterBasename, isRootRouterBasename } from '@/lib/runtimeConfig'
 import { useThemeStore } from '@/hooks/useTheme'
 import { DesktopFrameBar } from '@/components/layout/DesktopWindowControls'
 import { useDesktopNavigation } from '@/services/desktopWindow'
+import { useProjectChildBridge } from '@/hooks/useProjectChildBridge'
 
 /**
  * Global Ctrl/Cmd+Shift+L flips light/dark from any route (including the
@@ -92,6 +94,7 @@ function DesktopNavigationBridge() {
 }
 
 function RootLayout() {
+  useProjectChildBridge()
   return (
     <Suspense
       fallback={
@@ -135,6 +138,7 @@ const router = createBrowserRouter(
         <Route path="terminal" element={<TerminalView />} />
         <Route path="settings" element={<SettingsView />} />
         <Route path="projects" element={<ProjectsView />} />
+        <Route path="projects/:id/workspace" element={<ProjectWorkspace />} />
         {/* Both routes render the same view: the gallery without an id,
             the Studio with one, so a Studio URL survives a reload. */}
         <Route path="design" element={<DesignView />} />

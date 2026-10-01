@@ -816,6 +816,8 @@ export interface ProjectTab {
   delegations?: number
   openedAt: string
   error?: string
+  busy?: boolean
+  childTitle?: string
 }
 
 // Settings / config types (matching SettingsResponse in handlers_settings.go)

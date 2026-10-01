@@ -2,14 +2,15 @@
 id: PANDO-US-0111
 type: story
 title: "WebUI: project workspace route hosting the child UI in a keep-alive iframe"
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0019
 author: mcp
 labels: [projects, webui]
 estimate: 5
 created: 2026-10-01T19:24:43Z
-updated: 2026-10-01T19:24:43Z
+updated: 2026-10-01T20:41:21Z
+closed: 2026-10-01T20:41:21Z
 ---
 
 ## Description

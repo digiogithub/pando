@@ -178,6 +178,25 @@
   overflow: hidden;
 }
 
+.shell-main-inner--workspace {
+  pointer-events: none;
+}
+
+.shell-projectframes {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.shell-projectframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--bg);
+}
+
 /* ── Sidebar ───────────────────────────────────────────────────────────── */
 
 .shell-sidebar {
@@ -633,6 +652,69 @@
   pointer-events: auto;
 }
 
+/* ── Project workspace route overlays ─────────────────────────────────── */
+
+.project-workspace {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.project-workspace-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  pointer-events: none;
+}
+
+.project-workspace-panel,
+.project-workspace .ui-empty {
+  width: min(560px, 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-card) 92%, transparent);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+}
+
+.project-workspace .ui-empty {
+  padding: 28px;
+}
+
+.project-workspace-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+}
+
+.project-workspace-error {
+  margin: 0;
+  max-height: min(40vh, 280px);
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.project-workspace-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+  pointer-events: auto;
+}
+
 @media (max-width: 768px) {
   .shell-main { border-left: 0; border-top-left-radius: 0; }
   .shell-title { justify-content: flex-start; padding: 0 4px; }
@@ -646,6 +728,10 @@
     padding: 0 8px max(0px, env(safe-area-inset-bottom));
   }
   .shell-projecttab { max-width: min(220px, 72vw); }
+  .project-workspace-overlay { padding: 16px; }
+  .project-workspace-panel,
+  .project-workspace .ui-empty { width: 100%; }
+  .project-workspace-actions > * { flex: 1 1 160px; }
 }
 
 @media (hover: none) and (pointer: coarse) {

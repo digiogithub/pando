@@ -42,11 +42,16 @@ export interface ProjectTabActionResult {
 interface ProjectTabsStore {
   tabs: ProjectTab[]
   activeTabId: 'main' | string
+  focusRequestId: number
   order: string[]
   lastMainRoute: string
   openTab: (projectId: string) => Promise<ProjectTabActionResult>
   closeTab: (projectId: string, options?: { stop?: boolean }) => Promise<ProjectTabActionResult>
   focusTab: (id: 'main' | string) => void
+  setRuntimeState: (
+    projectId: string,
+    runtime: { busy?: boolean; childTitle?: string | null },
+  ) => void
   reorder: (order: string[]) => void
   restore: () => Promise<void>
   applyEvent: (event: ProjectManagerEvent) => void
@@ -137,6 +142,8 @@ function baseTab(projectId: string, project: Project | null, existing?: ProjectT
     delegations: existing?.delegations ?? project?.delegations ?? 0,
     openedAt: existing?.openedAt ?? new Date().toISOString(),
     error: existing?.error,
+    busy: existing?.busy ?? false,
+    childTitle: existing?.childTitle,
   }
 }
 
@@ -235,6 +242,13 @@ async function startTab(projectId: string, force: boolean): Promise<ProjectTabAc
 
   const promise: Promise<ProjectTabActionResult> = (async (): Promise<ProjectTabActionResult> => {
     const project = await ensureProject(projectId)
+    if (!project) {
+      return {
+        ok: false,
+        code: 'error',
+        error: 'project_not_found',
+      }
+    }
 
     while (true) {
       const existing = useProjectTabsStore.getState().tabs.find((tab) => tab.projectId === projectId)
@@ -267,6 +281,7 @@ async function startTab(projectId: string, force: boolean): Promise<ProjectTabAc
           webUrl: response.web_url ?? startingTab.webUrl,
           webPort: response.web_port ?? startingTab.webPort,
           error: undefined,
+          busy: false,
         }
 
         useProjectTabsStore.setState((state) => {
@@ -301,6 +316,8 @@ async function startTab(projectId: string, force: boolean): Promise<ProjectTabAc
             ...baseTab(projectId, project, currentTab),
             state: 'stopped',
             error: undefined,
+            busy: false,
+            childTitle: undefined,
           }
 
           useProjectTabsStore.setState((state) => ({
@@ -324,6 +341,8 @@ async function startTab(projectId: string, force: boolean): Promise<ProjectTabAc
           ...baseTab(projectId, project, currentTab),
           state: 'error',
           error: detail,
+          busy: false,
+          childTitle: undefined,
         }
 
         useProjectTabsStore.setState((state) => ({
@@ -363,6 +382,7 @@ function baseProject(projectId: string, tab?: ProjectTab): Project {
 export const useProjectTabsStore = create<ProjectTabsStore>((set, get) => ({
   tabs: [],
   activeTabId: 'main',
+  focusRequestId: 0,
   order: [],
   lastMainRoute: DEFAULT_MAIN_ROUTE,
 
@@ -424,7 +444,24 @@ export const useProjectTabsStore = create<ProjectTabsStore>((set, get) => ({
     if (id !== 'main' && !get().tabs.some((tab) => tab.projectId === id)) {
       return
     }
-    set({ activeTabId: id })
+    set((state) => ({ activeTabId: id, focusRequestId: state.focusRequestId + 1 }))
+  },
+
+  setRuntimeState: (projectId, runtime) => {
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.projectId === projectId
+          ? {
+              ...tab,
+              busy: runtime.busy ?? tab.busy ?? false,
+              childTitle:
+                runtime.childTitle === undefined
+                  ? tab.childTitle
+                  : runtime.childTitle || undefined,
+            }
+          : tab,
+      ),
+    }))
   },
 
   reorder: (nextOrder) => {
@@ -443,6 +480,7 @@ export const useProjectTabsStore = create<ProjectTabsStore>((set, get) => ({
         tabs: [],
         order: [],
         activeTabId: 'main',
+        focusRequestId: 0,
         lastMainRoute: DEFAULT_MAIN_ROUTE,
       })
       return
@@ -457,6 +495,7 @@ export const useProjectTabsStore = create<ProjectTabsStore>((set, get) => ({
       tabs: sortTabs(tabs, order),
       order,
       activeTabId: normalizeActiveTabId(persisted.activeTabId ?? 'main', tabs),
+      focusRequestId: 0,
       lastMainRoute: persisted.lastMainRoute ?? DEFAULT_MAIN_ROUTE,
     })
   },
@@ -486,6 +525,8 @@ export const useProjectTabsStore = create<ProjectTabsStore>((set, get) => ({
                 ...tab,
                 state: event.status as ProjectTab['state'],
                 error: event.status === 'error' ? event.error ?? tab.error : undefined,
+                busy: event.status === 'running' ? tab.busy ?? false : false,
+                childTitle: event.status === 'running' ? tab.childTitle : undefined,
               }
             : tab,
         ),
@@ -506,6 +547,7 @@ export const useProjectTabsStore = create<ProjectTabsStore>((set, get) => ({
             state: 'running',
             webPort: event.webPort ?? base.webPort,
             error: undefined,
+            busy: false,
           }
           break
         case 'web_stopped':
@@ -516,6 +558,8 @@ export const useProjectTabsStore = create<ProjectTabsStore>((set, get) => ({
             webPort: event.webPort ?? base.webPort,
             delegations: 0,
             error: undefined,
+            busy: false,
+            childTitle: undefined,
           }
           break
         case 'web_error':
@@ -524,6 +568,8 @@ export const useProjectTabsStore = create<ProjectTabsStore>((set, get) => ({
             state: 'error',
             webPort: event.webPort ?? base.webPort,
             error: event.error ?? base.error,
+            busy: false,
+            childTitle: undefined,
           }
           break
         default:

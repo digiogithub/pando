@@ -176,6 +176,7 @@ export default function ChatInput({ onSend, streaming, onCancel, disabled, goalA
         <textarea
           ref={textareaRef}
           className="chat-composer-input"
+          data-project-child-focus-target="chat-input"
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}

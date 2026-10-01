@@ -90,6 +90,20 @@
       "shortcutFocusTabs": "Focar a aba principal ou uma aba de projeto",
       "shortcutCloseTab": "Fechar a aba atual do projeto",
       "shortcutCycleTabs": "Alternar entre as abas de projeto"
+    },
+    "workspace": {
+      "startingTitle": "Iniciando o espaço de trabalho",
+      "startingDescription": "Iniciando o Pando em {{path}}",
+      "errorTitle": "{{name}} não pôde ser iniciado",
+      "errorDescription": "O Pando parou antes que a interface do espaço de trabalho ficasse pronta.",
+      "restart": "Reiniciar espaço de trabalho",
+      "close": "Fechar aba",
+      "stoppedTitle": "{{name}} está fechado",
+      "stoppedDescription": "Reabra o espaço de trabalho em segundo plano para continuar de onde você parou.",
+      "reopen": "Reabrir espaço de trabalho",
+      "unknownTitle": "Projeto não encontrado",
+      "unknownDescription": "Esse projeto não está mais disponível neste espaço de trabalho.",
+      "backToProjects": "Voltar para projetos"
     }
   },
   "orchestrator": {

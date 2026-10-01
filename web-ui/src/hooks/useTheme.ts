@@ -14,6 +14,7 @@
  * "system") and `pando_accent`. The backend config field `theme` keeps the
  * legacy "family-mode" string; legacy family ids are mapped on read.
  */
+import { useSyncExternalStore } from 'react'
 import { create } from 'zustand'
 import { useShallow } from 'zustand/react/shallow'
 import { localBrowserStorage, storageKey } from '@pando/client/services/storage'
@@ -174,6 +175,11 @@ function commit(family: ThemeFamily, mode: ThemeModePref, accent: AccentPreset |
   return { family, mode, resolvedMode, accent }
 }
 
+function applyThemeState(themeId: string, accent: AccentPreset | null, persist: boolean) {
+  const { family, mode } = parseThemeId(themeId)
+  return commit(family, mode, normalizeAccent(accent), persist)
+}
+
 export const useThemeStore = create<ThemeState>((set, get) => ({
   ...commit(initial.family, initial.mode, initialAccent, false),
   setFamily: (family) => {
@@ -243,4 +249,21 @@ export function useTheme() {
     themeName: s.family,
     themeMode: s.resolvedMode,
   }
+}
+
+export function syncThemeFromParent(themeId: string, accent: AccentPreset | null) {
+  useThemeStore.setState(applyThemeState(themeId, accent, false))
+}
+
+export function useThemeSyncSnapshot() {
+  return useSyncExternalStore(
+    (onStoreChange) => useThemeStore.subscribe(onStoreChange),
+    () => {
+      const state = useThemeStore.getState()
+      return {
+        themeId: `${state.family}-${state.mode}` as ThemeId,
+        accent: state.accent,
+      }
+    },
+  )
 }

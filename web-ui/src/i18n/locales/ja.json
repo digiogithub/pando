@@ -90,6 +90,20 @@
       "shortcutFocusTabs": "メインまたはプロジェクトタブにフォーカスする",
       "shortcutCloseTab": "現在のプロジェクトタブを閉じる",
       "shortcutCycleTabs": "プロジェクトタブを順に切り替える"
+    },
+    "workspace": {
+      "startingTitle": "ワークスペースを起動しています",
+      "startingDescription": "{{path}} で Pando を起動しています",
+      "errorTitle": "{{name}} を起動できませんでした",
+      "errorDescription": "ワークスペース UI の準備が整う前に Pando が停止しました。",
+      "restart": "ワークスペースを再起動",
+      "close": "タブを閉じる",
+      "stoppedTitle": "{{name}} は閉じられています",
+      "stoppedDescription": "中断した場所から続けるには、バックグラウンドのワークスペースを再度開いてください。",
+      "reopen": "ワークスペースを再度開く",
+      "unknownTitle": "プロジェクトが見つかりません",
+      "unknownDescription": "このプロジェクトはこのワークスペースでは利用できなくなりました。",
+      "backToProjects": "プロジェクト一覧に戻る"
     }
   },
   "orchestrator": {

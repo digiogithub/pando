@@ -90,6 +90,20 @@
       "shortcutFocusTabs": "Focus main or project tabs",
       "shortcutCloseTab": "Close the current project tab",
       "shortcutCycleTabs": "Cycle through project tabs"
+    },
+    "workspace": {
+      "startingTitle": "Starting workspace",
+      "startingDescription": "Starting Pando in {{path}}",
+      "errorTitle": "{{name}} could not start",
+      "errorDescription": "Pando stopped before the workspace UI was ready.",
+      "restart": "Restart workspace",
+      "close": "Close tab",
+      "stoppedTitle": "{{name}} is closed",
+      "stoppedDescription": "Reopen the background workspace to continue where you left off.",
+      "reopen": "Reopen workspace",
+      "unknownTitle": "Project not found",
+      "unknownDescription": "That project is not available in this workspace anymore.",
+      "backToProjects": "Back to projects"
     }
   },
   "orchestrator": {

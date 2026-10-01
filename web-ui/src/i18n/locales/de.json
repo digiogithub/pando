@@ -90,6 +90,20 @@
       "shortcutFocusTabs": "Haupt- oder Projekt-Tabs fokussieren",
       "shortcutCloseTab": "Aktuellen Projekt-Tab schließen",
       "shortcutCycleTabs": "Zwischen Projekt-Tabs wechseln"
+    },
+    "workspace": {
+      "startingTitle": "Arbeitsbereich wird gestartet",
+      "startingDescription": "Pando wird in {{path}} gestartet",
+      "errorTitle": "{{name}} konnte nicht gestartet werden",
+      "errorDescription": "Pando wurde beendet, bevor die Arbeitsbereichsoberfläche bereit war.",
+      "restart": "Arbeitsbereich neu starten",
+      "close": "Tab schließen",
+      "stoppedTitle": "{{name}} ist geschlossen",
+      "stoppedDescription": "Öffne den Hintergrund-Arbeitsbereich erneut, um dort weiterzumachen, wo du aufgehört hast.",
+      "reopen": "Arbeitsbereich erneut öffnen",
+      "unknownTitle": "Projekt nicht gefunden",
+      "unknownDescription": "Dieses Projekt ist in diesem Arbeitsbereich nicht mehr verfügbar.",
+      "backToProjects": "Zurück zu Projekten"
     }
   },
   "orchestrator": {

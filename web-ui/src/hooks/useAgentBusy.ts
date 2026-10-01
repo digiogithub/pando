@@ -1,4 +1,5 @@
 import { useSessionStore } from '@pando/client/stores/sessionStore'
+import { useProjectTabsStore } from '@pando/client/stores/projectTabsStore'
 
 /**
  * True while the agent (the active streaming session, or any other session
@@ -10,5 +11,11 @@ import { useSessionStore } from '@pando/client/stores/sessionStore'
 export function useAgentBusy(): boolean {
   const isStreaming = useSessionStore((s) => s.isStreaming)
   const anyRunning = useSessionStore((s) => s.sessions.some((sess) => sess.is_running))
-  return isStreaming || anyRunning
+  const activeTabId = useProjectTabsStore((s) => s.activeTabId)
+  const activeProjectBusy = useProjectTabsStore((s) =>
+    s.activeTabId === 'main'
+      ? false
+      : s.tabs.find((tab) => tab.projectId === activeTabId)?.busy ?? false,
+  )
+  return isStreaming || anyRunning || activeProjectBusy
 }

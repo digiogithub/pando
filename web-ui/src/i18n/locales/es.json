@@ -90,6 +90,20 @@
       "shortcutFocusTabs": "Enfocar la pestaña principal o de proyecto",
       "shortcutCloseTab": "Cerrar la pestaña actual del proyecto",
       "shortcutCycleTabs": "Recorrer las pestañas de proyectos"
+    },
+    "workspace": {
+      "startingTitle": "Iniciando el espacio de trabajo",
+      "startingDescription": "Iniciando Pando en {{path}}",
+      "errorTitle": "No se pudo iniciar {{name}}",
+      "errorDescription": "Pando se detuvo antes de que la interfaz del espacio de trabajo estuviera lista.",
+      "restart": "Reiniciar espacio de trabajo",
+      "close": "Cerrar pestaña",
+      "stoppedTitle": "{{name}} está cerrado",
+      "stoppedDescription": "Vuelve a abrir el espacio de trabajo en segundo plano para continuar donde lo dejaste.",
+      "reopen": "Reabrir espacio de trabajo",
+      "unknownTitle": "Proyecto no encontrado",
+      "unknownDescription": "Ese proyecto ya no está disponible en este espacio de trabajo.",
+      "backToProjects": "Volver a proyectos"
     }
   },
   "orchestrator": {

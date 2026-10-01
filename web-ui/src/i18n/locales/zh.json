@@ -90,6 +90,20 @@
       "shortcutFocusTabs": "聚焦主标签页或项目标签页",
       "shortcutCloseTab": "关闭当前项目标签页",
       "shortcutCycleTabs": "循环切换项目标签页"
+    },
+    "workspace": {
+      "startingTitle": "正在启动工作区",
+      "startingDescription": "正在 {{path}} 中启动 Pando",
+      "errorTitle": "{{name}} 无法启动",
+      "errorDescription": "在工作区界面准备就绪之前，Pando 已停止运行。",
+      "restart": "重新启动工作区",
+      "close": "关闭标签页",
+      "stoppedTitle": "{{name}} 已关闭",
+      "stoppedDescription": "重新打开后台工作区即可从上次离开的地方继续。",
+      "reopen": "重新打开工作区",
+      "unknownTitle": "未找到项目",
+      "unknownDescription": "该项目在当前工作区中已不可用。",
+      "backToProjects": "返回项目列表"
     }
   },
   "orchestrator": {

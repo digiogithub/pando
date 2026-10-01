@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from 'react'
 import { localBrowserStorage, storageKey } from '@pando/client/services/storage'
 
 /**
@@ -37,16 +38,28 @@ function apply(scale: UIScale) {
   else root.setAttribute('data-ui-size', scale)
 }
 
+const listeners = new Set<() => void>()
+
+function emitChange() {
+  for (const listener of listeners) {
+    listener()
+  }
+}
+
 /** Current UI scale (localStorage, falling back to "default"). */
 export function getUIScale(): UIScale {
   return readStorage()
 }
 
 /** Persists and immediately applies the UI scale. */
-export function setUIScale(scale: UIScale) {
-  if (scale === 'default') localBrowserStorage.removeItem(KEY)
-  else localBrowserStorage.setItem(KEY, scale)
+export function setUIScale(scale: UIScale, options?: { persist?: boolean }) {
+  const persist = options?.persist ?? true
+  if (persist) {
+    if (scale === 'default') localBrowserStorage.removeItem(KEY)
+    else localBrowserStorage.setItem(KEY, scale)
+  }
   apply(scale)
+  emitChange()
 }
 
 if (typeof document !== 'undefined') {
@@ -58,6 +71,19 @@ if (typeof document !== 'undefined') {
 if (typeof window !== 'undefined') {
   // Keep multiple tabs/windows in sync, like useTheme.ts does for the theme.
   window.addEventListener('storage', (e) => {
-    if (e.key === storageKey(KEY)) apply(readStorage())
+    if (e.key === storageKey(KEY)) {
+      apply(readStorage())
+      emitChange()
+    }
   })
+}
+
+export function useUIScale() {
+  return useSyncExternalStore(
+    (listener) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    getUIScale,
+  )
 }

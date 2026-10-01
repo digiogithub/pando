@@ -90,6 +90,20 @@
       "shortcutFocusTabs": "Activer l’onglet principal ou un onglet de projet",
       "shortcutCloseTab": "Fermer l’onglet de projet actuel",
       "shortcutCycleTabs": "Parcourir les onglets de projet"
+    },
+    "workspace": {
+      "startingTitle": "Démarrage de l’espace de travail",
+      "startingDescription": "Démarrage de Pando dans {{path}}",
+      "errorTitle": "{{name}} n’a pas pu démarrer",
+      "errorDescription": "Pando s’est arrêté avant que l’interface de l’espace de travail soit prête.",
+      "restart": "Redémarrer l’espace de travail",
+      "close": "Fermer l’onglet",
+      "stoppedTitle": "{{name}} est fermé",
+      "stoppedDescription": "Rouvrez l’espace de travail en arrière-plan pour reprendre là où vous vous étiez arrêté.",
+      "reopen": "Rouvrir l’espace de travail",
+      "unknownTitle": "Projet introuvable",
+      "unknownDescription": "Ce projet n’est plus disponible dans cet espace de travail.",
+      "backToProjects": "Retour aux projets"
     }
   },
   "orchestrator": {

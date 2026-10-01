@@ -9,7 +9,7 @@ export function projectWorkspacePath(projectId: string): string {
   return `/projects/${encodeURIComponent(projectId)}/workspace`
 }
 
-function readWorkspaceProjectId(pathname: string): string | null {
+export function readWorkspaceProjectId(pathname: string): string | null {
   const match = PROJECT_WORKSPACE_ROUTE.exec(pathname)
   if (!match) return null
 

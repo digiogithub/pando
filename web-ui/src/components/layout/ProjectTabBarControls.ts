@@ -33,6 +33,22 @@ export interface ProjectTabBarController extends ProjectTabShortcutController {
   openProjectInNewWindow: (projectId: string) => Promise<void>
 }
 
+export interface ShellShortcutEvent {
+  ctrlKey: boolean
+  altKey: boolean
+  metaKey: boolean
+  shiftKey: boolean
+  key: string
+  code?: string
+}
+
+export interface ShellShortcutActions {
+  openQuickMenu: () => void
+  openModelSwitcher: () => void
+  toggleSidebar: () => void
+  toggleAutoApprove: () => void
+}
+
 function readClosePreference(): ClosePreference | null {
   try {
     const raw = sessionBrowserStorage.getItem(PROJECT_TAB_CLOSE_PREF_KEY)
@@ -65,15 +81,15 @@ function translateNotice(
 }
 
 export function handleProjectTabKeyboardShortcut(
-  event: KeyboardEvent,
+  event: ShellShortcutEvent,
   controller: ProjectTabShortcutController,
 ): boolean {
   if (!event.ctrlKey || !event.altKey || event.metaKey) {
     return false
   }
 
-  if (/^Digit[1-9]$/.test(event.code) || /^[1-9]$/.test(event.key)) {
-    const key = Number(event.code.replace('Digit', '') || event.key)
+  if ((event.code && /^Digit[1-9]$/.test(event.code)) || /^[1-9]$/.test(event.key)) {
+    const key = Number((event.code ? event.code.replace('Digit', '') : '') || event.key)
     if (Number.isInteger(key) && key >= 1 && key <= 9) {
       controller.focusTabByIndex(key)
       return true
@@ -92,6 +108,39 @@ export function handleProjectTabKeyboardShortcut(
 
   if (event.key === 'ArrowRight') {
     controller.cycleTabs(1)
+    return true
+  }
+
+  return false
+}
+
+export function handleShellKeyboardShortcut(
+  event: ShellShortcutEvent,
+  controller: ProjectTabShortcutController,
+  actions: ShellShortcutActions,
+): boolean {
+  const key = event.key.toLowerCase()
+  if (handleProjectTabKeyboardShortcut(event, controller)) {
+    return true
+  }
+
+  if (event.ctrlKey && !event.altKey && !event.metaKey && key === 'p') {
+    actions.openQuickMenu()
+    return true
+  }
+
+  if (event.ctrlKey && !event.altKey && !event.metaKey && key === 'o') {
+    actions.openModelSwitcher()
+    return true
+  }
+
+  if (event.ctrlKey && !event.altKey && !event.metaKey && key === 'b') {
+    actions.toggleSidebar()
+    return true
+  }
+
+  if (event.shiftKey && event.key === 'Tab' && !event.ctrlKey && !event.altKey && !event.metaKey) {
+    actions.toggleAutoApprove()
     return true
   }
 
