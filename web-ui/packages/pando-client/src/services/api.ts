@@ -1,6 +1,8 @@
 import { localBrowserStorage } from './storage'
+import type { ServerInfo } from '../types'
 
 const TOKEN_KEY = 'pando_token'
+const CHILD_MODE_RESTRICTED_PATHS = new Set(['/projects', '/instances'])
 
 // Network error handler — registered by serverStore to get immediate notification
 // when the server is unreachable (TypeError: Failed to fetch).
@@ -39,6 +41,7 @@ function normalizeBaseURL(url: string): string {
 }
 
 let baseURL = normalizeBaseURL(resolveInitialBaseURL())
+let serverReportedProjectChildMode = false
 
 function getConfiguredBasePath(url: string): string {
   const trimmed = url.trim()
@@ -62,7 +65,26 @@ export function getBaseURL(): string {
 }
 
 export function isProjectChildMode(): boolean {
-  return /^\/api\/v1\/projects\/[^/]+\/web$/.test(getConfiguredBasePath(baseURL))
+  return serverReportedProjectChildMode || /^\/api\/v1\/projects\/[^/]+\/web$/.test(getConfiguredBasePath(baseURL))
+}
+
+export function setServerProjectChildMode(startupMode: string | null | undefined): void {
+  serverReportedProjectChildMode = startupMode === 'project-child'
+}
+
+export function isChildModeRestrictedPath(path: string): boolean {
+  const normalized = (path.replace(/\/+$/, '') || '/')
+  return CHILD_MODE_RESTRICTED_PATHS.has(normalized)
+}
+
+export async function fetchServerInfo(): Promise<ServerInfo> {
+  const response = await fetch(resolveAPIURL('/health'))
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
+  }
+  const payload = await response.json() as ServerInfo
+  setServerProjectChildMode(payload.startup_mode)
+  return payload
 }
 
 export function resolveAPIURL(path: string): string {

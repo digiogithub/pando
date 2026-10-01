@@ -47,6 +47,9 @@ type ServerConfig struct {
 	TLSKeyFile          string
 	StartupMode         string
 	ParentInstanceID    string
+	ProjectID           string
+	ProjectName         string
+	PublicBasePath      string
 	WebChildTLSCertFile string
 	WebChildTLSKeyFile  string
 	WebChildTLSDataDir  string
@@ -113,12 +116,13 @@ type Server struct {
 
 func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
 	appOpts := app.AppOptions{
-		DBQuerier:           cfg.Querier,
-		StartupMode:         cfg.StartupMode,
-		InstanceID:          cfg.ParentInstanceID,
-		WebChildTLSCertFile: cfg.WebChildTLSCertFile,
-		WebChildTLSKeyFile:  cfg.WebChildTLSKeyFile,
-		WebChildTLSDataDir:  cfg.WebChildTLSDataDir,
+		DBQuerier:             cfg.Querier,
+		StartupMode:           cfg.StartupMode,
+		ChildParentInstanceID: cfg.ParentInstanceID,
+		InstanceID:            cfg.InstanceID,
+		WebChildTLSCertFile:   cfg.WebChildTLSCertFile,
+		WebChildTLSKeyFile:    cfg.WebChildTLSKeyFile,
+		WebChildTLSDataDir:    cfg.WebChildTLSDataDir,
 	}
 	application, err := app.New(ctx, cfg.DB, appOpts)
 	if err != nil {

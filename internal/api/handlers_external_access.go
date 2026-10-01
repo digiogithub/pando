@@ -104,6 +104,10 @@ func (s *Server) handleExternalAccess(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		writeJSON(w, http.StatusOK, s.externalAccessStatus())
 	case http.MethodPut:
+		if s.isProjectChildMode() {
+			s.writeChildModeUnavailable(w)
+			return
+		}
 		var req struct {
 			Enabled bool `json:"enabled"`
 		}

@@ -51,6 +51,10 @@ func (s *Server) handleListInstances(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if s.isProjectChildMode() {
+		s.writeChildModeUnavailable(w)
+		return
+	}
 
 	reg := instanceregistry.New()
 	entries, err := reg.List()
@@ -70,6 +74,10 @@ func (s *Server) handleListInstances(w http.ResponseWriter, r *http.Request) {
 // handleGetInstance handles GET /api/v1/instances/{id}.
 // Returns a single instance by its InstanceID.
 func (s *Server) handleGetInstance(w http.ResponseWriter, r *http.Request) {
+	if s.isProjectChildMode() {
+		s.writeChildModeUnavailable(w)
+		return
+	}
 	id := r.PathValue("id")
 	if id == "" {
 		writeError(w, http.StatusBadRequest, "instance id required")
@@ -93,6 +101,10 @@ func (s *Server) handleGetInstance(w http.ResponseWriter, r *http.Request) {
 // handleInstanceStream handles GET /api/v1/instances/{id}/stream.
 // Proxies the remote instance's ZMQ PUB stream as Server-Sent Events.
 func (s *Server) handleInstanceStream(w http.ResponseWriter, r *http.Request) {
+	if s.isProjectChildMode() {
+		s.writeChildModeUnavailable(w)
+		return
+	}
 	id := r.PathValue("id")
 	if id == "" {
 		writeError(w, http.StatusBadRequest, "instance id required")
@@ -171,6 +183,10 @@ func (s *Server) handleInstanceListSessions(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if s.isProjectChildMode() {
+		s.writeChildModeUnavailable(w)
+		return
+	}
 
 	instanceID := r.PathValue("id")
 	if instanceID == "" {
@@ -244,6 +260,10 @@ func (s *Server) handleInstanceListMessages(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if s.isProjectChildMode() {
+		s.writeChildModeUnavailable(w)
+		return
+	}
 
 	instanceID := r.PathValue("id")
 	sessionID := r.PathValue("sid")
@@ -303,6 +323,10 @@ func (s *Server) handleInstanceListMessages(w http.ResponseWriter, r *http.Reque
 // handleInstanceGetSession handles GET /api/v1/instances/{id}/sessions/{sid}.
 // Returns the state of a specific session on a remote instance via RPC session.get.
 func (s *Server) handleInstanceGetSession(w http.ResponseWriter, r *http.Request) {
+	if s.isProjectChildMode() {
+		s.writeChildModeUnavailable(w)
+		return
+	}
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -360,6 +384,10 @@ func (s *Server) handleInstanceGetSession(w http.ResponseWriter, r *http.Request
 // handleInstanceSessionStream handles GET /api/v1/instances/{id}/sessions/{sid}/stream.
 // Proxies the remote instance's ZMQ PUB stream as SSE, filtering events by session_id.
 func (s *Server) handleInstanceSessionStream(w http.ResponseWriter, r *http.Request) {
+	if s.isProjectChildMode() {
+		s.writeChildModeUnavailable(w)
+		return
+	}
 	instanceID := r.PathValue("id")
 	sessionID := r.PathValue("sid")
 
@@ -451,6 +479,10 @@ func (s *Server) handleInstanceSessionStream(w http.ResponseWriter, r *http.Requ
 // handleInstanceCancelSession handles DELETE /api/v1/instances/{id}/sessions/{sid}/cancel.
 // Interrupts an ongoing LLM generation on a remote session via RPC session.interrupt.
 func (s *Server) handleInstanceCancelSession(w http.ResponseWriter, r *http.Request) {
+	if s.isProjectChildMode() {
+		s.writeChildModeUnavailable(w)
+		return
+	}
 	if r.Method != http.MethodDelete {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -513,6 +545,10 @@ type instanceSendMessageRequest struct {
 // handleInstanceSendMessage handles POST /api/v1/instances/{id}/sessions/{sid}/message.
 // Sends a user message to a session on a remote instance via RemoteControl.
 func (s *Server) handleInstanceSendMessage(w http.ResponseWriter, r *http.Request) {
+	if s.isProjectChildMode() {
+		s.writeChildModeUnavailable(w)
+		return
+	}
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return

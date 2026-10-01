@@ -68,6 +68,10 @@ type ManagerOptions struct {
 	// ParentInstanceID identifies the parent Pando process that owns any spawned
 	// background WebUI children.
 	ParentInstanceID string
+	// SpawnDisabled prevents this manager from spawning ACP or WebUI children.
+	// Project-child servers use it to keep delegation-to-external-peers working
+	// without allowing recursive child startup.
+	SpawnDisabled bool
 	// WebTLSCertFile and WebTLSKeyFile provide the certificate/key pair the
 	// parent uses for child WebUI TLS pinning. When empty, the manager generates
 	// or reuses a certificate under WebTLSDataDir on first use.
@@ -91,6 +95,7 @@ type Manager struct {
 	// pandoBin is the path to the current pando executable.
 	pandoBin         string
 	parentInstanceID string
+	spawnDisabled    bool
 	webTLSCertFile   string
 	webTLSKeyFile    string
 	webTLSDataDir    string
@@ -128,13 +133,16 @@ func NewManager(ctx context.Context, service Service, opts ...ManagerOptions) (*
 		registry:         newInstanceRegistry(),
 		pandoBin:         pandoBin,
 		parentInstanceID: opt.ParentInstanceID,
+		spawnDisabled:    opt.SpawnDisabled,
 		webTLSCertFile:   opt.WebTLSCertFile,
 		webTLSKeyFile:    opt.WebTLSKeyFile,
 		webTLSDataDir:    opt.WebTLSDataDir,
 		ctx:              mgrCtx,
 		cancel:           cancel,
 	}
-	m.adoptExistingWebInstances(mgrCtx)
+	if !m.spawnDisabled {
+		m.adoptExistingWebInstances(mgrCtx)
+	}
 	return m, nil
 }
 
@@ -142,6 +150,10 @@ func NewManager(ctx context.Context, service Service, opts ...ManagerOptions) (*
 // the active project.  Returns ErrProjectNeedsInit if the path has no
 // .pando.toml or .pando.json configuration file.
 func (m *Manager) Activate(ctx context.Context, projectID string) error {
+	if m.spawnDisabled {
+		return ErrChildInstance
+	}
+
 	// 1. Fetch project record.
 	proj, err := m.service.Get(ctx, projectID)
 	if err != nil {
@@ -219,6 +231,10 @@ func (m *Manager) Activate(ctx context.Context, projectID string) error {
 // It creates .pando.toml, .pando/ directory structure, and the init flag,
 // then retries Activate. On success the project becomes the active project.
 func (m *Manager) CompleteInit(ctx context.Context, projectID string) error {
+	if m.spawnDisabled {
+		return ErrChildInstance
+	}
+
 	proj, err := m.service.Get(ctx, projectID)
 	if err != nil {
 		return fmt.Errorf("CompleteInit: get project: %w", err)
@@ -668,9 +684,16 @@ func (m *Manager) SeedFromGlobal(ctx context.Context) {
 		logging.Warn("project manager: seed from global: failed to load registry", "error", err)
 		return
 	}
+	selfPath := ""
+	if m.spawnDisabled {
+		selfPath = config.CanonicalProjectPath(config.WorkingDirectory())
+	}
 	for _, entry := range entries {
 		absPath := entry.Path
 		if absPath == "" {
+			continue
+		}
+		if selfPath != "" && config.CanonicalProjectPath(absPath) == selfPath {
 			continue
 		}
 		// Skip if already present in the local DB.

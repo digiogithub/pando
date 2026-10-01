@@ -49,3 +49,8 @@ var ErrSelfInstance = errors.New("project is served by this instance; warm deleg
 // ErrChildStartupTimeout is returned when a spawned background child never
 // becomes healthy within the startup timeout window.
 var ErrChildStartupTimeout = errors.New("child startup timed out")
+
+// ErrChildInstance is returned when a project-child Pando instance is asked to
+// spawn or initialize another project child. Child instances may delegate to
+// external peers over IPC, but they must never create recursive descendants.
+var ErrChildInstance = errors.New("project child instances cannot spawn nested project instances")

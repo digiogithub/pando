@@ -1,15 +1,15 @@
-import { useEffect, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useSessionStore } from '@pando/client/stores/sessionStore'
 import { useExtensionPanelsStore } from '@pando/client/stores/extensionPanelsStore'
+import { useServerStore } from '@pando/client/stores/serverStore'
 import { useTheme } from '@/hooks/useTheme'
 import { useAgentBusy } from '@/hooks/useAgentBusy'
 import { BrandMark } from '@/components/brand'
 import PersonaSelector from '@/components/shared/PersonaSelector'
 import { IconButton, Tooltip } from '@/components/ui'
-import { getBaseURL } from '@pando/client/services/api'
+import { isProjectChildMode } from '@pando/client/services/api'
 import {
   CircleQuestionMark, LayoutDashboard, MessageSquare, Moon, PanelLeft, PanelLeftClose, Settings, Sun,
 } from '@/components/ui/icons'
@@ -47,23 +47,14 @@ export default function Header({ isMobile = false, simple = false }: { isMobile?
   const location = useLocation()
   const { toggleSidebar, sidebarOpen, setChatMode } = useLayoutStore()
   const { resolvedMode, toggleMode } = useTheme()
-  const [version, setVersion] = useState<string>('')
+  const version = useServerStore((s) => s.version)
+  const startupMode = useServerStore((s) => s.startupMode)
+  const projectName = useServerStore((s) => s.projectName)
   const busy = useAgentBusy()
   const activeSession = useSessionStore((s) => s.sessions.find((x) => x.id === s.activeSessionId))
   const extensionPanels = useExtensionPanelsStore((s) => s.panels)
   const desktopShell = useDesktopShell()
-
-  useEffect(() => {
-    fetch(`${getBaseURL()}/health`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.version && d.version !== 'unknown') {
-          const clean = d.version.replace(/\+.*$/, '')
-          setVersion(clean.startsWith('v') ? clean : `v${clean}`)
-        }
-      })
-      .catch(() => {})
-  }, [])
+  const childMode = startupMode === 'project-child' || isProjectChildMode()
 
   // Title: section name, plus the active session on chat routes.
   const segments = location.pathname.split('/').filter(Boolean)
@@ -77,6 +68,10 @@ export default function Header({ isMobile = false, simple = false }: { isMobile?
   const sessionTitle = isChatRoute && activeSession
     ? activeSession.title || t('nav.untitledSession')
     : ''
+  const cleanVersion = version && version !== 'unknown'
+    ? version.replace(/\+.*$/, '')
+    : ''
+  const versionLabel = cleanVersion ? (cleanVersion.startsWith('v') ? cleanVersion : `v${cleanVersion}`) : ''
 
   const shortcutMod = isMacPlatform ? '⌘' : 'Ctrl'
   const themeLabel = resolvedMode === 'dark'
@@ -89,6 +84,8 @@ export default function Header({ isMobile = false, simple = false }: { isMobile?
     : sidebarOpen
       ? t('shell.collapseSidebar', 'Collapse sidebar')
       : t('shell.expandSidebar', 'Expand sidebar')
+  const titleSection = childMode && projectName ? projectName : section
+  const titleDetail = childMode && projectName ? (sessionTitle || section) : sessionTitle
 
   return (
     <header className="shell-titlebar" onDoubleClick={desktopShell ? onTitleBarDoubleClick : undefined}>
@@ -100,21 +97,21 @@ export default function Header({ isMobile = false, simple = false }: { isMobile?
           onClick={toggleSidebar}
         />
         {/* Version lives in the tooltip only: the title bar stays quiet. */}
-        <div className="shell-brand" aria-label="Pando" title={version ? `Pando ${version}` : 'Pando'}>
+        <div className="shell-brand" aria-label="Pando" title={versionLabel ? `Pando ${versionLabel}` : 'Pando'}>
           <span className="shell-brand-glyph"><BrandMark size={18} pulse={busy} /></span>
           <span className="shell-brand-name">Pando</span>
         </div>
       </div>
 
       <div className="shell-title" aria-live="polite">
-        {sessionTitle ? (
+        {titleDetail ? (
           <>
-              <span className="shell-title-section">{section}</span>
+              <span className="shell-title-section">{titleSection}</span>
               <span className="shell-title-sep" aria-hidden="true">/</span>
-              <span className="shell-title-text shell-title-strong">{sessionTitle}</span>
+              <span className="shell-title-text shell-title-strong">{titleDetail}</span>
           </>
         ) : (
-          section && <span className="shell-title-text">{section}</span>
+          titleSection && <span className="shell-title-text">{titleSection}</span>
         )}
       </div>
 

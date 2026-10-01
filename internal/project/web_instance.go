@@ -320,6 +320,10 @@ func defaultFetchWebToken(ctx context.Context, client *http.Client, baseURL stri
 
 // OpenWeb starts or reuses the background WebUI child for projectID.
 func (m *Manager) OpenWeb(ctx context.Context, projectID string) (*WebInstance, error) {
+	if m.spawnDisabled {
+		return nil, ErrChildInstance
+	}
+
 	proj, err := m.service.Get(ctx, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("project manager: get project %s: %w", projectID, err)

@@ -77,6 +77,7 @@ This is the backend for the Pando Desktop/Web UI.`,
 		if err != nil {
 			return fmt.Errorf("failed to get current working directory: %v", err)
 		}
+		startup := resolveStartupContext(cwd, "serve")
 
 		_, err = config.Load(cwd, debug, "")
 		if err != nil {
@@ -139,7 +140,9 @@ This is the backend for the Pando Desktop/Web UI.`,
 			UIBaseURL:           baseURL,
 			TLSCertFile:         tlsCert,
 			TLSKeyFile:          tlsKey,
-			ParentInstanceID:    instanceID,
+			ParentInstanceID:    startup.ParentInstanceID,
+			ProjectID:           startup.ProjectID,
+			ProjectName:         startup.ProjectName,
 			WebChildTLSCertFile: tlsCert,
 			WebChildTLSKeyFile:  tlsKey,
 			WebChildTLSDataDir:  dataDir,
@@ -147,7 +150,7 @@ This is the backend for the Pando Desktop/Web UI.`,
 			Role:                string(rt.Role),
 			PubPort:             rt.PubPort,
 			RPCPort:             rt.RPCPort,
-			StartupMode:         "serve",
+			StartupMode:         startup.Mode,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create API server: %w", err)
@@ -162,7 +165,7 @@ This is the backend for the Pando Desktop/Web UI.`,
 			WebPort:          port,
 			StartedAt:        time.Now(),
 			Mode:             instanceregistry.ModeWebUI,
-			ParentInstanceID: os.Getenv("PANDO_PARENT_INSTANCE"),
+			ParentInstanceID: startup.ParentInstanceID,
 			IsPrimary:        rt.Role == ipcruntime.RolePrimary,
 		})
 		defer func() { _ = instanceregistry.Revoke(instanceID) }()

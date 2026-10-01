@@ -196,3 +196,18 @@ func TestExternalAccessFixedByStartupFlag(t *testing.T) {
 		t.Fatalf("expected 409 when the bind comes from --host, got %d", rec.Code)
 	}
 }
+
+func TestExternalAccessChildModeRefusesRebind(t *testing.T) {
+	s := externalAccessServer(t, "project-child", config.BasicAuthConfig{
+		Enabled: true,
+		Users:   []config.BasicAuthUser{{Username: "admin", Password: "secret"}},
+	})
+
+	rec := externalAccessPut(t, s, true)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 in child mode, got %d", rec.Code)
+	}
+	if got := rec.Body.String(); got != "{\"error\":\"not_available_in_child\"}\n" {
+		t.Fatalf("unexpected body: %q", got)
+	}
+}

@@ -82,6 +82,7 @@ func runAppMode(cmd *cobra.Command) error {
 	if err != nil {
 		return fmt.Errorf("failed to get current working directory: %w", err)
 	}
+	startup := resolveStartupContext(cwd, "app")
 
 	_, err = config.Load(cwd, debug, "")
 	if err != nil {
@@ -138,7 +139,9 @@ func runAppMode(cmd *cobra.Command) error {
 		UIBaseURL:           baseURL,
 		TLSCertFile:         tlsCert,
 		TLSKeyFile:          tlsKey,
-		ParentInstanceID:    instanceID,
+		ParentInstanceID:    startup.ParentInstanceID,
+		ProjectID:           startup.ProjectID,
+		ProjectName:         startup.ProjectName,
 		WebChildTLSCertFile: tlsCert,
 		WebChildTLSKeyFile:  tlsKey,
 		WebChildTLSDataDir:  dataDir,
@@ -146,7 +149,7 @@ func runAppMode(cmd *cobra.Command) error {
 		Role:                string(rt.Role),
 		PubPort:             rt.PubPort,
 		RPCPort:             rt.RPCPort,
-		StartupMode:         "app",
+		StartupMode:         startup.Mode,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create app server: %w", err)
@@ -161,7 +164,7 @@ func runAppMode(cmd *cobra.Command) error {
 		WebPort:          port,
 		StartedAt:        time.Now(),
 		Mode:             instanceregistry.ModeWebUI,
-		ParentInstanceID: os.Getenv("PANDO_PARENT_INSTANCE"),
+		ParentInstanceID: startup.ParentInstanceID,
 		IsPrimary:        rt.Role == ipcruntime.RolePrimary,
 	})
 	defer func() { _ = instanceregistry.Revoke(instanceID) }()

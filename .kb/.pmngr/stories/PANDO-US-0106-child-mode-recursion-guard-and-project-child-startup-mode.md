@@ -2,14 +2,15 @@
 id: PANDO-US-0106
 type: story
 title: "Child mode: recursion guard and `project-child` startup mode for nested instances"
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0019
 author: mcp
 labels: [projects, backend, webui]
 estimate: 3
 created: 2026-10-01T19:23:08Z
-updated: 2026-10-01T19:23:08Z
+updated: 2026-10-01T20:22:03Z
+closed: 2026-10-01T20:22:03Z
 ---
 
 ## Description

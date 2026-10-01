@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { useSessionStore } from '@pando/client/stores/sessionStore'
 import { useServerStore } from '@pando/client/stores/serverStore'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
+import { isProjectChildMode } from '@pando/client/services/api'
 import ExternalAccessToggle from './ExternalAccessToggle'
 import ExtensionSlot from '@/components/extensions/ExtensionSlot'
 import MemorySyncIndicator from '@/components/extensions/MemorySyncIndicator'
@@ -15,8 +16,10 @@ export default function StatusBar() {
   const autoApprove = useSessionStore((s) => s.autoApprove)
   const toggleAutoApprove = useSessionStore((s) => s.toggleAutoApprove)
   const connected = useServerStore((s) => s.connected)
+  const startupMode = useServerStore((s) => s.startupMode)
   const activeSession = sessions.find((s) => s.id === activeSessionId)
   const setModelSwitcherOpen = useLayoutStore((s) => s.setModelSwitcherOpen)
+  const childMode = startupMode === 'project-child' || isProjectChildMode()
   // On chat routes the composer's model chip already shows (and switches) the
   // model, so the status bar does not repeat it.
   const { pathname } = useLocation()
@@ -90,9 +93,11 @@ export default function StatusBar() {
         )}
 
         {/* External access (0.0.0.0 bind) toggle */}
-        <span className="shell-status-hide-mobile">
-          <ExternalAccessToggle />
-        </span>
+        {!childMode && (
+          <span className="shell-status-hide-mobile">
+            <ExternalAccessToggle />
+          </span>
+        )}
 
         {/* Model selector button (hidden where the composer shows it) */}
         {!onChatRoute && (

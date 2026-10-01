@@ -203,6 +203,10 @@ type AppOptions struct {
 	// StartupMode identifies the mode in which Pando is starting so background
 	// remembrances behaviors can be aligned consistently across entrypoints.
 	StartupMode string
+	// ChildParentInstanceID is set when this process was spawned as a project
+	// child by another Pando instance. Child instances must not spawn nested
+	// project children, but they still import peer projects for IPC delegation.
+	ChildParentInstanceID string
 	// DBQuerier overrides the db.Querier used for sessions, messages, and projects.
 	// When non-nil this querier is used instead of db.New(conn).
 	// Primary instances leave this nil; secondary instances pass a dbproxy.DBProxy.
@@ -288,6 +292,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	// Initialize project manager (Phase 2).
 	mgr, mgrErr := project.NewManager(ctx, projects, project.ManagerOptions{
 		ParentInstanceID: opt.InstanceID,
+		SpawnDisabled:    opt.ChildParentInstanceID != "",
 		WebTLSCertFile:   opt.WebChildTLSCertFile,
 		WebTLSKeyFile:    opt.WebChildTLSKeyFile,
 		WebTLSDataDir:    opt.WebChildTLSDataDir,
@@ -302,14 +307,16 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	// config file present (i.e. the directory is a real Pando project).
 	go func() {
 		cwd := config.WorkingDirectory()
-		if cwd != "" && config.HasConfigFileAt(cwd) {
+		if opt.ChildParentInstanceID == "" && cwd != "" && config.HasConfigFileAt(cwd) {
 			name := filepath.Base(cwd)
 			if err := config.RegisterSelfAsGlobalProject(cwd, name); err != nil {
 				logging.Warn("failed to register self as global project", "error", err)
 			}
 		}
-		// Seed local DB with all projects from the global registry so this
-		// instance can see projects registered by other Pando instances.
+		// Seed local DB with peer projects from the global registry. Project-child
+		// instances still need this for external warm delegation, but their own
+		// working directory is skipped by Manager.SeedFromGlobal to avoid a
+		// duplicate self row in the child workspace DB.
 		mgr.SeedFromGlobal(ctx)
 	}()
 

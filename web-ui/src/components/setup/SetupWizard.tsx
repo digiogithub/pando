@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
 import api from '@pando/client/services/api'
+import { isProjectChildMode } from '@pando/client/services/api'
+import { useServerStore } from '@pando/client/stores/serverStore'
 import { useSetupWizardStore, type SetupStatus } from '@pando/client/stores/setupWizardStore'
 import { useConfigInitStore } from '@pando/client/stores/configInitStore'
 import { useSettingsStore } from '@pando/client/stores/settingsStore'
@@ -54,6 +56,8 @@ export default function SetupWizard() {
   const { status, open, completeError, fetchStatus, setStatus, cancel, complete } = useSetupWizardStore()
   const refreshConfigInit = useConfigInitStore((s) => s.fetchStatus)
   const fetchSettings = useSettingsStore((s) => s.fetchSettings)
+  const startupMode = useServerStore((s) => s.startupMode)
+  const childMode = startupMode === 'project-child' || isProjectChildMode()
 
   const [step, setStep] = useState<StepId>('scope')
   const [scope, setScope] = useState<Scope>('global')
@@ -65,6 +69,7 @@ export default function SetupWizard() {
   // Load the status, retrying with backoff (about 30s in total) while the API
   // is not ready yet; stops as soon as one arrives or the component unmounts.
   useEffect(() => {
+    if (childMode || startupMode === 'unknown') return undefined
     let stopped = false
     let timer: number | undefined
     const delaysMs = [1000, 2000, 4000, 8000, 15000]
@@ -79,7 +84,7 @@ export default function SetupWizard() {
       stopped = true
       if (timer !== undefined) window.clearTimeout(timer)
     }
-  }, [fetchStatus])
+  }, [childMode, fetchStatus, startupMode])
 
   // Each time the assistant opens, start from the first step that applies. It
   // runs once per open, as soon as both the open flag and the status exist
@@ -131,7 +136,7 @@ export default function SetupWizard() {
     void fetchSettings()
   }
 
-  if (!open || !status) return null
+  if (childMode || !open || !status) return null
 
   const index = STEPS.indexOf(step)
   const firstStep: StepId = status.hasLocalConfig ? 'provider' : 'scope'

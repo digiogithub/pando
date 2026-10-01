@@ -77,6 +77,10 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if s.isProjectChildMode() {
+		s.writeChildModeUnavailable(w)
+		return
+	}
 
 	if s.app.ProjectManager == nil {
 		writeError(w, http.StatusServiceUnavailable, "project manager not available")
@@ -106,6 +110,10 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.isProjectChildMode() {
+		s.writeChildModeUnavailable(w)
 		return
 	}
 
@@ -145,6 +153,10 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if s.isProjectChildMode() {
+		s.writeChildModeUnavailable(w)
+		return
+	}
 
 	if s.app.ProjectManager == nil {
 		writeError(w, http.StatusServiceUnavailable, "project manager not available")
@@ -172,6 +184,10 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if s.isProjectChildMode() {
+		s.writeChildModeUnavailable(w)
+		return
+	}
 
 	if s.app.ProjectManager == nil {
 		writeError(w, http.StatusServiceUnavailable, "project manager not available")
@@ -193,6 +209,10 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleActivateProject(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.isProjectChildMode() {
+		s.writeChildModeUnavailable(w)
 		return
 	}
 
@@ -233,6 +253,10 @@ func (s *Server) handleDeactivateProject(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if s.isProjectChildMode() {
+		s.writeChildModeUnavailable(w)
+		return
+	}
 
 	if s.app.ProjectManager == nil {
 		writeError(w, http.StatusServiceUnavailable, "project manager not available")
@@ -254,6 +278,10 @@ func (s *Server) handleDeactivateProject(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleInitProject(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.isProjectChildMode() {
+		s.writeChildModeUnavailable(w)
 		return
 	}
 
@@ -278,6 +306,10 @@ func (s *Server) handleInitProject(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetActiveProject(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.isProjectChildMode() {
+		s.writeChildModeUnavailable(w)
 		return
 	}
 
@@ -315,6 +347,10 @@ func (s *Server) handleStopProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if s.isProjectChildMode() {
+		s.writeChildModeUnavailable(w)
+		return
+	}
 
 	if s.app.ProjectManager == nil {
 		writeError(w, http.StatusServiceUnavailable, "project manager not available")
@@ -350,6 +386,10 @@ func (s *Server) handleStopProject(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRenameProject(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPatch {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.isProjectChildMode() {
+		s.writeChildModeUnavailable(w)
 		return
 	}
 
@@ -393,6 +433,10 @@ func (s *Server) handleRenameProject(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleProjectEvents(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.isProjectChildMode() {
+		s.writeChildModeUnavailable(w)
 		return
 	}
 

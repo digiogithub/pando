@@ -200,6 +200,9 @@ func (m *Manager) EnsureInstance(ctx context.Context, projectID string, autoStar
 	if !autoStart {
 		return nil, ErrInstanceNotRunning
 	}
+	if m.spawnDisabled {
+		return nil, ErrChildInstance
+	}
 
 	resolvedPath, err := resolvePath(proj.Path)
 	if err != nil {

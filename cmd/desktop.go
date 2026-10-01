@@ -112,6 +112,7 @@ func runDesktopMode(cmd *cobra.Command) error {
 		_ = os.Chdir(cwd)
 	}
 	desktop.ImportLoginShellPath()
+	startup := resolveStartupContext(cwd, "desktop")
 
 	_, err = config.Load(cwd, debug, "")
 	if err != nil {
@@ -152,13 +153,15 @@ func runDesktopMode(cmd *cobra.Command) error {
 		StaticFS:           staticFS,
 		OpenUI:             false,
 		UIBaseURL:          baseURL,
-		ParentInstanceID:   instanceID,
+		ParentInstanceID:   startup.ParentInstanceID,
+		ProjectID:          startup.ProjectID,
+		ProjectName:        startup.ProjectName,
 		WebChildTLSDataDir: dataDir,
 		InstanceID:         instanceID,
 		Role:               string(rt.Role),
 		PubPort:            rt.PubPort,
 		RPCPort:            rt.RPCPort,
-		StartupMode:        "desktop",
+		StartupMode:        startup.Mode,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create API server: %w", err)
@@ -173,7 +176,7 @@ func runDesktopMode(cmd *cobra.Command) error {
 		WebPort:          port,
 		StartedAt:        time.Now(),
 		Mode:             instanceregistry.ModeDesktop,
-		ParentInstanceID: os.Getenv("PANDO_PARENT_INSTANCE"),
+		ParentInstanceID: startup.ParentInstanceID,
 		IsPrimary:        rt.Role == ipcruntime.RolePrimary,
 	})
 	defer func() { _ = instanceregistry.Revoke(instanceID) }()

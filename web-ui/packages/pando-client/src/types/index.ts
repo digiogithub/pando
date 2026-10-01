@@ -127,6 +127,16 @@ export interface ServerStatus {
   model?: string
 }
 
+export interface ServerInfo {
+  status: string
+  version: string
+  startup_mode: string
+  parent_instance_id: string
+  project_id: string
+  project_name: string
+  public_base_path: string
+}
+
 export interface ChatRequest {
   session_id?: string
   message: string

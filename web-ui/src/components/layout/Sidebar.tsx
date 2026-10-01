@@ -5,6 +5,8 @@ import { format } from 'date-fns'
 import { useSessionStore } from '@pando/client/stores/sessionStore'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useExtensionPanelsStore } from '@pando/client/stores/extensionPanelsStore'
+import { useServerStore } from '@pando/client/stores/serverStore'
+import { isChildModeRestrictedPath, isProjectChildMode } from '@pando/client/services/api'
 import { localBrowserStorage } from '@pando/client/services/storage'
 import { IconButton, Input, Tooltip } from '@/components/ui'
 import { BrandMark } from '@/components/brand'
@@ -63,6 +65,8 @@ export default function Sidebar({ variant = 'full', simple = false }: { variant?
   const setSidebarOpen = useLayoutStore((s) => s.setSidebarOpen)
   const sessionsLoading = useSessionStore((s) => s.loading)
   const extensionPanels = useExtensionPanelsStore((s) => s.panels)
+  const startupMode = useServerStore((s) => s.startupMode)
+  const childMode = startupMode === 'project-child' || isProjectChildMode()
 
   const rail = variant === 'rail'
 
@@ -105,7 +109,7 @@ export default function Sidebar({ variant = 'full', simple = false }: { variant?
     { path: '/snapshots', label: t('nav.agentVcs'), icon: GitBranch },
     { path: '/evaluator', label: t('nav.selfImprovement'), icon: Sparkles },
     { path: '/instances', label: t('nav.instances'), icon: Server },
-  ]
+  ].filter((item) => !(childMode && isChildModeRestrictedPath(item.path)))
 
   // Sidebar panels contributed by compiled-in extensions. They are appended
   // rather than merged into NAV_ITEMS above so a build can never reorder or

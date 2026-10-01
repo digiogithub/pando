@@ -33,6 +33,10 @@ var liveDesktopForPath = func(path string) bool {
 // Only a desktop-mode server may do this: spawning native windows is a local
 // GUI action that makes no sense for a headless or remotely reached server.
 func (s *Server) handleOpenProjectDesktop(w http.ResponseWriter, r *http.Request) {
+	if s.isProjectChildMode() {
+		s.writeChildModeUnavailable(w)
+		return
+	}
 	if !strings.EqualFold(s.config.StartupMode, "desktop") {
 		writeError(w, http.StatusConflict, "opening a desktop window is only available in the desktop app")
 		return
