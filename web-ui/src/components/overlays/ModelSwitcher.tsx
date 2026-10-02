@@ -7,6 +7,9 @@ import { modelMetaLine } from '@/components/shared/ModelCombobox'
 import { Badge, IconButton, Kbd } from '@/components/ui'
 import { Circle, CircleCheck, Search, Sparkles, X } from '@/components/ui/icons'
 import { AUTO_MODEL_ID, useModelAutoModeStore } from '@pando/client/stores/modelAutoModeStore'
+import { useSessionModelStore } from '@pando/client/stores/sessionModelStore'
+import { useSessionStore } from '@pando/client/stores/sessionStore'
+import { useActiveModelSelection } from '@/utils/modelLabel'
 import type { BadgeTone } from '@/components/ui'
 import '@/styles/overlays.css'
 
@@ -87,7 +90,7 @@ export default function ModelSwitcher() {
   const [models, setModels] = useState<ModelInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const autoSelected = useModelAutoModeStore((s) => s.autoSelected)
+  const { model: activeModel, autoSelected } = useActiveModelSelection()
   const lastRoutedModel = useModelAutoModeStore((s) => s.lastRoutedModel)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -131,11 +134,24 @@ export default function ModelSwitcher() {
   const selectModel = useCallback(
     async (modelId: string) => {
       try {
-        await api.put<{ model: string }>('/api/v1/models/active', { model: modelId })
-        if (modelId === AUTO_MODEL_ID) useModelAutoModeStore.setState({ autoSelected: true })
-        else {
-          updateField('default_model', modelId)
-          useModelAutoModeStore.setState({ autoSelected: false })
+        // The switcher picks the model of the current session only; the
+        // default model of every session is changed in Settings.
+        const sessionId = useSessionStore.getState().activeSessionId
+        if (!sessionId && config.default_model) {
+          // No session yet: the selection travels with the first prompt.
+          useSessionModelStore.getState().select(modelId)
+        } else {
+          const res = await api.put<{ model: string; scope?: string }>(
+            '/api/v1/models/active',
+            sessionId ? { model: modelId, sessionId } : { model: modelId },
+          )
+          if (res?.scope === 'session') useSessionModelStore.getState().select(modelId)
+          else if (modelId === AUTO_MODEL_ID) useModelAutoModeStore.setState({ autoSelected: true })
+          else {
+            // No default model was configured yet, so the server persisted it.
+            updateField('default_model', modelId)
+            useModelAutoModeStore.setState({ autoSelected: false })
+          }
         }
         addToast(`Model switched to ${modelId}`, 'success')
         close()
@@ -146,7 +162,7 @@ export default function ModelSwitcher() {
         addToast(`Failed to switch model: ${serverErrorMessage(err)}`, 'error')
       }
     },
-    [close, updateField, addToast],
+    [close, updateField, addToast, config.default_model],
   )
 
   useEffect(() => {
@@ -177,8 +193,6 @@ export default function ModelSwitcher() {
     const el = listRef.current?.querySelector<HTMLElement>('[data-selected="true"]')
     el?.scrollIntoView({ block: 'nearest' })
   }, [normalizedSelectedIndex])
-
-  const activeModel = config.default_model
 
   return (
     <div className="ovl-scrim" onClick={close}>

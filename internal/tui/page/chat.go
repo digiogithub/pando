@@ -1662,6 +1662,9 @@ func (p *ChatPageModel) ensureSession() ([]tea.Cmd, error) {
 		return nil, err
 	}
 
+	// A model picked before the session existed belongs to this session.
+	agentpkg.AdoptDraftSessionOverrides(session.ID)
+
 	p.session = session
 	cmds = append(cmds, util.CmdHandler(chat.SessionSelectedMsg(session)))
 	return cmds, nil

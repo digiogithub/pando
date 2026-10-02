@@ -123,6 +123,35 @@ func SetSessionModelOverride(sessionID string, model models.ModelID) {
 	storeSessionLLMOverrides(sessionID, current)
 }
 
+// DraftSessionID keys the model selection made before a session exists (the
+// TUI model dialog on an empty chat). It is never a real session: the selection
+// is moved onto the session created by the first prompt with
+// AdoptDraftSessionOverrides.
+const DraftSessionID = "draft:new-session"
+
+// AdoptDraftSessionOverrides moves the model selection stored under
+// DraftSessionID onto sessionID and clears the draft. It is a no-op when no
+// draft selection exists.
+func AdoptDraftSessionOverrides(sessionID string) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" || sessionID == DraftSessionID {
+		return
+	}
+
+	sessionLLMOverridesMu.Lock()
+	defer sessionLLMOverridesMu.Unlock()
+
+	draft := SessionLLMOverridesFor(DraftSessionID)
+	if draft.isEmpty() {
+		return
+	}
+	current := SessionLLMOverridesFor(sessionID)
+	current.Model = draft.Model
+	current.AutoMode = draft.AutoMode
+	storeSessionLLMOverrides(sessionID, current)
+	sessionLLMOverrides.Delete(DraftSessionID)
+}
+
 // storeSessionLLMOverrides normalizes and persists the overrides. Callers must
 // hold sessionLLMOverridesMu.
 func storeSessionLLMOverrides(sessionID string, overrides SessionLLMOverrides) {

@@ -10,6 +10,9 @@ vi.mock('@pando/client/services/api', () => ({
 
 import ModelSwitcher from './ModelSwitcher'
 import { useModelAutoModeStore } from '@pando/client/stores/modelAutoModeStore'
+import { useSessionModelStore } from '@pando/client/stores/sessionModelStore'
+import { useSessionStore } from '@pando/client/stores/sessionStore'
+import { useSettingsStore } from '@pando/client/stores/settingsStore'
 
 const base = { description: '', badges: [], canReason: false, supportsReasoningEffort: false }
 
@@ -17,6 +20,8 @@ beforeEach(() => {
   get.mockReset()
   put.mockReset()
   useModelAutoModeStore.setState({ autoSelected: false, lastRoutedModel: null })
+  useSessionStore.setState({ activeSessionId: null })
+  useSessionModelStore.setState({ sessionId: null, selection: null })
   get.mockResolvedValue({
     autoSelected: true,
     models: [
@@ -38,8 +43,30 @@ describe('ModelSwitcher Auto entry', () => {
     expect(dot.getAttribute('title')).toMatch(/prompts use the coder model\.$/)
     expect(container.querySelector('.ovl-model-name--active')?.textContent).toMatch(/^Auto/)
 
-    put.mockResolvedValue({ model: 'auto' })
     fireEvent.click(screen.getByText(/Auto · gpt-4o/))
-    await waitFor(() => expect(put).toHaveBeenCalledWith('/api/v1/models/active', { model: 'auto' }))
+    // No session yet: the choice is kept for the first prompt, nothing is persisted.
+    await waitFor(() => expect(useSessionModelStore.getState().selection).toEqual({ model: null, auto: true }))
+    expect(put).not.toHaveBeenCalled()
+  })
+})
+
+describe('ModelSwitcher session scope', () => {
+  it('applies the selection to the active session without touching the default model', async () => {
+    get.mockImplementation((url: string) =>
+      url.endsWith('/model')
+        ? Promise.resolve({ model: 'claude-sonnet-4-6', override: false, autoSelected: false })
+        : Promise.resolve({ autoSelected: false, models: [{ ...base, id: 'gpt-4o', name: 'GPT-4o', provider: 'openai' }] }),
+    )
+    const defaultModel = useSettingsStore.getState().config.default_model
+    useSessionStore.setState({ activeSessionId: 's1' })
+    render(<ModelSwitcher />)
+
+    put.mockResolvedValue({ model: 'gpt-4o', scope: 'session' })
+    fireEvent.click(await screen.findByText('GPT-4o'))
+    await waitFor(() =>
+      expect(put).toHaveBeenCalledWith('/api/v1/models/active', { model: 'gpt-4o', sessionId: 's1' }),
+    )
+    await waitFor(() => expect(useSessionModelStore.getState().selection).toEqual({ model: 'gpt-4o', auto: false }))
+    expect(useSettingsStore.getState().config.default_model).toBe(defaultModel)
   })
 })

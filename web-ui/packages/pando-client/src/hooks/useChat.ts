@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from 'react'
 import { createSSEStream, createGETSSEStream } from '../services/sse'
 import { api, getBaseURL } from '../services/api'
 import { useSessionStore } from '../stores/sessionStore'
+import { pendingSessionModel } from '../stores/sessionModelStore'
 import { RUN_SEQ_STALE } from '../services/runSeq'
 import { useFileChangesStore } from '../stores/fileChangesStore'
 import { handleSystemMessageEvent, handleDelegationEvent } from './routingNotice'
@@ -552,7 +553,7 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
       const baseURL = getBaseURL()
       abortRef.current = createSSEStream(
         `${baseURL}/api/v1/chat/stream`,
-        { sessionId: sessionId ?? undefined, prompt: text },
+        { sessionId: sessionId ?? undefined, prompt: text, model: pendingSessionModel() },
         (event: SSEEvent) => handleEvent(event),
         (err) => {
           setError(err.message)

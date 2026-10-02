@@ -295,7 +295,16 @@ func (m statusCmp) renderBreadcrumbs() string {
 // not necessarily the configured one: pando_setup can switch the model for a
 // single session at runtime.
 func (m statusCmp) sessionModel() models.Model {
-	return models.SupportedModels()[agent.SessionModelID(m.session.ID)]
+	return models.SupportedModels()[agent.SessionModelID(m.modelSessionID())]
+}
+
+// modelSessionID returns the key the model selection lives under: the selected
+// session, or the draft selection while no session exists yet.
+func (m statusCmp) modelSessionID() string {
+	if m.session.ID == "" {
+		return agent.DraftSessionID
+	}
+	return m.session.ID
 }
 
 func (m statusCmp) View() string {
@@ -515,14 +524,11 @@ func (m statusCmp) autoLabel() string {
 	if c == nil || !c.ModelAutoMode.Enabled {
 		return ""
 	}
-	if m.session.ID == "" {
-		if c.ModelAutoMode.AutoSelected() {
-			return "Auto"
-		}
+	if !agent.SessionAutoMode(m.modelSessionID()) {
 		return ""
 	}
-	if !agent.SessionAutoMode(m.session.ID) {
-		return ""
+	if m.session.ID == "" {
+		return "Auto"
 	}
 	if id, ok := agent.LastRoutedModel(m.session.ID); ok {
 		name := models.SupportedModels()[id].Name

@@ -1,5 +1,6 @@
 import { useSettingsStore } from '@pando/client/stores/settingsStore'
 import { useModelAutoModeStore } from '@pando/client/stores/modelAutoModeStore'
+import { useSessionModelStore } from '@pando/client/stores/sessionModelStore'
 
 /** Human label for a model id: "claude-sonnet-4-6" → "Claude Sonnet 4.6", "copilot.gpt-4o" → "Copilot GPT-4o". */
 export function formatModel(id: string): string {
@@ -29,9 +30,22 @@ export function activeModelLabel(defaultModel: string, autoSelected: boolean, la
   return lastRoutedModel ? `Auto → ${formatModel(lastRoutedModel)}` : 'Auto'
 }
 
-export function useActiveModelLabel(): string {
+/**
+ * Model selection in force for the active session: its own selection when it
+ * has one, otherwise the configured default model and auto mode.
+ */
+export function useActiveModelSelection(): { model: string; autoSelected: boolean } {
   const defaultModel = useSettingsStore((s) => s.config.default_model)
-  const autoSelected = useModelAutoModeStore((s) => s.autoSelected)
+  const globalAuto = useModelAutoModeStore((s) => s.autoSelected)
+  const selection = useSessionModelStore((s) => s.selection)
+  return {
+    model: selection?.model ?? defaultModel,
+    autoSelected: selection ? selection.auto : globalAuto,
+  }
+}
+
+export function useActiveModelLabel(): string {
+  const { model, autoSelected } = useActiveModelSelection()
   const lastRoutedModel = useModelAutoModeStore((s) => s.lastRoutedModel)
-  return activeModelLabel(defaultModel, autoSelected, lastRoutedModel)
+  return activeModelLabel(model, autoSelected, lastRoutedModel)
 }

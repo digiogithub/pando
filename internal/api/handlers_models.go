@@ -10,6 +10,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/modelrouter"
 	"github.com/digiogithub/pando/internal/llm/models"
 )
@@ -422,7 +423,19 @@ func staticModelInfosForAccount(acc config.ProviderAccount, sameTypeCount int) [
 	return items
 }
 
+// Scopes reported by handleSetActiveModel: where the selection was applied.
+const (
+	modelScopeSession = "session"
+	modelScopeConfig  = "config"
+)
+
 // handleSetActiveModel handles PUT /api/v1/models/active.
+//
+// With a sessionId the selection is scoped to that session (an in-memory
+// override): the coder agent model persisted in the configuration, which is the
+// default of every session, is left untouched. Without a sessionId, or while no
+// coder model is configured yet (a session override needs a default to fall
+// back to), the selection is persisted as the coder model.
 func (s *Server) handleSetActiveModel(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -430,7 +443,8 @@ func (s *Server) handleSetActiveModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Model string `json:"model"`
+		Model     string `json:"model"`
+		SessionID string `json:"sessionId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Model == "" {
 		writeError(w, http.StatusBadRequest, "invalid request body: 'model' field required")
@@ -439,6 +453,16 @@ func (s *Server) handleSetActiveModel(w http.ResponseWriter, r *http.Request) {
 
 	if config.Get() == nil {
 		writeError(w, http.StatusInternalServerError, "configuration not loaded")
+		return
+	}
+
+	sessionID := strings.TrimSpace(req.SessionID)
+	if sessionID != "" && config.Get().Agents[config.AgentCoder].Model != "" {
+		if err := selectSessionModel(sessionID, req.Model); err != nil {
+			writeConfigError(w, http.StatusBadRequest, "failed to update model: "+err.Error(), err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"model": req.Model, "scope": modelScopeSession})
 		return
 	}
 
@@ -453,7 +477,7 @@ func (s *Server) handleSetActiveModel(w http.ResponseWriter, r *http.Request) {
 			writeConfigError(w, http.StatusBadRequest, "failed to select auto mode: "+err.Error(), err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]string{"model": req.Model})
+		writeJSON(w, http.StatusOK, map[string]string{"model": req.Model, "scope": modelScopeConfig})
 		return
 	}
 
@@ -469,7 +493,49 @@ func (s *Server) handleSetActiveModel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"model": req.Model})
+	writeJSON(w, http.StatusOK, map[string]string{"model": req.Model, "scope": modelScopeConfig})
+}
+
+// selectSessionModel applies a model selection to a single session without
+// touching the configuration. "auto" puts the session in model auto mode.
+func selectSessionModel(sessionID, model string) error {
+	if model == config.AutoModelID {
+		if !config.Get().ModelAutoMode.Enabled {
+			return errAutoModeDisabled
+		}
+		agent.SetSessionAutoMode(sessionID, true)
+		return nil
+	}
+	modelID := models.NormalizeModelID(model)
+	if err := config.ValidateAgentModel(config.AgentCoder, modelID); err != nil {
+		return err
+	}
+	agent.SetSessionModelOverride(sessionID, modelID)
+	return nil
+}
+
+type sessionModelResponse struct {
+	SessionID string `json:"sessionId"`
+	// Model is the model the session runs on: its override, or the coder model.
+	Model string `json:"model"`
+	// Override reports whether Model comes from a session-scoped selection.
+	Override     bool `json:"override"`
+	AutoSelected bool `json:"autoSelected"`
+}
+
+// handleGetSessionModel handles GET /api/v1/sessions/{id}/model.
+func (s *Server) handleGetSessionModel(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	if sessionID == "" {
+		writeError(w, http.StatusBadRequest, "session id required")
+		return
+	}
+	writeJSON(w, http.StatusOK, sessionModelResponse{
+		SessionID:    sessionID,
+		Model:        string(agent.SessionModelID(sessionID)),
+		Override:     agent.SessionModelOverrideID(sessionID) != "",
+		AutoSelected: agent.SessionAutoMode(sessionID),
+	})
 }
 
 // setCoderModel persists the coder agent model and, when a live agent exists,

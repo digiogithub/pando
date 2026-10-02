@@ -20,6 +20,8 @@ import (
 	"github.com/digiogithub/pando/internal/imageopt"
 	"github.com/digiogithub/pando/internal/learning"
 	"github.com/digiogithub/pando/internal/llm/agent"
+	"github.com/digiogithub/pando/internal/llm/models"
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/ponytail"
@@ -57,17 +59,24 @@ type goalSSEPayload struct {
 	CompletedAt   *int64 `json:"completedAt,omitempty"`
 }
 
-// applyRequestModel handles ChatRequest.Model. "auto" puts the session in
-// model auto mode (400 when the feature is disabled); any other value keeps
-// the existing behaviour (the request model is not applied per request).
+// applyRequestModel handles ChatRequest.Model as a session-scoped selection:
+// "auto" puts the session in model auto mode (400 when the feature is
+// disabled) and a known model becomes the session's model override. Unknown
+// model names are ignored, as they always were, so older clients keep working.
+// The configured coder model is never changed here.
 func applyRequestModel(sessionID, model string) error {
-	if model != config.AutoModelID {
+	if model == "" {
 		return nil
 	}
-	if cfg := config.Get(); cfg == nil || !cfg.ModelAutoMode.Enabled {
-		return errAutoModeDisabled
+	if model == config.AutoModelID {
+		return selectSessionModel(sessionID, model)
 	}
-	agent.SetSessionAutoMode(sessionID, true)
+	if string(agent.SessionModelID(sessionID)) == string(models.NormalizeModelID(model)) && !agent.SessionAutoMode(sessionID) {
+		return nil
+	}
+	if err := selectSessionModel(sessionID, model); err != nil {
+		logging.Debug("chat request model ignored", "model", model, "error", err)
+	}
 	return nil
 }
 

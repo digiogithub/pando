@@ -822,31 +822,41 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case dialog.ModelSelectedMsg:
 		a.showModelDialog = false
 
-		if string(msg.Model.ID) == config.AutoModelID {
-			if err := config.SetModelAutoSelected(true); err != nil {
-				return a, util.ReportError(err)
-			}
-			if a.selectedSession.ID != "" {
-				agent.SetSessionAutoMode(a.selectedSession.ID, true)
-			}
-			return a, util.ReportInfo("Model changed to Auto")
+		// The dialog selects the model of the current session only. The coder
+		// model persisted in the configuration (the default of every session)
+		// is changed from the settings page. Before a session exists the
+		// selection is kept as a draft and adopted by the session the first
+		// prompt creates.
+		sessionID := a.selectedSession.ID
+		if sessionID == "" {
+			sessionID = agent.DraftSessionID
 		}
 
-		model, err := a.app.CoderAgent.Update(config.AgentCoder, msg.Model.ID)
-		if err != nil {
+		if string(msg.Model.ID) == config.AutoModelID {
+			agent.SetSessionAutoMode(sessionID, true)
+			return a, util.ReportInfo("Model changed to Auto for this session")
+		}
+
+		// Without a configured coder model there is no default to fall back to,
+		// so the first selection has to be persisted.
+		if cfg := config.Get(); cfg == nil || cfg.Agents[config.AgentCoder].Model == "" {
+			model, err := a.app.CoderAgent.Update(config.AgentCoder, msg.Model.ID)
+			if err != nil {
+				return a, util.ReportError(err)
+			}
+			return a, util.ReportInfo(fmt.Sprintf("Model changed to %s", model.Name))
+		}
+
+		if err := config.ValidateAgentModel(config.AgentCoder, msg.Model.ID); err != nil {
 			return a, util.ReportError(err)
 		}
+		agent.SetSessionModelOverride(sessionID, models.NormalizeModelID(string(msg.Model.ID)))
 
-		if config.Get() != nil && config.Get().ModelAutoMode.Enabled {
-			if err := config.SetModelAutoSelected(false); err != nil {
-				return a, util.ReportError(err)
-			}
+		name := msg.Model.Name
+		if name == "" {
+			name = string(msg.Model.ID)
 		}
-		if a.selectedSession.ID != "" {
-			agent.SetSessionAutoMode(a.selectedSession.ID, false)
-		}
-
-		return a, util.ReportInfo(fmt.Sprintf("Model changed to %s", model.Name))
+		return a, util.ReportInfo(fmt.Sprintf("Model changed to %s for this session", name))
 
 	case dialog.ShowInitDialogMsg:
 		a.showInitDialog = msg.Show
@@ -927,6 +937,10 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.completeSession(prev, "tui_session_switch")
 		}
 		a.selectedSession = msg
+		// A draft model selection is adopted when its session is created (see
+		// ChatPageModel.ensureSession); one left behind must not leak into a
+		// later session.
+		agent.SetSessionLLMOverrides(agent.DraftSessionID, agent.SessionLLMOverrides{})
 		a.sessionDialog.SetSelectedSession(msg.ID)
 		a.isAgentRunning = a.app.CoderAgent.IsSessionBusy(msg.ID)
 		cmds = append(cmds, tea.SetWindowTitle(a.currentSessionWindowTitle()))
