@@ -156,8 +156,17 @@ interface MessageListProps {
 export default function MessageList({ messages, streaming, streamingState, pendingFeedback }: MessageListProps) {
   const { t } = useTranslation()
   const scrollRef = useRef<HTMLDivElement>(null)
-  const atBottomRef = useRef(true)
-  const [atBottom, setAtBottom] = useState(true)
+  // "Following" = auto-scroll is on. It is switched off the moment the reader
+  // scrolls up and back on when they return to the bottom (or use the pill).
+  const followingRef = useRef(true)
+  const [following, setFollowingState] = useState(true)
+  const lastScrollTop = useRef(0)
+  const lastScrollHeight = useRef(0)
+
+  const setFollowing = useCallback((value: boolean) => {
+    followingRef.current = value
+    setFollowingState(value)
+  }, [])
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     const el = scrollRef.current
@@ -168,10 +177,25 @@ export default function MessageList({ messages, streaming, streamingState, pendi
   const onScroll = useCallback(() => {
     const el = scrollRef.current
     if (!el) return
-    const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD
-    atBottomRef.current = bottom
-    setAtBottom(bottom)
-  }, [])
+    // Our own scrolls only ever move down, so an upward move is the reader's.
+    // A shrinking thread also lowers scrollTop (the browser clamps it); that
+    // is not the reader, hence the scrollHeight guard.
+    const movedUp = el.scrollTop < lastScrollTop.current && el.scrollHeight >= lastScrollHeight.current
+    lastScrollTop.current = el.scrollTop
+    lastScrollHeight.current = el.scrollHeight
+    if (movedUp) {
+      setFollowing(false)
+      return
+    }
+    // Not gated on the threshold alone: a smooth scroll in flight reports
+    // positions far from the bottom, which must not stop the follow.
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD) setFollowing(true)
+  }, [setFollowing])
+
+  const jumpToBottom = useCallback(() => {
+    setFollowing(true)
+    scrollToBottom('smooth')
+  }, [setFollowing, scrollToBottom])
 
   const lastMsg = messages[messages.length - 1]
   const lastContent = lastMsg?.content[0]?.text ?? ''
@@ -181,20 +205,25 @@ export default function MessageList({ messages, streaming, streamingState, pendi
   const lastItem = streamingState.items[itemCount - 1]
   const lastItemLen = lastItem && lastItem.type !== 'tool' ? lastItem.text.length : 0
 
-  // Follow new content while the reader is at the bottom; a new user message
-  // always brings the view down (the user just sent it).
+  // Follow new content while following is on; a newly sent user message
+  // always brings the view down and resumes the follow.
+  const prevCount = useRef(messages.length)
   useEffect(() => {
-    if (atBottomRef.current || lastMsg?.role === 'user') scrollToBottom('smooth')
+    const sent = messages.length > prevCount.current && lastMsg?.role === 'user'
+    prevCount.current = messages.length
+    if (sent) setFollowing(true)
+    if (followingRef.current) scrollToBottom('smooth')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length, lastContent, thinkingLen, toolCount, itemCount, lastItemLen, pendingFeedback?.length])
 
   // Opening a session lands on its latest message.
   const firstId = messages[0]?.id
   useLayoutEffect(() => {
-    atBottomRef.current = true
-    setAtBottom(true)
+    setFollowing(true)
+    lastScrollTop.current = 0
+    lastScrollHeight.current = 0
     scrollToBottom('auto')
-  }, [firstId, scrollToBottom])
+  }, [firstId, scrollToBottom, setFollowing])
 
   const lastMessage = messages[messages.length - 1]
   // Only show LoadingBubble when there is no assistant message yet.
@@ -226,9 +255,9 @@ export default function MessageList({ messages, streaming, streamingState, pendi
         </div>
       </div>
 
-      {!atBottom && (
+      {!following && (
         <div className="chat-scroll-bottom">
-          <Button size="sm" icon={<ArrowDown size={14} />} onClick={() => scrollToBottom('smooth')}>
+          <Button size="sm" icon={<ArrowDown size={14} />} onClick={jumpToBottom}>
             {t('chat.scrollToBottom')}
           </Button>
         </div>
