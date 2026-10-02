@@ -17,15 +17,15 @@ import (
 // cancel func that records invocation.
 func newIdleTestInstance(id string, spawned bool, idleSince time.Time, inflight int, cancelled *bool) *Instance {
 	inst := &Instance{
-		Project:      Project{ID: id, Path: "/tmp"},
-		cmd:          &exec.Cmd{},
-		cancel:       func() { *cancelled = true },
-		errCh:        make(chan error, 1),
-		lastActiveAt: idleSince,
+		Project: Project{ID: id, Path: "/tmp"},
+		cmd:     &exec.Cmd{},
+		cancel:  func() { *cancelled = true },
+		errCh:   make(chan error, 1),
+		slots:   newDelegationSlotsAt(idleSince),
 	}
 	close(inst.errCh)
 	inst.delegationSpawned = spawned
-	inst.inflight = inflight
+	inst.slots.inflight = inflight
 	return inst
 }
 
@@ -86,11 +86,36 @@ func TestGCIdleSkipsProtectedInstances(t *testing.T) {
 	}
 }
 
+func TestGCIdleSkipsWebInstances(t *testing.T) {
+	web := &WebInstance{
+		Project:   Project{ID: "web", Path: t.TempDir()},
+		StartedAt: time.Now().Add(-time.Hour),
+		state:     WebStateRunning,
+		pid:       os.Getpid(),
+		done:      make(chan struct{}),
+		slots:     newDelegationSlotsAt(time.Now().Add(-time.Hour)),
+	}
+
+	m := &Manager{
+		instances:    map[string]*Instance{},
+		webInstances: map[string]*WebInstance{"web": web},
+		broker:       pubsub.NewBroker[ManagerEvent](),
+	}
+	t.Cleanup(m.broker.Shutdown)
+
+	if stopped := m.gcIdleInstances(time.Minute); len(stopped) != 0 {
+		t.Fatalf("stopped = %v, want none", stopped)
+	}
+	if _, ok := m.webInstances["web"]; !ok {
+		t.Fatal("web instance was removed by ACP idle GC")
+	}
+}
+
 // TestInstanceCloseBlocksSlotAcquire verifies the close/acquire race guard: an
 // in-flight slot prevents tryBeginClose, and once an instance is closing no new
 // slot can be acquired (so a concurrent delegation falls back to the cold path).
 func TestInstanceCloseBlocksSlotAcquire(t *testing.T) {
-	inst := &Instance{lastActiveAt: time.Now()}
+	inst := &Instance{slots: newDelegationSlotsAt(time.Now())}
 
 	if !inst.acquireDelegationSlot(0) {
 		t.Fatal("first acquire failed")

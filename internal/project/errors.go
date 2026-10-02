@@ -2,6 +2,7 @@ package project
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 )
 
@@ -49,6 +50,11 @@ var ErrExternalUnreachable = errors.New("external instance is unreachable over I
 // agent loop — so warm routing refuses it and the caller takes the cold path.
 var ErrSelfInstance = errors.New("project is served by this instance; warm delegation to self is not allowed")
 
+// ErrWebInstanceRunning is returned by EnsureInstance when a manager-owned web
+// child is already serving the project. Warm delegations must route over that
+// child over IPC rather than spawning a second ACP process in the same directory.
+var ErrWebInstanceRunning = errors.New("project has a running web child; warm delegations must route over IPC")
+
 // ErrChildStartupTimeout is returned when a spawned background child never
 // becomes healthy within the startup timeout window.
 var ErrChildStartupTimeout = errors.New("child startup timed out")
@@ -92,3 +98,24 @@ func (e *ChildStartupError) Is(target error) bool {
 // spawn or initialize another project child. Child instances may delegate to
 // external peers over IPC, but they must never create recursive descendants.
 var ErrChildInstance = errors.New("project child instances cannot spawn nested project instances")
+
+// ErrDelegationsInFlight is returned when an operation needs an idle project
+// child but the project still has delegated runs in flight.
+var ErrDelegationsInFlight = errors.New("project has delegations in flight")
+
+// DelegationsInFlightError carries the number of delegated runs that prevented
+// an operation such as replacing an ACP child with a web child.
+type DelegationsInFlightError struct {
+	Count int
+}
+
+func (e *DelegationsInFlightError) Error() string {
+	if e == nil || e.Count <= 0 {
+		return ErrDelegationsInFlight.Error()
+	}
+	return fmt.Sprintf("%s (%d)", ErrDelegationsInFlight.Error(), e.Count)
+}
+
+func (e *DelegationsInFlightError) Is(target error) bool {
+	return target == ErrDelegationsInFlight
+}

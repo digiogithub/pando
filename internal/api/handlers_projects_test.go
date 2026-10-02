@@ -246,6 +246,17 @@ func TestOpenProjectWebHandler(t *testing.T) {
 			wantContains: []string{`"error":"child_instance"`},
 		},
 		{
+			name:     "delegations in flight",
+			projects: map[string]*project.Project{"p1": projectRecord},
+			manager: fakeProjectManager{
+				openWebFn: func(context.Context, string) (project.WebInstanceSnapshot, error) {
+					return project.WebInstanceSnapshot{}, &project.DelegationsInFlightError{Count: 2}
+				},
+			},
+			wantCode:     http.StatusConflict,
+			wantContains: []string{`"error":"delegations_in_flight"`, `"project_id":"p1"`, `"delegations":2`},
+		},
+		{
 			name:     "startup failed",
 			projects: map[string]*project.Project{"p1": projectRecord},
 			manager: fakeProjectManager{

@@ -24,6 +24,9 @@ type DelegationMetrics struct {
 	// a manager-spawned warm child. External run failures fold into warmFailures and
 	// refused/unreachable peers fold into coldFallbacks, like any other warm miss.
 	externalHits atomic.Int64
+	// webHits counts the subset of warmHits served by a manager-owned project web
+	// child over IPC instead of an ACP warm child.
+	webHits atomic.Int64
 	// warmFailures counts warm attempts that reached a warm instance but failed the
 	// run (terminal-failed task, still no cold spawn).
 	warmFailures atomic.Int64
@@ -77,6 +80,7 @@ type DelegationMetricsSnapshot struct {
 	WarmAttempts   int64 `json:"warm_attempts"`
 	WarmHits       int64 `json:"warm_hits"`
 	ExternalHits   int64 `json:"external_hits"`
+	WebHits        int64 `json:"web_hits"`
 	WarmFailures   int64 `json:"warm_failures"`
 	ColdFallbacks  int64 `json:"cold_fallbacks"`
 	CapRejections  int64 `json:"cap_rejections"`
@@ -105,6 +109,7 @@ type DelegationMetricsSnapshot struct {
 func (m *DelegationMetrics) recordWarmAttempt()   { m.warmAttempts.Add(1) }
 func (m *DelegationMetrics) recordWarmHit()       { m.warmHits.Add(1) }
 func (m *DelegationMetrics) recordExternalHit()   { m.externalHits.Add(1) }
+func (m *DelegationMetrics) recordWebHit()        { m.webHits.Add(1) }
 func (m *DelegationMetrics) recordWarmFailure()   { m.warmFailures.Add(1) }
 func (m *DelegationMetrics) recordColdFallback()  { m.coldFallbacks.Add(1) }
 func (m *DelegationMetrics) recordCapRejection()  { m.capRejections.Add(1) }
@@ -171,6 +176,7 @@ func (m *DelegationMetrics) Snapshot() DelegationMetricsSnapshot {
 		WarmAttempts:              attempts,
 		WarmHits:                  hits,
 		ExternalHits:              m.externalHits.Load(),
+		WebHits:                   m.webHits.Load(),
 		WarmFailures:              m.warmFailures.Load(),
 		ColdFallbacks:             m.coldFallbacks.Load(),
 		CapRejections:             m.capRejections.Load(),

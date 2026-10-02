@@ -6,6 +6,8 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/digiogithub/pando/internal/app"
@@ -47,7 +49,8 @@ func (r agentMessageRunner) RunMessage(ctx context.Context, sessionID string, co
 // delegation to it. Centralising this keeps every entrypoint (tui/acp/serve/
 // app/desktop, plus failover-promoted buses) consistent.
 func registerBridgeHandlers(bus *ipc.Bus, instanceID string, pandoApp *app.App) {
-	accept := config.Get().Mesnada.Delegation.AcceptDelegations
+	accept := config.Get().Mesnada.Delegation.AcceptDelegations ||
+		strings.TrimSpace(os.Getenv("PANDO_PARENT_INSTANCE")) != ""
 
 	var delRunner bridge.DelegationRunner
 	if accept && pandoApp.CoderAgent != nil {

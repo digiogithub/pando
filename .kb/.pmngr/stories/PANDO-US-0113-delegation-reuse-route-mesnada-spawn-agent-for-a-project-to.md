@@ -2,14 +2,15 @@
 id: PANDO-US-0113
 type: story
 title: "Delegation reuse: route `mesnada_spawn_agent` for a project to its running web child over IPC instead of a second `pando acp`"
-status: backlog
+status: done
 priority: medium
 parent: PANDO-EP-0019
 author: mcp
 labels: [projects, delegation, ipc]
 estimate: 5
 created: 2026-10-01T19:24:43Z
-updated: 2026-10-01T19:24:43Z
+updated: 2026-10-02T09:07:33Z
+closed: 2026-10-02T09:07:33Z
 ---
 
 ## Description

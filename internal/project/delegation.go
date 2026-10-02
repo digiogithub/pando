@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -35,6 +36,9 @@ type DelegateResult struct {
 	// peer reached over the IPC bus (DelegateExternal, B3) rather than a
 	// manager-spawned warm child. Used by the orchestrator for metrics attribution.
 	External bool
+	// Web is true when this result came from a manager-owned project web child
+	// reached over the IPC bus instead of an ACP warm child or external peer.
+	Web bool
 }
 
 // Delegate runs promptText inside the already-running ("warm") child ACP
@@ -49,6 +53,9 @@ type DelegateResult struct {
 // cancelled and the context error is returned so the caller can fall back to the
 // cold path.
 func (m *Manager) Delegate(ctx context.Context, projectID, promptText string) (*DelegateResult, error) {
+	if web, ok := m.runningWebInstance(projectID); ok {
+		return m.delegateOnWeb(ctx, projectID, web, promptText, "")
+	}
 	m.mu.RLock()
 	inst, ok := m.instances[projectID]
 	m.mu.RUnlock()
@@ -87,6 +94,18 @@ func (m *Manager) WarmDelegate(ctx context.Context, projectID, projectPath, prom
 	id, err := m.resolveProjectID(ctx, projectID, projectPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if web, ok := m.runningWebInstance(id); ok {
+		if !web.acquireDelegationSlotOrQueue(ctx, maxConcurrent, queueDepth) {
+			return nil, ErrWarmCapReached
+		}
+		m.publishDelegationChanged(id, web.InflightDelegations())
+		defer func() {
+			web.releaseDelegationSlot()
+			m.publishDelegationChanged(id, web.InflightDelegations())
+		}()
+		return m.delegateOnWeb(ctx, id, web, promptText, correlationID)
 	}
 
 	inst, err := m.EnsureInstance(ctx, id, autoStart)
@@ -169,6 +188,10 @@ func (m *Manager) servedBySelf(path string) bool {
 // when autoStart is true but the path has no Pando config it returns
 // ErrProjectNeedsInit.
 func (m *Manager) EnsureInstance(ctx context.Context, projectID string, autoStart bool) (*Instance, error) {
+	if _, ok := m.runningWebInstance(projectID); ok {
+		return nil, ErrWebInstanceRunning
+	}
+
 	// Fast path: reuse an already-running manager-owned instance.
 	m.mu.RLock()
 	if inst, ok := m.instances[projectID]; ok && inst != nil {
@@ -242,6 +265,73 @@ func (m *Manager) EnsureInstance(ctx context.Context, projectID string, autoStar
 	})
 
 	return inst, nil
+}
+
+func (m *Manager) runningWebInstance(projectID string) (*WebInstance, bool) {
+	m.mu.RLock()
+	inst, ok := m.webInstances[projectID]
+	m.mu.RUnlock()
+	if !ok || inst == nil {
+		return nil, false
+	}
+	switch inst.State() {
+	case WebStateStarting, WebStateRunning:
+		return inst, true
+	default:
+		return nil, false
+	}
+}
+
+func (m *Manager) delegateOnWeb(ctx context.Context, projectID string, inst *WebInstance, promptText, correlationID string) (*DelegateResult, error) {
+	cid := correlationID
+	if cid == "" {
+		cid = fmt.Sprintf("web-%s-%d", projectID, time.Now().UnixNano())
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		endpoint, err := m.resolveWebDelegationEndpoint(inst)
+		if err == nil {
+			resolved, resolveErr := resolvePath(inst.Project.Path)
+			if resolveErr != nil {
+				return nil, ErrExternalUnreachable
+			}
+			res, callErr := m.delegateViaIPC(ctx, endpoint, resolved, promptText, cid, false, true)
+			if callErr == nil {
+				return res, nil
+			}
+			if !errors.Is(callErr, ErrExternalUnreachable) || time.Now().After(deadline) {
+				return nil, callErr
+			}
+		} else if time.Now().After(deadline) {
+			return nil, err
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+func (m *Manager) resolveWebDelegationEndpoint(inst *WebInstance) (string, error) {
+	if inst == nil {
+		return "", ErrExternalUnreachable
+	}
+	resolved, err := resolvePath(inst.Project.Path)
+	if err != nil {
+		return "", ErrExternalUnreachable
+	}
+	info, err := ipc.ReadLockForPath(resolved)
+	if err != nil || info == nil || !pidIsAlive(info.PID) {
+		return "", ErrExternalUnreachable
+	}
+	if wantPID := inst.PID(); wantPID <= 0 || info.PID != wantPID || info.RPCPort <= 0 {
+		return "", ErrExternalUnreachable
+	}
+	inst.setRPCPort(info.RPCPort)
+	return fmt.Sprintf("tcp://127.0.0.1:%d", info.RPCPort), nil
 }
 
 // delegateOn runs promptText against an already-resolved instance, capturing the

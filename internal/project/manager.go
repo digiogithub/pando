@@ -185,7 +185,22 @@ func (m *Manager) Activate(ctx context.Context, projectID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// 4. If an instance already exists and is ready, just switch the active pointer.
+	// 4. If a manager-owned web child is already serving the project, just switch
+	// the active pointer — never spawn a second ACP child for the same directory.
+	if web, ok := m.webInstances[projectID]; ok && web != nil {
+		switch web.State() {
+		case WebStateStarting, WebStateRunning:
+			m.activeID = projectID
+			_ = m.service.TouchLastOpened(ctx, projectID)
+			m.broker.Publish(pubsub.UpdatedEvent, ManagerEvent{
+				Type:      EvProjectSwitched,
+				ProjectID: projectID,
+			})
+			return nil
+		}
+	}
+
+	// 5. If an instance already exists and is ready, just switch the active pointer.
 	if inst, ok := m.instances[projectID]; ok {
 		select {
 		case <-inst.ready:
@@ -205,7 +220,7 @@ func (m *Manager) Activate(ctx context.Context, projectID string) error {
 		return nil
 	}
 
-	// 5. Spawn a new child ACP process.
+	// 6. Spawn a new child ACP process.
 	inst, err := m.spawnChild(*proj)
 	if err != nil {
 		_ = m.service.UpdateStatus(ctx, projectID, StatusError, 0, 0)
@@ -300,14 +315,14 @@ func (m *Manager) spawnChild(proj Project) (*Instance, error) {
 	conn := acpsdk.NewClientSideConnection(client, stdinPipe, stdoutPipe)
 
 	inst := &Instance{
-		Project:      proj,
-		cmd:          cmd,
-		conn:         conn,
-		delClient:    client,
-		cancel:       cancel,
-		ready:        make(chan struct{}),
-		errCh:        make(chan error, 1),
-		lastActiveAt: time.Now(),
+		Project:   proj,
+		cmd:       cmd,
+		conn:      conn,
+		delClient: client,
+		cancel:    cancel,
+		ready:     make(chan struct{}),
+		errCh:     make(chan error, 1),
+		slots:     newDelegationSlotsAt(time.Now()),
 	}
 
 	// The stdio ACP server is ready as soon as the process starts.
@@ -337,7 +352,9 @@ func (m *Manager) spawnChild(proj Project) (*Instance, error) {
 		// Remove from the live-instance map and clear activeID if needed.
 		m.mu.Lock()
 		if m.activeID == proj.ID {
-			m.activeID = ""
+			if web, ok := m.webInstances[proj.ID]; !ok || web == nil || (web.State() != WebStateStarting && web.State() != WebStateRunning) {
+				m.activeID = ""
+			}
 		}
 		delete(m.instances, proj.ID)
 		m.mu.Unlock()
@@ -378,6 +395,14 @@ func (m *Manager) Deactivate(_ context.Context) error {
 // lock on disk with a live PID is considered an external instance.
 func (m *Manager) Runtime(projectID, path string) (running, external bool, pid int) {
 	m.mu.RLock()
+	if web, ok := m.webInstances[projectID]; ok && web != nil {
+		switch web.State() {
+		case WebStateStarting, WebStateRunning:
+			pid = web.PID()
+			m.mu.RUnlock()
+			return true, false, pid
+		}
+	}
 	inst, ours := m.instances[projectID]
 	if ours {
 		if inst.cmd != nil && inst.cmd.Process != nil {
@@ -421,14 +446,16 @@ func (m *Manager) Stop(ctx context.Context, projectID string) error {
 // parent loop never hangs. The count lets the UI warn the user how many
 // delegated loops were interrupted.
 func (m *Manager) StopReport(ctx context.Context, projectID string) (cancelled int, err error) {
-	if closeErr := m.CloseWeb(ctx, projectID); closeErr != nil {
+	webCancelled, closeErr := m.CloseWebReport(ctx, projectID)
+	if closeErr != nil {
 		return 0, closeErr
 	}
+	cancelled += webCancelled
 
 	m.mu.Lock()
 	inst, ours := m.instances[projectID]
 	if ours {
-		cancelled = inst.InflightDelegations()
+		cancelled += inst.InflightDelegations()
 		// Wake any delegations queued for a slot (A3) so they fall back to the cold
 		// path instead of waiting on an instance that is going away.
 		inst.beginCloseAndWake()
@@ -607,19 +634,30 @@ func (m *Manager) ListSessions(_ context.Context, projectID string) ([]sessionEn
 	return result, nil
 }
 
-// DelegationInfo reports the warm-delegation state of a manager-owned instance:
-// the count of in-flight delegated sessions, whether the instance was
-// auto-started by the delegation router (vs user-activated), and whether an
-// instance is running at all. All zero/false when the project has no
-// manager-owned instance (e.g. stopped or external).
+// DelegationInfo reports the warm-delegation state of manager-owned project
+// children: the total count of in-flight delegated sessions across the tracked
+// ACP and web children, whether the ACP child (when present) was auto-started
+// by the delegation router (vs user-activated), and whether any manager-owned
+// child is running at all. All zero/false when the project has no manager-owned
+// child (e.g. stopped or external).
 func (m *Manager) DelegationInfo(projectID string) (inflight int, spawned, running bool) {
 	m.mu.RLock()
+	web, webOK := m.webInstances[projectID]
 	inst, ok := m.instances[projectID]
 	m.mu.RUnlock()
-	if !ok || inst == nil {
-		return 0, false, false
+	if webOK && web != nil {
+		switch web.State() {
+		case WebStateStarting, WebStateRunning:
+			inflight += web.InflightDelegations()
+			running = true
+		}
 	}
-	return inst.InflightDelegations(), inst.isDelegationSpawned(), true
+	if ok && inst != nil {
+		inflight += inst.InflightDelegations()
+		spawned = inst.isDelegationSpawned()
+		running = true
+	}
+	return inflight, spawned, running
 }
 
 // publishDelegationChanged announces a change in the in-flight delegated-session
@@ -762,6 +800,7 @@ func (m *Manager) Shutdown() {
 	}
 
 	for _, inst := range webInstances {
+		inst.beginDelegationShutdown()
 		inst.markStopping()
 		terminateWebProcess(inst, syscall.SIGTERM)
 	}

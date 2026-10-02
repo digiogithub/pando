@@ -42,6 +42,10 @@ type WarmRunResult struct {
 	// peer over the IPC bus (hot-peer delegation, B3) rather than a manager-spawned
 	// warm child. Used only for metrics attribution (externalHits).
 	External bool
+	// Web is true when the run was served by a manager-owned project web child
+	// over IPC rather than an ACP warm child or external peer. Used only for
+	// metrics attribution (webHits).
+	Web bool
 }
 
 // WarmTargetResolver routes a delegated task to a warm per-project ACP instance,
@@ -215,6 +219,9 @@ func (o *Orchestrator) tryStartWarm(task *models.Task) bool {
 		o.metrics.recordWarmHit()
 		if res.External {
 			o.metrics.recordExternalHit()
+		}
+		if res.Web {
+			o.metrics.recordWebHit()
 		}
 		task.Status = models.TaskStatusCompleted
 		task.Output = res.Output

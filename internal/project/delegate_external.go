@@ -47,8 +47,10 @@ func (m *Manager) DelegateExternal(ctx context.Context, projectID, projectPath, 
 	}
 
 	endpoint := fmt.Sprintf("tcp://127.0.0.1:%d", info.RPCPort)
+	return m.delegateViaIPC(ctx, endpoint, resolved, promptText, correlationID, true, false)
+}
 
-	// 3. Open main IPC client.
+func (m *Manager) delegateViaIPC(ctx context.Context, endpoint, cwd, promptText, correlationID string, external, web bool) (*DelegateResult, error) {
 	client, err := ipc.NewClient(ctx)
 	if err != nil {
 		return nil, ErrExternalUnreachable
@@ -73,7 +75,7 @@ func (m *Manager) DelegateExternal(ctx context.Context, projectID, projectPath, 
 	//    client (the main client's Call is tied to ctx and cannot be reused).
 	params := protocol.DelegationRunParams{
 		Prompt:        promptText,
-		Cwd:           resolved,
+		Cwd:           cwd,
 		CorrelationID: correlationID,
 	}
 
@@ -104,19 +106,20 @@ func (m *Manager) DelegateExternal(ctx context.Context, projectID, projectPath, 
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, fmt.Errorf("external delegation failed: %w", err)
+		return nil, fmt.Errorf("ipc delegation failed: %w", err)
 	}
 
 	var res protocol.DelegationRunResult
 	if err := json.Unmarshal(raw, &res); err != nil {
-		return nil, fmt.Errorf("external delegation: unmarshal result: %w", err)
+		return nil, fmt.Errorf("ipc delegation: unmarshal result: %w", err)
 	}
 
 	return &DelegateResult{
 		ChildSessionID: res.SessionID,
 		Output:         res.Output,
 		StopReason:     res.StopReason,
-		External:       true,
+		External:       external,
+		Web:            web,
 	}, nil
 }
 
@@ -163,7 +166,22 @@ func (m *Manager) RecoverExternalDelegation(ctx context.Context, projectID, proj
 	}
 
 	endpoint := fmt.Sprintf("tcp://127.0.0.1:%d", info.RPCPort)
+	webRoute := false
+	if projectID != "" {
+		if webInst, ok := m.runningWebInstance(projectID); ok && webInst.PID() == info.PID {
+			webRoute = true
+		}
+	} else if m.service != nil {
+		if proj, getErr := m.service.GetByPath(ctx, resolved); getErr == nil && proj != nil {
+			if webInst, ok := m.runningWebInstance(proj.ID); ok && webInst.PID() == info.PID {
+				webRoute = true
+			}
+		}
+	}
+	return m.recoverDelegationViaIPC(ctx, endpoint, correlationID, !webRoute, webRoute)
+}
 
+func (m *Manager) recoverDelegationViaIPC(ctx context.Context, endpoint, correlationID string, external, web bool) (*DelegateResult, string, error) {
 	client, err := ipc.NewClient(ctx)
 	if err != nil {
 		return nil, "", ErrExternalUnreachable
@@ -191,11 +209,11 @@ func (m *Manager) RecoverExternalDelegation(ctx context.Context, projectID, proj
 		if ctx.Err() != nil {
 			return nil, "", ctx.Err()
 		}
-		return nil, "", fmt.Errorf("external delegation status failed: %w", err)
+		return nil, "", fmt.Errorf("ipc delegation status failed: %w", err)
 	}
 	var st protocol.DelegationStatusResult
 	if err := json.Unmarshal(raw, &st); err != nil {
-		return nil, "", fmt.Errorf("external delegation status: unmarshal result: %w", err)
+		return nil, "", fmt.Errorf("ipc delegation status: unmarshal result: %w", err)
 	}
 
 	switch st.State {
@@ -204,7 +222,8 @@ func (m *Manager) RecoverExternalDelegation(ctx context.Context, projectID, proj
 			ChildSessionID: st.SessionID,
 			Output:         st.Output,
 			StopReason:     st.StopReason,
-			External:       true,
+			External:       external,
+			Web:            web,
 		}, protocol.DelegationStateCompleted, nil
 	case protocol.DelegationStateRunning:
 		return nil, protocol.DelegationStateRunning, nil

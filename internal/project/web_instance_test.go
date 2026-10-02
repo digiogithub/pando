@@ -329,6 +329,146 @@ func TestOpenWebCrashPublishesError(t *testing.T) {
 	}
 }
 
+func TestOpenWebStopsIdleACPInstanceFirst(t *testing.T) {
+	mgr, svc := newWebTestManager(t)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	writeProjectConfig(t, dir)
+	proj, err := svc.Create(ctx, "web-stop-idle-acp", dir)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	cancelled := false
+	inst := &Instance{
+		Project: Project{ID: proj.ID, Path: dir},
+		cmd:     &exec.Cmd{},
+		cancel:  func() { cancelled = true },
+		errCh:   make(chan error, 1),
+		slots:   newDelegationSlotsAt(time.Now()),
+	}
+	close(inst.errCh)
+	mgr.instances[proj.ID] = inst
+
+	spawnCount := 0
+	spawnWebProcess = func(_ context.Context, _ string, _ webProcessConfig, _ Project, _ int) (*webProcessStart, error) {
+		spawnCount++
+		return startShellCommand(t, `trap 'exit 0' TERM INT; while :; do sleep 1; done`), nil
+	}
+	probeWebHealth = func(context.Context, *http.Client, string) error { return nil }
+	fetchWebToken = func(context.Context, *http.Client, string) (string, error) { return "child-token", nil }
+
+	if _, err := mgr.OpenWeb(ctx, proj.ID); err != nil {
+		t.Fatalf("OpenWeb: %v", err)
+	}
+	if !cancelled {
+		t.Fatal("idle ACP instance was not stopped before opening web child")
+	}
+	if spawnCount != 1 {
+		t.Fatalf("spawn count = %d, want 1", spawnCount)
+	}
+	if _, ok := mgr.instances[proj.ID]; ok {
+		t.Fatal("ACP instance still tracked after OpenWeb")
+	}
+}
+
+func TestOpenWebRefusesWhenACPDelegationsInFlight(t *testing.T) {
+	mgr, svc := newWebTestManager(t)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	writeProjectConfig(t, dir)
+	proj, err := svc.Create(ctx, "web-busy-acp", dir)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	inst := &Instance{
+		Project: Project{ID: proj.ID, Path: dir},
+		cmd:     &exec.Cmd{},
+		cancel:  func() {},
+		errCh:   make(chan error, 1),
+		slots:   newDelegationSlotsAt(time.Now()),
+	}
+	close(inst.errCh)
+	if !inst.acquireDelegationSlot(0) {
+		t.Fatal("failed to acquire ACP delegation slot")
+	}
+	mgr.instances[proj.ID] = inst
+
+	spawned := false
+	spawnWebProcess = func(_ context.Context, _ string, _ webProcessConfig, _ Project, _ int) (*webProcessStart, error) {
+		spawned = true
+		return nil, errors.New("should not spawn")
+	}
+
+	_, err = mgr.OpenWeb(ctx, proj.ID)
+	if !errors.Is(err, ErrDelegationsInFlight) {
+		t.Fatalf("err = %v, want ErrDelegationsInFlight", err)
+	}
+	var inflightErr *DelegationsInFlightError
+	if !errors.As(err, &inflightErr) || inflightErr.Count != 1 {
+		t.Fatalf("err = %v, want DelegationsInFlightError{Count:1}", err)
+	}
+	if spawned {
+		t.Fatal("web child was spawned despite in-flight ACP delegation")
+	}
+}
+
+func TestRuntimeReportsManagerOwnedWebChild(t *testing.T) {
+	proj := Project{ID: "proj-runtime-web", Path: t.TempDir()}
+	cmd := startShellCommand(t, `trap 'exit 0' TERM INT; while :; do sleep 1; done`)
+	t.Cleanup(func() {
+		if cmd.cmd.Process != nil {
+			_ = cmd.cmd.Process.Kill()
+			_, _ = cmd.cmd.Process.Wait()
+		}
+	})
+
+	m := &Manager{
+		instances:    map[string]*Instance{},
+		webInstances: map[string]*WebInstance{proj.ID: newTrackedWebInstance(proj, cmd.cmd.Process.Pid)},
+	}
+
+	running, external, pid := m.Runtime(proj.ID, proj.Path)
+	if !running || external || pid != cmd.cmd.Process.Pid {
+		t.Fatalf("Runtime = (%v,%v,%d), want (true,false,%d)", running, external, pid, cmd.cmd.Process.Pid)
+	}
+}
+
+func TestActivateWithWebChildSkipsACPSpawn(t *testing.T) {
+	dir := t.TempDir()
+	writeProjectConfig(t, dir)
+	proj := &Project{ID: "proj-activate-web", Path: dir}
+	cmd := startShellCommand(t, `trap 'exit 0' TERM INT; while :; do sleep 1; done`)
+	t.Cleanup(func() {
+		if cmd.cmd.Process != nil {
+			_ = cmd.cmd.Process.Kill()
+			_, _ = cmd.cmd.Process.Wait()
+		}
+	})
+
+	m := &Manager{
+		service:      &stubService{proj: proj},
+		instances:    map[string]*Instance{},
+		webInstances: map[string]*WebInstance{proj.ID: newTrackedWebInstance(*proj, cmd.cmd.Process.Pid)},
+		broker:       pubsub.NewBroker[ManagerEvent](),
+		pandoBin:     filepath.Join(t.TempDir(), "missing-pando"),
+	}
+	t.Cleanup(m.broker.Shutdown)
+
+	if err := m.Activate(context.Background(), proj.ID); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
+	if m.ActiveID() != proj.ID {
+		t.Fatalf("ActiveID = %q, want %q", m.ActiveID(), proj.ID)
+	}
+	if len(m.instances) != 0 {
+		t.Fatalf("ACP instances = %d, want 0", len(m.instances))
+	}
+}
+
 func TestNewManagerAdoptsOrphanWithPinnedTLSAndTokenHandshake(t *testing.T) {
 	restoreWebHooks(t)
 	conn := setupWebTestDB(t)

@@ -522,6 +522,18 @@ func (s *Server) handleOpenProjectWeb(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, project.ErrChildInstance):
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "child_instance"})
 			return
+		case errors.Is(err, project.ErrDelegationsInFlight):
+			count := 0
+			var inflightErr *project.DelegationsInFlightError
+			if errors.As(err, &inflightErr) && inflightErr != nil {
+				count = inflightErr.Count
+			}
+			writeJSON(w, http.StatusConflict, map[string]interface{}{
+				"error":       "delegations_in_flight",
+				"project_id":  id,
+				"delegations": count,
+			})
+			return
 		default:
 			var startupErr *project.ChildStartupError
 			if errors.As(err, &startupErr) || errors.Is(err, project.ErrChildStartupFailed) || errors.Is(err, project.ErrChildStartupTimeout) {

@@ -65,11 +65,14 @@ type WebInstance struct {
 	state    WebInstanceState
 	port     int
 	pid      int
+	rpcPort  int
 	token    string
 	done     chan struct{}
 	exitErr  error
 	stopping bool
 	adopted  bool
+
+	slots delegationSlots
 }
 
 // WebInstanceSnapshot is a race-free copy of a WebInstance's live runtime data.
@@ -125,6 +128,13 @@ func (w *WebInstance) PID() int {
 	return w.pid
 }
 
+// RPCPort returns the IPC ROUTER port served by the child when known.
+func (w *WebInstance) RPCPort() int {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.rpcPort
+}
+
 // State returns the current lifecycle state of the child.
 func (w *WebInstance) State() WebInstanceState {
 	w.mu.RLock()
@@ -141,6 +151,12 @@ func (w *WebInstance) setState(state WebInstanceState) {
 func (w *WebInstance) setToken(token string) {
 	w.mu.Lock()
 	w.token = token
+	w.mu.Unlock()
+}
+
+func (w *WebInstance) setRPCPort(port int) {
+	w.mu.Lock()
+	w.rpcPort = port
 	w.mu.Unlock()
 }
 
@@ -161,6 +177,7 @@ func (w *WebInstance) recordExit(err error, state WebInstanceState) {
 	w.exitErr = err
 	w.state = state
 	w.token = ""
+	w.rpcPort = 0
 	w.mu.Unlock()
 	close(w.done)
 }
@@ -183,6 +200,22 @@ func (w *WebInstance) stdoutText() string {
 		return ""
 	}
 	return strings.TrimSpace(w.stdout.String())
+}
+
+func (w *WebInstance) acquireDelegationSlotOrQueue(ctx context.Context, max, queueDepth int) bool {
+	return w.slots.acquireOrQueue(ctx, max, queueDepth)
+}
+
+func (w *WebInstance) releaseDelegationSlot() {
+	w.slots.release()
+}
+
+func (w *WebInstance) beginDelegationShutdown() {
+	w.slots.beginCloseAndWake()
+}
+
+func (w *WebInstance) InflightDelegations() int {
+	return w.slots.inflightCount()
 }
 
 type tailBuffer struct {
@@ -350,6 +383,10 @@ func (m *Manager) OpenWeb(ctx context.Context, projectID string) (*WebInstance, 
 		return nil, fmt.Errorf("project manager: resolve child TLS certificate: %w", err)
 	}
 
+	if err := m.stopConflictingACPInstance(ctx, projectID); err != nil {
+		return nil, err
+	}
+
 	m.mu.Lock()
 	if inst, ok := m.webInstances[projectID]; ok && inst != nil {
 		switch inst.State() {
@@ -399,6 +436,7 @@ func (m *Manager) OpenWeb(ctx context.Context, projectID string) (*WebInstance, 
 		port:      port,
 		pid:       started.cmd.Process.Pid,
 		done:      make(chan struct{}),
+		slots:     newDelegationSlotsAt(time.Now()),
 	}
 
 	m.mu.Lock()
@@ -425,26 +463,37 @@ func (m *Manager) OpenWeb(ctx context.Context, projectID string) (*WebInstance, 
 
 // CloseWeb stops the background WebUI child for projectID if one is running.
 func (m *Manager) CloseWeb(ctx context.Context, projectID string) error {
+	_, err := m.CloseWebReport(ctx, projectID)
+	return err
+}
+
+// CloseWebReport is CloseWeb with bookkeeping: it returns the number of
+// web-routed delegations that were still in flight when the child was asked to
+// stop. Those delegations are cancelled by the process teardown; the parent warm
+// call exits with a terminal error instead of hanging.
+func (m *Manager) CloseWebReport(ctx context.Context, projectID string) (int, error) {
 	inst, ok := m.takeWebInstance(projectID)
 	if !ok || inst == nil {
 		if m.service != nil {
 			_ = m.service.UpdateWebRuntime(ctx, projectID, 0, 0)
 		}
-		return nil
+		return 0, nil
 	}
 
+	cancelled := inst.InflightDelegations()
+	inst.beginDelegationShutdown()
 	inst.markStopping()
 	terminateWebProcess(inst, syscall.SIGTERM)
 
 	select {
 	case <-inst.done:
 	case <-ctx.Done():
-		return ctx.Err()
+		return cancelled, ctx.Err()
 	case <-time.After(5 * time.Second):
 		terminateWebProcess(inst, syscall.SIGKILL)
 	}
 
-	return nil
+	return cancelled, nil
 }
 
 // WebInstances returns the currently tracked background WebUI children keyed by
@@ -787,6 +836,7 @@ func (m *Manager) adoptExistingWebInstances(ctx context.Context) {
 				pid:       entry.PID,
 				done:      make(chan struct{}),
 				adopted:   true,
+				slots:     newDelegationSlotsAt(entry.StartedAt),
 			}
 
 			probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
@@ -869,4 +919,35 @@ func terminateWebProcess(inst *WebInstance, sig syscall.Signal) {
 			}
 		}
 	}
+}
+
+func (m *Manager) stopConflictingACPInstance(ctx context.Context, projectID string) error {
+	m.mu.Lock()
+	inst, ok := m.instances[projectID]
+	if !ok || inst == nil {
+		m.mu.Unlock()
+		return nil
+	}
+	if inflight := inst.InflightDelegations(); inflight > 0 {
+		m.mu.Unlock()
+		return &DelegationsInFlightError{Count: inflight}
+	}
+	inst.beginCloseAndWake()
+	inst.cancel()
+	if inst.cmd != nil && inst.cmd.Process != nil {
+		_ = inst.cmd.Process.Signal(syscall.SIGTERM)
+	}
+	delete(m.instances, projectID)
+	m.mu.Unlock()
+
+	select {
+	case <-inst.errCh:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(5 * time.Second):
+		if inst.cmd != nil && inst.cmd.Process != nil {
+			_ = inst.cmd.Process.Kill()
+		}
+	}
+	return nil
 }

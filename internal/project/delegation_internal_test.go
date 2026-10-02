@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/digiogithub/pando/internal/ipc"
+	"github.com/digiogithub/pando/internal/ipc/protocol"
 	"github.com/digiogithub/pando/internal/pubsub"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
@@ -610,6 +612,10 @@ func TestExternalDelegationSentinelsDistinct(t *testing.T) {
 // writeFakeLockFile creates a minimal .pando/ipc.lock in dir with the given pid
 // and rpcPort so that ReadLockForPath / Runtime detect an "external" instance.
 func writeFakeLockFile(t *testing.T, dir string, pid, rpcPort int) {
+	writeFakeLockFileWithPorts(t, dir, pid, 0, rpcPort)
+}
+
+func writeFakeLockFileWithPorts(t *testing.T, dir string, pid, pubPort, rpcPort int) {
 	t.Helper()
 	pandoDir := filepath.Join(dir, ".pando")
 	if err := os.MkdirAll(pandoDir, 0o755); err != nil {
@@ -618,7 +624,7 @@ func writeFakeLockFile(t *testing.T, dir string, pid, rpcPort int) {
 	info := map[string]interface{}{
 		"instance_id": "fake-external",
 		"pid":         pid,
-		"pub_port":    0,
+		"pub_port":    pubPort,
 		"rpc_port":    rpcPort,
 		"started_at":  time.Now(),
 	}
@@ -774,3 +780,477 @@ func (f *fakeExtService) UpdateWebRuntime(_ context.Context, _ string, _, _ int)
 }
 func (f *fakeExtService) MarkInitialized(_ context.Context, _ string) error { return nil }
 func (f *fakeExtService) TouchLastOpened(_ context.Context, _ string) error { return nil }
+
+type fakeIPCDelegationRunner struct {
+	mu sync.Mutex
+
+	result     protocol.DelegationRunResult
+	status     protocol.DelegationStatusResult
+	runCount   int
+	cancelIDs  []string
+	started    chan struct{}
+	release    <-chan struct{}
+	cancelSeen chan struct{}
+}
+
+func (f *fakeIPCDelegationRunner) run(ctx context.Context, params protocol.DelegationRunParams) (protocol.DelegationRunResult, error) {
+	f.mu.Lock()
+	f.runCount++
+	started := f.started
+	release := f.release
+	f.mu.Unlock()
+
+	if started != nil {
+		select {
+		case <-started:
+		default:
+			close(started)
+		}
+	}
+
+	if release != nil {
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return protocol.DelegationRunResult{}, ctx.Err()
+		}
+	}
+
+	res := f.result
+	if res.SessionID == "" {
+		res.SessionID = "web-session"
+	}
+	if res.Output == "" {
+		res.Output = "<pando:conclusion>\nstatus: success\nsummary: web\n</pando:conclusion>\n"
+	}
+	if res.StopReason == "" {
+		res.StopReason = "end_turn"
+	}
+
+	f.mu.Lock()
+	f.status = protocol.DelegationStatusResult{
+		State:      protocol.DelegationStateCompleted,
+		SessionID:  res.SessionID,
+		Output:     res.Output,
+		StopReason: res.StopReason,
+	}
+	f.mu.Unlock()
+	return res, nil
+}
+
+func (f *fakeIPCDelegationRunner) cancel(correlationID string) {
+	f.mu.Lock()
+	f.cancelIDs = append(f.cancelIDs, correlationID)
+	cancelSeen := f.cancelSeen
+	f.mu.Unlock()
+	if cancelSeen != nil {
+		select {
+		case <-cancelSeen:
+		default:
+			close(cancelSeen)
+		}
+	}
+}
+
+func (f *fakeIPCDelegationRunner) statusResult() protocol.DelegationStatusResult {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.status.State == "" {
+		return protocol.DelegationStatusResult{State: protocol.DelegationStateRunning}
+	}
+	return f.status
+}
+
+func (f *fakeIPCDelegationRunner) cancelledIDs() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, len(f.cancelIDs))
+	copy(out, f.cancelIDs)
+	return out
+}
+
+func startFakeDelegationBus(t *testing.T, dir string, pid int, runner *fakeIPCDelegationRunner) *ipc.Bus {
+	t.Helper()
+
+	pubPort, rpcPort, err := ipc.FindFreePorts()
+	if err != nil {
+		t.Fatalf("FindFreePorts: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	bus := ipc.NewBus("fake-web-child")
+	bus.RegisterMethod(protocol.MethodInstancePing, func(context.Context, string, json.RawMessage) (json.RawMessage, error) {
+		return json.Marshal(protocol.PingResult{
+			Status:             "ok",
+			InstanceID:         "fake-web-child",
+			AcceptsDelegations: true,
+			DelegationProtocol: protocol.DelegationProtocolVersion,
+		})
+	})
+	bus.RegisterMethod(protocol.MethodDelegationRun, func(ctx context.Context, _ string, params json.RawMessage) (json.RawMessage, error) {
+		var p protocol.DelegationRunParams
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+		res, err := runner.run(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(res)
+	})
+	bus.RegisterMethod(protocol.MethodDelegationCancel, func(_ context.Context, _ string, params json.RawMessage) (json.RawMessage, error) {
+		var p protocol.DelegationCancelParams
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+		runner.cancel(p.CorrelationID)
+		return json.Marshal(protocol.OKResult{OK: true})
+	})
+	bus.RegisterMethod(protocol.MethodDelegationStatus, func(_ context.Context, _ string, params json.RawMessage) (json.RawMessage, error) {
+		var p protocol.DelegationStatusParams
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+		_ = p
+		return json.Marshal(runner.statusResult())
+	})
+	if err := bus.Start(ctx, pubPort, rpcPort); err != nil {
+		cancel()
+		t.Fatalf("bus.Start: %v", err)
+	}
+	writeFakeLockFileWithPorts(t, dir, pid, pubPort, rpcPort)
+	t.Cleanup(func() {
+		cancel()
+		_ = bus.Shutdown()
+	})
+	return bus
+}
+
+func startDummyProcess(t *testing.T) *exec.Cmd {
+	t.Helper()
+	cmd := exec.Command("sh", "-c", `trap 'exit 0' TERM INT; while :; do sleep 1; done`)
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start dummy process: %v", err)
+	}
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+			_, _ = cmd.Process.Wait()
+		}
+	})
+	return cmd
+}
+
+func newTrackedWebInstance(proj Project, pid int) *WebInstance {
+	return &WebInstance{
+		Project:   proj,
+		StartedAt: time.Now(),
+		state:     WebStateRunning,
+		pid:       pid,
+		done:      make(chan struct{}),
+		slots:     newDelegationSlotsAt(time.Now()),
+	}
+}
+
+func TestEnsureInstanceRefusesACPSpawnWhileWebChildRuns(t *testing.T) {
+	dir := t.TempDir()
+	proj := Project{ID: "proj-web-ensure", Path: dir}
+	cmd := startDummyProcess(t)
+
+	m := &Manager{
+		service:      &fakeExtService{proj: proj},
+		instances:    map[string]*Instance{},
+		webInstances: map[string]*WebInstance{proj.ID: newTrackedWebInstance(proj, cmd.Process.Pid)},
+	}
+
+	_, err := m.EnsureInstance(context.Background(), proj.ID, true)
+	if err != ErrWebInstanceRunning {
+		t.Fatalf("err = %v, want ErrWebInstanceRunning", err)
+	}
+}
+
+func TestWarmDelegateRoutesToWebChildOverIPC(t *testing.T) {
+	dir := t.TempDir()
+	proj := Project{ID: "proj-web-route", Path: dir}
+	cmd := startDummyProcess(t)
+	runner := &fakeIPCDelegationRunner{
+		result: protocol.DelegationRunResult{
+			SessionID:  "web-session-1",
+			Output:     "<pando:conclusion>\nstatus: success\nsummary: web route\n</pando:conclusion>\n",
+			StopReason: "end_turn",
+		},
+	}
+	startFakeDelegationBus(t, dir, cmd.Process.Pid, runner)
+
+	m := &Manager{
+		service:      &fakeExtService{proj: proj},
+		instances:    map[string]*Instance{},
+		webInstances: map[string]*WebInstance{proj.ID: newTrackedWebInstance(proj, cmd.Process.Pid)},
+	}
+
+	res, err := m.WarmDelegate(context.Background(), proj.ID, "", "delegate over web", true, 1, 0, false, "corr-web-1")
+	if err != nil {
+		t.Fatalf("WarmDelegate: %v", err)
+	}
+	if !res.Web || res.External {
+		t.Fatalf("routing flags = {Web:%v External:%v}, want {true false}", res.Web, res.External)
+	}
+	if res.ChildSessionID != "web-session-1" {
+		t.Fatalf("ChildSessionID = %q, want web-session-1", res.ChildSessionID)
+	}
+	if len(m.instances) != 0 {
+		t.Fatalf("ACP instances = %d, want 0", len(m.instances))
+	}
+}
+
+func TestWarmDelegateWebHonorsCapAndQueue(t *testing.T) {
+	dir := t.TempDir()
+	proj := Project{ID: "proj-web-queue", Path: dir}
+	cmd := startDummyProcess(t)
+	release := make(chan struct{})
+	runner := &fakeIPCDelegationRunner{
+		started: make(chan struct{}),
+		release: release,
+	}
+	startFakeDelegationBus(t, dir, cmd.Process.Pid, runner)
+
+	m := &Manager{
+		service:      &fakeExtService{proj: proj},
+		instances:    map[string]*Instance{},
+		webInstances: map[string]*WebInstance{proj.ID: newTrackedWebInstance(proj, cmd.Process.Pid)},
+		broker:       pubsub.NewBroker[ManagerEvent](),
+	}
+	t.Cleanup(m.broker.Shutdown)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	sub := m.broker.Subscribe(ctx)
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := m.WarmDelegate(ctx, proj.ID, "", "first", true, 1, 1, false, "corr-web-first")
+		firstDone <- err
+	}()
+	select {
+	case <-runner.started:
+	case <-ctx.Done():
+		t.Fatal("first web delegation never started")
+	}
+
+	inflight, spawned, running := m.DelegationInfo(proj.ID)
+	if inflight != 1 || spawned || !running {
+		t.Fatalf("DelegationInfo = (%d,%v,%v), want (1,false,true)", inflight, spawned, running)
+	}
+
+	secondDone := make(chan error, 1)
+	go func() {
+		_, err := m.WarmDelegate(ctx, proj.ID, "", "second", true, 1, 1, false, "corr-web-second")
+		secondDone <- err
+	}()
+
+	select {
+	case err := <-secondDone:
+		t.Fatalf("second delegation completed early with %v, want queued", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	close(release)
+
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first WarmDelegate: %v", err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatalf("second WarmDelegate: %v", err)
+	}
+
+	var counts []int
+	deadline := time.After(2 * time.Second)
+	for len(counts) < 4 {
+		select {
+		case ev := <-sub:
+			if ev.Payload.Type == EvDelegationChanged {
+				counts = append(counts, ev.Payload.Count)
+			}
+		case <-deadline:
+			t.Fatalf("delegation events = %v, want [1 0 1 0]", counts)
+		}
+	}
+	if got := fmt.Sprint(counts); got != "[1 0 1 0]" {
+		t.Fatalf("delegation events = %s, want [1 0 1 0]", got)
+	}
+}
+
+func TestWarmDelegateWebCapReached(t *testing.T) {
+	dir := t.TempDir()
+	proj := Project{ID: "proj-web-cap", Path: dir}
+	cmd := startDummyProcess(t)
+	release := make(chan struct{})
+	runner := &fakeIPCDelegationRunner{started: make(chan struct{}), release: release}
+	startFakeDelegationBus(t, dir, cmd.Process.Pid, runner)
+
+	m := &Manager{
+		service:      &fakeExtService{proj: proj},
+		instances:    map[string]*Instance{},
+		webInstances: map[string]*WebInstance{proj.ID: newTrackedWebInstance(proj, cmd.Process.Pid)},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	defer close(release)
+
+	go func() {
+		_, _ = m.WarmDelegate(ctx, proj.ID, "", "first", true, 1, 0, false, "corr-web-cap-1")
+	}()
+	select {
+	case <-runner.started:
+	case <-ctx.Done():
+		t.Fatal("first web delegation never started")
+	}
+
+	_, err := m.WarmDelegate(context.Background(), proj.ID, "", "second", true, 1, 0, false, "corr-web-cap-2")
+	if err != ErrWarmCapReached {
+		t.Fatalf("err = %v, want ErrWarmCapReached", err)
+	}
+}
+
+func TestRecoverExternalDelegationUsesWebRoutingFlags(t *testing.T) {
+	dir := t.TempDir()
+	proj := Project{ID: "proj-web-recover", Path: dir}
+	cmd := startDummyProcess(t)
+	runner := &fakeIPCDelegationRunner{
+		status: protocol.DelegationStatusResult{
+			State:      protocol.DelegationStateCompleted,
+			SessionID:  "web-recovered",
+			Output:     "recovered\n<pando:conclusion>\nstatus: success\n</pando:conclusion>\n",
+			StopReason: "end_turn",
+		},
+	}
+	startFakeDelegationBus(t, dir, cmd.Process.Pid, runner)
+
+	m := &Manager{
+		service:      &fakeExtService{proj: proj},
+		instances:    map[string]*Instance{},
+		webInstances: map[string]*WebInstance{proj.ID: newTrackedWebInstance(proj, cmd.Process.Pid)},
+	}
+
+	res, state, err := m.RecoverExternalDelegation(context.Background(), proj.ID, "", "corr-web-recover")
+	if err != nil {
+		t.Fatalf("RecoverExternalDelegation: %v", err)
+	}
+	if state != protocol.DelegationStateCompleted {
+		t.Fatalf("state = %q, want completed", state)
+	}
+	if res == nil || !res.Web || res.External {
+		t.Fatalf("routing flags = %+v, want Web=true External=false", res)
+	}
+}
+
+func TestWarmDelegateWebContextCancelSendsDelegationCancel(t *testing.T) {
+	dir := t.TempDir()
+	proj := Project{ID: "proj-web-cancel", Path: dir}
+	cmd := startDummyProcess(t)
+	release := make(chan struct{})
+	runner := &fakeIPCDelegationRunner{
+		started:    make(chan struct{}),
+		release:    release,
+		cancelSeen: make(chan struct{}),
+	}
+	startFakeDelegationBus(t, dir, cmd.Process.Pid, runner)
+
+	m := &Manager{
+		service:      &fakeExtService{proj: proj},
+		instances:    map[string]*Instance{},
+		webInstances: map[string]*WebInstance{proj.ID: newTrackedWebInstance(proj, cmd.Process.Pid)},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := m.WarmDelegate(ctx, proj.ID, "", "cancel me", true, 1, 0, false, "corr-web-cancel")
+		done <- err
+	}()
+	select {
+	case <-runner.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("web delegation never started")
+	}
+
+	cancel()
+
+	select {
+	case <-runner.cancelSeen:
+	case <-time.After(2 * time.Second):
+		t.Fatal("delegation.cancel was not sent")
+	}
+
+	close(release)
+	if err := <-done; err == nil {
+		t.Fatal("WarmDelegate succeeded after cancellation, want error")
+	}
+	if got := runner.cancelledIDs(); len(got) != 1 || got[0] != "corr-web-cancel" {
+		t.Fatalf("cancelled IDs = %v, want [corr-web-cancel]", got)
+	}
+}
+
+func TestCloseWebMidDelegationEndsWarmCall(t *testing.T) {
+	dir := t.TempDir()
+	proj := Project{ID: "proj-web-close", Path: dir}
+	cmd := startDummyProcess(t)
+	release := make(chan struct{})
+	runner := &fakeIPCDelegationRunner{
+		started: make(chan struct{}),
+		release: release,
+	}
+	bus := startFakeDelegationBus(t, dir, cmd.Process.Pid, runner)
+
+	inst := &WebInstance{
+		Project:   proj,
+		StartedAt: time.Now(),
+		cmd:       cmd,
+		errCh:     make(chan error, 1),
+		cancel:    func() {},
+		state:     WebStateRunning,
+		pid:       cmd.Process.Pid,
+		done:      make(chan struct{}),
+		slots:     newDelegationSlotsAt(time.Now()),
+	}
+	go func() {
+		_, _ = cmd.Process.Wait()
+		inst.recordExit(nil, WebStateStopped)
+		_ = bus.Shutdown()
+	}()
+
+	m := &Manager{
+		service:      &fakeExtService{proj: proj},
+		instances:    map[string]*Instance{},
+		webInstances: map[string]*WebInstance{proj.ID: inst},
+	}
+
+	resultCh := make(chan error, 1)
+	go func() {
+		_, err := m.WarmDelegate(context.Background(), proj.ID, "", "close me", true, 1, 0, false, "corr-web-close")
+		resultCh <- err
+	}()
+	select {
+	case <-runner.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("web delegation never started")
+	}
+
+	cancelled, err := m.CloseWebReport(context.Background(), proj.ID)
+	if err != nil {
+		t.Fatalf("CloseWebReport: %v", err)
+	}
+	if cancelled != 1 {
+		t.Fatalf("cancelled = %d, want 1", cancelled)
+	}
+
+	select {
+	case err := <-resultCh:
+		if err == nil {
+			t.Fatal("WarmDelegate succeeded after web close, want terminal error")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("WarmDelegate hung after web close")
+	}
+}

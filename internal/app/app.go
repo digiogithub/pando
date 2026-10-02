@@ -651,11 +651,11 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		// known is run inside an already-running per-project ACP instance instead of
 		// cold-spawning a CLI. nil when ReuseWarmInstances is off → cold path always.
 		mesnadaCfg.WarmTargetResolver = makeWarmTargetResolver(app.ProjectManager, cfg)
-		// Wire external-delegation re-attach recovery (item A2): after a parent
-		// restart, recover the result of an interrupted external (editor-launched)
-		// peer delegation instead of failing it. Gated on the same caller opt-in as
-		// routing external warm targets; nil otherwise → today's mark-failed path.
-		if app.ProjectManager != nil && cfg.Mesnada.Delegation.AllowExternalWarmTargets {
+		// Wire IPC delegation re-attach recovery (item A2): after a parent restart,
+		// recover the result of an interrupted delegation that was running in a
+		// surviving IPC peer (external editor instance or manager-owned web child)
+		// instead of failing it.
+		if app.ProjectManager != nil && cfg.Mesnada.Delegation.ReuseWarmInstances {
 			mesnadaCfg.ExternalDelegationRecoverer = makeExternalDelegationRecoverer(app.ProjectManager)
 		}
 		// Wire project-reference resolution (item B1): lets the spawn tool target a
@@ -1184,6 +1184,7 @@ func makeWarmTargetResolver(mgr *project.Manager, cfg *config.Config) mesnadaOrc
 			Output:         res.Output,
 			StopReason:     res.StopReason,
 			External:       res.External,
+			Web:            res.Web,
 		}, nil
 	})
 }
@@ -1220,7 +1221,8 @@ func makeExternalDelegationRecoverer(mgr *project.Manager) mesnadaOrch.ExternalD
 					ChildSessionID: res.ChildSessionID,
 					Output:         res.Output,
 					StopReason:     res.StopReason,
-					External:       true,
+					External:       res.External,
+					Web:            res.Web,
 				}
 			}
 			return wr, mesnadaOrch.RecoveryCompleted, nil
@@ -1237,6 +1239,7 @@ func makeExternalDelegationRecoverer(mgr *project.Manager) mesnadaOrch.ExternalD
 func isWarmColdFallback(err error) bool {
 	return errors.Is(err, project.ErrInstanceNotRunning) ||
 		errors.Is(err, project.ErrExternalInstance) ||
+		errors.Is(err, project.ErrWebInstanceRunning) ||
 		// The project is served by this very process: warm routing refuses to
 		// delegate to itself, so the task cold-spawns its own subagent.
 		errors.Is(err, project.ErrSelfInstance) ||

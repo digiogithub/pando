@@ -12,9 +12,9 @@ func waitForWaiters(t *testing.T, inst *Instance, want int) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		inst.mu.Lock()
-		got := inst.waiters
-		inst.mu.Unlock()
+		inst.slots.mu.Lock()
+		got := inst.slots.waiters
+		inst.slots.mu.Unlock()
 		if got == want {
 			return
 		}
