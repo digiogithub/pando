@@ -103,6 +103,19 @@ var ErrChildInstance = errors.New("project child instances cannot spawn nested p
 // child but the project still has delegated runs in flight.
 var ErrDelegationsInFlight = errors.New("project has delegations in flight")
 
+// ErrWebInstanceLimit is returned by OpenWeb when the configured cap on
+// simultaneous project WebUI children has been reached.
+type ErrWebInstanceLimit struct {
+	Limit int
+}
+
+func (e *ErrWebInstanceLimit) Error() string {
+	if e == nil || e.Limit <= 0 {
+		return "project web instance limit reached"
+	}
+	return fmt.Sprintf("project web instance limit reached (%d)", e.Limit)
+}
+
 // DelegationsInFlightError carries the number of delegated runs that prevented
 // an operation such as replacing an ACP child with a web child.
 type DelegationsInFlightError struct {

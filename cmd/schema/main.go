@@ -653,5 +653,39 @@ func generateSchema() map[string]any {
 		},
 	}
 
+	schema["properties"].(map[string]any)["projects"] = map[string]any{
+		"type":        "object",
+		"description": "Project workspaces and multi-project management configuration.",
+		"properties": map[string]any{
+			"enabled": map[string]any{
+				"type":        "boolean",
+				"description": "Enable the Projects feature",
+				"default":     true,
+			},
+			"autoRestore": map[string]any{
+				"type":        "boolean",
+				"description": "Re-activate the last active project on startup",
+				"default":     false,
+			},
+			"maxProjects": map[string]any{
+				"type":        "integer",
+				"description": "Maximum number of registered projects (0 = unlimited)",
+				"default":     20,
+				"minimum":     0,
+			},
+			"maxWebInstances": map[string]any{
+				"type":        "integer",
+				"description": "Maximum number of simultaneous background project WebUI children (0 = unlimited)",
+				"default":     6,
+				"minimum":     0,
+			},
+			"webStartupTimeout": map[string]any{
+				"type":        "string",
+				"description": "How long to wait for a background project WebUI child to become healthy (e.g. '20s', '1m')",
+				"default":     "20s",
+			},
+		},
+	}
+
 	return schema
 }

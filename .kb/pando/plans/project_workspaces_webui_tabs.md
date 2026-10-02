@@ -10,7 +10,7 @@ tags:
 ---
 # Plan: Project workspaces in the WebUI (bottom tab bar per project instance)
 
-**Date:** 2026-10-01 · **Tracker:** gintrack epic PANDO-EP-0019, stories PANDO-US-0103 … PANDO-US-0115 · **Status:** backlog (analysis done, nothing implemented)
+**Date:** 2026-10-01 · **Tracker:** gintrack epic PANDO-EP-0019, stories PANDO-US-0103 … PANDO-US-0115 · **Status:** implemented (stories 0103-0115 shipped, including limits, proxy/UI flows, delegation reuse, QA, and docs)
 
 ## Goal
 Clicking a project in the WebUI Projects view launches/reuses a background `pando serve` in that project's directory and the WebUI shows a bottom tab bar (under the status bar) with one tab per opened project; each tab shows the full WebUI of that instance (chat, sessions, settings, terminal…) inside the unified interface.

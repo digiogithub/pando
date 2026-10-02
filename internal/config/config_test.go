@@ -139,6 +139,8 @@ func TestDefaultConfigTemplateEnablesPandoPreferredDefaults(t *testing.T) {
 		{"Remembrances", "KBWikiLinks", "true"},
 		{"LLMCache", "Enabled", "true"},
 		{"ToolDiscovery", "Enabled", "true"},
+		{"Projects", "MaxWebInstances", "6"},
+		{"Projects", "WebStartupTimeout", "'20s'"},
 		{"InternalTools", "FetchEnabled", "true"},
 		{"InternalTools", "BrowserEnabled", "true"},
 		{"Evaluator", "Enabled", "true"},
@@ -152,6 +154,56 @@ func TestDefaultConfigTemplateEnablesPandoPreferredDefaults(t *testing.T) {
 		if !assignment.MatchString(templateSection(t, c.section)) {
 			t.Errorf("DefaultConfigTemplate: [%s] should set %s = %s", c.section, c.key, c.want)
 		}
+	}
+}
+
+func TestProjectsDefaultsAndParsing(t *testing.T) {
+	isolateGlobalConfig(t)
+	cfg = nil
+	viper.Reset()
+	t.Cleanup(func() {
+		cfg = nil
+		viper.Reset()
+	})
+
+	workDir := t.TempDir()
+	loaded, err := Load(workDir, false)
+	if err != nil {
+		t.Fatalf("Load defaults: %v", err)
+	}
+	if got := loaded.Projects.MaxWebInstances; got != 6 {
+		t.Fatalf("projects.maxWebInstances = %d, want 6", got)
+	}
+	if got := loaded.Projects.WebStartupTimeout; got != "20s" {
+		t.Fatalf("projects.webStartupTimeout = %q, want 20s", got)
+	}
+	if got := loaded.ProjectsWebStartupWait().String(); got != "20s" {
+		t.Fatalf("ProjectsWebStartupWait = %q, want 20s", got)
+	}
+
+	cfg = nil
+	viper.Reset()
+	configureViper()
+	setDefaults(false)
+
+	projectDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectDir, ".pando.toml"), []byte("[Projects]\nMaxWebInstances = 2\nWebStartupTimeout = '45s'\n"), 0o644); err != nil {
+		t.Fatalf("write local config: %v", err)
+	}
+	loaded, err = Load(projectDir, false)
+	if err != nil {
+		t.Fatalf("Load local projects config: %v", err)
+	}
+	if got := loaded.Projects.MaxWebInstances; got != 2 {
+		t.Fatalf("projects.maxWebInstances = %d, want 2", got)
+	}
+	if got := loaded.ProjectsWebStartupWait().String(); got != "45s" {
+		t.Fatalf("ProjectsWebStartupWait = %q, want 45s", got)
+	}
+
+	loaded.Projects.WebStartupTimeout = "garbage"
+	if got := loaded.ProjectsWebStartupWait().String(); got != "20s" {
+		t.Fatalf("ProjectsWebStartupWait invalid fallback = %q, want 20s", got)
 	}
 }
 

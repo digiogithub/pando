@@ -26,11 +26,11 @@ import (
 )
 
 const (
-	webHealthProbeInterval = 200 * time.Millisecond
-	webStartupTimeout      = 20 * time.Second
-	webOutputBufferLimit   = 8 * 1024
-	webLoopbackHost        = "127.0.0.1"
-	webTokenPath           = "/api/v1/token"
+	webHealthProbeInterval   = 200 * time.Millisecond
+	defaultWebStartupTimeout = 20 * time.Second
+	webOutputBufferLimit     = 8 * 1024
+	webLoopbackHost          = "127.0.0.1"
+	webTokenPath             = "/api/v1/token"
 )
 
 // WebInstanceState describes the lifecycle state of a background WebUI child.
@@ -401,6 +401,10 @@ func (m *Manager) OpenWeb(ctx context.Context, projectID string) (*WebInstance, 
 			return inst, nil
 		}
 	}
+	if limit := m.maxWebInstances; limit > 0 && m.activeWebInstanceCountLocked() >= limit {
+		m.mu.Unlock()
+		return nil, &ErrWebInstanceLimit{Limit: limit}
+	}
 	m.mu.Unlock()
 
 	preferredPort := proj.WebPort
@@ -536,7 +540,7 @@ func (m *Manager) waitForWebStartup(ctx context.Context, projectID string, inst 
 		return nil
 	}
 
-	deadline := time.NewTimer(webStartupTimeout)
+	deadline := time.NewTimer(m.webStartupTimeout)
 	defer deadline.Stop()
 
 	ticker := time.NewTicker(webHealthProbeInterval)
@@ -594,6 +598,20 @@ func (m *Manager) waitForWebStartup(ctx context.Context, projectID string, inst 
 		case <-ticker.C:
 		}
 	}
+}
+
+func (m *Manager) activeWebInstanceCountLocked() int {
+	count := 0
+	for _, inst := range m.webInstances {
+		if inst == nil {
+			continue
+		}
+		switch inst.State() {
+		case WebStateStarting, WebStateRunning:
+			count++
+		}
+	}
+	return count
 }
 
 func (m *Manager) monitorOwnedWebInstance(projectID string, inst *WebInstance) {

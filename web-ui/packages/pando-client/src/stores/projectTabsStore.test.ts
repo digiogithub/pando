@@ -166,6 +166,29 @@ describe('projectTabsStore', () => {
     )
   })
 
+  it('surfaces the web instance limit as a localized notice', async () => {
+    useProjectStore.setState({ projects: [makeProject('proj-1')] })
+    vi.spyOn(api, 'post').mockRejectedValue(
+      new Error(JSON.stringify({ error: 'web_instance_limit', limit: 2 })),
+    )
+
+    const result = await useProjectTabsStore.getState().openTab('proj-1')
+
+    expect(result.ok).toBe(false)
+    expect(result.code).toBe('error')
+    expect(result.notice).toEqual({
+      key: 'projects.tabs.limitReached',
+      type: 'error',
+      values: { limit: 2 },
+    })
+    expect(useProjectTabsStore.getState().tabs[0]).toEqual(
+      expect.objectContaining({
+        projectId: 'proj-1',
+        state: 'stopped',
+      }),
+    )
+  })
+
   it('closes a tab locally without stopping the child instance', async () => {
     const post = vi.spyOn(api, 'post')
     useProjectTabsStore.setState({

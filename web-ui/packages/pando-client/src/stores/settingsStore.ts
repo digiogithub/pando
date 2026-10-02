@@ -43,6 +43,8 @@ const DEFAULTS: SettingsConfig = {
   tool_discovery_mode: 'auto',
   tool_discovery_max_direct_tools: 64,
   tool_discovery_search_limit: 8,
+  projects_max_web_instances: 6,
+  projects_web_startup_timeout: '20s',
   delegation_enabled: false,
   delegation_inject_into_live_loop: false,
   delegation_resurrect_idle_loop: false,

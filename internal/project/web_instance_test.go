@@ -373,6 +373,90 @@ func TestOpenWebStopsIdleACPInstanceFirst(t *testing.T) {
 	}
 }
 
+func TestOpenWebHonorsMaxWebInstances(t *testing.T) {
+	restoreWebHooks(t)
+	conn := setupWebTestDB(t)
+	svc := NewService(db.New(conn))
+	mgr, err := NewManager(context.Background(), svc, ManagerOptions{
+		ParentInstanceID: "test-parent",
+		WebTLSDataDir:    t.TempDir(),
+		MaxWebInstances:  1,
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	t.Cleanup(mgr.Shutdown)
+
+	ctx := context.Background()
+	dirOne := t.TempDir()
+	dirTwo := t.TempDir()
+	writeProjectConfig(t, dirOne)
+	writeProjectConfig(t, dirTwo)
+	projOne, err := svc.Create(ctx, "one", dirOne)
+	if err != nil {
+		t.Fatalf("Create first project: %v", err)
+	}
+	projTwo, err := svc.Create(ctx, "two", dirTwo)
+	if err != nil {
+		t.Fatalf("Create second project: %v", err)
+	}
+
+	spawnWebProcess = func(_ context.Context, _ string, _ webProcessConfig, _ Project, _ int) (*webProcessStart, error) {
+		return startShellCommand(t, `trap 'exit 0' TERM INT; while :; do sleep 1; done`), nil
+	}
+	probeWebHealth = func(context.Context, *http.Client, string) error { return nil }
+	fetchWebToken = func(context.Context, *http.Client, string) (string, error) { return "child-token", nil }
+
+	if _, err := mgr.OpenWeb(ctx, projOne.ID); err != nil {
+		t.Fatalf("OpenWeb first project: %v", err)
+	}
+	_, err = mgr.OpenWeb(ctx, projTwo.ID)
+	var limitErr *ErrWebInstanceLimit
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("OpenWeb second project error = %v, want ErrWebInstanceLimit", err)
+	}
+	if limitErr.Limit != 1 {
+		t.Fatalf("limit = %d, want 1", limitErr.Limit)
+	}
+}
+
+func TestOpenWebUsesConfiguredStartupTimeout(t *testing.T) {
+	restoreWebHooks(t)
+	conn := setupWebTestDB(t)
+	svc := NewService(db.New(conn))
+	mgr, err := NewManager(context.Background(), svc, ManagerOptions{
+		ParentInstanceID:  "test-parent",
+		WebTLSDataDir:     t.TempDir(),
+		WebStartupTimeout: 40 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	t.Cleanup(mgr.Shutdown)
+
+	ctx := context.Background()
+	dir := t.TempDir()
+	writeProjectConfig(t, dir)
+	proj, err := svc.Create(ctx, "slow", dir)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	spawnWebProcess = func(_ context.Context, _ string, _ webProcessConfig, _ Project, _ int) (*webProcessStart, error) {
+		return startShellCommand(t, `trap 'exit 0' TERM INT; while :; do sleep 1; done`), nil
+	}
+	probeWebHealth = func(context.Context, *http.Client, string) error { return errors.New("not ready") }
+
+	start := time.Now()
+	_, err = mgr.OpenWeb(ctx, proj.ID)
+	if !errors.Is(err, ErrChildStartupTimeout) {
+		t.Fatalf("OpenWeb error = %v, want %v", err, ErrChildStartupTimeout)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("OpenWeb timeout took too long: %s", elapsed)
+	}
+}
+
 func TestOpenWebRefusesWhenACPDelegationsInFlight(t *testing.T) {
 	mgr, svc := newWebTestManager(t)
 	ctx := context.Background()

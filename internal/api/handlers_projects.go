@@ -511,6 +511,7 @@ func (s *Server) handleOpenProjectWeb(w http.ResponseWriter, r *http.Request) {
 
 	inst, err := mgr.OpenWeb(r.Context(), id)
 	if err != nil {
+		var limitErr *project.ErrWebInstanceLimit
 		switch {
 		case errors.Is(err, project.ErrProjectNeedsInit):
 			writeJSON(w, http.StatusConflict, map[string]string{
@@ -521,6 +522,16 @@ func (s *Server) handleOpenProjectWeb(w http.ResponseWriter, r *http.Request) {
 			return
 		case errors.Is(err, project.ErrChildInstance):
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "child_instance"})
+			return
+		case errors.As(err, &limitErr):
+			limit := 0
+			if limitErr != nil {
+				limit = limitErr.Limit
+			}
+			writeJSON(w, http.StatusConflict, map[string]interface{}{
+				"error": "web_instance_limit",
+				"limit": limit,
+			})
 			return
 		case errors.Is(err, project.ErrDelegationsInFlight):
 			count := 0

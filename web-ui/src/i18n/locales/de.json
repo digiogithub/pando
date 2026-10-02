@@ -82,6 +82,7 @@
       "started": "Projektarbeitsbereich bereit",
       "stopped": "Projektarbeitsbereich gestoppt",
       "error": "Der Projektarbeitsbereich konnte nicht geöffnet werden",
+      "limitReached": "Schließe einen anderen Projektarbeitsbereich, bevor du weitere öffnest (Limit: {{limit}})",
       "restart": "Arbeitsbereich neu starten",
       "close": "Tab schließen",
       "closeAndStop": "Arbeitsbereich schließen und beenden",

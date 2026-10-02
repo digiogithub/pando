@@ -22,6 +22,7 @@ interface PersistedProjectTabsState {
 export interface ProjectTabNotice {
   key: string
   type: ToastType
+  values?: Record<string, unknown>
 }
 
 export interface ProjectTabActionResult {
@@ -75,6 +76,7 @@ interface ProjectTabsErrorBody {
   error?: string
   detail?: string
   path?: string
+  limit?: number
 }
 
 const inflightOpens = new Map<string, Promise<ProjectTabActionResult>>()
@@ -333,6 +335,29 @@ async function startTab(projectId: string, force: boolean): Promise<ProjectTabAc
               outcome === 'cancelled'
                 ? undefined
                 : { key: 'projects.tabs.needsInit', type: 'warning' },
+          }
+        }
+
+        if (parsed.error === 'web_instance_limit') {
+          const limit = typeof parsed.limit === 'number' ? parsed.limit : undefined
+          const stoppedTab: ProjectTab = {
+            ...baseTab(projectId, project, currentTab),
+            state: 'stopped',
+            error: undefined,
+            busy: false,
+            childTitle: undefined,
+          }
+
+          useProjectTabsStore.setState((state) => ({
+            tabs: sortTabs(upsertTab(state.tabs, stoppedTab), mergeOrder(state.order, upsertTab(state.tabs, stoppedTab))),
+            order: mergeOrder(state.order, upsertTab(state.tabs, stoppedTab)),
+          }))
+
+          return {
+            ok: false,
+            code: 'error',
+            tab: stoppedTab,
+            notice: { key: 'projects.tabs.limitReached', type: 'error', values: limit !== undefined ? { limit } : undefined },
           }
         }
 

@@ -82,6 +82,7 @@
       "started": "Project workspace ready",
       "stopped": "Project workspace stopped",
       "error": "Failed to open the project workspace",
+      "limitReached": "Close another project workspace before opening more (limit: {{limit}})",
       "restart": "Restart workspace",
       "close": "Close tab",
       "closeAndStop": "Close and stop workspace",

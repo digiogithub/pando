@@ -62,6 +62,8 @@ type SettingsResponse struct {
 	ToolDiscoveryMode           string `json:"tool_discovery_mode"`
 	ToolDiscoveryMaxDirectTools int    `json:"tool_discovery_max_direct_tools"`
 	ToolDiscoverySearchLimit    int    `json:"tool_discovery_search_limit"`
+	ProjectsMaxWebInstances     int    `json:"projects_max_web_instances"`
+	ProjectsWebStartupTimeout   string `json:"projects_web_startup_timeout"`
 
 	// Delegation (mesnada delegated-task conclusions + agent-loop resurrection).
 	DelegationEnabled                  bool   `json:"delegation_enabled"`
@@ -128,6 +130,8 @@ type SettingsUpdateRequest struct {
 	ToolDiscoveryMode           *string `json:"tool_discovery_mode,omitempty"`
 	ToolDiscoveryMaxDirectTools *int    `json:"tool_discovery_max_direct_tools,omitempty"`
 	ToolDiscoverySearchLimit    *int    `json:"tool_discovery_search_limit,omitempty"`
+	ProjectsMaxWebInstances     *int    `json:"projects_max_web_instances,omitempty"`
+	ProjectsWebStartupTimeout   *string `json:"projects_web_startup_timeout,omitempty"`
 
 	DelegationEnabled                  *bool   `json:"delegation_enabled,omitempty"`
 	DelegationInjectIntoLiveLoop       *bool   `json:"delegation_inject_into_live_loop,omitempty"`
@@ -220,6 +224,8 @@ func buildSettingsResponse() (*SettingsResponse, error) {
 		ToolDiscoveryMode:           toolDiscoveryModeOrDefault(cfg.ToolDiscovery.Mode),
 		ToolDiscoveryMaxDirectTools: intOrDefault(cfg.ToolDiscovery.MaxDirectTools, 64),
 		ToolDiscoverySearchLimit:    intOrDefault(cfg.ToolDiscovery.SearchLimit, 8),
+		ProjectsMaxWebInstances:     cfg.Projects.MaxWebInstances,
+		ProjectsWebStartupTimeout:   durationOrDefault(cfg.Projects.WebStartupTimeout, "20s"),
 
 		DelegationEnabled:                  cfg.Mesnada.Delegation.Enabled,
 		DelegationInjectIntoLiveLoop:       cfg.Mesnada.Delegation.InjectIntoLiveLoop,
@@ -533,6 +539,28 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := config.UpdateToolDiscovery(td); err != nil {
 			writeConfigError(w, http.StatusInternalServerError, "failed to update tool discovery settings", err)
+			return
+		}
+	}
+
+	if req.ProjectsMaxWebInstances != nil || req.ProjectsWebStartupTimeout != nil {
+		projects := config.Get().Projects
+		if req.ProjectsMaxWebInstances != nil {
+			if *req.ProjectsMaxWebInstances < 0 {
+				writeError(w, http.StatusBadRequest, "projects_max_web_instances must be >= 0")
+				return
+			}
+			projects.MaxWebInstances = *req.ProjectsMaxWebInstances
+		}
+		if req.ProjectsWebStartupTimeout != nil {
+			if _, err := time.ParseDuration(*req.ProjectsWebStartupTimeout); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid projects_web_startup_timeout (e.g. 20s, 1m)")
+				return
+			}
+			projects.WebStartupTimeout = *req.ProjectsWebStartupTimeout
+		}
+		if err := config.UpdateProjects(projects); err != nil {
+			writeConfigError(w, http.StatusInternalServerError, "failed to update projects settings", err)
 			return
 		}
 	}

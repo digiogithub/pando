@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:project-tabs": "bash ./scripts/e2e-project-tabs.sh",
     "typecheck": "tsc -p tsconfig.app.json --noEmit",
     "lint": "bunx --bun eslint .",
     "check:contrast": "bun ./scripts/check-contrast.mjs"

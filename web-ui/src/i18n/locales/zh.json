@@ -82,6 +82,7 @@
       "started": "项目工作区已就绪",
       "stopped": "项目工作区已停止",
       "error": "无法打开项目工作区",
+      "limitReached": "请先关闭另一个项目工作区再打开更多（上限：{{limit}}）",
       "restart": "重新启动工作区",
       "close": "关闭标签页",
       "closeAndStop": "关闭并停止工作区",

@@ -1097,6 +1097,13 @@ type ProjectsConfig struct {
 	AutoRestore bool `json:"autoRestore,omitempty" toml:"AutoRestore"`
 	// MaxProjects limits how many projects can be registered. 0 means no limit. Default: 20.
 	MaxProjects int `json:"maxProjects,omitempty" toml:"MaxProjects"`
+	// MaxWebInstances limits how many background WebUI project children may run
+	// at once. 0 means unlimited. Default: 6.
+	MaxWebInstances int `json:"maxWebInstances,omitempty" toml:"MaxWebInstances"`
+	// WebStartupTimeout bounds how long the project manager waits for a spawned
+	// background WebUI child to pass the health+token handshake. Go duration
+	// string. Default: "20s".
+	WebStartupTimeout string `json:"webStartupTimeout,omitempty" toml:"WebStartupTimeout"`
 }
 
 // CronJob defines a scheduled prompt execution.
@@ -1694,6 +1701,24 @@ func (c *Config) PonytailDefaultMode() string {
 	default:
 		return ""
 	}
+}
+
+// ProjectsWebStartupWait returns the effective startup timeout for project
+// WebUI children. Unset or unparsable values fall back to 20s.
+func (c *Config) ProjectsWebStartupWait() time.Duration {
+	const fallback = 20 * time.Second
+	if c == nil {
+		return fallback
+	}
+	raw := strings.TrimSpace(c.Projects.WebStartupTimeout)
+	if raw == "" {
+		return fallback
+	}
+	wait, err := time.ParseDuration(raw)
+	if err != nil || wait <= 0 {
+		return fallback
+	}
+	return wait
 }
 
 // CavemanConfig configures the caveman output-brevity mode.
@@ -2698,6 +2723,13 @@ func setDefaults(debug bool) {
 	viper.SetDefault("toolDiscovery.mode", "auto")
 	viper.SetDefault("toolDiscovery.maxDirectTools", 64)
 	viper.SetDefault("toolDiscovery.searchLimit", 8)
+
+	// Projects defaults.
+	viper.SetDefault("projects.enabled", true)
+	viper.SetDefault("projects.autoRestore", false)
+	viper.SetDefault("projects.maxProjects", 20)
+	viper.SetDefault("projects.maxWebInstances", 6)
+	viper.SetDefault("projects.webStartupTimeout", "20s")
 
 	// Internal Tools defaults
 	viper.SetDefault("internalTools.fetchEnabled", true)
@@ -5127,6 +5159,25 @@ func UpdateToolDiscovery(td ToolDiscoveryConfig) error {
 		config.ToolDiscovery = td
 	}); err != nil {
 		cfg.ToolDiscovery = oldValue
+		return err
+	}
+
+	return nil
+}
+
+// UpdateProjects updates the projects configuration and persists it.
+func UpdateProjects(projects ProjectsConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldValue := cfg.Projects
+	cfg.Projects = projects
+
+	if err := updateCfgFile(func(config *Config) {
+		config.Projects = projects
+	}); err != nil {
+		cfg.Projects = oldValue
 		return err
 	}
 

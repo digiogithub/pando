@@ -294,6 +294,33 @@ export default function GeneralSettings() {
         </SettingsRow>
       </SettingsSection>
 
+      <SettingsSection title="Project workspaces">
+        <SettingsRow
+          label="Max running workspaces"
+          description="Maximum number of background project workspaces Pando may run at once. Set 0 for no limit."
+          htmlFor="general-projects-max-web-instances"
+        >
+          <Input
+            id="general-projects-max-web-instances"
+            type="number"
+            min={0}
+            value={config.projects_max_web_instances}
+            onChange={(e) => updateField('projects_max_web_instances', Number(e.target.value))}
+          />
+        </SettingsRow>
+        <SettingsRow
+          label="Workspace startup timeout"
+          description="How long to wait for a project workspace to become healthy before marking startup as failed."
+          htmlFor="general-projects-web-startup-timeout"
+        >
+          <Input
+            id="general-projects-web-startup-timeout"
+            value={config.projects_web_startup_timeout}
+            onChange={(e) => updateField('projects_web_startup_timeout', e.target.value)}
+          />
+        </SettingsRow>
+      </SettingsSection>
+
       {/* Delegation (subagent conclusions + agent-loop resurrection) */}
       <SettingsSection title={t('settings.general.delegation')}>
         <SettingsRow

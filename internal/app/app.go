@@ -291,11 +291,13 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 
 	// Initialize project manager (Phase 2).
 	mgr, mgrErr := project.NewManager(ctx, projects, project.ManagerOptions{
-		ParentInstanceID: opt.InstanceID,
-		SpawnDisabled:    opt.ChildParentInstanceID != "",
-		WebTLSCertFile:   opt.WebChildTLSCertFile,
-		WebTLSKeyFile:    opt.WebChildTLSKeyFile,
-		WebTLSDataDir:    opt.WebChildTLSDataDir,
+		ParentInstanceID:  opt.InstanceID,
+		SpawnDisabled:     opt.ChildParentInstanceID != "",
+		WebTLSCertFile:    opt.WebChildTLSCertFile,
+		WebTLSKeyFile:     opt.WebChildTLSKeyFile,
+		WebTLSDataDir:     opt.WebChildTLSDataDir,
+		MaxWebInstances:   config.Get().Projects.MaxWebInstances,
+		WebStartupTimeout: config.Get().ProjectsWebStartupWait(),
 	})
 	if mgrErr != nil {
 		return nil, fmt.Errorf("failed to initialize project manager: %w", mgrErr)

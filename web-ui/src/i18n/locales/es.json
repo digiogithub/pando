@@ -82,6 +82,7 @@
       "started": "Espacio de trabajo del proyecto listo",
       "stopped": "Espacio de trabajo del proyecto detenido",
       "error": "No se pudo abrir el espacio de trabajo del proyecto",
+      "limitReached": "Cierra otro espacio de trabajo del proyecto antes de abrir más (límite: {{limit}})",
       "restart": "Reiniciar espacio de trabajo",
       "close": "Cerrar pestaña",
       "closeAndStop": "Cerrar y detener el espacio de trabajo",

@@ -7,7 +7,8 @@ export default defineConfig({
   timeout: 60_000,
   use: {
     baseURL: process.env.PANDO_E2E_BASE_URL,
-    channel: process.env.PANDO_E2E_CHANNEL || 'chrome',
+    channel: process.env.PLAYWRIGHT_CHROME ? undefined : (process.env.PANDO_E2E_CHANNEL || 'chrome'),
+    executablePath: process.env.PLAYWRIGHT_CHROME || undefined,
     headless: true,
     // `pando app` serves a self-signed certificate.
     ignoreHTTPSErrors: true,

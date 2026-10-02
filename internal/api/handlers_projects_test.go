@@ -246,6 +246,17 @@ func TestOpenProjectWebHandler(t *testing.T) {
 			wantContains: []string{`"error":"child_instance"`},
 		},
 		{
+			name:     "web instance limit",
+			projects: map[string]*project.Project{"p1": projectRecord},
+			manager: fakeProjectManager{
+				openWebFn: func(context.Context, string) (project.WebInstanceSnapshot, error) {
+					return project.WebInstanceSnapshot{}, &project.ErrWebInstanceLimit{Limit: 3}
+				},
+			},
+			wantCode:     http.StatusConflict,
+			wantContains: []string{`"error":"web_instance_limit"`, `"limit":3`},
+		},
+		{
 			name:     "delegations in flight",
 			projects: map[string]*project.Project{"p1": projectRecord},
 			manager: fakeProjectManager{

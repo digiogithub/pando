@@ -859,6 +859,8 @@ export interface SettingsConfig {
   tool_discovery_mode: string            // 'auto' | 'always' | 'off'
   tool_discovery_max_direct_tools: number
   tool_discovery_search_limit: number
+  projects_max_web_instances: number
+  projects_web_startup_timeout: string
   // Delegation (mesnada delegated-task conclusions + agent-loop resurrection)
   delegation_enabled: boolean
   delegation_inject_into_live_loop: boolean

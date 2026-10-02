@@ -74,8 +74,8 @@ function translateNotice(
   if (!notice) return
 
   const message = result.error
-    ? `${t(notice.key)}: ${result.error}`
-    : t(notice.key)
+    ? `${t(notice.key, notice.values)}: ${result.error}`
+    : t(notice.key, notice.values)
 
   useToastStore.getState().addToast(message, notice.type)
 }

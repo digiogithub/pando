@@ -661,9 +661,11 @@ auto_permission = false
 # Projects — Multi-project management
 # =============================================================================
 [Projects]
-Enabled     = true
-AutoRestore = false
-MaxProjects = 20
+Enabled           = true
+AutoRestore       = false
+MaxProjects       = 20
+MaxWebInstances   = 6
+WebStartupTimeout = '20s'
 `
 
 // GenerateLocalConfigFile writes the annotated default .pando.toml template

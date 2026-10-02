@@ -78,6 +78,12 @@ type ManagerOptions struct {
 	WebTLSCertFile string
 	WebTLSKeyFile  string
 	WebTLSDataDir  string
+	// MaxWebInstances caps simultaneous background WebUI children. 0 means
+	// unlimited.
+	MaxWebInstances int
+	// WebStartupTimeout bounds how long OpenWeb waits for a child to become
+	// healthy. Zero falls back to the default.
+	WebStartupTimeout time.Duration
 }
 
 // Manager tracks child Pando ACP processes for registered project directories
@@ -93,12 +99,14 @@ type Manager struct {
 	registry registryLister
 
 	// pandoBin is the path to the current pando executable.
-	pandoBin         string
-	parentInstanceID string
-	spawnDisabled    bool
-	webTLSCertFile   string
-	webTLSKeyFile    string
-	webTLSDataDir    string
+	pandoBin          string
+	parentInstanceID  string
+	spawnDisabled     bool
+	webTLSCertFile    string
+	webTLSKeyFile     string
+	webTLSDataDir     string
+	maxWebInstances   int
+	webStartupTimeout time.Duration
 
 	webClientMu  sync.Mutex
 	webClient    *http.Client
@@ -126,19 +134,24 @@ func NewManager(ctx context.Context, service Service, opts ...ManagerOptions) (*
 	}
 
 	m := &Manager{
-		service:          service,
-		instances:        make(map[string]*Instance),
-		webInstances:     make(map[string]*WebInstance),
-		broker:           pubsub.NewBroker[ManagerEvent](),
-		registry:         newInstanceRegistry(),
-		pandoBin:         pandoBin,
-		parentInstanceID: opt.ParentInstanceID,
-		spawnDisabled:    opt.SpawnDisabled,
-		webTLSCertFile:   opt.WebTLSCertFile,
-		webTLSKeyFile:    opt.WebTLSKeyFile,
-		webTLSDataDir:    opt.WebTLSDataDir,
-		ctx:              mgrCtx,
-		cancel:           cancel,
+		service:           service,
+		instances:         make(map[string]*Instance),
+		webInstances:      make(map[string]*WebInstance),
+		broker:            pubsub.NewBroker[ManagerEvent](),
+		registry:          newInstanceRegistry(),
+		pandoBin:          pandoBin,
+		parentInstanceID:  opt.ParentInstanceID,
+		spawnDisabled:     opt.SpawnDisabled,
+		webTLSCertFile:    opt.WebTLSCertFile,
+		webTLSKeyFile:     opt.WebTLSKeyFile,
+		webTLSDataDir:     opt.WebTLSDataDir,
+		maxWebInstances:   opt.MaxWebInstances,
+		webStartupTimeout: opt.WebStartupTimeout,
+		ctx:               mgrCtx,
+		cancel:            cancel,
+	}
+	if m.webStartupTimeout <= 0 {
+		m.webStartupTimeout = defaultWebStartupTimeout
 	}
 	if !m.spawnDisabled {
 		m.adoptExistingWebInstances(mgrCtx)

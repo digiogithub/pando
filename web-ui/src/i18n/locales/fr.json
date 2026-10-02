@@ -82,6 +82,7 @@
       "started": "Espace de travail du projet prêt",
       "stopped": "Espace de travail du projet arrêté",
       "error": "Impossible d’ouvrir l’espace de travail du projet",
+      "limitReached": "Fermez un autre espace de travail de projet avant d’en ouvrir davantage (limite : {{limit}})",
       "restart": "Redémarrer l’espace de travail",
       "close": "Fermer l’onglet",
       "closeAndStop": "Fermer et arrêter l’espace de travail",

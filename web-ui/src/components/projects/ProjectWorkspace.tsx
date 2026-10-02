@@ -12,7 +12,9 @@ function translateNotice(
   result: ProjectTabActionResult,
 ) {
   if (!result.notice) return
-  const message = result.error ? `${t(result.notice.key)}: ${result.error}` : t(result.notice.key)
+  const message = result.error
+    ? `${t(result.notice.key, result.notice.values)}: ${result.error}`
+    : t(result.notice.key, result.notice.values)
   useToastStore.getState().addToast(message, result.notice.type)
 }
 
