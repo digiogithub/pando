@@ -94,3 +94,40 @@ func TestSettingsAppliesUIPolicy(t *testing.T) {
 		t.Fatal("no banner was drawn for a policy that declares one")
 	}
 }
+
+func TestApplyFieldPolicyDropsOrphanHeadersAndEmptySections(t *testing.T) {
+	sections := []settings.Section{
+		{Title: "Providers", Fields: []settings.Field{
+			headerField("providers.header.accounts", "Accounts"),
+			infoNote("providers.accounts.info", "Info", "This note belongs to a hidden account."),
+			{Label: "Name", Key: "providerAccount.hidden.displayName", Type: settings.FieldText, Value: "Hidden"},
+			headerField("providers.header.visible", "Visible"),
+			infoNote("providers.visible.info", "Info", "This group stays."),
+			{Label: "Enabled", Key: "providerAccount.visible.enabled", Type: settings.FieldToggle, Value: "true"},
+		}},
+		{Title: "Skills", Fields: []settings.Field{
+			headerField("skills.header.catalog", "Catalog"),
+			infoNote("skills.catalog.info", "Info", "Nothing focusable remains here."),
+		}},
+	}
+
+	t.Cleanup(func() { extensions.SetUIPolicyResolver(nil) })
+	extensions.SetUIPolicyResolver(func(context.Context) extensions.UIPolicy {
+		return extensions.UIPolicy{HiddenSections: []string{"providerAccount.hidden"}}
+	})
+
+	got := applyFieldPolicy(&pandoapp.App{UIPolicy: extensions.CurrentUIPolicy}, sections)
+	if len(got) != 1 || got[0].Title != "Providers" {
+		t.Fatalf("unexpected filtered sections: %+v", got)
+	}
+
+	fields := got[0].Fields
+	for _, field := range fields {
+		if field.Key == "providers.header.accounts" || field.Key == "providers.accounts.info" || field.Key == "providerAccount.hidden.displayName" {
+			t.Fatalf("orphaned header group was not removed: %+v", fields)
+		}
+	}
+	if sectionFieldByKey(t, got[0], "providerAccount.visible.enabled").Label != "Enabled" {
+		t.Fatal("visible focusable row should remain")
+	}
+}

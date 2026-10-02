@@ -135,6 +135,21 @@ func TestModelAutoModeSectionRouteCap(t *testing.T) {
 	_ = cfg
 }
 
+func TestModelAutoModeRouteCardIDsAndErrorsUseCardContext(t *testing.T) {
+	cfg := withModelAutoTUIConfig(t)
+	cfg.ModelAutoMode.Routes = []config.ModelAutoRoute{{ID: "route-a", Description: "First route", Model: cfg.Agents[config.AgentCoder].Model}}
+
+	f, ok := modelAutoFieldByKey(t, cfg, "modelAutoMode.routes.0.enabled")
+	if !ok || f.CardID != "route-a" {
+		t.Fatalf("route field card id = %+v ok=%v, want route-a", f, ok)
+	}
+
+	err := saveModelAutoMode(settings.Field{Key: "modelAutoMode.routes.0.enabled", Label: "Enabled", Card: "Route Alpha", Value: "wat"})
+	if err == nil || !strings.Contains(err.Error(), "Route Alpha › Enabled") {
+		t.Fatalf("card-aware validation error = %v", err)
+	}
+}
+
 func agentFieldByKey(cfg *config.Config, key string) (settings.Field, bool) {
 	for _, f := range buildAgentsSection(cfg).Fields {
 		if f.Key == key {
@@ -142,6 +157,16 @@ func agentFieldByKey(cfg *config.Config, key string) (settings.Field, bool) {
 		}
 	}
 	return settings.Field{}, false
+}
+
+func TestFieldDisplayLabelUsesCardContext(t *testing.T) {
+	field := settings.Field{Label: "Enabled", Card: "Route Alpha"}
+	if got := fieldDisplayLabel(field); got != "Route Alpha › Enabled" {
+		t.Fatalf("fieldDisplayLabel() = %q, want %q", got, "Route Alpha › Enabled")
+	}
+	if got := fieldDisplayLabel(settings.Field{Label: "Theme"}); got != "Theme" {
+		t.Fatalf("fieldDisplayLabel() without card = %q, want Theme", got)
+	}
 }
 
 func TestPersonaSelectorDecisionModelFields(t *testing.T) {

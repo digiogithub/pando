@@ -19,20 +19,32 @@ func buildModelAutoModeSection(cfg *config.Config) settings.Section {
 	m := cfg.ModelAutoMode
 
 	fields := []settings.Field{
+		headerField(modelAutoKeyPrefix+"header.general", "General"),
 		{Label: "Enabled", Key: modelAutoKeyPrefix + "enabled", Type: settings.FieldToggle, Value: boolString(m.Enabled)},
 		{Label: "Default to Auto", Key: modelAutoKeyPrefix + "defaultAuto", Type: settings.FieldToggle, Value: boolString(m.DefaultAuto), Hint: "New sessions start in Auto."},
 	}
+	fields = append(fields, headerField(modelAutoKeyPrefix+"header.decisionModel", "Decision model"))
 	fields = append(fields, decisionModelInfoRows(cfg, modelAutoKeyPrefix+"info.")...)
 	fields = append(fields,
+		headerField(modelAutoKeyPrefix+"header.routing", "Routing tuning"),
 		settings.Field{Label: "Match Threshold", Key: modelAutoKeyPrefix + "threshold", Type: settings.FieldText, Value: strconv.FormatFloat(m.EffectiveThreshold(), 'f', -1, 64), Hint: "Minimum route probability (0-1, default 0.60)."},
 		settings.Field{Label: "History Prompts", Key: modelAutoKeyPrefix + "historyPrompts", Type: settings.FieldText, Value: strconv.Itoa(m.HistoryPrompts), Hint: "Previous user prompts sent to the router as context."},
 	)
+	fields = append(fields, headerField(modelAutoKeyPrefix+"header.routes", "Routes"))
 
 	modelOptions := supportedModelOptions(cfg)
 	fallbackOptions := append([]string{modelAutoNoneOption}, modelOptions...)
 	for i, r := range m.Routes {
 		prefix := fmt.Sprintf("%sroutes.%d.", modelAutoKeyPrefix, i)
-		label := fmt.Sprintf("[Route %d] ", i+1)
+		card := strings.TrimSpace(r.ID)
+		cardID := card
+		if card == "" {
+			card = fmt.Sprintf("Route %d", i+1)
+		}
+		cardStatus := "Enabled"
+		if r.Disabled {
+			cardStatus = "Disabled"
+		}
 		fb := func(n int) string {
 			if n < len(r.Fallbacks) && r.Fallbacks[n] != "" {
 				return string(r.Fallbacks[n])
@@ -40,15 +52,15 @@ func buildModelAutoModeSection(cfg *config.Config) settings.Section {
 			return modelAutoNoneOption
 		}
 		fields = append(fields,
-			settings.Field{Label: label + "ID", Key: prefix + "id", Type: settings.FieldText, Value: r.ID},
-			settings.Field{Label: label + "Description", Key: prefix + "description", Type: settings.FieldText, Value: r.Description, Hint: "Tells the router when this route applies."},
-			settings.Field{Label: label + "Model", Key: prefix + "model", Type: settings.FieldSelect, Value: string(r.Model), Options: ensureOption(modelOptions, string(r.Model)), UseModelDialog: true, ModelDialogTitle: "Select Route Model"},
-			settings.Field{Label: label + "Fallback 1", Key: prefix + "fallback1", Type: settings.FieldSelect, Value: fb(0), Options: ensureOption(fallbackOptions, fb(0))},
-			settings.Field{Label: label + "Fallback 2", Key: prefix + "fallback2", Type: settings.FieldSelect, Value: fb(1), Options: ensureOption(fallbackOptions, fb(1))},
-			settings.Field{Label: label + "Enabled", Key: prefix + "enabled", Type: settings.FieldToggle, Value: boolString(!r.Disabled)},
-			settings.Field{Label: label + "Move up", Key: fmt.Sprintf("action:model_auto_move_route:%d:-1", i), Type: settings.FieldAction, Value: "Move this route earlier", Disabled: i == 0},
-			settings.Field{Label: label + "Move down", Key: fmt.Sprintf("action:model_auto_move_route:%d:1", i), Type: settings.FieldAction, Value: "Move this route later", Disabled: i == len(m.Routes)-1},
-			settings.Field{Label: label + "Delete", Key: fmt.Sprintf("action:model_auto_delete_route:%d", i), Type: settings.FieldAction, Value: "Delete this route"},
+			settings.Field{Label: "ID", Key: prefix + "id", Type: settings.FieldText, Value: r.ID, Card: card, CardID: cardID, CardStatus: cardStatus},
+			settings.Field{Label: "Description", Key: prefix + "description", Type: settings.FieldText, Value: r.Description, Hint: "Tells the router when this route applies.", Card: card, CardID: cardID},
+			settings.Field{Label: "Model", Key: prefix + "model", Type: settings.FieldSelect, Value: string(r.Model), Options: ensureOption(modelOptions, string(r.Model)), UseModelDialog: true, ModelDialogTitle: "Select Route Model", Card: card, CardID: cardID},
+			settings.Field{Label: "Fallback 1", Key: prefix + "fallback1", Type: settings.FieldSelect, Value: fb(0), Options: ensureOption(fallbackOptions, fb(0)), Card: card, CardID: cardID},
+			settings.Field{Label: "Fallback 2", Key: prefix + "fallback2", Type: settings.FieldSelect, Value: fb(1), Options: ensureOption(fallbackOptions, fb(1)), Card: card, CardID: cardID},
+			settings.Field{Label: "Enabled", Key: prefix + "enabled", Type: settings.FieldToggle, Value: boolString(!r.Disabled), Card: card, CardID: cardID},
+			settings.Field{Label: "Move up", Key: fmt.Sprintf("action:model_auto_move_route:%d:-1", i), Type: settings.FieldAction, Value: "Move this route earlier", Disabled: i == 0, Card: card, CardID: cardID},
+			settings.Field{Label: "Move down", Key: fmt.Sprintf("action:model_auto_move_route:%d:1", i), Type: settings.FieldAction, Value: "Move this route later", Disabled: i == len(m.Routes)-1, Card: card, CardID: cardID},
+			settings.Field{Label: "Delete", Key: fmt.Sprintf("action:model_auto_delete_route:%d", i), Type: settings.FieldAction, Value: "Delete this route", Card: card, CardID: cardID},
 		)
 	}
 
@@ -102,7 +114,7 @@ func saveModelAutoMode(field settings.Field) error {
 	case sub == "enabled" || sub == "defaultAuto":
 		v, err := parseBoolValue(field.Value)
 		if err != nil {
-			return fmt.Errorf("invalid value for %s: %w", field.Label, err)
+			return invalidFieldValueError(field, err)
 		}
 		if sub == "enabled" {
 			m.Enabled = v
@@ -118,7 +130,7 @@ func saveModelAutoMode(field settings.Field) error {
 	case sub == "historyPrompts":
 		v, err := strconv.Atoi(value)
 		if err != nil {
-			return fmt.Errorf("invalid value for %s: %w", field.Label, err)
+			return invalidFieldValueError(field, err)
 		}
 		m.HistoryPrompts = v
 	case strings.HasPrefix(sub, "routes."):
@@ -158,7 +170,7 @@ func saveModelAutoMode(field settings.Field) error {
 		case "enabled":
 			v, err := parseBoolValue(field.Value)
 			if err != nil {
-				return fmt.Errorf("invalid value for %s: %w", field.Label, err)
+				return invalidFieldValueError(field, err)
 			}
 			r.Disabled = !v
 		default:

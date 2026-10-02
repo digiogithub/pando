@@ -21,6 +21,16 @@ const (
 	FieldToggle
 	FieldSelect
 	FieldAction // triggers a command when enter/space is pressed
+	FieldHeader
+	FieldNote
+)
+
+type NoteLevel int
+
+const (
+	NoteLevelInfo NoteLevel = iota
+	NoteLevelWarning
+	NoteLevelError
 )
 
 type Field struct {
@@ -34,6 +44,10 @@ type Field struct {
 	Disabled         bool
 	UseModelDialog   bool
 	ModelDialogTitle string
+	NoteLevel        NoteLevel
+	Card             string
+	CardID           string
+	CardStatus       string
 	// Hint is optional helper text shown below the field row (e.g. recommended default).
 	Hint string
 	// Locked marks a field whose configuration key an extension has taken
@@ -73,7 +87,17 @@ func (f Field) LockMarker() string {
 // Editable reports whether the field accepts input. It is the single question
 // the section asks before opening an editor or emitting a save.
 func (f Field) Editable() bool {
-	return !f.ReadOnly && !f.Disabled && !f.Locked
+	return f.Focusable() && !f.ReadOnly && !f.Disabled && !f.Locked
+}
+
+// Focusable reports whether the field participates in keyboard or mouse focus.
+func (f Field) Focusable() bool {
+	switch f.Type {
+	case FieldHeader, FieldNote:
+		return false
+	default:
+		return true
+	}
 }
 
 func (f Field) DisplayValue(editing bool) string {
@@ -119,9 +143,10 @@ func NewTextFieldCmp(field Field, width int) TextFieldCmp {
 	t := theme.CurrentTheme()
 	input := textinput.New()
 	input.Prompt = ""
-	input.SetValue(field.Value)
-	input.Focus()
 	input.Width = max(1, width)
+	input.SetValue(field.Value)
+	input.CursorEnd()
+	input.Focus()
 	input.Cursor.Style = lipgloss.NewStyle().Foreground(t.Primary())
 	input.TextStyle = lipgloss.NewStyle().Foreground(t.Text())
 	input.PlaceholderStyle = lipgloss.NewStyle().Foreground(t.TextMuted())
@@ -180,19 +205,17 @@ func (c *ToggleFieldCmp) Update(msg tea.Msg) (tea.Cmd, bool) {
 func (c ToggleFieldCmp) View() string {
 	t := theme.CurrentTheme()
 	base := styles.BaseStyle()
+	glyphs := currentFieldGlyphs()
 
-	selectedStyle := base.
-		Foreground(t.Primary()).
-		Bold(true)
-	regularStyle := base.
-		Foreground(t.TextMuted())
+	selectedStyle := base.Foreground(t.Primary()).Bold(true)
+	regularStyle := base.Foreground(t.TextMuted())
 
-	trueValue := regularStyle.Render("true")
-	falseValue := regularStyle.Render("false")
+	trueValue := regularStyle.Render(glyphs.ToggleOn + " on")
+	falseValue := regularStyle.Render(glyphs.ToggleOff + " off")
 	if c.value {
-		trueValue = selectedStyle.Render("true")
+		trueValue = selectedStyle.Render(glyphs.ToggleOn + " on")
 	} else {
-		falseValue = selectedStyle.Render("false")
+		falseValue = selectedStyle.Render(glyphs.ToggleOff + " off")
 	}
 
 	return lipgloss.JoinHorizontal(lipgloss.Left, trueValue, " / ", falseValue)

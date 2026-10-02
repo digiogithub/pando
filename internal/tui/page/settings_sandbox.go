@@ -96,6 +96,11 @@ func buildSandboxSection(cfg *config.Config) settings.Section {
 		Title: "Sandbox",
 		Fields: []settings.Field{
 			{
+				Label: "General",
+				Key:   "sandbox.header.general",
+				Type:  settings.FieldHeader,
+			},
+			{
 				Label:    "Status",
 				Key:      "sandbox.backend",
 				Type:     settings.FieldText,
@@ -142,6 +147,11 @@ func buildSandboxSection(cfg *config.Config) settings.Section {
 			},
 			{
 				Label: "Writable Roots",
+				Key:   "sandbox.header.writableRoots",
+				Type:  settings.FieldHeader,
+			},
+			{
+				Label: "Writable Roots",
 				Key:   "sandbox.writableRoots",
 				Type:  settings.FieldText,
 				Value: strings.Join(view.WritableRoots, ","),
@@ -149,10 +159,20 @@ func buildSandboxSection(cfg *config.Config) settings.Section {
 			},
 			{
 				Label: "Deny Paths",
+				Key:   "sandbox.header.denyPaths",
+				Type:  settings.FieldHeader,
+			},
+			{
+				Label: "Deny Paths",
 				Key:   "sandbox.denyPaths",
 				Type:  settings.FieldText,
 				Value: strings.Join(view.DenyPaths, ","),
 				Hint:  "Denied for read and write, comma separated (globs allowed).",
+			},
+			{
+				Label: "Extend To",
+				Key:   "sandbox.header.extendTo",
+				Type:  settings.FieldHeader,
 			},
 			{
 				Label: "Sandbox MCP Servers",
@@ -166,6 +186,11 @@ func buildSandboxSection(cfg *config.Config) settings.Section {
 				Type:  settings.FieldToggle,
 				Value: boolString(slices.Contains(view.ExtendTo, config.SandboxExtendSubagents)),
 				Hint:  "ACP terminals and skills are always sandboxed.",
+			},
+			{
+				Label: "Effective Policy",
+				Key:   "sandbox.header.effectivePolicy",
+				Type:  settings.FieldHeader,
 			},
 			{
 				Label:    "Protected Paths",
@@ -233,7 +258,7 @@ func saveSandbox(field settings.Field) error {
 		target := strings.TrimPrefix(key, "sandbox.extendTo.")
 		enabled, err := parseBoolValue(field.Value)
 		if err != nil {
-			return fmt.Errorf("invalid %s value: %w", field.Label, err)
+			return invalidFieldValueError(field, err)
 		}
 		sc.ExtendTo = slices.DeleteFunc(slices.Clone(sc.ExtendTo), func(v string) bool { return v == target })
 		if enabled {

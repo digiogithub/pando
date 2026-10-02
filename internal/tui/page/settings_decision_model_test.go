@@ -252,8 +252,14 @@ func TestDecisionModelInfoRows(t *testing.T) {
 		t.Fatalf("rows = %+v", rows)
 	}
 	for _, r := range rows {
+		if r.Type == settings.FieldNote {
+			if r.Focusable() {
+				t.Errorf("note row %q must not be focusable", r.Key)
+			}
+			continue
+		}
 		if !r.Disabled {
-			t.Errorf("info row %q must be read-only", r.Key)
+			t.Errorf("info row %q must stay disabled", r.Key)
 		}
 	}
 	cfg.DecisionModel.Router.Model = ""

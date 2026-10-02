@@ -126,7 +126,7 @@ func decisionModelInfoRows(cfg *config.Config, keyPrefix string) []settings.Fiel
 	model := strings.TrimSpace(router.Model)
 	if model == "" {
 		return []settings.Field{
-			info("routerWarning", "Decision model", "Not configured. "+decisionInfoHint),
+			warningNote(keyPrefix+"routerWarning", "Decision model", "Not configured. "+decisionInfoHint),
 		}
 	}
 	rows := []settings.Field{
@@ -134,9 +134,9 @@ func decisionModelInfoRows(cfg *config.Config, keyPrefix string) []settings.Fiel
 		info("routerHealth", "Health", personaRouterHealthStatus(cfg.DecisionModel)),
 	}
 	if router.EffectiveProvider() != config.DecisionProviderOllama {
-		rows = append(rows, info("routerPrivacy", "Privacy", "This provider is remote: your prompts leave your machine to be classified."))
+		rows = append(rows, infoNote(keyPrefix+"routerPrivacy", "Privacy", "This provider is remote: your prompts leave your machine to be classified."))
 	}
-	return append(rows, info("routerHint", "Note", decisionInfoHint))
+	return append(rows, infoNote(keyPrefix+"routerHint", "Note", decisionInfoHint))
 }
 
 // formatDecisionHeaders renders the headers as "Name: ••••; Name2: ••••" so
@@ -215,14 +215,17 @@ func buildDecisionModelSection(cfg *config.Config) settings.Section {
 		modelField.Options = ensureOption(opts, d.Router.Model)
 	}
 
-	fields := []settings.Field{{
-		Label:   "Provider",
-		Key:     decisionKeyPrefix + "router.provider",
-		Type:    settings.FieldSelect,
-		Value:   string(kind),
-		Options: []string{string(config.DecisionProviderOllama), string(config.DecisionProviderTypeSafe), string(config.DecisionProviderCustom)},
-		Hint:    providerHint,
-	}}
+	fields := []settings.Field{
+		headerField(decisionKeyPrefix+"header.connection", "Connection"),
+		{
+			Label:   "Provider",
+			Key:     decisionKeyPrefix + "router.provider",
+			Type:    settings.FieldSelect,
+			Value:   string(kind),
+			Options: []string{string(config.DecisionProviderOllama), string(config.DecisionProviderTypeSafe), string(config.DecisionProviderCustom)},
+			Hint:    providerHint,
+		},
+	}
 	if kind == config.DecisionProviderCustom {
 		names := []string{"(choose)"}
 		for _, pr := range decisionPresets {
@@ -285,6 +288,7 @@ func buildDecisionModelSection(cfg *config.Config) settings.Section {
 		}
 	}
 	fields = append(fields,
+		headerField(decisionKeyPrefix+"header.diagnostics", "Diagnostics"),
 		settings.Field{Label: "Timeout (ms)", Key: decisionKeyPrefix + "timeoutMs", Type: settings.FieldText, Value: strconv.Itoa(d.TimeoutMs), Hint: "0 = default (1500 local, 3000 remote)."},
 		settings.Field{Label: "Effective URL", Key: decisionKeyPrefix + "info.url", Type: settings.FieldText, Value: d.Router.EffectiveBaseURL(), Disabled: true},
 	)
@@ -292,7 +296,7 @@ func buildDecisionModelSection(cfg *config.Config) settings.Section {
 		fields = append(fields, settings.Field{Label: "Health", Key: decisionKeyPrefix + "info.health", Type: settings.FieldText, Value: personaRouterHealthStatus(d), Disabled: true})
 	}
 	if note := decisionProviderPrivacy(d.Router); note != "" {
-		fields = append(fields, settings.Field{Label: "Privacy", Key: decisionKeyPrefix + "info.privacy", Type: settings.FieldText, Value: note, Disabled: true})
+		fields = append(fields, infoNote(decisionKeyPrefix+"info.privacy", "Privacy", note))
 	}
 	fields = append(fields, settings.Field{Label: "Test connection", Key: "action:decision_model_test", Type: settings.FieldAction, Value: "Check the decision model health"})
 
@@ -356,7 +360,7 @@ func saveDecisionModel(field settings.Field) error {
 	case "timeoutMs":
 		v, err := strconv.Atoi(value)
 		if err != nil {
-			return fmt.Errorf("invalid value for %s: %w", field.Label, err)
+			return invalidFieldValueError(field, err)
 		}
 		d.TimeoutMs = v
 	default:

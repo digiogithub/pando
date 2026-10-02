@@ -297,7 +297,7 @@ DesktopAllowedApps        = []
 DesktopDeniedApps         = []
 ```
 
-Also configurable from the TUI (`Settings → Internal Tools → Desktop Controller`) and the WebUI
+Also configurable from the TUI (`Settings → Tools → Desktop Controller`) and the WebUI
 (`InternalToolsSettings` → "Desktop Controller (Accessibility Automation)" card).
 
 ## Platform support matrix (honest status)

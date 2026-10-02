@@ -176,15 +176,15 @@ func (m *SettingsCmp) SetSections(sections []Section) {
 			m.activeSectionIdx = i
 		}
 		key, ok := activeKeys[m.sections[i].Title]
-		if !ok {
-			continue
-		}
-		for fieldIdx := range m.sections[i].Fields {
-			if m.sections[i].Fields[fieldIdx].Key == key {
-				m.sections[i].activeFieldIdx = fieldIdx
-				break
+		if ok {
+			for fieldIdx := range m.sections[i].Fields {
+				if m.sections[i].Fields[fieldIdx].Key == key {
+					m.sections[i].activeFieldIdx = fieldIdx
+					break
+				}
 			}
 		}
+		m.sections[i].SetActiveFieldIdx(m.sections[i].activeFieldIdx)
 	}
 
 	m.syncSectionWidths()
@@ -217,7 +217,7 @@ func (m *SettingsCmp) SetActiveField(sectionTitle, fieldKey string) {
 		m.activeSectionIdx = sectionIdx
 		for fieldIdx := range m.sections[sectionIdx].Fields {
 			if m.sections[sectionIdx].Fields[fieldIdx].Key == fieldKey {
-				m.sections[sectionIdx].activeFieldIdx = fieldIdx
+				m.sections[sectionIdx].SetActiveFieldIdx(fieldIdx)
 				m.sections[sectionIdx].editor = nil
 				m.syncSectionWidths()
 				m.syncViewport()
@@ -226,7 +226,7 @@ func (m *SettingsCmp) SetActiveField(sectionTitle, fieldKey string) {
 			}
 		}
 
-		m.sections[sectionIdx].activeFieldIdx = 0
+		m.sections[sectionIdx].SetActiveFieldIdx(0)
 		m.sections[sectionIdx].editor = nil
 		m.syncSectionWidths()
 		m.syncViewport()
@@ -399,31 +399,45 @@ func (m *SettingsCmp) autoScrollToActiveField() {
 	}
 
 	width := max(1, m.viewport.Width)
-	heights := activeSection.FieldHeights(width)
 	idx := activeSection.ActiveFieldIdx()
-	if idx < 0 || idx >= len(heights) {
-		m.viewport.SetYOffset(0)
+	if idx < 0 {
 		return
 	}
 
-	targetLine := 0
-	for i := 0; i < idx; i++ {
-		targetLine += heights[i]
+	heights := activeSection.FieldHeights(width)
+	if idx >= len(heights) {
+		return
 	}
+
+	targetLine := activeSection.FieldLineOffset(width, idx)
 	fieldHeight := heights[idx]
+	targetEnd := targetLine + fieldHeight
 	totalLines := 0
 	for _, h := range heights {
 		totalLines += h
 	}
 
-	// Only move the viewport when the active field is not fully visible, so a
-	// selection change scrolls the minimum needed instead of jumping to the top.
-	yOffset := m.viewport.YOffset
-	if targetLine < yOffset {
-		yOffset = targetLine
-	} else if targetLine+fieldHeight > yOffset+m.viewport.Height {
-		yOffset = targetLine + fieldHeight - m.viewport.Height
+	groupStart, groupEnd := activeFieldDecorationGroup(activeSection.Fields, idx)
+	desiredStart := activeSection.FieldLineOffset(width, groupStart)
+	desiredEnd := activeSection.FieldLineOffset(width, groupEnd) + heights[groupEnd]
+
+	allowedTopMin := targetEnd - m.viewport.Height
+	allowedTopMax := targetLine
+	preferredTop := m.viewport.YOffset
+	switch {
+	case desiredEnd-desiredStart <= m.viewport.Height:
+		preferredTop = desiredStart
+	case desiredStart < targetLine:
+		preferredTop = desiredStart
+	case desiredEnd > targetEnd:
+		preferredTop = desiredEnd - m.viewport.Height
+	case targetLine < preferredTop:
+		preferredTop = targetLine
+	case targetEnd > preferredTop+m.viewport.Height:
+		preferredTop = targetEnd - m.viewport.Height
 	}
+
+	yOffset := min(max(preferredTop, allowedTopMin), allowedTopMax)
 	maxOffset := max(0, totalLines-m.viewport.Height)
 	m.viewport.SetYOffset(min(max(yOffset, 0), maxOffset))
 }
@@ -441,16 +455,16 @@ func (m *SettingsCmp) syncActiveFieldToScroll() {
 	}
 
 	width := max(1, m.viewport.Width)
-	heights := activeSection.FieldHeights(width)
 	idx := activeSection.ActiveFieldIdx()
-	if idx < 0 || idx >= len(heights) {
+	if idx < 0 {
 		return
 	}
 
-	start := 0
-	for i := 0; i < idx; i++ {
-		start += heights[i]
+	heights := activeSection.FieldHeights(width)
+	if idx >= len(heights) {
+		return
 	}
+	start := activeSection.FieldLineOffset(width, idx)
 	end := start + heights[idx]
 	top := m.viewport.YOffset
 	bottom := top + m.viewport.Height
@@ -459,11 +473,41 @@ func (m *SettingsCmp) syncActiveFieldToScroll() {
 		return
 	}
 
-	newIdx := activeSection.FieldAtLine(width, top)
-	if newIdx < 0 {
-		newIdx = len(activeSection.Fields) - 1
+	newIdx := -1
+	for line := top; line < bottom; line++ {
+		if idx := activeSection.FieldAtLine(width, line); idx >= 0 {
+			newIdx = idx
+			break
+		}
 	}
-	activeSection.SetActiveFieldIdx(newIdx)
+	if newIdx < 0 {
+		for line := top - 1; line >= 0; line-- {
+			if idx := activeSection.FieldAtLine(width, line); idx >= 0 {
+				newIdx = idx
+				break
+			}
+		}
+	}
+	if newIdx >= 0 {
+		activeSection.SetActiveFieldIdx(newIdx)
+	}
+}
+
+func activeFieldDecorationGroup(fields []Field, idx int) (start, end int) {
+	start, end = idx, idx
+	for i := idx - 1; i >= 0; i-- {
+		if fields[i].Focusable() {
+			break
+		}
+		start = i
+	}
+	for i := idx + 1; i < len(fields); i++ {
+		if fields[i].Focusable() {
+			break
+		}
+		end = i
+	}
+	return start, end
 }
 
 func (m *SettingsCmp) activeSection() *Section {

@@ -545,7 +545,7 @@ func (p *settingsPage) saveField(msg settings.SaveFieldMsg) tea.Cmd {
 	p.settings.SetSize(p.width, p.height)
 	p.settings.SetActiveField(msg.SectionTitle, savedFieldKey(msg.Field))
 
-	cmds := []tea.Cmd{util.ReportInfo("Setting saved: " + msg.Field.Label)}
+	cmds := []tea.Cmd{util.ReportInfo("Setting saved: " + fieldDisplayLabel(msg.Field))}
 	// Live-apply settings that other pages render from, so the change is visible
 	// immediately without a restart.
 	if msg.Field.Key == "tui.showHiddenFiles" {
@@ -1010,40 +1010,32 @@ func buildSections(app *pandoapp.App) []settings.Section {
 	}
 
 	return applyFieldPolicy(app, []settings.Section{
-		// ── Core ──
-		withGroup(buildGeneralSection(cfg), "Core"),
+		withGroup(buildGeneralSection(cfg), ""),
+		withGroup(buildAppearanceSection(cfg), ""),
+		withGroup(buildProviderAccountsSection(cfg), ""),
+		withGroup(buildAgentsSection(cfg), ""),
+		withGroup(buildPersonaAutoSelectSection(cfg), ""),
+		withGroup(buildModelAutoModeSection(cfg), ""),
+		withGroup(buildDecisionModelSection(cfg), ""),
+		withGroup(buildMCPServersSection(cfg), ""),
+		withGroup(buildMCPGatewaySection(cfg), ""),
+		withGroup(buildLSPSection(app, cfg), ""),
+		withGroup(buildInternalToolsSection(cfg), ""),
+		withGroup(buildContainerRuntimeSection(cfg), ""),
+		withGroup(buildSandboxSection(cfg), ""),
+		withGroup(buildBashSection(cfg), ""),
+		withGroup(buildTokenOptimizationSection(cfg), ""),
+		withGroup(buildSkillsSection(app, cfg), ""),
+		withGroup(buildSkillsCatalogSection(cfg), ""),
+		withGroup(buildLuaSection(cfg), ""),
+		withGroup(buildEvaluatorSection(cfg), ""),
 
-		// ── AI ──
-		withGroup(buildProviderAccountsSection(cfg), "AI"),
-		withGroup(buildAgentsSection(cfg), "AI"),
-		withGroup(buildPersonaAutoSelectSection(cfg), "AI"),
-		withGroup(buildDecisionModelSection(cfg), "AI"),
-		withGroup(buildModelAutoModeSection(cfg), "AI"),
-		withGroup(buildEvaluatorSection(cfg), "AI"),
-
-		// ── Extensions ──
-		withGroup(buildSkillsSection(app, cfg), "Extensions"),
-		withGroup(buildSkillsCatalogSection(cfg), "Extensions"),
-		withGroup(buildLuaSection(cfg), "Extensions"),
-
-		// ── Integrations ──
-		withGroup(buildMCPServersSection(cfg), "Integrations"),
-		withGroup(buildMCPGatewaySection(cfg), "Integrations"),
-		withGroup(buildLSPSection(app, cfg), "Integrations"),
-
-		// ── Tools ──
-		withGroup(buildContainerRuntimeSection(cfg), "Tools"),
-		withGroup(buildInternalToolsSection(cfg), "Tools"),
-		withGroup(buildSandboxSection(cfg), "Tools"),
-		withGroup(buildBashSection(cfg), "Tools"),
-		withGroup(buildTokenOptimizationSection(cfg), "Tools"),
-
-		// ── Services ──
 		withGroup(buildMesnadaSection(cfg), "Services"),
 		withGroup(buildRemembrancesSection(app, cfg), "Services"),
-		withGroup(buildOpenLitSection(cfg), "Services"),
-		withGroup(buildServerSection(cfg), "Services"),
 		withGroup(buildSnapshotsSection(cfg), "Services"),
+		withGroup(buildServerSection(cfg), "Services"),
+		withGroup(buildWebUIAccessSection(cfg), "Services"),
+		withGroup(buildOpenLitSection(cfg), "Services"),
 	})
 }
 
@@ -1091,13 +1083,52 @@ func applyFieldPolicy(app *pandoapp.App, sections []settings.Section) []settings
 			}
 			fields = append(fields, field)
 		}
-		if len(fields) == 0 && len(section.Fields) > 0 {
+		fields = pruneOrphanHeaders(fields)
+		if !hasFocusableField(fields) && len(section.Fields) > 0 {
 			continue
 		}
 		section.Fields = fields
 		kept = append(kept, section)
 	}
 	return kept
+}
+
+func hasFocusableField(fields []settings.Field) bool {
+	for _, field := range fields {
+		if field.Focusable() {
+			return true
+		}
+	}
+	return false
+}
+
+func pruneOrphanHeaders(fields []settings.Field) []settings.Field {
+	if len(fields) == 0 {
+		return nil
+	}
+
+	pruned := make([]settings.Field, 0, len(fields))
+	for i := 0; i < len(fields); {
+		if fields[i].Type != settings.FieldHeader {
+			pruned = append(pruned, fields[i])
+			i++
+			continue
+		}
+
+		end := i + 1
+		hasFocusable := false
+		for end < len(fields) && fields[end].Type != settings.FieldHeader {
+			if fields[end].Focusable() {
+				hasFocusable = true
+			}
+			end++
+		}
+		if hasFocusable {
+			pruned = append(pruned, fields[i:end]...)
+		}
+		i = end
+	}
+	return pruned
 }
 
 // uiPolicy reads the current UI policy through the app. The app wires it at
@@ -1137,14 +1168,29 @@ func managedBanner(app *pandoapp.App, width int) string {
 		Render(text)
 }
 
-func buildGeneralSection(cfg *config.Config) settings.Section {
+func currentTUITheme(cfg *config.Config) string {
 	currentTheme := strings.TrimSpace(cfg.TUI.Theme)
 	if currentTheme == "" {
 		currentTheme = theme.CurrentThemeName()
 	}
+	return currentTheme
+}
 
-	themeOptions := ensureOption(theme.AvailableThemes(), currentTheme)
+func buildAppearanceSection(cfg *config.Config) settings.Section {
+	currentTheme := currentTUITheme(cfg)
+	return settings.Section{
+		Title: "Appearance",
+		Fields: []settings.Field{{
+			Label:   "Theme",
+			Key:     "tui.theme",
+			Value:   currentTheme,
+			Type:    settings.FieldSelect,
+			Options: ensureOption(theme.AvailableThemes(), currentTheme),
+		}},
+	}
+}
 
+func buildGeneralSection(cfg *config.Config) settings.Section {
 	telemetryAvailable := telemetry.Available()
 	telemetryEnabled := cfg.Telemetry.Enabled
 	telemetryDebugID := strings.TrimSpace(cfg.Telemetry.DebugID)
@@ -1165,13 +1211,7 @@ func buildGeneralSection(cfg *config.Config) settings.Section {
 	return settings.Section{
 		Title: "General",
 		Fields: []settings.Field{
-			{
-				Label:   "Theme",
-				Key:     "tui.theme",
-				Value:   currentTheme,
-				Type:    settings.FieldSelect,
-				Options: themeOptions,
-			},
+			headerField("general.header.interface", "Interface"),
 			{
 				Label: "Show Hidden Files",
 				Key:   "tui.showHiddenFiles",
@@ -1197,6 +1237,7 @@ func buildGeneralSection(cfg *config.Config) settings.Section {
 				Value: intString(cfg.TUI.ChatSidebarMinWidth, 120),
 				Type:  settings.FieldText,
 			},
+			headerField("general.header.automation", "Automation"),
 			{
 				Label: "AutoCompact",
 				Key:   "autoCompact",
@@ -1246,6 +1287,7 @@ func buildGeneralSection(cfg *config.Config) settings.Section {
 				Value: intString(cfg.ToolDiscovery.SearchLimit, 8),
 				Type:  settings.FieldText,
 			},
+			headerField("general.header.diagnostics", "Diagnostics"),
 			{
 				Label: "Debug",
 				Key:   "debug",
@@ -1296,6 +1338,7 @@ func buildGeneralSection(cfg *config.Config) settings.Section {
 				// of telemetry.Available() (see that method's doc).
 				Disabled: telemetryDebugID == "",
 			},
+			headerField("general.header.shell", "Shell"),
 			{
 				Label: "Shell Path",
 				Key:   "shell.path",
@@ -1308,6 +1351,7 @@ func buildGeneralSection(cfg *config.Config) settings.Section {
 				Value: strings.Join(cfg.Shell.Args, " "),
 				Type:  settings.FieldText,
 			},
+			headerField("general.header.workspace", "Workspace"),
 			{
 				Label: "Working Dir",
 				Key:   "general.workingDir",
@@ -1344,7 +1388,9 @@ func buildGeneralSection(cfg *config.Config) settings.Section {
 
 func buildProviderAccountsSection(cfg *config.Config) settings.Section {
 	accounts := config.GetProviderAccounts()
-	fields := make([]settings.Field, 0, len(accounts)*6+1)
+	fields := make([]settings.Field, 0, len(accounts)*6+2)
+
+	fields = append(fields, headerField("providers.header.accounts", "Accounts"))
 
 	// "Add Provider" action at the top
 	fields = append(fields, settings.Field{
@@ -1363,56 +1409,63 @@ func buildProviderAccountsSection(cfg *config.Config) settings.Section {
 
 	for _, acc := range accounts {
 		accType := string(acc.Type)
+		card := nonEmptyTitle(acc.ID, acc.DisplayName)
 		statusValue := providerAccountStatus(acc)
 		fields = append(fields,
 			settings.Field{
-				Label: fmt.Sprintf("[%s] Name", acc.ID),
-				Key:   fmt.Sprintf("providerAccount.%s.displayName", acc.ID),
-				Value: acc.DisplayName,
-				Type:  settings.FieldText,
+				Label:      "Name",
+				Key:        fmt.Sprintf("providerAccount.%s.displayName", acc.ID),
+				Value:      acc.DisplayName,
+				Type:       settings.FieldText,
+				Card:       card,
+				CardID:     acc.ID,
+				CardStatus: statusValue,
 			},
 			settings.Field{
-				Label:   fmt.Sprintf("[%s] Type", acc.ID),
+				Label:   "Type",
 				Key:     fmt.Sprintf("providerAccount.%s.type", acc.ID),
 				Value:   accType,
 				Type:    settings.FieldSelect,
 				Options: ensureOption(providerOptions, accType),
+				Card:    card,
+				CardID:  acc.ID,
 			},
-			credentialField(acc),
+			withCardID(credentialField(acc), card, acc.ID, ""),
 			settings.Field{
-				Label: fmt.Sprintf("[%s] Base URL", acc.ID),
-				Key:   fmt.Sprintf("providerAccount.%s.baseUrl", acc.ID),
-				Value: acc.BaseURL,
-				Type:  settings.FieldText,
-			},
-			settings.Field{
-				Label: fmt.Sprintf("[%s] Enabled", acc.ID),
-				Key:   fmt.Sprintf("providerAccount.%s.enabled", acc.ID),
-				Value: boolString(!acc.Disabled),
-				Type:  settings.FieldToggle,
+				Label:  "Base URL",
+				Key:    fmt.Sprintf("providerAccount.%s.baseUrl", acc.ID),
+				Value:  acc.BaseURL,
+				Type:   settings.FieldText,
+				Card:   card,
+				CardID: acc.ID,
 			},
 			settings.Field{
-				Label:    fmt.Sprintf("[%s] Status", acc.ID),
-				Key:      fmt.Sprintf("providerAccount.%s.status", acc.ID),
-				Value:    statusValue,
-				Type:     settings.FieldText,
-				ReadOnly: true,
+				Label:  "Enabled",
+				Key:    fmt.Sprintf("providerAccount.%s.enabled", acc.ID),
+				Value:  boolString(!acc.Disabled),
+				Type:   settings.FieldToggle,
+				Card:   card,
+				CardID: acc.ID,
 			},
 			settings.Field{
-				Label:    fmt.Sprintf("[%s] Delete", acc.ID),
+				Label:    "Delete",
 				Key:      fmt.Sprintf("action:delete_provider_account:%s", acc.ID),
 				Value:    "Delete this provider account",
 				Type:     settings.FieldAction,
 				ReadOnly: true,
+				Card:     card,
+				CardID:   acc.ID,
 			},
 		)
 		if acc.Type == models.ProviderCopilot {
 			fields = append(fields, settings.Field{
-				Label:    fmt.Sprintf("[%s] Login", acc.ID),
+				Label:    "Login",
 				Key:      fmt.Sprintf("action:login_provider_account:%s", acc.ID),
 				Value:    "Login with GitHub (device flow)",
 				Type:     settings.FieldAction,
 				ReadOnly: true,
+				Card:     card,
+				CardID:   acc.ID,
 			})
 		}
 	}
@@ -1429,7 +1482,7 @@ func buildProviderAccountsSection(cfg *config.Config) settings.Section {
 func credentialField(acc config.ProviderAccount) settings.Field {
 	if acc.Type == models.ProviderCopilot {
 		return settings.Field{
-			Label:    fmt.Sprintf("[%s] Auth", acc.ID),
+			Label:    "Auth",
 			Key:      fmt.Sprintf("providerAccount.%s.auth", acc.ID),
 			Value:    "GitHub OAuth (official)",
 			Type:     settings.FieldText,
@@ -1437,7 +1490,7 @@ func credentialField(acc config.ProviderAccount) settings.Field {
 		}
 	}
 	return settings.Field{
-		Label:  fmt.Sprintf("[%s] API Key", acc.ID),
+		Label:  "API Key",
 		Key:    fmt.Sprintf("providerAccount.%s.apiKey", acc.ID),
 		Value:  acc.APIKey,
 		Type:   settings.FieldText,
@@ -1447,6 +1500,7 @@ func credentialField(acc config.ProviderAccount) settings.Field {
 
 func buildSkillsSection(app *pandoapp.App, cfg *config.Config) settings.Section {
 	fields := []settings.Field{
+		headerField("skills.header.general", "General"),
 		{
 			Label: "Skills Enabled",
 			Key:   "skills.enabled",
@@ -1456,6 +1510,7 @@ func buildSkillsSection(app *pandoapp.App, cfg *config.Config) settings.Section 
 	}
 
 	if cfg.SkillsCatalog.Enabled {
+		fields = append(fields, headerField("skills.header.catalog", "Catalog"))
 		fields = append(fields, settings.Field{
 			Label:    "Browse Catalog",
 			Key:      "action:open_skills_catalog",
@@ -1466,27 +1521,17 @@ func buildSkillsSection(app *pandoapp.App, cfg *config.Config) settings.Section 
 	}
 
 	if !cfg.Skills.Enabled || app == nil || app.SkillManager == nil {
-		fields = append(fields, settings.Field{
-			Label:    "Info",
-			Key:      "skills.info.disabled",
-			Value:    "Skills system disabled. Enable in General > Skills Enabled",
-			Type:     settings.FieldText,
-			ReadOnly: true,
-		})
+		fields = append(fields, infoNote("skills.info.disabled", "Info", "Skills system disabled. Enable in General > Skills Enabled"))
 		return settings.Section{Title: "Skills", Fields: fields}
 	}
 
 	metadata := app.SkillManager.GetAllMetadata()
 	if len(metadata) == 0 {
-		fields = append(fields, settings.Field{
-			Label:    "Info",
-			Key:      "skills.info.empty",
-			Value:    "No skills found. Place SKILL.md files in ~/.pando/skills/ or .pando/skills/",
-			Type:     settings.FieldText,
-			ReadOnly: true,
-		})
+		fields = append(fields, infoNote("skills.info.empty", "Info", "No skills found. Place SKILL.md files in ~/.pando/skills/ or .pando/skills/"))
 		return settings.Section{Title: "Skills", Fields: fields}
 	}
+
+	fields = append(fields, headerField("skills.header.installed", "Installed skills"))
 
 	// Read lock file to get catalog source info (try project-local first, then global)
 	var catalogLock *catalog.CatalogLock
@@ -1519,50 +1564,56 @@ func buildSkillsSection(app *pandoapp.App, cfg *config.Config) settings.Section 
 			}
 		}
 
+		card := displayName
+
 		fields = append(fields,
 			settings.Field{
-				Label:    displayName,
-				Key:      "skills.meta." + m.Name,
-				Value:    description,
-				Type:     settings.FieldText,
-				ReadOnly: true,
+				Label:      "Description",
+				Key:        "skills.meta." + m.Name,
+				Value:      description,
+				Type:       settings.FieldText,
+				ReadOnly:   true,
+				Card:       card,
+				CardID:     m.Name,
+				CardStatus: skillLoadStatus(isLoaded),
 			},
 			settings.Field{
-				Label:    fmt.Sprintf("%s Status", m.Name),
-				Key:      "skills.status." + m.Name,
-				Value:    skillLoadStatus(isLoaded),
-				Type:     settings.FieldText,
-				ReadOnly: true,
+				Label:  "Active",
+				Key:    "skill_" + m.Name,
+				Value:  boolString(isLoaded),
+				Type:   settings.FieldToggle,
+				Card:   card,
+				CardID: m.Name,
 			},
 			settings.Field{
-				Label: fmt.Sprintf("%s Active", m.Name),
-				Key:   "skill_" + m.Name,
-				Value: boolString(isLoaded),
-				Type:  settings.FieldToggle,
-			},
-			settings.Field{
-				Label:    fmt.Sprintf("%s Source", m.Name),
+				Label:    "Source",
 				Key:      "skills.source." + m.Name,
 				Value:    sourceValue,
 				Type:     settings.FieldText,
 				ReadOnly: true,
+				Card:     card,
+				CardID:   m.Name,
 			},
 			settings.Field{
-				Label:    fmt.Sprintf("%s Uninstall", m.Name),
+				Label:    "Uninstall",
 				Key:      "action:uninstall_skill:" + m.Name,
 				Value:    "Remove skill files",
 				Type:     settings.FieldAction,
 				ReadOnly: true,
+				Card:     card,
+				CardID:   m.Name,
 			},
 		)
 
 		if lockEntry != nil {
 			fields = append(fields, settings.Field{
-				Label:    fmt.Sprintf("%s Update", m.Name),
+				Label:    "Update",
 				Key:      "action:update_skill:" + m.Name,
 				Value:    "Re-fetch from " + lockEntry.Source,
 				Type:     settings.FieldAction,
 				ReadOnly: true,
+				Card:     card,
+				CardID:   m.Name,
 			})
 		}
 	}
@@ -1610,13 +1661,7 @@ func buildSkillsCatalogSection(cfg *config.Config) settings.Section {
 				Value: boolString(cfg.SkillsCatalog.AutoUpdate),
 				Type:  settings.FieldToggle,
 			},
-			{
-				Label:    "Lock File Location",
-				Key:      "skillsCatalog.lockFile.info",
-				Value:    "~/.pando/skills/catalog-lock.json",
-				Type:     settings.FieldText,
-				ReadOnly: true,
-			},
+			infoNote("skillsCatalog.lockFile.info", "Lock File Location", "~/.pando/skills/catalog-lock.json"),
 		},
 	}
 }
@@ -1631,6 +1676,7 @@ func buildAgentsSection(cfg *config.Config) settings.Section {
 	for _, agentName := range agentOrder {
 		agentCfg := cfg.Agents[agentName]
 		modelID := string(agentCfg.Model)
+		card := string(agentName)
 
 		modelLabel := "Model"
 		if agentName == config.AgentPersonaSelector && agentCfg.UseDecisionModel {
@@ -1639,32 +1685,40 @@ func buildAgentsSection(cfg *config.Config) settings.Section {
 
 		fields = append(fields,
 			settings.Field{
-				Label:            fmt.Sprintf("%s %s", string(agentName), modelLabel),
+				Label:            modelLabel,
 				Key:              fmt.Sprintf("agents.%s.model", agentName),
 				Value:            modelID,
 				Type:             settings.FieldSelect,
 				Options:          ensureOption(modelOptions, modelID),
 				UseModelDialog:   true,
 				ModelDialogTitle: fmt.Sprintf("Select %s Model", string(agentName)),
+				Card:             card,
+				CardID:           string(agentName),
 			},
 			settings.Field{
-				Label:   fmt.Sprintf("%s Reasoning Effort", string(agentName)),
+				Label:   "Reasoning Effort",
 				Key:     fmt.Sprintf("agents.%s.reasoningEffort", agentName),
 				Value:   agentCfg.ReasoningEffort,
 				Type:    settings.FieldSelect,
 				Options: []string{"", "low", "medium", "high"},
+				Card:    card,
+				CardID:  string(agentName),
 			},
 			settings.Field{
-				Label:   fmt.Sprintf("%s Thinking Mode", string(agentName)),
+				Label:   "Thinking Mode",
 				Key:     fmt.Sprintf("agents.%s.thinkingMode", agentName),
 				Value:   string(agentCfg.ThinkingMode),
 				Type:    settings.FieldSelect,
 				Options: []string{"", "disabled", "low", "medium", "high"},
+				Card:    card,
+				CardID:  string(agentName),
 			},
 		)
 
 		if agentName == config.AgentPersonaSelector {
-			fields = append(fields, personaSelectorDecisionFields(cfg, agentCfg)...)
+			for _, field := range personaSelectorDecisionFields(cfg, agentCfg) {
+				fields = append(fields, withCardID(field, card, string(agentName), ""))
+			}
 		}
 
 		// Token budget and context management knobs are only meaningful for the
@@ -1674,31 +1728,37 @@ func buildAgentsSection(cfg *config.Config) settings.Section {
 		if config.AgentExposesContextControls(agentName) {
 			fields = append(fields,
 				settings.Field{
-					Label: fmt.Sprintf("%s Max Tokens", string(agentName)),
-					Key:   fmt.Sprintf("agents.%s.maxTokens", agentName),
-					Value: fmt.Sprint(agentCfg.MaxTokens),
-					Type:  settings.FieldText,
-					Hint:  agentTokensHint(agentName, agentCfg),
+					Label:  "Max Tokens",
+					Key:    fmt.Sprintf("agents.%s.maxTokens", agentName),
+					Value:  fmt.Sprint(agentCfg.MaxTokens),
+					Type:   settings.FieldText,
+					Hint:   agentTokensHint(agentName, agentCfg),
+					Card:   card,
+					CardID: string(agentName),
 				},
 				settings.Field{
-					Label: fmt.Sprintf("%s Auto Compact", string(agentName)),
-					Key:   fmt.Sprintf("agents.%s.autoCompact", agentName),
-					Value: boolString(config.ResolveAutoCompact(cfg.AutoCompact, agentCfg)),
-					Type:  settings.FieldToggle,
+					Label:  "Auto Compact",
+					Key:    fmt.Sprintf("agents.%s.autoCompact", agentName),
+					Value:  boolString(config.ResolveAutoCompact(cfg.AutoCompact, agentCfg)),
+					Type:   settings.FieldToggle,
+					Card:   card,
+					CardID: string(agentName),
 				},
 				settings.Field{
-					Label:    fmt.Sprintf("%s Compact Threshold", string(agentName)),
+					Label:    "Compact Threshold",
 					Key:      fmt.Sprintf("agents.%s.autoCompactThreshold", agentName),
 					Value:    fmt.Sprintf("%.2f", agentCfg.AutoCompactThreshold),
 					Type:     settings.FieldText,
 					Disabled: !config.ResolveAutoCompact(cfg.AutoCompact, agentCfg),
+					Card:     card,
+					CardID:   string(agentName),
 				},
 			)
 		}
 	}
 
 	return settings.Section{
-		Title:  "Agents/Models",
+		Title:  "Agents",
 		Fields: fields,
 	}
 }
@@ -1708,7 +1768,7 @@ func buildAgentsSection(cfg *config.Config) settings.Section {
 func personaSelectorDecisionFields(cfg *config.Config, agentCfg config.Agent) []settings.Field {
 	name := config.AgentPersonaSelector
 	fields := []settings.Field{{
-		Label: fmt.Sprintf("%s Use decision model", string(name)),
+		Label: "Use decision model",
 		Key:   fmt.Sprintf("agents.%s.useDecisionModel", name),
 		Value: boolString(agentCfg.UseDecisionModel),
 		Type:  settings.FieldToggle,
@@ -1735,7 +1795,8 @@ func buildMCPServersSection(cfg *config.Config) settings.Section {
 	}
 	sort.Strings(serverNames)
 
-	fields := make([]settings.Field, 0, len(serverNames)*7+1)
+	fields := make([]settings.Field, 0, len(serverNames)*7+2)
+	fields = append(fields, headerField("mcpServers.header.configured", "Configured servers"))
 	fields = append(fields, settings.Field{
 		Label:    "Add MCP Server",
 		Key:      "action:add_mcp_server",
@@ -1746,71 +1807,95 @@ func buildMCPServersSection(cfg *config.Config) settings.Section {
 
 	for _, name := range serverNames {
 		server := cfg.MCPServers[name]
+		card := name
 		serverType := string(server.Type)
 		if serverType == "" {
 			serverType = string(config.MCPStdio)
 		}
+		cardStatus := ""
+		if server.Auth != nil && server.Auth.ResolvedType() == config.MCPAuthOAuth {
+			cardStatus = mcpAuthStatusLabel(mcpauth.Default().Status(name, server))
+		}
 
 		fields = append(fields,
 			settings.Field{
-				Label: fmt.Sprintf("%s Name", name),
-				Key:   fmt.Sprintf("mcpServers.%s.name", name),
-				Value: name,
-				Type:  settings.FieldText,
+				Label:      "Name",
+				Key:        fmt.Sprintf("mcpServers.%s.name", name),
+				Value:      name,
+				Type:       settings.FieldText,
+				Card:       card,
+				CardID:     name,
+				CardStatus: cardStatus,
 			},
 			settings.Field{
-				Label: fmt.Sprintf("%s Delete", name),
-				Key:   fmt.Sprintf("action:delete_mcp_server:%s", name),
-				Value: "Delete server and gateway registry data",
-				Type:  settings.FieldAction,
+				Label:  "Delete",
+				Key:    fmt.Sprintf("action:delete_mcp_server:%s", name),
+				Value:  "Delete server and gateway registry data",
+				Type:   settings.FieldAction,
+				Card:   card,
+				CardID: name,
 			},
 			settings.Field{
-				Label:    fmt.Sprintf("%s Command", name),
+				Label:    "Command",
 				Key:      fmt.Sprintf("mcpServers.%s.command", name),
 				Value:    server.Command,
 				Type:     settings.FieldText,
 				Disabled: server.Type != config.MCPStdio,
+				Card:     card,
+				CardID:   name,
 			},
 			settings.Field{
-				Label:   fmt.Sprintf("%s Type", name),
+				Label:   "Type",
 				Key:     fmt.Sprintf("mcpServers.%s.type", name),
 				Value:   serverType,
 				Type:    settings.FieldSelect,
 				Options: ensureOption([]string{string(config.MCPStdio), string(config.MCPSse), string(config.MCPStreamableHTTP)}, serverType),
+				Card:    card,
+				CardID:  name,
 			},
 			settings.Field{
-				Label:    fmt.Sprintf("%s Args", name),
+				Label:    "Args",
 				Key:      fmt.Sprintf("mcpServers.%s.args", name),
 				Value:    strings.Join(server.Args, " "),
 				Type:     settings.FieldText,
 				Disabled: server.Type != config.MCPStdio,
+				Card:     card,
+				CardID:   name,
 			},
 			settings.Field{
-				Label:    fmt.Sprintf("%s Env", name),
+				Label:    "Env",
 				Key:      fmt.Sprintf("mcpServers.%s.env", name),
 				Value:    config.FormatEnvPairs(server.Env),
 				Type:     settings.FieldText,
 				Disabled: server.Type != config.MCPStdio,
 				Hint:     "Comma-separated 'KEY=value' entries; values may contain spaces.",
+				Card:     card,
+				CardID:   name,
 			},
 			settings.Field{
-				Label:    fmt.Sprintf("%s URL", name),
+				Label:    "URL",
 				Key:      fmt.Sprintf("mcpServers.%s.url", name),
 				Value:    server.URL,
 				Type:     settings.FieldText,
 				Disabled: server.Type == config.MCPStdio,
+				Card:     card,
+				CardID:   name,
 			},
 			settings.Field{
-				Label:    fmt.Sprintf("%s Headers", name),
+				Label:    "Headers",
 				Key:      fmt.Sprintf("mcpServers.%s.headers", name),
 				Value:    headersToString(server.Headers),
 				Type:     settings.FieldText,
 				Disabled: server.Type == config.MCPStdio,
 				Hint:     "Comma-separated 'Header: Value' pairs; values may contain spaces.",
+				Card:     card,
+				CardID:   name,
 			},
 		)
 
-		fields = append(fields, buildMCPServerAuthFields(name, server)...)
+		for _, field := range buildMCPServerAuthFields(name, server, false) {
+			fields = append(fields, withCardID(field, card, name, ""))
+		}
 	}
 
 	return settings.Section{
@@ -1824,7 +1909,7 @@ func buildMCPServersSection(cfg *config.Config) settings.Section {
 // and — for oauth servers — a read-only status line plus actionable
 // login/logout entries so a "needs login" server can be authorized without
 // leaving the TUI.
-func buildMCPServerAuthFields(name string, server config.MCPServer) []settings.Field {
+func buildMCPServerAuthFields(name string, server config.MCPServer, includeStatus bool) []settings.Field {
 	authType := string(server.Auth.ResolvedType())
 	auth := server.Auth // may be nil; field values below guard against that
 
@@ -1835,7 +1920,7 @@ func buildMCPServerAuthFields(name string, server config.MCPServer) []settings.F
 
 	fields := []settings.Field{
 		{
-			Label:   fmt.Sprintf("%s Auth Type", name),
+			Label:   "Auth Type",
 			Key:     fmt.Sprintf("mcpServers.%s.authType", name),
 			Value:   authType,
 			Type:    settings.FieldSelect,
@@ -1843,7 +1928,7 @@ func buildMCPServerAuthFields(name string, server config.MCPServer) []settings.F
 			Hint:    "none · bearer (token) · basic (user/pass) · header (custom header) · oauth (2.1 authorization code)",
 		},
 		{
-			Label:    fmt.Sprintf("%s Auth Token", name),
+			Label:    "Auth Token",
 			Key:      fmt.Sprintf("mcpServers.%s.authToken", name),
 			Value:    maskedSecretPlaceholder(auth != nil && auth.Token != ""),
 			Type:     settings.FieldText,
@@ -1851,14 +1936,14 @@ func buildMCPServerAuthFields(name string, server config.MCPServer) []settings.F
 			Hint:     "bearer token / header value; leave unchanged to keep the stored secret",
 		},
 		{
-			Label:    fmt.Sprintf("%s Auth Username", name),
+			Label:    "Auth Username",
 			Key:      fmt.Sprintf("mcpServers.%s.authUsername", name),
 			Value:    authOrEmpty(auth, func(a config.MCPAuth) string { return a.Username }),
 			Type:     settings.FieldText,
 			Disabled: authType != string(config.MCPAuthBasic),
 		},
 		{
-			Label:    fmt.Sprintf("%s Auth Password", name),
+			Label:    "Auth Password",
 			Key:      fmt.Sprintf("mcpServers.%s.authPassword", name),
 			Value:    maskedSecretPlaceholder(auth != nil && auth.Password != ""),
 			Type:     settings.FieldText,
@@ -1866,7 +1951,7 @@ func buildMCPServerAuthFields(name string, server config.MCPServer) []settings.F
 			Hint:     "leave unchanged to keep the stored secret",
 		},
 		{
-			Label:    fmt.Sprintf("%s Auth Header Name", name),
+			Label:    "Auth Header Name",
 			Key:      fmt.Sprintf("mcpServers.%s.authHeaderName", name),
 			Value:    authOrEmpty(auth, func(a config.MCPAuth) string { return a.HeaderName }),
 			Type:     settings.FieldText,
@@ -1874,7 +1959,7 @@ func buildMCPServerAuthFields(name string, server config.MCPServer) []settings.F
 			Hint:     "defaults to Authorization when empty",
 		},
 		{
-			Label:    fmt.Sprintf("%s OAuth Client ID", name),
+			Label:    "OAuth Client ID",
 			Key:      fmt.Sprintf("mcpServers.%s.authOAuthClientID", name),
 			Value:    oauth.ClientID,
 			Type:     settings.FieldText,
@@ -1882,7 +1967,7 @@ func buildMCPServerAuthFields(name string, server config.MCPServer) []settings.F
 			Hint:     "leave empty to rely on dynamic client registration (RFC 7591)",
 		},
 		{
-			Label:    fmt.Sprintf("%s OAuth Client Secret", name),
+			Label:    "OAuth Client Secret",
 			Key:      fmt.Sprintf("mcpServers.%s.authOAuthClientSecret", name),
 			Value:    maskedSecretPlaceholder(oauth.ClientSecret != ""),
 			Type:     settings.FieldText,
@@ -1890,7 +1975,7 @@ func buildMCPServerAuthFields(name string, server config.MCPServer) []settings.F
 			Hint:     "leave unchanged to keep the stored secret; only for confidential clients",
 		},
 		{
-			Label:    fmt.Sprintf("%s OAuth Scopes", name),
+			Label:    "OAuth Scopes",
 			Key:      fmt.Sprintf("mcpServers.%s.authOAuthScopes", name),
 			Value:    strings.Join(oauth.Scopes, " "),
 			Type:     settings.FieldText,
@@ -1898,7 +1983,7 @@ func buildMCPServerAuthFields(name string, server config.MCPServer) []settings.F
 			Hint:     "space-separated OAuth scopes to request",
 		},
 		{
-			Label:    fmt.Sprintf("%s OAuth Callback Port", name),
+			Label:    "OAuth Callback Port",
 			Key:      fmt.Sprintf("mcpServers.%s.authOAuthCallbackPort", name),
 			Value:    strconv.Itoa(oauth.CallbackPort),
 			Type:     settings.FieldText,
@@ -1912,20 +1997,22 @@ func buildMCPServerAuthFields(name string, server config.MCPServer) []settings.F
 	}
 
 	info := mcpauth.Default().Status(name, server)
-	fields = append(fields, settings.Field{
-		Label:    fmt.Sprintf("%s Auth Status", name),
-		Key:      fmt.Sprintf("mcpServers.%s.authStatusInfo", name),
-		Value:    mcpAuthStatusLabel(info),
-		Type:     settings.FieldText,
-		ReadOnly: true,
-	})
+	if includeStatus {
+		fields = append(fields, settings.Field{
+			Label:    "Auth Status",
+			Key:      fmt.Sprintf("mcpServers.%s.authStatusInfo", name),
+			Value:    mcpAuthStatusLabel(info),
+			Type:     settings.FieldText,
+			ReadOnly: true,
+		})
+	}
 
 	loginLabel := "Authorize this MCP server (opens your browser)"
 	if info.HasTokens {
 		loginLabel = "Re-authorize this MCP server"
 	}
 	fields = append(fields, settings.Field{
-		Label:    fmt.Sprintf("%s Login", name),
+		Label:    "Login",
 		Key:      fmt.Sprintf("action:mcp_login:%s", name),
 		Value:    loginLabel,
 		Type:     settings.FieldAction,
@@ -1934,7 +2021,7 @@ func buildMCPServerAuthFields(name string, server config.MCPServer) []settings.F
 
 	if info.HasTokens {
 		fields = append(fields, settings.Field{
-			Label:    fmt.Sprintf("%s Logout", name),
+			Label:    "Logout",
 			Key:      fmt.Sprintf("action:mcp_logout:%s", name),
 			Value:    "Remove stored OAuth credentials",
 			Type:     settings.FieldAction,
@@ -2009,6 +2096,7 @@ func buildLSPSection(app *pandoapp.App, cfg *config.Config) settings.Section {
 	fields := make([]settings.Field, 0, len(statuses)*3+6)
 
 	fields = append(fields,
+		headerField("lsp.header.activation", "On-demand activation"),
 		settings.Field{
 			Label: "On-demand activation",
 			Key:   "lsp.settings.autoactivate",
@@ -2055,62 +2143,76 @@ func buildLSPSection(app *pandoapp.App, cfg *config.Config) settings.Section {
 		},
 	)
 
+	configuredHeaderAdded := false
 	for _, st := range statuses {
 		if !st.Configured {
 			continue
 		}
+		if !configuredHeaderAdded {
+			fields = append(fields, headerField("lsp.header.configured", "Configured servers"))
+			configuredHeaderAdded = true
+		}
 		name := st.Name
+		card := name
 		lspCfg := cfg.LSP[name]
 		fields = append(fields,
 			settings.Field{
-				Label: fmt.Sprintf("%s Name", name),
-				Key:   fmt.Sprintf("lsp.%s.language", name),
-				Value: name,
-				Type:  settings.FieldText,
+				Label:      "Name",
+				Key:        fmt.Sprintf("lsp.%s.language", name),
+				Value:      name,
+				Type:       settings.FieldText,
+				Card:       card,
+				CardID:     name,
+				CardStatus: lspServerStatusLine(st),
 			},
 			settings.Field{
-				Label: fmt.Sprintf("%s Command", name),
-				Key:   fmt.Sprintf("lsp.%s.command", name),
-				Value: lspCfg.Command,
-				Type:  settings.FieldText,
+				Label:  "Command",
+				Key:    fmt.Sprintf("lsp.%s.command", name),
+				Value:  lspCfg.Command,
+				Type:   settings.FieldText,
+				Card:   card,
+				CardID: name,
 			},
 			settings.Field{
-				Label:    fmt.Sprintf("%s Status", name),
-				Key:      fmt.Sprintf("lsp.%s.status", name),
-				Value:    lspServerStatusLine(st),
-				Type:     settings.FieldText,
-				ReadOnly: true,
+				Label:  "Args",
+				Key:    fmt.Sprintf("lsp.%s.args", name),
+				Value:  strings.Join(lspCfg.Args, " "),
+				Type:   settings.FieldText,
+				Card:   card,
+				CardID: name,
 			},
 			settings.Field{
-				Label: fmt.Sprintf("%s Args", name),
-				Key:   fmt.Sprintf("lsp.%s.args", name),
-				Value: strings.Join(lspCfg.Args, " "),
-				Type:  settings.FieldText,
+				Label:  "Languages",
+				Key:    fmt.Sprintf("lsp.%s.languages", name),
+				Value:  strings.Join(lspCfg.Languages, " "),
+				Type:   settings.FieldText,
+				Card:   card,
+				CardID: name,
 			},
 			settings.Field{
-				Label: fmt.Sprintf("%s Languages", name),
-				Key:   fmt.Sprintf("lsp.%s.languages", name),
-				Value: strings.Join(lspCfg.Languages, " "),
-				Type:  settings.FieldText,
+				Label:  "Filenames",
+				Key:    fmt.Sprintf("lsp.%s.filenames", name),
+				Value:  strings.Join(lspCfg.Filenames, " "),
+				Type:   settings.FieldText,
+				Hint:   "base names handled regardless of extension (Dockerfile, CMakeLists.txt)",
+				Card:   card,
+				CardID: name,
 			},
 			settings.Field{
-				Label: fmt.Sprintf("%s Filenames", name),
-				Key:   fmt.Sprintf("lsp.%s.filenames", name),
-				Value: strings.Join(lspCfg.Filenames, " "),
-				Type:  settings.FieldText,
-				Hint:  "base names handled regardless of extension (Dockerfile, CMakeLists.txt)",
+				Label:  "Enabled",
+				Key:    fmt.Sprintf("lsp.%s.enabled", name),
+				Value:  boolString(!lspCfg.Disabled),
+				Type:   settings.FieldToggle,
+				Card:   card,
+				CardID: name,
 			},
 			settings.Field{
-				Label: fmt.Sprintf("%s Enabled", name),
-				Key:   fmt.Sprintf("lsp.%s.enabled", name),
-				Value: boolString(!lspCfg.Disabled),
-				Type:  settings.FieldToggle,
-			},
-			settings.Field{
-				Label: fmt.Sprintf("%s Autostart", name),
-				Key:   fmt.Sprintf("lsp.%s.autostart", name),
-				Value: boolString(lspCfg.Autostart),
-				Type:  settings.FieldToggle,
+				Label:  "Autostart",
+				Key:    fmt.Sprintf("lsp.%s.autostart", name),
+				Value:  boolString(lspCfg.Autostart),
+				Type:   settings.FieldToggle,
+				Card:   card,
+				CardID: name,
 			},
 		)
 	}
@@ -2118,9 +2220,14 @@ func buildLSPSection(app *pandoapp.App, cfg *config.Config) settings.Section {
 	// Catalogue servers the user has not configured, annotated with their
 	// availability so it is obvious which ones are ready, which ones Pando can
 	// install itself, and which ones need a manual install.
+	catalogHeaderAdded := false
 	for _, st := range statuses {
 		if st.Configured {
 			continue
+		}
+		if !catalogHeaderAdded {
+			fields = append(fields, headerField("lsp.header.catalogue", "Built-in catalogue"))
+			catalogHeaderAdded = true
 		}
 		value := fmt.Sprintf("%s [%s]", st.Description, lspServerStatusLine(st))
 		if st.OptIn {
@@ -2165,6 +2272,7 @@ func buildContainerRuntimeSection(cfg *config.Config) settings.Section {
 	}
 
 	fields := []settings.Field{
+		headerField("container.header.runtime", "Runtime"),
 		{
 			Label:   "Runtime",
 			Key:     "container.runtime",
@@ -2211,6 +2319,7 @@ func buildContainerRuntimeSection(cfg *config.Config) settings.Section {
 			Value:   firstNonEmptyString(containerCfg.Network, "none"),
 			Options: ensureOption([]string{"none", "bridge", "host", "slirp4netns"}, firstNonEmptyString(containerCfg.Network, "none")),
 		},
+		headerField("container.header.security", "Security"),
 		{
 			Label: "Read Only RootFS",
 			Key:   "container.read_only",
@@ -2284,11 +2393,11 @@ func buildContainerRuntimeSection(cfg *config.Config) settings.Section {
 			Value: fmt.Sprint(containerCfg.EmbeddedGCKeepN),
 		},
 		{
-			Label:    "Security Defaults",
-			Key:      "container.info",
-			Type:     settings.FieldText,
-			Value:    "Auto prefers rootless Podman, then Docker, then host. Recommended defaults: network=none, read_only=true, no_new_privileges=true, pids_limit=512.",
-			ReadOnly: true,
+			Key:       "container.info",
+			Label:     "Security Defaults",
+			Value:     "Auto prefers rootless Podman, then Docker, then host. Recommended defaults: network=none, read_only=true, no_new_privileges=true, pids_limit=512.",
+			Type:      settings.FieldNote,
+			NoteLevel: settings.NoteLevelInfo,
 		},
 	}
 
@@ -2300,9 +2409,12 @@ func buildContainerRuntimeSection(cfg *config.Config) settings.Section {
 
 func buildMesnadaSection(cfg *config.Config) settings.Section {
 	fields := []settings.Field{
+		headerField("mesnada.header.general", "General"),
 		{Label: "Enabled", Key: "mesnada.enabled", Type: settings.FieldToggle, Value: fmt.Sprint(cfg.Mesnada.Enabled)},
+		headerField("mesnada.header.server", "Server"),
 		{Label: "Server Host", Key: "mesnada.server.host", Type: settings.FieldText, Value: cfg.Mesnada.Server.Host},
 		{Label: "Server Port", Key: "mesnada.server.port", Type: settings.FieldText, Value: fmt.Sprint(cfg.Mesnada.Server.Port)},
+		headerField("mesnada.header.orchestrator", "Orchestrator"),
 		{Label: "Max Parallel", Key: "mesnada.orchestrator.maxParallel", Type: settings.FieldText, Value: fmt.Sprint(cfg.Mesnada.Orchestrator.MaxParallel), Hint: "Tasks running at once; a ready task over the cap queues and starts when a slot frees"},
 		{Label: "Max Per Engine", Key: "mesnada.orchestrator.maxPerEngine", Type: settings.FieldText, Value: intString(cfg.Mesnada.Orchestrator.MaxPerEngine, 0), Hint: "Per-engine in-flight cap so one engine's fan-out cannot take every slot (0 = no per-engine limit)"},
 		{Label: "Claim TTL", Key: "mesnada.orchestrator.claimTtl", Type: settings.FieldText, Value: durationString(cfg.Mesnada.Orchestrator.ClaimTTL, "2m"), Hint: "How long a dispatch reservation is held before a stranded task is reclaimed (e.g. 2m)"},
@@ -2316,8 +2428,6 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 		},
 		{Label: "Persona Path", Key: "mesnada.orchestrator.personaPath", Type: settings.FieldText, Value: cfg.Mesnada.Orchestrator.PersonaPath},
 		{Label: "Engines Dir", Key: "mesnada.orchestrator.enginesDir", Type: settings.FieldText, Value: cfg.Mesnada.Orchestrator.EnginesDir, Hint: "Directory for *.template.yaml custom engine files. Defaults to <storePath>/../engines"},
-		{Label: "ACP Enabled", Key: "mesnada.acp.enabled", Type: settings.FieldToggle, Value: fmt.Sprint(cfg.Mesnada.ACP.Enabled)},
-		{Label: "ACP Auto Permission", Key: "mesnada.acp.autoPermission", Type: settings.FieldToggle, Value: fmt.Sprint(cfg.Mesnada.ACP.AutoPermission)},
 		{Label: "Orchestrator Store Path", Key: "mesnada.orchestrator.storePath", Type: settings.FieldText, Value: cfg.Mesnada.Orchestrator.StorePath},
 		{Label: "Orchestrator Log Dir", Key: "mesnada.orchestrator.logDir", Type: settings.FieldText, Value: cfg.Mesnada.Orchestrator.LogDir},
 		{
@@ -2330,6 +2440,9 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 			ModelDialogTitle: "Select Orchestrator Default Model",
 		},
 		{Label: "Orchestrator MCP Config", Key: "mesnada.orchestrator.defaultMcpConfig", Type: settings.FieldText, Value: cfg.Mesnada.Orchestrator.DefaultMCPConfig},
+		headerField("mesnada.header.acp", "ACP"),
+		{Label: "ACP Enabled", Key: "mesnada.acp.enabled", Type: settings.FieldToggle, Value: fmt.Sprint(cfg.Mesnada.ACP.Enabled)},
+		{Label: "ACP Auto Permission", Key: "mesnada.acp.autoPermission", Type: settings.FieldToggle, Value: fmt.Sprint(cfg.Mesnada.ACP.AutoPermission)},
 		{
 			Label:   "ACP Default Agent",
 			Key:     "mesnada.acp.defaultAgent",
@@ -2337,6 +2450,7 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 			Value:   cfg.Mesnada.ACP.DefaultAgent,
 			Options: ensureOption([]string{"pando"}, cfg.Mesnada.ACP.DefaultAgent),
 		},
+		headerField("mesnada.header.acpServer", "ACP server"),
 		{Label: "ACP Server Enabled", Key: "mesnada.acp.server.enabled", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.ACP.Server.Enabled)},
 		{Label: "ACP Server Transports", Key: "mesnada.acp.server.transports", Type: settings.FieldText, Value: strings.Join(cfg.Mesnada.ACP.Server.Transports, ","), Hint: "Comma-separated: stdio,http"},
 		{Label: "ACP Server Host", Key: "mesnada.acp.server.host", Type: settings.FieldText, Value: cfg.Mesnada.ACP.Server.Host},
@@ -2344,6 +2458,7 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 		{Label: "ACP Server Max Sessions", Key: "mesnada.acp.server.maxSessions", Type: settings.FieldText, Value: fmt.Sprint(cfg.Mesnada.ACP.Server.MaxSessions)},
 		{Label: "ACP Server Session Timeout", Key: "mesnada.acp.server.sessionTimeout", Type: settings.FieldText, Value: cfg.Mesnada.ACP.Server.SessionTimeout},
 		{Label: "ACP Server Require Auth", Key: "mesnada.acp.server.requireAuth", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.ACP.Server.RequireAuth)},
+		headerField("mesnada.header.delegation", "Delegation"),
 		{Label: "Delegation Enabled", Key: "mesnada.delegation.enabled", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.Enabled), Hint: "Capture delegated-task conclusions and re-enter the parent agent loop"},
 		{Label: "Delegation Inject Into Live Loop", Key: "mesnada.delegation.injectIntoLiveLoop", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.InjectIntoLiveLoop), Hint: "Case A: inject a conclusion into a still-running parent loop"},
 		{Label: "Delegation Resurrect Idle Loop", Key: "mesnada.delegation.resurrectIdleLoop", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.ResurrectIdleLoop), Hint: "Case B: resurrect an idle parent session when a correlated task completes"},
@@ -2368,13 +2483,16 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 	}
 
 	if !cfg.Mesnada.Enabled {
-		for i := 1; i < len(fields); i++ {
+		for i := range fields {
+			if fields[i].Key == "mesnada.enabled" || !fields[i].Focusable() {
+				continue
+			}
 			fields[i].Disabled = true
 		}
 	}
 
 	return settings.Section{
-		Title:  styles.MesnadaIcon + " Subagents",
+		Title:  styles.MesnadaIcon + " Mesnada",
 		Fields: fields,
 	}
 }
@@ -2398,6 +2516,7 @@ func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Se
 	codeDimension := embeddings.GetModelDimension(codeModel)
 
 	fields := []settings.Field{
+		headerField("remembrances.header.general", "General"),
 		{
 			Label: "Enabled",
 			Key:   "remembrances.enabled",
@@ -2407,29 +2526,18 @@ func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Se
 	}
 
 	if !rem.Enabled {
-		fields = append(fields, settings.Field{
-			Label:    "Info",
-			Key:      "remembrances.info.disabled",
-			Value:    "Remembrances system is disabled. Enable it to configure embedding providers and models.",
-			Type:     settings.FieldText,
-			ReadOnly: true,
-		})
-		return settings.Section{Title: styles.RemembrancesIcon + " KB & Code Index", Fields: fields}
+		fields = append(fields, infoNote("remembrances.info.disabled", "Info", "Remembrances system is disabled. Enable it to configure embedding providers and models."))
+		return settings.Section{Title: styles.RemembrancesIcon + " Remembrances", Fields: fields}
 	}
 
 	fields = append(fields,
+		headerField("remembrances.header.documentEmbeddings", "Document embeddings"),
 		settings.Field{
-			Label: "Use Same Model",
-			Key:   "remembrances.use_same_model",
-			Type:  settings.FieldToggle,
-			Value: boolString(useSameModel),
-		},
-		settings.Field{
-			Label:    "Warning",
-			Key:      "remembrances.warning.reembed",
-			Type:     settings.FieldText,
-			Value:    "Changing embedding providers or models requires re-embedding existing Remembrances content.",
-			ReadOnly: true,
+			Label:     "Warning",
+			Key:       "remembrances.warning.reembed",
+			Type:      settings.FieldNote,
+			Value:     "Changing embedding providers or models requires re-embedding existing Remembrances content.",
+			NoteLevel: settings.NoteLevelWarning,
 		},
 	)
 
@@ -2489,6 +2597,13 @@ func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Se
 	}
 	codeIsCustom := codeProvider == "openai-compatible"
 	fields = append(fields,
+		headerField("remembrances.header.codeEmbeddings", "Code embeddings"),
+		settings.Field{
+			Label: "Use Same Model",
+			Key:   "remembrances.use_same_model",
+			Type:  settings.FieldToggle,
+			Value: boolString(useSameModel),
+		},
 		settings.Field{
 			Label:    "Code Provider",
 			Key:      "remembrances.code_embedding_provider",
@@ -2557,6 +2672,7 @@ func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Se
 	}
 
 	fields = append(fields,
+		headerField("remembrances.header.kbFilesystemSync", "KB filesystem sync"),
 		settings.Field{
 			Label: "KB Path",
 			Key:   "remembrances.kb_path",
@@ -2587,12 +2703,14 @@ func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Se
 			Type:  settings.FieldToggle,
 			Value: boolString(rem.KBWikiLinks),
 		},
+		headerField("remembrances.header.codeIndexing", "Code indexing"),
 		settings.Field{
 			Label: "Auto Index Sessions",
 			Key:   "remembrances.auto_index_sessions",
 			Type:  settings.FieldToggle,
 			Value: boolString(rem.AutoIndexSessions),
 		},
+		headerField("remembrances.header.chunking", "Chunking"),
 		settings.Field{
 			Label: "Chunk Size",
 			Key:   "remembrances.chunk_size",
@@ -2612,6 +2730,8 @@ func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Se
 			Value: fmt.Sprint(rem.IndexWorkers),
 		},
 	)
+
+	fields = append(fields, headerField("remembrances.header.contextEnrichment", "Context enrichment"))
 
 	// ── Context Enrichment ──
 	// Build the list of indexed project IDs for the selector.
@@ -2774,6 +2894,7 @@ func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Se
 
 	// Decision-model relevance filter for the injected context blocks.
 	fields = append(fields,
+		headerField("remembrances.header.decisionFilter", "Decision model relevance filter"),
 		settings.Field{
 			Label: "Context Relevance Filter",
 			Key:   "remembrances.context_enrichment_decision_filter_enabled",
@@ -2826,11 +2947,9 @@ func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Se
 	// Memory System subsection
 	fields = append(fields,
 		settings.Field{
-			Label:    "Memory System",
-			Key:      "remembrances.memory.header",
-			Type:     settings.FieldText,
-			Value:    "── Memory System ──────────────────────────────────────",
-			ReadOnly: true,
+			Label: "Memory system",
+			Key:   "remembrances.memory.header",
+			Type:  settings.FieldHeader,
 		},
 		settings.Field{
 			Label: "Memory Enabled",
@@ -2874,15 +2993,13 @@ func buildRemembrancesSection(app *pandoapp.App, cfg *config.Config) settings.Se
 	if err := validateRemembrancesConfig(cfg, rem); err != nil {
 		validationMessage = err.Error()
 	}
-	fields = append(fields, settings.Field{
-		Label:    "Validation",
-		Key:      "remembrances.validation",
-		Type:     settings.FieldText,
-		Value:    validationMessage,
-		ReadOnly: true,
-	})
+	validationNote := infoNote("remembrances.validation", "Validation", validationMessage)
+	if validationMessage != "Configuration looks valid." {
+		validationNote = errorNote("remembrances.validation", "Validation", validationMessage)
+	}
+	fields = append(fields, validationNote)
 
-	return settings.Section{Title: styles.RemembrancesIcon + " KB & Code Index", Fields: fields}
+	return settings.Section{Title: styles.RemembrancesIcon + " Remembrances", Fields: fields}
 }
 
 func buildInternalToolsSection(cfg *config.Config) settings.Section {
@@ -2896,6 +3013,7 @@ func buildInternalToolsSection(cfg *config.Config) settings.Section {
 		}
 	}
 	fields := []settings.Field{
+		headerField("internalTools.header.webSearch", "Web & search"),
 		{
 			Label: "Fetch Enabled",
 			Key:   "internalTools.fetchEnabled",
@@ -2985,6 +3103,7 @@ func buildInternalToolsSection(cfg *config.Config) settings.Section {
 			Type:  settings.FieldToggle,
 			Value: boolString(it.Context7Enabled),
 		},
+		headerField("internalTools.header.browser", "Browser automation"),
 		// --- Browser Automation ---
 		{
 			Label: "Browser Enabled",
@@ -3031,12 +3150,12 @@ func buildInternalToolsSection(cfg *config.Config) settings.Section {
 			Value: fmt.Sprint(it.BrowserMaxSessions),
 		},
 		{
-			Label:    "Browser Info",
-			Key:      "internalTools.browserInfo",
-			Type:     settings.FieldText,
-			Value:    browserInfoValue(browserInstalls),
-			ReadOnly: true,
+			Key:   "internalTools.browserInfo",
+			Label: "Browser Info",
+			Type:  settings.FieldNote,
+			Value: browserInfoValue(browserInstalls),
 		},
+		headerField("internalTools.header.desktop", "Desktop controller"),
 		// --- Desktop Controller ---
 		{
 			Label: "Desktop Enabled",
@@ -3103,15 +3222,14 @@ func buildInternalToolsSection(cfg *config.Config) settings.Section {
 			Hint:  "Comma-separated app ids/names to always block.",
 		},
 		{
-			Label:    "Info",
-			Key:      "internalTools.info",
-			Type:     settings.FieldText,
-			Value:    "Search tools are only active when their API key is configured. Env vars: GOOGLE_API_KEY, BRAVE_API_KEY, PERPLEXITY_API_KEY, EXA_API_KEY",
-			ReadOnly: true,
+			Key:   "internalTools.info",
+			Label: "Info",
+			Type:  settings.FieldNote,
+			Value: "Search tools are only active when their API key is configured. Env vars: GOOGLE_API_KEY, BRAVE_API_KEY, PERPLEXITY_API_KEY, EXA_API_KEY",
 		},
 	}
 	return settings.Section{
-		Title:  "Internal Tools",
+		Title:  "Tools",
 		Fields: fields,
 	}
 }
@@ -3136,6 +3254,23 @@ func buildServerSection(cfg *config.Config) settings.Section {
 		{Label: "Host", Key: "server.host", Type: settings.FieldText, Value: cfg.Server.Host},
 		{Label: "Port", Key: "server.port", Type: settings.FieldText, Value: fmt.Sprint(cfg.Server.Port)},
 		{Label: "Require Auth", Key: "server.requireAuth", Type: settings.FieldToggle, Value: boolString(cfg.Server.RequireAuth)},
+	}
+
+	if !cfg.Server.Enabled {
+		fields = append(fields, infoNote("server.info.disabled", "Info", "API server is disabled."))
+		for i := 1; i < len(fields)-1; i++ {
+			fields[i].Disabled = true
+		}
+	}
+
+	return settings.Section{
+		Title:  "API Server",
+		Fields: fields,
+	}
+}
+
+func buildWebUIAccessSection(cfg *config.Config) settings.Section {
+	fields := []settings.Field{
 		{
 			Label: "WebUI Access (Basic Auth)",
 			Key:   "server.basicAuth.enabled",
@@ -3154,20 +3289,14 @@ func buildServerSection(cfg *config.Config) settings.Section {
 	}
 
 	if !cfg.Server.Enabled {
-		fields = append(fields, settings.Field{
-			Label:    "Info",
-			Key:      "server.info.disabled",
-			Type:     settings.FieldText,
-			Value:    "API server is disabled.",
-			ReadOnly: true,
-		})
-		for i := 1; i < len(fields)-1; i++ {
+		fields = append(fields, infoNote("server.webuiAccess.info.disabled", "Info", "API server is disabled."))
+		for i := range fields[:len(fields)-1] {
 			fields[i].Disabled = true
 		}
 	}
 
 	return settings.Section{
-		Title:  "API Server",
+		Title:  "WebUI Access",
 		Fields: fields,
 	}
 }
@@ -3202,13 +3331,7 @@ func buildLuaSection(cfg *config.Config) settings.Section {
 	}
 
 	if !cfg.Lua.Enabled {
-		fields = append(fields, settings.Field{
-			Label:    "Info",
-			Key:      "lua.info.disabled",
-			Type:     settings.FieldText,
-			Value:    "Lua engine disabled.",
-			ReadOnly: true,
-		})
+		fields = append(fields, infoNote("lua.info.disabled", "Info", "Lua engine disabled."))
 		for i := 1; i < len(fields)-1; i++ {
 			fields[i].Disabled = true
 		}
@@ -3228,11 +3351,10 @@ func buildMCPGatewaySection(cfg *config.Config) settings.Section {
 		{Label: "Favorite Window Days", Key: "mcpGateway.favoriteWindowDays", Type: settings.FieldText, Value: fmt.Sprint(cfg.MCPGateway.FavoriteWindowDays)},
 		{Label: "Decay Days", Key: "mcpGateway.decayDays", Type: settings.FieldText, Value: fmt.Sprint(cfg.MCPGateway.DecayDays)},
 		{
-			Label:    "Info",
-			Key:      "mcpGateway.info",
-			Type:     settings.FieldText,
-			Value:    "Tracks MCP tool usage frequency to surface favorites.",
-			ReadOnly: true,
+			Key:   "mcpGateway.info",
+			Label: "Info",
+			Type:  settings.FieldNote,
+			Value: "Tracks MCP tool usage frequency to surface favorites.",
 		},
 	}
 
@@ -3282,11 +3404,10 @@ func buildSnapshotsSection(cfg *config.Config) settings.Section {
 			Value: fmt.Sprint(snap.AutoCleanupDays),
 		},
 		{
-			Label:    "Info",
-			Key:      "snapshots.info",
-			Type:     settings.FieldText,
-			Value:    "Session file snapshots. Excluded patterns use glob syntax (comma-separated).",
-			ReadOnly: true,
+			Key:   "snapshots.info",
+			Label: "Info",
+			Type:  settings.FieldNote,
+			Value: "Session file snapshots. Excluded patterns use glob syntax (comma-separated).",
 		},
 	}
 
@@ -3330,11 +3451,10 @@ func buildBashSection(cfg *config.Config) settings.Section {
 				Value: allowedValue,
 			},
 			{
-				Label:    "Default Banned List",
-				Key:      "bash.defaultInfo",
-				Type:     settings.FieldText,
-				Value:    bannedDefault,
-				ReadOnly: true,
+				Key:   "bash.defaultInfo",
+				Label: "Default Banned List",
+				Type:  settings.FieldNote,
+				Value: bannedDefault,
 			},
 		},
 	}
@@ -3432,11 +3552,11 @@ func buildPersonaAutoSelectSection(cfg *config.Config) settings.Section {
 				Disabled: !pas.Enabled,
 			},
 			{
-				Label:    "Info",
-				Key:      "personaAutoSelect.info",
-				Type:     settings.FieldText,
-				Value:    "Uses agents[\"persona-selector\"] model. Falls back to mesnada.orchestrator.personaPath when empty.",
-				Disabled: true,
+				Key:       "personaAutoSelect.info",
+				Label:     "Info",
+				Type:      settings.FieldNote,
+				Value:     "Uses agents[\"persona-selector\"] model. Falls back to mesnada.orchestrator.personaPath when empty.",
+				NoteLevel: settings.NoteLevelInfo,
 			},
 		},
 	}
@@ -3454,6 +3574,7 @@ func buildEvaluatorSection(cfg *config.Config) settings.Section {
 	}
 
 	fields := []settings.Field{
+		headerField("evaluator.header.general", "General"),
 		{
 			Label: "Enabled",
 			Key:   "evaluator.enabled",
@@ -3561,6 +3682,7 @@ func buildEvaluatorSection(cfg *config.Config) settings.Section {
 			Value: boolString(eval.IncludeSubagents),
 			Hint:  "default: false (also evaluate delegated child sessions)",
 		},
+		headerField("evaluator.header.judge", "Judge"),
 		{
 			Label: "Judge High Reward",
 			Key:   "evaluator.judge.highReward",
@@ -3610,6 +3732,7 @@ func buildEvaluatorSection(cfg *config.Config) settings.Section {
 			Value: boolString(eval.Templates.Enabled),
 			Hint:  "recommended: true (A/B select .pando/prompts/variants files; inert without them)",
 		},
+		headerField("evaluator.header.contextTrimmer", "Context trimmer"),
 		{
 			Label: "Context Trimmer",
 			Key:   "evaluator.contextTrimmer.enabled",
@@ -3625,20 +3748,19 @@ func buildEvaluatorSection(cfg *config.Config) settings.Section {
 			Hint:  "recommended: 0.70 (profiles below this confidence are ignored)",
 		},
 		{
-			Label:    "Info",
-			Key:      "evaluator.info",
-			Type:     settings.FieldText,
-			Value:    "LLM-as-Judge self-improvement with UCB1 prompt selection. Requires a cheap/fast judge model.",
-			ReadOnly: true,
+			Key:   "evaluator.info",
+			Label: "Info",
+			Type:  settings.FieldNote,
+			Value: "LLM-as-Judge self-improvement with UCB1 prompt selection. Requires a cheap/fast judge model.",
 		},
 	}
 
 	if !eval.Enabled {
-		for i := 1; i < len(fields); i++ {
+		for i := range fields {
 			// Keep the Judge Model selectable even while the evaluator is
 			// disabled so users can pick a model before turning the feature on;
 			// disabling it would make the model dialog never open.
-			if fields[i].Key == "evaluator.model" {
+			if fields[i].Key == "evaluator.enabled" || fields[i].Key == "evaluator.model" || !fields[i].Focusable() {
 				continue
 			}
 			fields[i].Disabled = true
