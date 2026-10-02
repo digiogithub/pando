@@ -465,10 +465,12 @@ export function useChat({ onNewSession, onDone, onEvent, onCancelled }: UseChatO
       setPendingFeedback([])
       setStreaming(false)
       setStreamingState(emptyState())
-      if (sessionId && completed) markSessionRunning(sessionId, false)
+      // `sessionId` is null for the first prompt of a session the stream itself
+      // created; the stream's own session id covers that case.
+      const streamed = sessionId ?? streamSessionRef.current
+      if (streamed && completed) markSessionRunning(streamed, false)
       // A dropped stream leaves an incomplete view of the run: mark it stale so
       // the next poll reattaches and replays whatever was missed.
-      const streamed = sessionId ?? streamSessionRef.current
       if (!completed && streamed) setSeenRunSeq(streamed, RUN_SEQ_STALE)
       fetchSessions()
       onDone?.(completed)
