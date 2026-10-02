@@ -2,6 +2,8 @@ package project
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,7 +20,6 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
-	"github.com/digiogithub/pando/internal/instanceregistry"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/procgroup"
 	"github.com/digiogithub/pando/internal/pubsub"
@@ -30,18 +31,17 @@ const (
 	defaultWebStartupTimeout = 20 * time.Second
 	webOutputBufferLimit     = 8 * 1024
 	webLoopbackHost          = "127.0.0.1"
-	webTokenPath             = "/api/v1/token"
 )
 
 // WebInstanceState describes the lifecycle state of a background WebUI child.
 type WebInstanceState string
 
 const (
-	// WebStateStarting means the child process exists but has not finished the
-	// pinned TLS and token handshake yet.
+	// WebStateStarting means the child process exists but has not yet passed the
+	// pinned TLS health probe and identity check.
 	WebStateStarting WebInstanceState = "starting"
-	// WebStateRunning means the child answered the pinned health probe and the
-	// parent fetched its API token successfully.
+	// WebStateRunning means the child answered the pinned health probe and proved
+	// it is the process the parent started for this project.
 	WebStateRunning WebInstanceState = "running"
 	// WebStateError means the child crashed or failed startup.
 	WebStateError WebInstanceState = "error"
@@ -49,8 +49,9 @@ const (
 	WebStateStopped WebInstanceState = "stopped"
 )
 
-// WebInstance represents a background `pando serve` child owned or adopted by
-// the project manager.
+// WebInstance represents a background `pando serve` child started by the
+// project manager. Children are never adopted: the parent keeps the only copy
+// of the child's API token and the child exits when its parent does.
 type WebInstance struct {
 	Project   Project
 	StartedAt time.Time
@@ -70,7 +71,6 @@ type WebInstance struct {
 	done     chan struct{}
 	exitErr  error
 	stopping bool
-	adopted  bool
 
 	slots delegationSlots
 }
@@ -82,7 +82,6 @@ type WebInstanceSnapshot struct {
 	PID       int
 	StartedAt time.Time
 	State     WebInstanceState
-	Adopted   bool
 }
 
 // Snapshot returns a race-free copy of the instance state for callers that need
@@ -97,7 +96,6 @@ func (w *WebInstance) Snapshot() WebInstanceSnapshot {
 		PID:       w.pid,
 		StartedAt: w.StartedAt,
 		State:     w.state,
-		Adopted:   w.adopted,
 	}
 }
 
@@ -106,8 +104,8 @@ func (w *WebInstance) BaseURL() string {
 	return loopbackWebBaseURL(w.Port())
 }
 
-// APIToken returns the in-memory API token learned from the child's token
-// endpoint. The token is never persisted.
+// APIToken returns the in-memory API token the parent minted for the child. The
+// token is never persisted.
 func (w *WebInstance) APIToken() string {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
@@ -145,12 +143,6 @@ func (w *WebInstance) State() WebInstanceState {
 func (w *WebInstance) setState(state WebInstanceState) {
 	w.mu.Lock()
 	w.state = state
-	w.mu.Unlock()
-}
-
-func (w *WebInstance) setToken(token string) {
-	w.mu.Lock()
-	w.token = token
 	w.mu.Unlock()
 }
 
@@ -256,17 +248,43 @@ type webProcessConfig struct {
 	ParentInstanceID string
 	TLSCertFile      string
 	TLSKeyFile       string
+	// APIToken is handed to the child through its environment only.
+	APIToken string
 }
 
-type webTokenResponse struct {
-	Token string `json:"token"`
+// webHealthExpectation is the identity a child must report on /health before
+// the parent trusts the process answering on its port.
+type webHealthExpectation struct {
+	ProjectID        string
+	ParentInstanceID string
+	PID              int
 }
+
+type webHealthBody struct {
+	StartupMode      string `json:"startup_mode"`
+	ProjectID        string `json:"project_id"`
+	ParentInstanceID string `json:"parent_instance_id"`
+	PID              int    `json:"pid"`
+}
+
+// webIdentityError means something answered on the child's port but is not the
+// process the parent started. It is fatal for the startup, never retried.
+type webIdentityError struct{ Detail string }
+
+func (e *webIdentityError) Error() string { return "web child identity mismatch: " + e.Detail }
 
 var (
 	spawnWebProcess = defaultSpawnWebProcess
 	probeWebHealth  = defaultProbeWebHealth
-	fetchWebToken   = defaultFetchWebToken
 )
+
+func newWebChildToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate web child token: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
 
 func defaultSpawnWebProcess(_ context.Context, pandoBin string, cfg webProcessConfig, proj Project, port int) (*webProcessStart, error) {
 	cmd := exec.Command(pandoBin, "serve",
@@ -285,6 +303,10 @@ func defaultSpawnWebProcess(_ context.Context, pandoBin string, cfg webProcessCo
 	if cfg.ParentInstanceID != "" {
 		cmd.Env = append(cmd.Env, "PANDO_PARENT_INSTANCE="+cfg.ParentInstanceID)
 	}
+	cmd.Env = append(cmd.Env,
+		"PANDO_PARENT_PID="+strconv.Itoa(os.Getpid()),
+		"PANDO_CHILD_API_TOKEN="+cfg.APIToken,
+	)
 	procgroup.Ensure(cmd)
 
 	if err := checkDirAccessible(proj.Path); err != nil {
@@ -308,7 +330,7 @@ func defaultSpawnWebProcess(_ context.Context, pandoBin string, cfg webProcessCo
 	}, nil
 }
 
-func defaultProbeWebHealth(ctx context.Context, client *http.Client, baseURL string) error {
+func defaultProbeWebHealth(ctx context.Context, client *http.Client, baseURL string, expect webHealthExpectation) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/health", nil)
 	if err != nil {
 		return err
@@ -319,37 +341,40 @@ func defaultProbeWebHealth(ctx context.Context, client *http.Client, baseURL str
 		return err
 	}
 	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return fmt.Errorf("health probe returned status %d", resp.StatusCode)
+	}
+
+	var body webHealthBody
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&body); err != nil {
+		return &webIdentityError{Detail: fmt.Sprintf("undecodable health response: %v", err)}
+	}
+	switch {
+	case body.StartupMode != "project-child":
+		return &webIdentityError{Detail: fmt.Sprintf("startup_mode %q, want project-child", body.StartupMode)}
+	case body.ProjectID != expect.ProjectID:
+		return &webIdentityError{Detail: fmt.Sprintf("project_id %q, want %q", body.ProjectID, expect.ProjectID)}
+	case body.ParentInstanceID != expect.ParentInstanceID:
+		return &webIdentityError{Detail: fmt.Sprintf("parent_instance_id %q, want %q", body.ParentInstanceID, expect.ParentInstanceID)}
+	case body.PID != expect.PID:
+		return &webIdentityError{Detail: fmt.Sprintf("pid %d, want %d", body.PID, expect.PID)}
 	}
 	return nil
 }
 
-func defaultFetchWebToken(ctx context.Context, client *http.Client, baseURL string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+webTokenPath, nil)
+// freeLoopbackPort asks the kernel for an unused loopback port.
+func freeLoopbackPort() (int, error) {
+	ln, err := net.Listen("tcp", net.JoinHostPort(webLoopbackHost, "0"))
 	if err != nil {
-		return "", err
+		return 0, err
 	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
+	defer ln.Close()
+	addr, ok := ln.Addr().(*net.TCPAddr)
+	if !ok {
+		return 0, fmt.Errorf("failed to determine free port")
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return "", fmt.Errorf("token endpoint returned status %d", resp.StatusCode)
-	}
-
-	var payload webTokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return "", fmt.Errorf("decode token response: %w", err)
-	}
-	if strings.TrimSpace(payload.Token) == "" {
-		return "", fmt.Errorf("token endpoint returned an empty token")
-	}
-	return payload.Token, nil
+	return addr.Port, nil
 }
 
 // OpenWeb starts or reuses the background WebUI child for projectID.
@@ -416,11 +441,38 @@ func (m *Manager) OpenWeb(ctx context.Context, projectID string) (*WebInstance, 
 		return nil, fmt.Errorf("project manager: choose web port for %s: %w", proj.Path, err)
 	}
 
+	inst, err := m.startWebInstance(ctx, projectID, *proj, port, certPaths, webClient)
+	if err != nil && errors.Is(err, ErrChildStartupFailed) && !errors.Is(err, ErrChildStartupTimeout) && ctx.Err() == nil {
+		// The port can be taken between choosing it and the child binding it
+		// (the child refuses to fall back to another port): retry once on a
+		// fresh one.
+		if fresh, portErr := freeLoopbackPort(); portErr == nil {
+			logging.Warn("project manager: web child startup failed, retrying on a fresh port", "project", projectID, "port", port, "error", err)
+			inst, err = m.startWebInstance(ctx, projectID, *proj, fresh, certPaths, webClient)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	_ = m.service.TouchLastOpened(ctx, projectID)
+	return inst, nil
+}
+
+// startWebInstance spawns one child on port, registers it and waits until it
+// has proved its identity. A failed startup leaves no tracked instance behind.
+func (m *Manager) startWebInstance(ctx context.Context, projectID string, proj Project, port int, certPaths tlsutil.CertPaths, webClient *http.Client) (*WebInstance, error) {
+	token, err := newWebChildToken()
+	if err != nil {
+		return nil, &ChildStartupError{Detail: err.Error(), Cause: ErrChildStartupFailed}
+	}
+
 	started, err := spawnWebProcess(ctx, m.pandoBin, webProcessConfig{
 		ParentInstanceID: m.parentInstanceID,
 		TLSCertFile:      certPaths.CertFile,
 		TLSKeyFile:       certPaths.KeyFile,
-	}, *proj, port)
+		APIToken:         token,
+	}, proj, port)
 	if err != nil {
 		return nil, &ChildStartupError{
 			Detail: fmt.Sprintf("project manager: spawn web child for %s: %v", proj.Path, err),
@@ -429,7 +481,7 @@ func (m *Manager) OpenWeb(ctx context.Context, projectID string) (*WebInstance, 
 	}
 
 	inst := &WebInstance{
-		Project:   *proj,
+		Project:   proj,
 		StartedAt: time.Now(),
 		cmd:       started.cmd,
 		errCh:     make(chan error, 1),
@@ -439,6 +491,7 @@ func (m *Manager) OpenWeb(ctx context.Context, projectID string) (*WebInstance, 
 		state:     WebStateStarting,
 		port:      port,
 		pid:       started.cmd.Process.Pid,
+		token:     token,
 		done:      make(chan struct{}),
 		slots:     newDelegationSlotsAt(time.Now()),
 	}
@@ -460,8 +513,6 @@ func (m *Manager) OpenWeb(ctx context.Context, projectID string) (*WebInstance, 
 		}
 		return nil, err
 	}
-
-	_ = m.service.TouchLastOpened(ctx, projectID)
 	return inst, nil
 }
 
@@ -536,8 +587,13 @@ func (m *Manager) waitForWebStartup(ctx context.Context, projectID string, inst 
 			Cause:  ErrChildStartupTimeout,
 		}
 	}
-	if inst.State() == WebStateRunning && inst.APIToken() != "" {
+	if inst.State() == WebStateRunning {
 		return nil
+	}
+	expect := webHealthExpectation{
+		ProjectID:        projectID,
+		ParentInstanceID: m.parentInstanceID,
+		PID:              inst.PID(),
 	}
 
 	deadline := time.NewTimer(m.webStartupTimeout)
@@ -548,27 +604,38 @@ func (m *Manager) waitForWebStartup(ctx context.Context, projectID string, inst 
 
 	for {
 		probeCtx, cancel := context.WithTimeout(ctx, webHealthProbeInterval)
-		err := probeWebHealth(probeCtx, client, inst.BaseURL())
+		err := probeWebHealth(probeCtx, client, inst.BaseURL(), expect)
 		cancel()
 		if err == nil {
-			tokenCtx, tokenCancel := context.WithTimeout(ctx, webHealthProbeInterval)
-			token, tokenErr := fetchWebToken(tokenCtx, client, inst.BaseURL())
-			tokenCancel()
-			if tokenErr == nil {
-				inst.setToken(token)
-				inst.setState(WebStateRunning)
-				if m.service != nil {
-					_ = m.service.UpdateWebRuntime(context.Background(), projectID, inst.PID(), inst.Port())
-				}
-				if m.broker != nil {
-					m.broker.Publish(pubsub.UpdatedEvent, ManagerEvent{
-						Type:      EvWebStarted,
-						ProjectID: projectID,
-						Port:      inst.Port(),
-					})
-				}
-				return nil
+			inst.setState(WebStateRunning)
+			if m.service != nil {
+				_ = m.service.UpdateWebRuntime(context.Background(), projectID, inst.PID(), inst.Port())
 			}
+			if m.broker != nil {
+				m.broker.Publish(pubsub.UpdatedEvent, ManagerEvent{
+					Type:      EvWebStarted,
+					ProjectID: projectID,
+					Port:      inst.Port(),
+				})
+			}
+			return nil
+		}
+		var identityErr *webIdentityError
+		if errors.As(err, &identityErr) {
+			// Not the process we started: never show it as a running tab. Only
+			// the process this manager spawned is signalled.
+			inst.markStopping()
+			terminateWebProcess(inst, syscall.SIGTERM)
+			detail := identityErr.Error()
+			if m.broker != nil {
+				m.broker.Publish(pubsub.UpdatedEvent, ManagerEvent{
+					Type:      EvWebError,
+					ProjectID: projectID,
+					Port:      inst.Port(),
+					Error:     detail,
+				})
+			}
+			return &ChildStartupError{Detail: detail, Cause: ErrChildStartupFailed}
 		}
 
 		select {
@@ -644,49 +711,6 @@ func (m *Manager) monitorOwnedWebInstance(projectID string, inst *WebInstance) {
 			Port:      inst.Port(),
 			Error:     eventErr,
 		})
-	}
-}
-
-func (m *Manager) monitorAdoptedWebInstance(projectID string, inst *WebInstance) {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-m.ctx.Done():
-			inst.markStopping()
-			inst.recordExit(nil, WebStateStopped)
-			inst.cancel()
-			return
-		case <-inst.done:
-			inst.cancel()
-			return
-		case <-ticker.C:
-			if inst.PID() > 0 && !pidIsAlive(inst.PID()) {
-				state := WebStateStopped
-				eventType := EvWebStopped
-				eventErr := ""
-				if !inst.isStopping() {
-					state = WebStateError
-					eventType = EvWebError
-					eventErr = fmt.Sprintf("web child pid %d is no longer running", inst.PID())
-				}
-				inst.recordExit(nil, state)
-				if m.service != nil {
-					_ = m.service.UpdateWebRuntime(context.Background(), projectID, 0, 0)
-				}
-				m.removeWebInstance(projectID, inst)
-				if m.broker != nil {
-					m.broker.Publish(pubsub.UpdatedEvent, ManagerEvent{
-						Type:      eventType,
-						ProjectID: projectID,
-						Port:      inst.Port(),
-						Error:     eventErr,
-					})
-				}
-				return
-			}
-		}
 	}
 }
 
@@ -800,93 +824,22 @@ func (m *Manager) removeWebInstance(projectID string, inst *WebInstance) {
 	}
 }
 
-func (m *Manager) adoptExistingWebInstances(ctx context.Context) {
+// clearStaleWebRuntime forgets web runtime data left in the project store by a
+// previous parent. Web children do not outlive their parent (they exit when it
+// is gone) and the API token handed to a child lives only in memory, so nothing
+// from a previous run can be adopted or signalled.
+func (m *Manager) clearStaleWebRuntime(ctx context.Context) {
 	projects, err := m.service.List(ctx)
 	if err != nil {
-		logging.Warn("project manager: list projects for web adoption failed", "error", err)
+		logging.Warn("project manager: list projects to clear stale web runtime failed", "error", err)
 		return
 	}
-
-	entries, err := m.registry.List()
-	if err != nil {
-		logging.Warn("project manager: list instance registry for web adoption failed", "error", err)
-		return
-	}
-
-	liveIDs := make(map[string]struct{}, len(entries))
-	byPath := make(map[string][]*instanceregistry.Entry)
-	for _, entry := range entries {
-		if entry == nil {
-			continue
-		}
-		liveIDs[entry.InstanceID] = struct{}{}
-		if entry.Mode != instanceregistry.ModeWebUI || entry.Path == "" || entry.PID <= 0 || entry.WebPort <= 0 || entry.WebPort > 65535 || entry.ParentInstanceID == "" {
-			continue
-		}
-		byPath[entry.Path] = append(byPath[entry.Path], entry)
-	}
-
-	var webClient *http.Client
 	for _, proj := range projects {
-		projectEntries := byPath[proj.Path]
-		var adopted bool
-		for _, entry := range projectEntries {
-			if _, parentAlive := liveIDs[entry.ParentInstanceID]; parentAlive {
-				continue
-			}
-			if webClient == nil {
-				webClient, err = m.webHTTPClient()
-				if err != nil {
-					logging.Warn("project manager: configure pinned web client for adoption failed", "error", err)
-					return
-				}
-			}
-
-			inst := &WebInstance{
-				Project:   proj,
-				StartedAt: entry.StartedAt,
-				errCh:     make(chan error, 1),
-				cancel:    func() {},
-				stdout:    newTailBuffer(webOutputBufferLimit),
-				stderr:    newTailBuffer(webOutputBufferLimit),
-				state:     WebStateStarting,
-				port:      entry.WebPort,
-				pid:       entry.PID,
-				done:      make(chan struct{}),
-				adopted:   true,
-				slots:     newDelegationSlotsAt(entry.StartedAt),
-			}
-
-			probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			err := probeWebHealth(probeCtx, webClient, inst.BaseURL())
-			cancel()
-			if err != nil {
-				continue
-			}
-
-			tokenCtx, tokenCancel := context.WithTimeout(ctx, 2*time.Second)
-			token, err := fetchWebToken(tokenCtx, webClient, inst.BaseURL())
-			tokenCancel()
-			if err != nil {
-				continue
-			}
-
-			inst.setToken(token)
-			inst.setState(WebStateRunning)
-			if m.service != nil {
-				_ = m.service.UpdateWebRuntime(ctx, proj.ID, inst.PID(), inst.Port())
-			}
-			m.mu.Lock()
-			m.webInstances[proj.ID] = inst
-			m.mu.Unlock()
-			go m.monitorAdoptedWebInstance(proj.ID, inst)
-			adopted = true
-			break
+		if proj.WebPID == 0 && proj.WebPort == 0 {
+			continue
 		}
-		if !adopted && (proj.WebPID != 0 || proj.WebPort != 0) {
-			if err := m.service.UpdateWebRuntime(ctx, proj.ID, 0, 0); err != nil {
-				logging.Warn("project manager: clear stale web runtime failed", "project", proj.ID, "error", err)
-			}
+		if err := m.service.UpdateWebRuntime(ctx, proj.ID, 0, 0); err != nil {
+			logging.Warn("project manager: clear stale web runtime failed", "project", proj.ID, "error", err)
 		}
 	}
 }

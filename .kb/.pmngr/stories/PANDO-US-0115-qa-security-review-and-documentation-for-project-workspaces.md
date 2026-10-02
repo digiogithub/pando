@@ -2,14 +2,15 @@
 id: PANDO-US-0115
 type: story
 title: QA, security review and documentation for project workspaces
-status: backlog
+status: done
 priority: medium
 parent: PANDO-EP-0019
 author: mcp
 labels: [projects, qa, docs, security]
 estimate: 5
 created: 2026-10-01T19:24:43Z
-updated: 2026-10-01T19:24:43Z
+updated: 2026-10-02T09:38:52Z
+closed: 2026-10-02T09:38:52Z
 ---
 
 ## Description

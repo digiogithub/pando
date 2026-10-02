@@ -64,8 +64,8 @@ var ErrChildStartupTimeout = errors.New("child startup timed out")
 var ErrChildStartupFailed = errors.New("child startup failed")
 
 // ChildStartupError carries a startup failure detail suitable for API
-// responses and logs. Detail never includes the child API token because the
-// token is only learned after a successful startup handshake.
+// responses and logs. Detail never includes the child API token: it is
+// handed to the child through its environment and never logged.
 type ChildStartupError struct {
 	Detail string
 	Cause  error

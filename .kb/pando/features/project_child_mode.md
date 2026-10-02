@@ -19,3 +19,5 @@ Part of [[project_workspaces_webui_tabs]] (epic PANDO-EP-0019). Date: 2026-10-01
 
 ## Verification
 `go build ./...`, `go vet` on touched packages, `go test ./internal/project/... ./internal/api/... ./internal/app/... ./internal/instanceregistry/... -count=1` ok; new tests `internal/api/child_mode_test.go`, `internal/project/child_mode_test.go`, `web-ui/.../api.child-mode.test.ts`, `Sidebar.child-mode.test.tsx`; `bun run typecheck/test/build` ok.
+## Update 2026-10-02
+- Project-child mode requires a parent-minted API token (`PANDO_CHILD_API_TOKEN`, read once and `os.Unsetenv`'d, passed as `api.ServerConfig.APIToken`); without it `pando serve` refuses to start. `/api/v1/token` needs a valid token header in this mode. `/health` also reports `pid`. `pando serve` fails hard if the requested port is busy and exits when `PANDO_PARENT_PID` disappears. `PANDO_PUBLIC_BASE` must match `^/api/v1/projects/[A-Za-z0-9-]+/web$` and is HTML-escaped into `<base href>`.

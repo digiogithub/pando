@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -30,9 +31,10 @@ func newProjectsWebHTTPServer(t *testing.T, s *Server) *httptest.Server {
 func newProjectsWebServer(t *testing.T, lookup func(string) (string, string, http.RoundTripper, bool)) (*Server, *httptest.Server) {
 	t.Helper()
 	s := &Server{
-		token:                 "parent-token",
-		config:                ServerConfig{Host: "127.0.0.1", Port: 8765, StartupMode: "serve"},
-		projectWebProxyLookup: lookup,
+		token:                  "parent-token",
+		projectWebCookieSecret: "cookie-secret",
+		config:                 ServerConfig{Host: "127.0.0.1", Port: 8765, StartupMode: "serve"},
+		projectWebProxyLookup:  lookup,
 	}
 	return s, newProjectsWebHTTPServer(t, s)
 }
@@ -533,7 +535,7 @@ func TestProjectsWebProxyAcceptsCookieAndNeverForwardsIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
 	}
-	req.AddCookie(&http.Cookie{Name: projectWebCookieName, Value: "parent-token"})
+	req.AddCookie(&http.Cookie{Name: projectWebCookieName, Value: "cookie-secret"})
 	req.AddCookie(&http.Cookie{Name: "other", Value: "kept"})
 	resp, err := parent.Client().Do(req)
 	if err != nil {
@@ -564,14 +566,14 @@ func TestProjectsWebCookieIsScopedToProxyPaths(t *testing.T) {
 		name, method, path, cookie string
 		wantUnauthorized           bool
 	}{
-		{"proxy path, valid cookie", http.MethodGet, "/api/v1/projects/p1/web/", "parent-token", false},
+		{"proxy path, valid cookie", http.MethodGet, "/api/v1/projects/p1/web/", "cookie-secret", false},
 		{"proxy path, wrong cookie", http.MethodGet, "/api/v1/projects/p1/web/", "nope", true},
 		{"proxy path, no cookie", http.MethodGet, "/api/v1/projects/p1/web/", "", true},
-		{"open control endpoint", http.MethodPost, "/api/v1/projects/p1/web/open", "parent-token", true},
-		{"close control endpoint", http.MethodPost, "/api/v1/projects/p1/web/close", "parent-token", true},
-		{"project resource", http.MethodGet, "/api/v1/projects/p1", "parent-token", true},
-		{"web instance list", http.MethodGet, "/api/v1/projects/web", "parent-token", true},
-		{"unrelated api", http.MethodGet, "/api/v1/sessions", "parent-token", true},
+		{"open control endpoint", http.MethodPost, "/api/v1/projects/p1/web/open", "cookie-secret", true},
+		{"close control endpoint", http.MethodPost, "/api/v1/projects/p1/web/close", "cookie-secret", true},
+		{"project resource", http.MethodGet, "/api/v1/projects/p1", "cookie-secret", true},
+		{"web instance list", http.MethodGet, "/api/v1/projects/web", "cookie-secret", true},
+		{"unrelated api", http.MethodGet, "/api/v1/sessions", "cookie-secret", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -595,7 +597,7 @@ func TestProjectsWebCookieIsScopedToProxyPaths(t *testing.T) {
 }
 
 func TestSetProjectWebCookieAttributes(t *testing.T) {
-	s := &Server{token: "parent-token"}
+	s := &Server{token: "parent-token", projectWebCookieSecret: "cookie-secret"}
 	rec := httptest.NewRecorder()
 	s.setProjectWebCookie(rec, httptest.NewRequest(http.MethodGet, "https://localhost/api/v1/projects/web", nil))
 
@@ -604,10 +606,273 @@ func TestSetProjectWebCookieAttributes(t *testing.T) {
 		t.Fatalf("cookies = %d, want 1", len(cookies))
 	}
 	c := cookies[0]
-	if c.Name != projectWebCookieName || c.Value != "parent-token" {
+	if c.Name != projectWebCookieName || c.Value != "cookie-secret" {
 		t.Fatalf("cookie = %s=%s", c.Name, c.Value)
 	}
 	if !c.HttpOnly || !c.Secure || c.SameSite != http.SameSiteStrictMode || c.Path != projectWebCookiePath {
 		t.Fatalf("attributes: HttpOnly=%v Secure=%v SameSite=%v Path=%q", c.HttpOnly, c.Secure, c.SameSite, c.Path)
+	}
+}
+
+func TestProjectsWebCookieValueIsNotTheAPIToken(t *testing.T) {
+	s, _ := newProjectsWebServer(t, nil)
+	s.projectWebCookieSecret = "cookie-secret"
+	rec := httptest.NewRecorder()
+	s.setProjectWebCookie(rec, httptest.NewRequest(http.MethodGet, "https://localhost/api/v1/projects/web", nil))
+	if got := rec.Result().Cookies()[0].Value; got == s.token {
+		t.Fatal("proxy cookie carries the API token")
+	}
+	// The API token itself is not a valid cookie value.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/p1/web/", nil)
+	req.AddCookie(&http.Cookie{Name: projectWebCookieName, Value: s.token})
+	if s.hasValidProjectWebCookie(req) {
+		t.Fatal("API token accepted as the proxy cookie")
+	}
+}
+
+func TestProjectsWebCookieOnlyRequestsNeedSameOrigin(t *testing.T) {
+	var hits atomic.Int32
+	child := newChildTLSServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	_, parent := newProjectsWebServer(t, func(string) (string, string, http.RoundTripper, bool) {
+		return child.URL, "child-token", child.Client().Transport, true
+	})
+	host := strings.TrimPrefix(parent.URL, "http://")
+
+	cases := []struct {
+		name, method string
+		headers      map[string]string
+		wantStatus   int
+	}{
+		{"GET no proof", http.MethodGet, nil, http.StatusOK},
+		{"HEAD no proof", http.MethodHead, nil, http.StatusOK},
+		{"POST no proof", http.MethodPost, nil, http.StatusForbidden},
+		{"POST same-origin fetch metadata", http.MethodPost, map[string]string{"Sec-Fetch-Site": "same-origin"}, http.StatusOK},
+		{"POST same-site fetch metadata", http.MethodPost, map[string]string{"Sec-Fetch-Site": "same-site"}, http.StatusForbidden},
+		{"POST cross-site fetch metadata", http.MethodPost, map[string]string{"Sec-Fetch-Site": "cross-site", "Origin": "http://" + host}, http.StatusForbidden},
+		{"POST same Origin", http.MethodPost, map[string]string{"Origin": "http://" + host}, http.StatusOK},
+		{"POST other port Origin", http.MethodPost, map[string]string{"Origin": "http://127.0.0.1:1"}, http.StatusForbidden},
+		{"DELETE other scheme Origin", http.MethodDelete, map[string]string{"Origin": "https://" + host}, http.StatusForbidden},
+		{"WS upgrade no proof", http.MethodGet, map[string]string{"Upgrade": "websocket", "Connection": "Upgrade"}, http.StatusForbidden},
+		{"WS upgrade cross-origin", http.MethodGet, map[string]string{"Upgrade": "websocket", "Connection": "Upgrade", "Origin": "http://evil.example"}, http.StatusForbidden},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequest(tc.method, parent.URL+"/api/v1/projects/p1/web/api/v1/x", nil)
+			if err != nil {
+				t.Fatalf("NewRequest: %v", err)
+			}
+			req.AddCookie(&http.Cookie{Name: projectWebCookieName, Value: "cookie-secret"})
+			for k, v := range tc.headers {
+				req.Header.Set(k, v)
+			}
+			resp, err := parent.Client().Do(req)
+			if err != nil {
+				t.Fatalf("Do: %v", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != tc.wantStatus {
+				t.Fatalf("status = %d, want %d", resp.StatusCode, tc.wantStatus)
+			}
+			if tc.wantStatus == http.StatusForbidden {
+				if body := readAllString(t, resp.Body); !strings.Contains(body, "cross_origin_forbidden") {
+					t.Fatalf("body = %q, want cross_origin_forbidden", body)
+				}
+			}
+		})
+	}
+
+	// A valid header token is unaffected by the origin rule.
+	req, _ := http.NewRequest(http.MethodPost, parent.URL+"/api/v1/projects/p1/web/api/v1/x", nil)
+	req.Header.Set("X-Pando-Token", "parent-token")
+	resp, err := parent.Client().Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("header-token POST status = %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestProjectsWebProxyAnswersTokenExchangeItself(t *testing.T) {
+	var hits atomic.Int32
+	child := newChildTLSServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		_, _ = w.Write([]byte(`{"token":"child-token"}`))
+	}))
+	_, parent := newProjectsWebServer(t, func(string) (string, string, http.RoundTripper, bool) {
+		return child.URL, "child-token", child.Client().Transport, true
+	})
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		req, _ := http.NewRequest(method, parent.URL+"/api/v1/projects/p1/web/api/v1/token", strings.NewReader("{}"))
+		req.Header.Set("X-Pando-Token", "parent-token")
+		resp, err := parent.Client().Do(req)
+		if err != nil {
+			t.Fatalf("Do: %v", err)
+		}
+		body := readAllString(t, resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || !strings.Contains(body, `"proxied"`) || strings.Contains(body, "child-token") {
+			t.Fatalf("%s token exchange = %d %q", method, resp.StatusCode, body)
+		}
+	}
+	if hits.Load() != 0 {
+		t.Fatalf("token exchange reached the child %d times", hits.Load())
+	}
+}
+
+func TestProjectsWebProxyRefusesPreview(t *testing.T) {
+	var hits atomic.Int32
+	child := newChildTLSServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+	}))
+	_, parent := newProjectsWebServer(t, func(string) (string, string, http.RoundTripper, bool) {
+		return child.URL, "child-token", child.Client().Transport, true
+	})
+	for _, path := range []string{"/preview/", "/preview/abc/index.html", "/preview"} {
+		req, _ := http.NewRequest(http.MethodGet, parent.URL+"/api/v1/projects/p1/web"+path, nil)
+		req.Header.Set("X-Pando-Token", "parent-token")
+		resp, err := parent.Client().Do(req)
+		if err != nil {
+			t.Fatalf("Do: %v", err)
+		}
+		body := readAllString(t, resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusForbidden || !strings.Contains(body, "not_available_in_project_tab") {
+			t.Fatalf("%s = %d %q", path, resp.StatusCode, body)
+		}
+	}
+	if hits.Load() != 0 {
+		t.Fatal("preview request reached the child")
+	}
+}
+
+func TestProjectsWebProxyResponseHardening(t *testing.T) {
+	child := newChildTLSServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Set-Cookie", "evil=1; Path=/")
+		switch r.URL.Path {
+		case "/html":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Header().Set("Content-Security-Policy", "default-src 'self'; frame-ancestors *")
+			_, _ = w.Write([]byte("<html></html>"))
+		case "/json":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("{}"))
+		case "/redir-rel":
+			http.Redirect(w, r, "/login?next=1", http.StatusFound)
+		case "/redir-abs-child":
+			http.Redirect(w, r, "https://"+r.Host+"/dest#frag", http.StatusFound)
+		case "/redir-abs-evil":
+			http.Redirect(w, r, "https://evil.example/", http.StatusFound)
+		case "/redir-proto":
+			w.Header().Set("Location", "//evil.example/x")
+			w.WriteHeader(http.StatusFound)
+		}
+	}))
+	_, parent := newProjectsWebServer(t, func(string) (string, string, http.RoundTripper, bool) {
+		return child.URL, "child-token", child.Client().Transport, true
+	})
+	noRedirect := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	get := func(path string) *http.Response {
+		req, _ := http.NewRequest(http.MethodGet, parent.URL+"/api/v1/projects/p1/web"+path, nil)
+		req.Header.Set("X-Pando-Token", "parent-token")
+		resp, err := noRedirect.Do(req)
+		if err != nil {
+			t.Fatalf("Do: %v", err)
+		}
+		t.Cleanup(func() { resp.Body.Close() })
+		return resp
+	}
+
+	html := get("/html")
+	if len(html.Header.Values("Set-Cookie")) != 0 {
+		t.Fatal("Set-Cookie leaked through the proxy")
+	}
+	if csp := html.Header.Get("Content-Security-Policy"); csp != "default-src 'self'; frame-ancestors 'self'" {
+		t.Fatalf("CSP = %q", csp)
+	}
+	if html.Header.Get("X-Frame-Options") != "SAMEORIGIN" {
+		t.Fatalf("X-Frame-Options = %q", html.Header.Get("X-Frame-Options"))
+	}
+	if js := get("/json"); js.Header.Get("X-Frame-Options") != "" || js.Header.Get("Content-Security-Policy") != "" {
+		t.Fatal("non-HTML response got framing headers")
+	}
+	if loc := get("/redir-rel").Header.Get("Location"); loc != "/api/v1/projects/p1/web/login?next=1" {
+		t.Fatalf("relative Location = %q", loc)
+	}
+	if loc := get("/redir-abs-child").Header.Get("Location"); loc != "/api/v1/projects/p1/web/dest#frag" {
+		t.Fatalf("absolute child Location = %q", loc)
+	}
+	for _, path := range []string{"/redir-abs-evil", "/redir-proto"} {
+		resp := get(path)
+		if resp.StatusCode != http.StatusBadGateway || resp.Header.Get("Location") != "" {
+			t.Fatalf("%s = %d Location=%q, want 502 without Location", path, resp.StatusCode, resp.Header.Get("Location"))
+		}
+		if body := readAllString(t, resp.Body); !strings.Contains(body, "project_web_bad_redirect") {
+			t.Fatalf("%s body = %q", path, body)
+		}
+	}
+}
+
+func TestProjectChildTokenEndpointRequiresToken(t *testing.T) {
+	s := &Server{
+		token:  "minted-by-parent",
+		config: ServerConfig{Host: "127.0.0.1", Port: 8765, StartupMode: "project-child"},
+	}
+	srv := newProjectsWebHTTPServer(t, s)
+
+	resp, err := http.Get(srv.URL + TokenPath)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	body := readAllString(t, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized || strings.Contains(body, "minted-by-parent") {
+		t.Fatalf("unauthenticated token request = %d %q", resp.StatusCode, body)
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+TokenPath, nil)
+	req.Header.Set("X-Pando-Token", "minted-by-parent")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("authenticated token request = %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestProjectChildHealthReportsPID(t *testing.T) {
+	child := &Server{config: ServerConfig{StartupMode: "project-child"}}
+	rec := httptest.NewRecorder()
+	child.handleHealth(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
+	var got struct {
+		PID int `json:"pid"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if got.PID != os.Getpid() {
+		t.Fatalf("child pid = %d, want %d", got.PID, os.Getpid())
+	}
+
+	plain := &Server{config: ServerConfig{StartupMode: "serve"}}
+	rec = httptest.NewRecorder()
+	plain.handleHealth(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
+	if strings.Contains(rec.Body.String(), `"pid"`) {
+		t.Fatalf("non-child health leaks pid: %s", rec.Body.String())
+	}
+}
+
+func TestInjectRuntimeConfigEscapesBaseHref(t *testing.T) {
+	s := &Server{config: ServerConfig{PublicBasePath: `/x"><script>alert(1)</script>`}}
+	out := string(s.InjectRuntimeConfig([]byte(`<head><base href="/" /></head>`)))
+	if strings.Contains(out, `"><script>alert`) && !strings.Contains(out, "&#34;&gt;") {
+		t.Fatalf("base href not escaped: %s", out)
+	}
+	if !strings.Contains(out, `<base href="/x&#34;&gt;&lt;script&gt;`) {
+		t.Fatalf("unexpected base href: %s", out)
 	}
 }

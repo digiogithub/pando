@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io/fs"
 	"mime"
 	"net"
@@ -41,18 +42,21 @@ type ServerConfig struct {
 	// Querier overrides the db.Querier passed to app.New. When non-nil it is
 	// used instead of db.New(cfg.DB). Secondary instances supply a DBProxy here
 	// so all writes are forwarded to the primary via ZMQ RPC.
-	Querier             db.Querier
-	CWD                 string
-	StaticFS            fs.FS
-	OpenUI              bool
-	UIBaseURL           string
-	TLSCertFile         string
-	TLSKeyFile          string
-	StartupMode         string
-	ParentInstanceID    string
-	ProjectID           string
-	ProjectName         string
-	PublicBasePath      string
+	Querier          db.Querier
+	CWD              string
+	StaticFS         fs.FS
+	OpenUI           bool
+	UIBaseURL        string
+	TLSCertFile      string
+	TLSKeyFile       string
+	StartupMode      string
+	ParentInstanceID string
+	ProjectID        string
+	ProjectName      string
+	PublicBasePath   string
+	// APIToken, when set, is used as the API token instead of a generated one.
+	// A project child receives it from its parent so only the parent knows it.
+	APIToken            string
 	WebChildTLSCertFile string
 	WebChildTLSKeyFile  string
 	WebChildTLSDataDir  string
@@ -66,13 +70,16 @@ type ServerConfig struct {
 }
 
 type Server struct {
-	httpServer     *http.Server
-	app            *app.App
-	config         ServerConfig
-	token          string
-	staticFS       fs.FS
-	staticHandler  http.Handler
-	projectManager projectManagerAPI
+	httpServer *http.Server
+	app        *app.App
+	config     ServerConfig
+	token      string
+	// projectWebCookieSecret is the value of the proxy cookie. It is separate
+	// from token so the cookie never carries the API token.
+	projectWebCookieSecret string
+	staticFS               fs.FS
+	staticHandler          http.Handler
+	projectManager         projectManagerAPI
 	// projectWebProxyLookup lets tests inject a fake child transport/target
 	// without constructing a full app.ProjectManager.
 	projectWebProxyLookup func(projectID string) (baseURL, apiToken string, transport http.RoundTripper, ok bool)
@@ -275,20 +282,29 @@ func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
 	// (see getOrCreateSession); we no longer auto-approve globally so the Web UI
 	// can prompt for permission just like the TUI.
 
-	token, err := generateToken()
+	token := strings.TrimSpace(cfg.APIToken)
+	if token == "" {
+		var err error
+		if token, err = generateToken(); err != nil {
+			return nil, err
+		}
+	}
+	cookieSecret, err := generateToken()
 	if err != nil {
 		return nil, err
 	}
 
 	s := &Server{
-		app:         application,
-		config:      cfg,
-		token:       token,
-		staticFS:    cfg.StaticFS,
-		bgRunner:    NewBackgroundSessionManager(),
-		bindHost:    cfg.Host,
-		initialHost: cfg.Host,
-		rebindCh:    make(chan net.Listener, 1),
+		app:    application,
+		config: cfg,
+		token:  token,
+
+		projectWebCookieSecret: cookieSecret,
+		staticFS:               cfg.StaticFS,
+		bgRunner:               NewBackgroundSessionManager(),
+		bindHost:               cfg.Host,
+		initialHost:            cfg.Host,
+		rebindCh:               make(chan net.Listener, 1),
 	}
 
 	// Extensions may add asset subtrees, shadow individual core files, or
@@ -648,6 +664,16 @@ func (s *Server) tokenEndpointAuthenticated(r *http.Request) bool {
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == TokenPath {
+			// A project child's token is minted by its parent: no caller may
+			// obtain it from the child, loopback or not.
+			if s.isProjectChildMode() {
+				if !s.hasValidToken(r) {
+					http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+					return
+				}
+				next.ServeHTTP(w, r)
+				return
+			}
 			if s.tokenEndpointAuthenticated(r) {
 				next.ServeHTTP(w, r)
 				return
@@ -679,9 +705,17 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 
 		// A project frame and its assets are loaded by the browser itself and
 		// authenticate with the proxy cookie instead of the header.
-		if !s.hasValidToken(r) && !(isProjectWebCookiePath(r.Method, r.URL.Path) && s.hasValidProjectWebCookie(r)) {
-			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-			return
+		if !s.hasValidToken(r) {
+			if !(isProjectWebCookiePath(r.Method, r.URL.Path) && s.hasValidProjectWebCookie(r)) {
+				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+			// Authenticated by the ambient cookie alone: anything but a plain
+			// read must prove it was issued by this very origin.
+			if !cookieRequestAllowed(r) {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "cross_origin_forbidden"})
+				return
+			}
 		}
 
 		next.ServeHTTP(w, r)
@@ -812,16 +846,17 @@ func (s *Server) resolveEncodedAsset(name, acceptEncoding string) (string, strin
 	return "", ""
 }
 
-func (s *Server) InjectRuntimeConfig(html []byte) []byte {
+func (s *Server) InjectRuntimeConfig(page []byte) []byte {
 	script := s.runtimeConfigScript()
 	if script == "" && strings.TrimSpace(s.config.PublicBasePath) == "" {
-		return html
+		return page
 	}
 
-	content := string(html)
+	content := string(page)
 	if basePath := strings.TrimSpace(s.config.PublicBasePath); basePath != "" {
-		content = strings.Replace(content, `<base href="/" />`, `<base href="`+basePath+`/" />`, 1)
-		content = strings.Replace(content, `<base href="/">`, `<base href="`+basePath+`/">`, 1)
+		escaped := html.EscapeString(basePath)
+		content = strings.Replace(content, `<base href="/" />`, `<base href="`+escaped+`/" />`, 1)
+		content = strings.Replace(content, `<base href="/">`, `<base href="`+escaped+`/">`, 1)
 	}
 	if script == "" {
 		return []byte(content)

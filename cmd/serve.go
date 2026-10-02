@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -64,21 +67,34 @@ This is the backend for the Pando Desktop/Web UI.`,
 		config.SetAgeKeysOverride(ageKeys)
 		preferredPort := port
 
-		selectedPort, err := chooseAvailablePort(host, preferredPort)
-		if err != nil {
-			return err
-		}
-		if selectedPort != preferredPort {
-			logging.Warn("Preferred port unavailable, using fallback", "preferred", preferredPort, "selected", selectedPort)
-			fmt.Printf("Port %d in use, switching to %d\n", preferredPort, selectedPort)
-		}
-		port = selectedPort
-
 		cwd, err := os.Getwd()
 		if err != nil {
 			return fmt.Errorf("failed to get current working directory: %v", err)
 		}
 		startup := resolveStartupContext(cwd, "serve")
+
+		if startup.Mode == startupModeProjectChild {
+			// The parent probes and proxies exactly this port: a silent fallback
+			// would leave it talking to whatever else owns the requested one.
+			if len(startup.APIToken) < minChildAPITokenLen {
+				return fmt.Errorf("project child requires a parent-minted API token (%s)", childAPITokenEnv)
+			}
+			ln, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(preferredPort)))
+			if err != nil {
+				return fmt.Errorf("project child cannot bind requested port %d: %w", preferredPort, err)
+			}
+			_ = ln.Close()
+		} else {
+			selectedPort, err := chooseAvailablePort(host, preferredPort)
+			if err != nil {
+				return err
+			}
+			if selectedPort != preferredPort {
+				logging.Warn("Preferred port unavailable, using fallback", "preferred", preferredPort, "selected", selectedPort)
+				fmt.Printf("Port %d in use, switching to %d\n", preferredPort, selectedPort)
+			}
+			port = selectedPort
+		}
 
 		_, err = config.Load(cwd, debug, "")
 		if err != nil {
@@ -156,6 +172,7 @@ This is the backend for the Pando Desktop/Web UI.`,
 			ProjectID:           startup.ProjectID,
 			ProjectName:         startup.ProjectName,
 			PublicBasePath:      startup.PublicBasePath,
+			APIToken:            startup.APIToken,
 			WebChildTLSCertFile: tlsCert,
 			WebChildTLSKeyFile:  tlsKey,
 			WebChildTLSDataDir:  dataDir,
@@ -202,8 +219,19 @@ This is the backend for the Pando Desktop/Web UI.`,
 			}
 		}
 
-		sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		shutdownBase, requestShutdown := context.WithCancel(context.Background())
+		defer requestShutdown()
+		sigCtx, stopSignals := signal.NotifyContext(shutdownBase, syscall.SIGINT, syscall.SIGTERM)
 		defer stopSignals()
+
+		// A project child never outlives its parent: the parent keeps the only
+		// copy of the child's API token, so an orphan would be unreachable.
+		if startup.Mode == startupModeProjectChild && startup.ParentPID > 0 && runtime.GOOS != "windows" {
+			go watchParentProcess(sigCtx, startup.ParentPID, parentWatchInterval, func() {
+				logging.Warn("Parent process is gone, shutting down project child", "parentPid", startup.ParentPID)
+				requestShutdown()
+			})
+		}
 
 		// Watchdog: unconditionally force-exit if the process has not terminated
 		// within 6 seconds of receiving the shutdown signal.
@@ -266,4 +294,34 @@ func init() {
 	serveCmd.Flags().String("tls-key", "", "Path to TLS private key file (auto-generated if omitted)")
 	serveCmd.Flags().Int("agui-port", 0, "Serve the AG-UI protocol (CopilotKit) on its own port")
 	serveCmd.Flags().String("agui-host", "", "Host for the AG-UI listener (defaults to localhost)")
+}
+
+// parentWatchInterval is how often a project child checks that its parent is
+// still running.
+const parentWatchInterval = 3 * time.Second
+
+// watchParentProcess calls onGone once the process pid no longer exists, or
+// returns when ctx ends.
+func watchParentProcess(ctx context.Context, pid int, interval time.Duration, onGone func()) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if !processExists(pid) {
+				onGone()
+				return
+			}
+		}
+	}
+}
+
+func processExists(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return proc.Signal(syscall.Signal(0)) == nil
 }

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -12,9 +13,11 @@ import (
 // projectWebCookieName is the cookie that authenticates browser-initiated
 // loads of a project's WebUI through the proxy: the iframe navigation and the
 // scripts, styles and images it pulls cannot carry the X-Pando-Token header.
-// It holds the parent's API token, is HttpOnly and SameSite=Strict, is scoped
-// to projectWebCookiePath, and is honoured only on proxy paths (see
-// isProjectWebCookiePath); it is never forwarded to the child.
+// It holds a random secret minted at server start (never the API token), is
+// HttpOnly and SameSite=Strict, is scoped to projectWebCookiePath, and is
+// honoured only on proxy paths (see isProjectWebCookiePath); it is never
+// forwarded to the child. Requests it alone authenticates must also pass
+// cookieRequestAllowed.
 const (
 	projectWebCookieName = "pando_project_web"
 	projectWebCookiePath = "/api/v1/projects/"
@@ -25,7 +28,7 @@ const (
 func (s *Server) setProjectWebCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     projectWebCookieName,
-		Value:    s.token,
+		Value:    s.projectWebCookieSecret,
 		Path:     projectWebCookiePath,
 		HttpOnly: true,
 		Secure:   r.TLS != nil,
@@ -53,13 +56,40 @@ func isProjectWebCookiePath(method, path string) bool {
 }
 
 // hasValidProjectWebCookie reports whether r carries the proxy cookie with this
-// server's token.
+// server's cookie secret.
 func (s *Server) hasValidProjectWebCookie(r *http.Request) bool {
 	c, err := r.Cookie(projectWebCookieName)
-	if err != nil || c.Value == "" || s.token == "" {
+	if err != nil || c.Value == "" || s.projectWebCookieSecret == "" {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(c.Value), []byte(s.token)) == 1
+	return subtle.ConstantTimeCompare([]byte(c.Value), []byte(s.projectWebCookieSecret)) == 1
+}
+
+// cookieRequestAllowed decides whether a request authenticated only by the
+// ambient proxy cookie may proceed. Plain reads are free; every other method and
+// every websocket upgrade needs proof that the browser issued it from this very
+// origin, so a page on another port or site cannot ride the cookie.
+func cookieRequestAllowed(r *http.Request) bool {
+	upgrade := strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
+	if (r.Method == http.MethodGet || r.Method == http.MethodHead) && !upgrade {
+		return true
+	}
+	if site := r.Header.Get("Sec-Fetch-Site"); site != "" {
+		return site == "same-origin"
+	}
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return false
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	return strings.EqualFold(parsed.Scheme, scheme) && strings.EqualFold(parsed.Host, r.Host)
 }
 
 // stripProjectWebCookie removes the proxy cookie from a request bound for a
@@ -110,6 +140,21 @@ func (s *Server) handleProjectWebProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The framed UI must never learn the child's token: answer its token
+	// exchange here with a placeholder. Its requests are authenticated by the
+	// proxy cookie and the proxy swaps in the real header.
+	if pathSuffix == "/api/v1/token" {
+		writeJSON(w, http.StatusOK, map[string]string{"token": projectWebPlaceholderToken})
+		return
+	}
+	// Design previews are served from the child's origin, which is the parent's
+	// origin here, with no sandbox: hostile project files could script the
+	// parent UI. Refuse them until previews get an opaque or separate origin.
+	if pathSuffix == "/preview" || strings.HasPrefix(pathSuffix, "/preview/") {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "not_available_in_project_tab"})
+		return
+	}
+
 	baseURL, err := url.Parse(target.baseURL)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "project_web_unavailable"})
@@ -143,9 +188,17 @@ func (s *Server) handleProjectWebProxy(w http.ResponseWriter, r *http.Request) {
 		FlushInterval: -1,
 		ModifyResponse: func(resp *http.Response) error {
 			stripProjectWebProxyResponseHeaders(resp.Header)
+			if err := rewriteProjectWebLocation(resp.Header, baseURL, prefix); err != nil {
+				return err
+			}
+			protectProjectWebFraming(resp.Header)
 			return nil
 		},
 		ErrorHandler: func(rw http.ResponseWriter, req *http.Request, err error) {
+			if errors.Is(err, errProjectWebBadRedirect) {
+				writeJSON(rw, http.StatusBadGateway, map[string]string{"error": "project_web_bad_redirect"})
+				return
+			}
 			if err != nil && req.Context().Err() != nil && (req.Context().Err() == context.Canceled || req.Context().Err() == context.DeadlineExceeded) {
 				return
 			}
@@ -240,6 +293,79 @@ func validateProjectWebRawPath(rawPathSuffix string) bool {
 	return true
 }
 
+// projectWebPlaceholderToken is what the proxy answers to the framed UI's token
+// exchange. It authenticates nothing: the proxy replaces it with the real token.
+const projectWebPlaceholderToken = "proxied"
+
+var errProjectWebBadRedirect = errors.New("project web: redirect leaves the project child")
+
+// rewriteProjectWebLocation maps a redirect that points inside the child onto
+// the parent's prefix and rejects one that points anywhere else.
+func rewriteProjectWebLocation(headers http.Header, baseURL *url.URL, prefix string) error {
+	loc := headers.Get("Location")
+	if loc == "" {
+		return nil
+	}
+	u, err := url.Parse(loc)
+	if err != nil {
+		return errProjectWebBadRedirect
+	}
+	if u.Scheme != "" || u.Host != "" {
+		if !strings.EqualFold(u.Scheme, baseURL.Scheme) || !strings.EqualFold(u.Host, baseURL.Host) {
+			return errProjectWebBadRedirect
+		}
+	} else if strings.HasPrefix(loc, "//") {
+		return errProjectWebBadRedirect
+	}
+	if u.Scheme == "" && u.Host == "" && !strings.HasPrefix(u.Path, "/") {
+		// Relative to the current document: the browser resolves it under the
+		// prefix already.
+		return nil
+	}
+	path := u.EscapedPath()
+	if path == prefix || strings.HasPrefix(path, prefix+"/") {
+		path = strings.TrimPrefix(path, prefix)
+	}
+	out := prefix + path
+	if u.RawQuery != "" {
+		out += "?" + u.RawQuery
+	}
+	if u.Fragment != "" {
+		out += "#" + u.EscapedFragment()
+	}
+	headers.Set("Location", out)
+	return nil
+}
+
+// protectProjectWebFraming keeps proxied HTML from being framed by another
+// origin.
+func protectProjectWebFraming(headers http.Header) {
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(headers.Get("Content-Type"))), "text/html") {
+		return
+	}
+	const directive = "frame-ancestors 'self'"
+	values := headers.Values("Content-Security-Policy")
+	if len(values) == 0 {
+		headers.Set("Content-Security-Policy", directive)
+	} else {
+		merged := make([]string, 0, len(values))
+		for _, value := range values {
+			parts := strings.Split(value, ";")
+			kept := parts[:0]
+			for _, part := range parts {
+				name, _, _ := strings.Cut(strings.TrimSpace(part), " ")
+				if strings.EqualFold(name, "frame-ancestors") || strings.TrimSpace(part) == "" {
+					continue
+				}
+				kept = append(kept, strings.TrimSpace(part))
+			}
+			merged = append(merged, strings.Join(append(kept, directive), "; "))
+		}
+		headers["Content-Security-Policy"] = merged
+	}
+	headers.Set("X-Frame-Options", "SAMEORIGIN")
+}
+
 func stripProjectWebProxyResponseHeaders(headers http.Header) {
 	for name := range headers {
 		if strings.HasPrefix(http.CanonicalHeaderKey(name), "Access-Control-") {
@@ -248,6 +374,7 @@ func stripProjectWebProxyResponseHeaders(headers http.Header) {
 	}
 	headers.Del("X-Pando-Token")
 	headers.Del("Authorization")
+	headers.Del("Set-Cookie")
 }
 
 func singleJoiningSlash(a, b string) string {

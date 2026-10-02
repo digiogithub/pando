@@ -23,8 +23,12 @@ Part of [[project_workspaces_webui_tabs]] (epic PANDO-EP-0019). Date: 2026-10-01
 - `POST /api/v1/projects/{id}/open-desktop` stays separate and only launches a native desktop window; it does not replace `activate` or `web/open`.
 
 ## Known follow-ups (owned by PANDO-US-0104)
-- Done in PANDO-US-0104: the parent now pins a shared loopback certificate, fetches the child token over that pinned transport, stores it only in memory, and rejects children presenting another certificate.
-- Done in PANDO-US-0104: re-adoption now uses `instanceregistry.Entry.WebPort` + `ParentInstanceID`, only adopts loopback orphans whose recorded parent is no longer alive, and no longer relies on a process-wide `PANDO_INSTANCE_ID` environment hand-off.
+- [SUPERSEDED 2026-10-02, see update below] Done in PANDO-US-0104: the parent now pins a shared loopback certificate, fetches the child token over that pinned transport, stores it only in memory, and rejects children presenting another certificate.
+- [SUPERSEDED 2026-10-02: no adoption] Done in PANDO-US-0104: re-adoption now uses `instanceregistry.Entry.WebPort` + `ParentInstanceID`, only adopts loopback orphans whose recorded parent is no longer alive, and no longer relies on a process-wide `PANDO_INSTANCE_ID` environment hand-off.
 
 ## Verification
 `go build ./...`, `go vet ./internal/project/... ./cmd/...`, `go test ./internal/project/... ./internal/db/... ./internal/api/... -count=1` (ok), `go test -race ./internal/project/...` (ok, run by the implementing agent).
+## Update 2026-10-02 (security hardening, see fixes/project_workspaces_security_hardening.md)
+- SUPERSEDES the token handshake and re-adoption notes above: the parent mints a 32-byte random token per child and passes it only via `PANDO_CHILD_API_TOKEN` (plus `PANDO_PARENT_PID`); there is no `fetchWebToken` and the child's token endpoint refuses callers without the token.
+- Children do not outlive their parent: the child polls `PANDO_PARENT_PID` every 3s and shuts down gracefully when it is gone. Nothing secret is persisted, so `adoptExistingWebInstances` / `monitorAdoptedWebInstance` / `WebInstanceSnapshot.Adopted` were removed. On start `Manager` only clears stale `WebPID/WebPort` (`clearStaleWebRuntime`); it never signals a PID it did not start. `ParentInstanceID`/`WebPort` stay in the registry for the TUI.
+- Startup probe decodes `/health` and requires `startup_mode=project-child`, `project_id`, `parent_instance_id` and `pid` to match the spawned process; mismatch -> `EvWebError`, process terminated, `ChildStartupError`. A child never falls back to another port; `OpenWeb` retries once on a fresh port when startup fails (not on timeout).

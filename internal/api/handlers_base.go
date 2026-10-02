@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/digiogithub/pando/internal/updatecheck"
@@ -20,6 +21,9 @@ type serverInfoResponse struct {
 type healthResponse struct {
 	Status string `json:"status"`
 	serverInfoResponse
+	// PID is reported in project-child mode only, so the parent can verify the
+	// process it started is the one answering on the port.
+	PID int `json:"pid,omitempty"`
 }
 
 func (s *Server) serverInfoPayload() serverInfoResponse {
@@ -42,10 +46,14 @@ func (s *Server) writeChildModeUnavailable(w http.ResponseWriter) {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, healthResponse{
+	resp := healthResponse{
 		Status:             "healthy",
 		serverInfoResponse: s.serverInfoPayload(),
-	})
+	}
+	if s.isProjectChildMode() {
+		resp.PID = os.Getpid()
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {

@@ -22,3 +22,5 @@ Part of [[project_workspaces_webui_tabs]] (epic PANDO-EP-0019). Date: 2026-10-01
 
 ## Verification
 `go build ./...`, `go vet ./internal/api/... ./internal/project/... ./cmd/...`, `go test ./internal/api/... ./internal/project/... ./internal/app/... ./cmd/... -count=1` ok, `go test -race ./internal/api/ -run 'ProjectsWeb|Proxy'` ok. Tests cover header stripping/injection both ways, `?token=` replacement, unbuffered SSE, websocket echo, 404/502, traversal rejection, redirect, auth, prefixed index injection order/base rewrite/uncompressed index.
+## Update 2026-10-02
+- The proxy answers `<prefix>/api/v1/token` itself with the placeholder token `"proxied"` (never forwarded); strips `Set-Cookie`; rewrites in-child `Location` to the prefix and answers 502 `project_web_bad_redirect` for others; adds `Content-Security-Policy: frame-ancestors 'self'` + `X-Frame-Options: SAMEORIGIN` on HTML; refuses `<prefix>/preview/...` with 403 `not_available_in_project_tab` (previews run in the shared, unsandboxed origin). Cookie-only requests other than plain GET/HEAD need a same-origin proof. Recommended follow-up: serve project frames from a separate-origin listener.

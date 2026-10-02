@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -56,6 +57,8 @@ func setupWebTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("open in-memory db: %v", err)
 	}
+	// Each :memory: connection is its own database: keep a single one.
+	conn.SetMaxOpenConns(1)
 	if _, err := conn.Exec(webTestSchema); err != nil {
 		t.Fatalf("create schema: %v", err)
 	}
@@ -74,12 +77,10 @@ func restoreWebHooks(t *testing.T) {
 	t.Helper()
 	prevSpawn := spawnWebProcess
 	prevProbe := probeWebHealth
-	prevFetchToken := fetchWebToken
 	prevRegistry := newInstanceRegistry
 	t.Cleanup(func() {
 		spawnWebProcess = prevSpawn
 		probeWebHealth = prevProbe
-		fetchWebToken = prevFetchToken
 		newInstanceRegistry = prevRegistry
 	})
 }
@@ -142,7 +143,7 @@ func ensureTestCert(t *testing.T) tlsutil.CertPaths {
 	return paths
 }
 
-func newPinnedLoopbackServer(t *testing.T, certPaths tlsutil.CertPaths, token string) (*httptest.Server, int) {
+func newPinnedLoopbackServer(t *testing.T, certPaths tlsutil.CertPaths, health string) (*httptest.Server, int) {
 	t.Helper()
 
 	cert, err := tls.LoadX509KeyPair(certPaths.CertFile, certPaths.KeyFile)
@@ -152,11 +153,8 @@ func newPinnedLoopbackServer(t *testing.T, certPaths tlsutil.CertPaths, token st
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	mux.HandleFunc(webTokenPath, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"token":"` + token + `"}`))
+		_, _ = w.Write([]byte(health))
 	})
 
 	server := httptest.NewUnstartedServer(mux)
@@ -190,6 +188,7 @@ func TestDefaultSpawnWebProcessSetsPublicBaseEnv(t *testing.T) {
 		ParentInstanceID: "parent-1",
 		TLSCertFile:      "cert.pem",
 		TLSKeyFile:       "key.pem",
+		APIToken:         "secret-token-value",
 	}, Project{ID: "proj-123", Path: projDir}, 43123)
 	if err != nil {
 		t.Fatalf("defaultSpawnWebProcess: %v", err)
@@ -205,6 +204,12 @@ func TestDefaultSpawnWebProcessSetsPublicBaseEnv(t *testing.T) {
 	text := string(data)
 	if !strings.Contains(text, "PANDO_PUBLIC_BASE=/api/v1/projects/proj-123/web") {
 		t.Fatalf("missing PANDO_PUBLIC_BASE in env: %q", text)
+	}
+	if !strings.Contains(text, "PANDO_CHILD_API_TOKEN=secret-token-value") {
+		t.Fatalf("missing PANDO_CHILD_API_TOKEN in env: %q", text)
+	}
+	if !strings.Contains(text, "PANDO_PARENT_PID="+strconv.Itoa(os.Getpid())) {
+		t.Fatalf("missing PANDO_PARENT_PID in env: %q", text)
 	}
 }
 
@@ -230,8 +235,7 @@ func TestOpenWebReuseAndClose(t *testing.T) {
 		}
 		return startShellCommand(t, `trap 'exit 0' TERM INT; while :; do sleep 1; done`), nil
 	}
-	probeWebHealth = func(context.Context, *http.Client, string) error { return nil }
-	fetchWebToken = func(context.Context, *http.Client, string) (string, error) { return "child-token", nil }
+	probeWebHealth = func(context.Context, *http.Client, string, webHealthExpectation) error { return nil }
 
 	events := mgr.Subscribe(context.Background())
 
@@ -253,8 +257,8 @@ func TestOpenWebReuseAndClose(t *testing.T) {
 	if inst1.State() != WebStateRunning {
 		t.Fatalf("web state = %q, want %q", inst1.State(), WebStateRunning)
 	}
-	if inst1.APIToken() != "child-token" {
-		t.Fatalf("child token = %q, want child-token", inst1.APIToken())
+	if len(inst1.APIToken()) != 64 {
+		t.Fatalf("child token = %q, want a 32-byte hex token", inst1.APIToken())
 	}
 	snapshot := inst1.Snapshot()
 	if snapshot.Port == 0 || snapshot.PID == 0 {
@@ -304,7 +308,9 @@ func TestOpenWebCrashPublishesError(t *testing.T) {
 	spawnWebProcess = func(_ context.Context, _ string, _ webProcessConfig, _ Project, _ int) (*webProcessStart, error) {
 		return startShellCommand(t, `echo "boom from child" >&2; exit 3`), nil
 	}
-	probeWebHealth = func(context.Context, *http.Client, string) error { return errors.New("not ready") }
+	probeWebHealth = func(context.Context, *http.Client, string, webHealthExpectation) error {
+		return errors.New("not ready")
+	}
 
 	events := mgr.Subscribe(context.Background())
 
@@ -319,6 +325,9 @@ func TestOpenWebCrashPublishesError(t *testing.T) {
 	if !strings.Contains(evt.Error, "boom from child") {
 		t.Fatalf("EvWebError did not include stderr tail: %q", evt.Error)
 	}
+	// The failed startup is retried once on a fresh port; let that attempt
+	// finish publishing before the manager is shut down.
+	waitManagerEvent(t, events, EvWebError)
 
 	got, err := svc.Get(ctx, proj.ID)
 	if err != nil {
@@ -356,8 +365,7 @@ func TestOpenWebStopsIdleACPInstanceFirst(t *testing.T) {
 		spawnCount++
 		return startShellCommand(t, `trap 'exit 0' TERM INT; while :; do sleep 1; done`), nil
 	}
-	probeWebHealth = func(context.Context, *http.Client, string) error { return nil }
-	fetchWebToken = func(context.Context, *http.Client, string) (string, error) { return "child-token", nil }
+	probeWebHealth = func(context.Context, *http.Client, string, webHealthExpectation) error { return nil }
 
 	if _, err := mgr.OpenWeb(ctx, proj.ID); err != nil {
 		t.Fatalf("OpenWeb: %v", err)
@@ -404,8 +412,7 @@ func TestOpenWebHonorsMaxWebInstances(t *testing.T) {
 	spawnWebProcess = func(_ context.Context, _ string, _ webProcessConfig, _ Project, _ int) (*webProcessStart, error) {
 		return startShellCommand(t, `trap 'exit 0' TERM INT; while :; do sleep 1; done`), nil
 	}
-	probeWebHealth = func(context.Context, *http.Client, string) error { return nil }
-	fetchWebToken = func(context.Context, *http.Client, string) (string, error) { return "child-token", nil }
+	probeWebHealth = func(context.Context, *http.Client, string, webHealthExpectation) error { return nil }
 
 	if _, err := mgr.OpenWeb(ctx, projOne.ID); err != nil {
 		t.Fatalf("OpenWeb first project: %v", err)
@@ -445,7 +452,9 @@ func TestOpenWebUsesConfiguredStartupTimeout(t *testing.T) {
 	spawnWebProcess = func(_ context.Context, _ string, _ webProcessConfig, _ Project, _ int) (*webProcessStart, error) {
 		return startShellCommand(t, `trap 'exit 0' TERM INT; while :; do sleep 1; done`), nil
 	}
-	probeWebHealth = func(context.Context, *http.Client, string) error { return errors.New("not ready") }
+	probeWebHealth = func(context.Context, *http.Client, string, webHealthExpectation) error {
+		return errors.New("not ready")
+	}
 
 	start := time.Now()
 	_, err = mgr.OpenWeb(ctx, proj.ID)
@@ -553,7 +562,7 @@ func TestActivateWithWebChildSkipsACPSpawn(t *testing.T) {
 	}
 }
 
-func TestNewManagerAdoptsOrphanWithPinnedTLSAndTokenHandshake(t *testing.T) {
+func TestNewManagerDoesNotAdoptOrSignalOrphan(t *testing.T) {
 	restoreWebHooks(t)
 	conn := setupWebTestDB(t)
 	svc := NewService(db.New(conn))
@@ -561,19 +570,18 @@ func TestNewManagerAdoptsOrphanWithPinnedTLSAndTokenHandshake(t *testing.T) {
 
 	dir := t.TempDir()
 	writeProjectConfig(t, dir)
-	proj, err := svc.Create(ctx, "web-adopt", dir)
+	proj, err := svc.Create(ctx, "web-orphan", dir)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	certPaths := ensureTestCert(t)
-	_, port := newPinnedLoopbackServer(t, certPaths, "adopted-token")
+	_, port := newPinnedLoopbackServer(t, certPaths, `{"status":"healthy"}`)
 	dummy := startShellCommand(t, `trap 'exit 0' TERM INT; while :; do sleep 1; done`)
 	t.Cleanup(func() {
 		_ = dummy.cmd.Process.Kill()
 		_, _ = dummy.cmd.Process.Wait()
 	})
-
 	if err := svc.UpdateWebRuntime(ctx, proj.ID, dummy.cmd.Process.Pid, port); err != nil {
 		t.Fatalf("UpdateWebRuntime: %v", err)
 	}
@@ -590,150 +598,7 @@ func TestNewManagerAdoptsOrphanWithPinnedTLSAndTokenHandshake(t *testing.T) {
 		}}}
 	}
 
-	mgr, err := NewManager(context.Background(), svc, ManagerOptions{
-		ParentInstanceID: "new-parent",
-		WebTLSCertFile:   certPaths.CertFile,
-		WebTLSKeyFile:    certPaths.KeyFile,
-	})
-	if err != nil {
-		t.Fatalf("NewManager: %v", err)
-	}
-	t.Cleanup(mgr.Shutdown)
-
-	inst, ok := mgr.WebInstance(proj.ID)
-	if !ok || inst == nil {
-		t.Fatal("expected adopted web instance")
-	}
-	if inst.Port() != port {
-		t.Fatalf("adopted web port = %d, want %d", inst.Port(), port)
-	}
-	if inst.PID() != dummy.cmd.Process.Pid {
-		t.Fatalf("adopted web pid = %d, want %d", inst.PID(), dummy.cmd.Process.Pid)
-	}
-	if inst.State() != WebStateRunning {
-		t.Fatalf("adopted web state = %q, want %q", inst.State(), WebStateRunning)
-	}
-	if inst.APIToken() != "adopted-token" {
-		t.Fatalf("adopted token = %q, want adopted-token", inst.APIToken())
-	}
-
-	got, err := svc.Get(ctx, proj.ID)
-	if err != nil {
-		t.Fatalf("Get after adoption: %v", err)
-	}
-	if got.WebPID != dummy.cmd.Process.Pid || got.WebPort != port {
-		t.Fatalf("unexpected persisted runtime after adoption: pid=%d port=%d", got.WebPID, got.WebPort)
-	}
-}
-
-func TestNewManagerRejectsChildWithDifferentCertificate(t *testing.T) {
-	restoreWebHooks(t)
-	conn := setupWebTestDB(t)
-	svc := NewService(db.New(conn))
-	ctx := context.Background()
-
-	dir := t.TempDir()
-	writeProjectConfig(t, dir)
-	proj, err := svc.Create(ctx, "web-reject", dir)
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-
-	parentCert := ensureTestCert(t)
-	childCert := ensureTestCert(t)
-	_, port := newPinnedLoopbackServer(t, childCert, "wrong-token")
-	dummy := startShellCommand(t, `trap 'exit 0' TERM INT; while :; do sleep 1; done`)
-	t.Cleanup(func() {
-		_ = dummy.cmd.Process.Kill()
-		_, _ = dummy.cmd.Process.Wait()
-	})
-
-	if err := svc.UpdateWebRuntime(ctx, proj.ID, dummy.cmd.Process.Pid, port); err != nil {
-		t.Fatalf("UpdateWebRuntime: %v", err)
-	}
-
-	newInstanceRegistry = func() registryLister {
-		return fakeRegistry{entries: []*instanceregistry.Entry{{
-			InstanceID:       "child-1",
-			Path:             proj.Path,
-			PID:              dummy.cmd.Process.Pid,
-			WebPort:          port,
-			Mode:             instanceregistry.ModeWebUI,
-			StartedAt:        time.Now(),
-			ParentInstanceID: "dead-parent",
-		}}}
-	}
-
-	mgr, err := NewManager(context.Background(), svc, ManagerOptions{
-		ParentInstanceID: "new-parent",
-		WebTLSCertFile:   parentCert.CertFile,
-		WebTLSKeyFile:    parentCert.KeyFile,
-	})
-	if err != nil {
-		t.Fatalf("NewManager: %v", err)
-	}
-	t.Cleanup(mgr.Shutdown)
-
-	if inst, ok := mgr.WebInstance(proj.ID); ok && inst != nil {
-		t.Fatal("unexpected adoption of a child presenting another certificate")
-	}
-
-	got, err := svc.Get(ctx, proj.ID)
-	if err != nil {
-		t.Fatalf("Get after rejected adoption: %v", err)
-	}
-	if got.WebPID != 0 || got.WebPort != 0 {
-		t.Fatalf("expected rejected adoption to clear runtime, got pid=%d port=%d", got.WebPID, got.WebPort)
-	}
-}
-
-func TestNewManagerSkipsChildWhoseParentIsStillAlive(t *testing.T) {
-	restoreWebHooks(t)
-	conn := setupWebTestDB(t)
-	svc := NewService(db.New(conn))
-	ctx := context.Background()
-
-	dir := t.TempDir()
-	writeProjectConfig(t, dir)
-	proj, err := svc.Create(ctx, "web-live-parent", dir)
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-
-	certPaths := ensureTestCert(t)
-	_, port := newPinnedLoopbackServer(t, certPaths, "adopted-token")
-	dummy := startShellCommand(t, `trap 'exit 0' TERM INT; while :; do sleep 1; done`)
-	t.Cleanup(func() {
-		_ = dummy.cmd.Process.Kill()
-		_, _ = dummy.cmd.Process.Wait()
-	})
-
-	if err := svc.UpdateWebRuntime(ctx, proj.ID, dummy.cmd.Process.Pid, port); err != nil {
-		t.Fatalf("UpdateWebRuntime: %v", err)
-	}
-
-	newInstanceRegistry = func() registryLister {
-		return fakeRegistry{entries: []*instanceregistry.Entry{
-			{
-				InstanceID: "live-parent",
-				Path:       t.TempDir(),
-				PID:        dummy.cmd.Process.Pid,
-				Mode:       instanceregistry.ModeTUI,
-				StartedAt:  time.Now(),
-			},
-			{
-				InstanceID:       "child-1",
-				Path:             proj.Path,
-				PID:              dummy.cmd.Process.Pid,
-				WebPort:          port,
-				Mode:             instanceregistry.ModeWebUI,
-				StartedAt:        time.Now(),
-				ParentInstanceID: "live-parent",
-			},
-		}}
-	}
-
-	mgr, err := NewManager(context.Background(), svc, ManagerOptions{
+	mgr, err := NewManager(ctx, svc, ManagerOptions{
 		ParentInstanceID: "new-parent",
 		WebTLSCertFile:   certPaths.CertFile,
 		WebTLSKeyFile:    certPaths.KeyFile,
@@ -744,15 +609,17 @@ func TestNewManagerSkipsChildWhoseParentIsStillAlive(t *testing.T) {
 	t.Cleanup(mgr.Shutdown)
 
 	if inst, ok := mgr.WebInstance(proj.ID); ok && inst != nil {
-		t.Fatal("unexpected adoption while the recorded parent instance is still alive")
+		t.Fatal("an orphaned child must not be adopted: its token is unknown")
 	}
-
+	if !pidIsAlive(dummy.cmd.Process.Pid) {
+		t.Fatal("the manager signalled a process it did not start")
+	}
 	got, err := svc.Get(ctx, proj.ID)
 	if err != nil {
-		t.Fatalf("Get after skipped adoption: %v", err)
+		t.Fatalf("Get: %v", err)
 	}
 	if got.WebPID != 0 || got.WebPort != 0 {
-		t.Fatalf("expected skipped adoption to clear runtime, got pid=%d port=%d", got.WebPID, got.WebPort)
+		t.Fatalf("expected stale runtime to be cleared, got pid=%d port=%d", got.WebPID, got.WebPort)
 	}
 }
 
@@ -789,5 +656,119 @@ func TestNewManagerClearsStaleWebRuntime(t *testing.T) {
 	}
 	if got.WebPID != 0 || got.WebPort != 0 {
 		t.Fatalf("expected stale web runtime to be cleared, got pid=%d port=%d", got.WebPID, got.WebPort)
+	}
+}
+
+func TestDefaultProbeWebHealthChecksIdentity(t *testing.T) {
+	certPaths := ensureTestCert(t)
+	client := &http.Client{Transport: nil}
+	tlsConfig, err := tlsutil.LoadPinnedLoopbackTLSConfig(certPaths.CertFile)
+	if err != nil {
+		t.Fatalf("LoadPinnedLoopbackTLSConfig: %v", err)
+	}
+	client.Transport = &http.Transport{TLSClientConfig: tlsConfig}
+
+	good := `{"status":"healthy","startup_mode":"project-child","project_id":"p1","parent_instance_id":"par","pid":77}`
+	expect := webHealthExpectation{ProjectID: "p1", ParentInstanceID: "par", PID: 77}
+	cases := []struct {
+		name   string
+		body   string
+		wantID bool
+	}{
+		{"match", good, false},
+		{"plain server", `{"status":"healthy","startup_mode":"serve"}`, true},
+		{"other project", strings.Replace(good, `"p1"`, `"p2"`, 1), true},
+		{"other parent", strings.Replace(good, `"par"`, `"evil"`, 1), true},
+		{"other pid", strings.Replace(good, `77`, `78`, 1), true},
+		{"not json", `hello`, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, port := newPinnedLoopbackServer(t, certPaths, tc.body)
+			err := defaultProbeWebHealth(context.Background(), client, loopbackWebBaseURL(port), expect)
+			var idErr *webIdentityError
+			if got := errors.As(err, &idErr); got != tc.wantID {
+				t.Fatalf("identity error = %v (err=%v), want %v", got, err, tc.wantID)
+			}
+			if !tc.wantID && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestOpenWebIdentityMismatchFailsStartup(t *testing.T) {
+	mgr, svc := newWebTestManager(t)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	writeProjectConfig(t, dir)
+	proj, err := svc.Create(ctx, "web-impostor", dir)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	spawns := 0
+	spawnWebProcess = func(context.Context, string, webProcessConfig, Project, int) (*webProcessStart, error) {
+		spawns++
+		return startShellCommand(t, `trap 'exit 0' TERM INT; while :; do sleep 1; done`), nil
+	}
+	probeWebHealth = func(context.Context, *http.Client, string, webHealthExpectation) error {
+		return &webIdentityError{Detail: "pid 1, want 2"}
+	}
+
+	events := mgr.Subscribe(ctx)
+	_, err = mgr.OpenWeb(ctx, proj.ID)
+	if !errors.Is(err, ErrChildStartupFailed) {
+		t.Fatalf("OpenWeb err = %v, want ErrChildStartupFailed", err)
+	}
+	if got := waitManagerEvent(t, events, EvWebError); got.ProjectID != proj.ID {
+		t.Fatalf("EvWebError project = %q", got.ProjectID)
+	}
+	if spawns != 2 {
+		t.Fatalf("spawns = %d, want 2 (one retry on a fresh port)", spawns)
+	}
+	waitManagerEvent(t, events, EvWebError)
+	waitManagerEvent(t, events, EvWebStopped)
+	if inst, ok := mgr.WebInstance(proj.ID); ok && inst != nil && inst.State() == WebStateRunning {
+		t.Fatal("an impostor must never be tracked as running")
+	}
+}
+
+func TestOpenWebRetriesOnceOnFreshPort(t *testing.T) {
+	mgr, svc := newWebTestManager(t)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	writeProjectConfig(t, dir)
+	proj, err := svc.Create(ctx, "web-retry", dir)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	var ports []int
+	spawnWebProcess = func(_ context.Context, _ string, _ webProcessConfig, _ Project, port int) (*webProcessStart, error) {
+		ports = append(ports, port)
+		if len(ports) == 1 {
+			return startShellCommand(t, `echo "cannot bind" >&2; exit 1`), nil
+		}
+		return startShellCommand(t, `trap 'exit 0' TERM INT; while :; do sleep 1; done`), nil
+	}
+	probeWebHealth = func(ctx context.Context, _ *http.Client, _ string, _ webHealthExpectation) error {
+		if len(ports) < 2 {
+			return errors.New("not ready")
+		}
+		return nil
+	}
+
+	inst, err := mgr.OpenWeb(ctx, proj.ID)
+	if err != nil {
+		t.Fatalf("OpenWeb: %v", err)
+	}
+	if len(ports) != 2 || ports[0] == ports[1] {
+		t.Fatalf("ports = %v, want two distinct attempts", ports)
+	}
+	if inst.State() != WebStateRunning || inst.Port() != ports[1] {
+		t.Fatalf("state=%q port=%d, want running on %d", inst.State(), inst.Port(), ports[1])
 	}
 }

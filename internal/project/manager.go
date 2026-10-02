@@ -154,7 +154,7 @@ func NewManager(ctx context.Context, service Service, opts ...ManagerOptions) (*
 		m.webStartupTimeout = defaultWebStartupTimeout
 	}
 	if !m.spawnDisabled {
-		m.adoptExistingWebInstances(mgrCtx)
+		m.clearStaleWebRuntime(mgrCtx)
 	}
 	return m, nil
 }

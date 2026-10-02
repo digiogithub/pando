@@ -23,3 +23,5 @@ A project web child (`pando serve` from `Manager.OpenWeb`) is the IPC primary fo
 
 ## Verification
 `go build ./...`, `go vet` on touched packages, `go test ./internal/project/... ./internal/app/... ./internal/api/... ./internal/llm/agent/... ./internal/mesnada/... -count=1` ok (0 failures), `go test -race ./internal/project/... -count=1` ok. Not exercised live: a real delegated run needs a configured LLM provider in the isolated test HOME.
+## Update 2026-10-02
+- The child token used for IPC-adjacent reuse is the parent-minted in-memory token; orphans are never adopted (children exit with their parent), so reuse only applies to children started by this parent process.

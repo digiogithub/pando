@@ -47,10 +47,13 @@ var ptyUpgrader = websocket.Upgrader{
 // subject to CORS, so this is the only origin-level control on the endpoint.
 //
 // It is defence in depth rather than the primary boundary: authMiddleware
-// already requires the token, and the token lives in localStorage rather than a
-// cookie, so a hostile page has no ambient credential to replay. Loopback
-// origins are allowed so the Vite dev server (:5173 against the API on :8080)
-// keeps working.
+// already requires the token, which lives in localStorage and is sent in a
+// header or query parameter, so a hostile page has no ambient credential to
+// replay. The one cookie that authenticates requests (the project proxy cookie)
+// is honoured only on proxy paths, and websocket upgrades authenticated by it
+// alone additionally need a same-origin proof (see cookieRequestAllowed).
+// Loopback origins are allowed so the Vite dev server (:5173 against the API on
+// :8080) keeps working.
 func checkPtyOrigin(r *http.Request) bool {
 	return checkPtyOriginForServer(nil, r)
 }
