@@ -2,13 +2,14 @@
 id: PANDO-US-0117
 type: story
 title: "F1 Base and tokens: design tokens, self-hosted fonts, baseof, header, footer, theme switch, official brand marks"
-status: backlog
+status: in_review
 priority: high
 parent: PANDO-EP-0020
 author: mcp
 labels: [docs, pando-docs, design, hugo]
 created: 2026-10-02T12:15:37Z
-updated: 2026-10-02T12:15:37Z
+updated: 2026-10-02T12:37:02Z
+started: 2026-10-02T12:37:02Z
 ---
 
 ## Description

@@ -784,6 +784,7 @@ func (m *Manager) webTLSCertPaths() (tlsutil.CertPaths, error) {
 		if cfg := config.Get(); cfg != nil && cfg.Data.Directory != "" {
 			dataDir = cfg.Data.Directory
 		}
+		dataDir = config.TLSCertDir(dataDir)
 	}
 
 	paths, err := tlsutil.EnsureCert(dataDir)

@@ -2,19 +2,56 @@
 
 ## Install from binaries
 
-Installer script for windows (copy into powershell)
+Every release publishes signed binaries on the
+[releases page](https://github.com/digiogithub/pando/releases/latest):
+
+| Platform | File |
+|---|---|
+| macOS (Apple Silicon / Intel) | `pando-<version>-darwin-arm64.pkg` / `pando-<version>-darwin-x64.pkg` (signed and notarized) |
+| Linux (x86-64 / ARM64) | `pando-linux-x64.zip` / `pando-linux-arm64.zip` |
+| Windows (x86-64) | `pando-windows-x64.zip` (Authenticode-signed) |
+
+`SHA256SUMS` lists the SHA-256 of every file.
+
+### Linux and macOS: install script
+
+```
+curl -fsSL https://raw.githubusercontent.com/digiogithub/pando/main/scripts/install.sh | bash
+```
+
+- **Linux**: installs `~/.local/bin/pando`, a menu entry, and the GTK/WebKitGTK
+  libraries the desktop window needs (asks for `sudo` only if some are missing;
+  a failure there does not stop the install).
+- **macOS**: downloads the `.pkg` for your architecture and runs the system
+  installer, which places `Pando.app` (with the embedded desktop wrapper, icons
+  and the `/usr/local/bin/pando` launcher) under `/Applications`.
+
+Options go after `bash -s --`, or as environment variables:
+
+| Option | Variable | Effect |
+|---|---|---|
+| `--version v1.2.7` | `PANDO_VERSION` | Install that release instead of the latest |
+| `--dir <path>` | `PANDO_INSTALL_DIR` | Where the binary goes (default `~/.local/bin`) |
+| `--no-desktop` | `PANDO_NO_DESKTOP=1` | Linux: no system packages, icon or menu entry (servers, CI, containers) |
+| `--cli-only` | `PANDO_CLI_ONLY=1` | macOS: only the CLI binary, no `.pkg` |
+| `--force` | `PANDO_FORCE=1` | Reinstall the same version |
+
+```
+curl -fsSL https://raw.githubusercontent.com/digiogithub/pando/main/scripts/install.sh | bash -s -- --no-desktop
+```
+
+The download is checked against the release's `SHA256SUMS`. `scripts/install-linux.sh`
+still works and forwards to `install.sh`.
+
+### Windows: install script (PowerShell)
 
 ```
 iex (irm https://raw.githubusercontent.com/digiogithub/pando/main/scripts/install-windows.ps1)
 ```
 
-Installer in linux
-
-```
-curl -fsSL https://raw.githubusercontent.com/digiogithub/pando/main/scripts/install-linux.sh | bash
-```
-
-In OSX download the [release](https://github.com/digiogithub/pando/releases) `.pkg` for your architecture — `pando-<version>-darwin-arm64.pkg` (Apple Silicon) or `pando-<version>-darwin-x64.pkg` (Intel). The installer places `Pando.app` (with the embedded desktop wrapper, icons and the `/usr/local/bin/pando` launcher) under `/Applications`.
+Installs to `%LOCALAPPDATA%\Programs\pando`, adds it to the user `PATH`, and
+checks the SHA-256 and the Authenticode signature. Windows on ARM gets the x64
+build.
 
 ## Using Go
 

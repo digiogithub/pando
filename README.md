@@ -53,10 +53,10 @@ Pando is a Go-based CLI application that brings AI assistance to your terminal. 
 
 ## Installation
 
-Linux:
+Linux and macOS:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/digiogithub/pando/main/scripts/install-linux.sh | bash
+curl -fsSL https://raw.githubusercontent.com/digiogithub/pando/main/scripts/install.sh | bash
 ```
 
 Windows (PowerShell):
@@ -65,7 +65,7 @@ Windows (PowerShell):
 iex (irm https://raw.githubusercontent.com/digiogithub/pando/main/scripts/install-windows.ps1)
 ```
 
-macOS: download the `.pkg` for your architecture from the [releases](https://github.com/digiogithub/pando/releases) page.
+Or download a binary from the [latest release](https://github.com/digiogithub/pando/releases/latest): `.pkg` for macOS, `.zip` for Linux and Windows.
 
 Go install, building from source and extension builds: see [docs/installation.md](docs/installation.md).
 

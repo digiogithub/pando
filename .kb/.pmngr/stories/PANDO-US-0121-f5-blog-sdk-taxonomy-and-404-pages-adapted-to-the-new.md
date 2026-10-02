@@ -2,13 +2,14 @@
 id: PANDO-US-0121
 type: story
 title: F5 Blog, SDK, taxonomy and 404 pages adapted to the new visual language (no board, redesign as guide)
-status: backlog
+status: in_review
 priority: medium
 parent: PANDO-EP-0020
 author: mcp
 labels: [docs, pando-docs, design, hugo]
 created: 2026-10-02T12:15:37Z
-updated: 2026-10-02T12:15:37Z
+updated: 2026-10-02T12:37:13Z
+started: 2026-10-02T12:37:13Z
 ---
 
 ## Description

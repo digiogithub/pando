@@ -320,6 +320,14 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Generate SHA256SUMS
+        # Read by scripts/install.sh and scripts/install-windows.ps1 to verify
+        # a download before installing it. Names only, no dist/ prefix.
+        run: |
+          cd dist
+          sha256sum *.zip *.pkg > SHA256SUMS
+          cat SHA256SUMS
+
       - name: Publish
         uses: digiogithub/ci-actions/github-release@v1
         with:
@@ -327,9 +335,14 @@ jobs:
           files: |
             dist/*.zip
             dist/*.pkg
+            dist/SHA256SUMS
           draft: ${{ inputs.draft || false }}
           notes-header: |
             Downloads: `.pkg` for macOS (signed, notarized and stapled),
             `pando-linux-*.zip` for Linux and `pando-windows-x64.zip`
-            (Authenticode-signed) for Windows.
+            (Authenticode-signed) for Windows. `SHA256SUMS` lists the
+            SHA-256 of every file.
+
+            Install script (Linux and macOS):
+            `curl -fsSL https://raw.githubusercontent.com/digiogithub/pando/main/scripts/install.sh | bash`
           token: ${{ github.token }}

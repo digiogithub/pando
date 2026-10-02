@@ -40,6 +40,7 @@ MaxTokens = 0
 Model = 'copilot.gpt-6-luna'
 ReasoningEffort = ''
 ThinkingMode = ''
+UseDecisionModel = false
 
 [Agents.cliassist]
 AutoCompact = false
@@ -49,6 +50,7 @@ MaxTokens = 0
 Model = 'ollama.qwopus:latest'
 ReasoningEffort = ''
 ThinkingMode = ''
+UseDecisionModel = false
 
 [Agents.coder]
 AutoCompact = false
@@ -58,6 +60,7 @@ MaxTokens = 0
 Model = 'copilot.gpt-6-luna'
 ReasoningEffort = ''
 ThinkingMode = ''
+UseDecisionModel = false
 
 [Agents.context-enricher]
 AutoCompact = false
@@ -67,6 +70,7 @@ MaxTokens = 0
 Model = 'copilot.gpt-6-luna'
 ReasoningEffort = ''
 ThinkingMode = ''
+UseDecisionModel = false
 
 [Agents.persona-selector]
 AutoCompact = false
@@ -76,6 +80,7 @@ MaxTokens = 0
 Model = 'copilot.gpt-6-luna'
 ReasoningEffort = ''
 ThinkingMode = ''
+UseDecisionModel = false
 
 [Agents.summarizer]
 AutoCompact = false
@@ -85,6 +90,7 @@ MaxTokens = 0
 Model = 'copilot.gpt-6-luna'
 ReasoningEffort = ''
 ThinkingMode = ''
+UseDecisionModel = false
 
 [Agents.task]
 AutoCompact = false
@@ -94,6 +100,7 @@ MaxTokens = 0
 Model = 'copilot.gpt-6-luna'
 ReasoningEffort = ''
 ThinkingMode = ''
+UseDecisionModel = false
 
 [Agents.title]
 AutoCompact = false
@@ -103,6 +110,7 @@ MaxTokens = 0
 Model = 'copilot.gpt-6-luna'
 ReasoningEffort = ''
 ThinkingMode = ''
+UseDecisionModel = false
 
 [Bash]
 AllowedCommands = ['curl']
@@ -139,6 +147,13 @@ Jobs = []
 
 [Data]
 Directory = './.pando/data'
+
+[DecisionModel]
+TimeoutMs = 0
+
+[DecisionModel.Router]
+Model = ''
+Provider = ''
 
 [Design]
 DefaultKind = ''
@@ -409,12 +424,6 @@ Enabled = true
 HistoryPrompts = 0
 MinConfidence = 0.0
 Threshold = 0.6
-TimeoutMs = 0
-
-[ModelAutoMode.Router]
-KeepAlive = '30m'
-Model = 'tev1:0.8b'
-Provider = 'ollama'
 
 [[ModelAutoMode.Routes]]
 Description = 'Genera la traducción en inglés de la documentación'
@@ -460,6 +469,8 @@ DefaultMode = ''
 AutoRestore = false
 Enabled = false
 MaxProjects = 0
+MaxWebInstances = 0
+WebStartupTimeout = ''
 
 [Remembrances]
 AutoIndexSessions = true
@@ -479,6 +490,11 @@ ContextEnrichmentAgentLoopTimeoutSeconds = 60
 ContextEnrichmentCodeMaxChars = 0
 ContextEnrichmentCodeProject = 'pando'
 ContextEnrichmentCodeResults = 5
+ContextEnrichmentDecisionFilterAllowHosted = false
+ContextEnrichmentDecisionFilterEnabled = false
+ContextEnrichmentDecisionFilterMaxCandidateChars = 0
+ContextEnrichmentDecisionFilterMaxCandidates = 0
+ContextEnrichmentDecisionFilterThreshold = 0.0
 ContextEnrichmentEnabled = true
 ContextEnrichmentEventsLastDays = 10
 ContextEnrichmentEventsMaxChars = 0
@@ -502,6 +518,7 @@ KBConvertExtensions = []
 KBPath = './.kb'
 KBWatch = true
 KBWikiLinks = true
+MemoryContextDecisionFilterEnabled = false
 MemoryContextEnrichmentEnabled = true
 MemoryContextMaxChars = 500
 MemoryContextMaxItems = 3

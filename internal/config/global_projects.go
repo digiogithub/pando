@@ -47,6 +47,17 @@ func GlobalConfigDir() string {
 	return filepath.Join(home, ".config", "pando")
 }
 
+// TLSCertDir returns the directory holding Pando's local CA and server
+// certificate. It is the user-level profile directory, so one CA can be
+// imported as trusted and serves every project; fallback is used only when
+// the profile directory cannot be resolved.
+func TLSCertDir(fallback string) string {
+	if dir := GlobalConfigDir(); dir != "" {
+		return dir
+	}
+	return fallback
+}
+
 // GlobalProjectEntry represents a known Pando project in the global registry.
 type GlobalProjectEntry struct {
 	Path string `json:"path"`

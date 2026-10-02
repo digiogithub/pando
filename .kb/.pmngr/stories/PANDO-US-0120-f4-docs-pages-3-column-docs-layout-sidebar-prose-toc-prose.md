@@ -2,13 +2,14 @@
 id: PANDO-US-0120
 type: story
 title: "F4 Docs pages: 3-column docs layout (sidebar, prose, TOC), prose typography and hextra shortcode re-skin"
-status: backlog
+status: in_review
 priority: medium
 parent: PANDO-EP-0020
 author: mcp
 labels: [docs, pando-docs, design, hugo]
 created: 2026-10-02T12:15:37Z
-updated: 2026-10-02T12:15:37Z
+updated: 2026-10-02T12:37:13Z
+started: 2026-10-02T12:37:13Z
 ---
 
 ## Description

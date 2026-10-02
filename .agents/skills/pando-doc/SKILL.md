@@ -172,6 +172,20 @@ All content changes must be mirrored in both `content/en/` and `content/es/`:
 - Blog post filenames differ between languages (e.g., `pando-june-2026-roundup.md` vs `pando-junio-2026-resumen.md`)
 - When adding a new section, create `_index.md` in both language directories
 
+## Design System and Guides (redesign "Beneath the surface", PANDO-EP-0020)
+
+The site keeps hextra as a module for its shortcodes, but all layouts and CSS are the project's own. Read `../pando-docs/AGENTS.md` ("Design system") before touching `layouts/`, `assets/` or `data/`.
+
+When you add or rename a page under `content/*/docs/features/`:
+- add or update its entry in `data/features.yaml` (`slug`, stratum `surface` / `roots` / `soil`, group, `en` / `es` label). The home page chips, the feature counts and the docs sidebar are generated from that file, and the build fails on a slug with no page.
+
+Guides (`content/<lang>/guides/<slug>.md`, same slug in both languages):
+- create with `hugo new content guides/<slug>.md`; front matter: `track` (surface | roots | soil), `level` (beginner | intermediate | advanced), `weight`, `shortTitle`, `description`, `featured`, `home`, `planned`, `video {provider, id, subtitles}`, `chapters [{t, title}]`.
+- each `##` heading is one numbered step; keep one chapter per step, in the same order.
+- shortcodes: `{{</* under-surface */>}}…{{</* /under-surface */>}}` for the "what happened below" callout, `{{</* shot src="…" alt="…" */>}}` for screenshots (empty `src` renders a placeholder).
+
+UI strings go in `i18n/en.yaml` and `i18n/es.yaml`, never hardcoded in templates.
+
 ## Critical Rules
 
 1. **NEVER** edit files in `_vendor/` — that's the vendored hextra theme

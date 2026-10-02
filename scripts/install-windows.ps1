@@ -1,13 +1,16 @@
 # install-windows.ps1
 # Installs the latest Pando release for Windows to the user's PATH
 # Usage: iex (irm https://raw.githubusercontent.com/digiogithub/pando/main/scripts/install-windows.ps1)
-#   or:  .\install-windows.ps1 [-Version v0.311.0]
+#   or:  .\install-windows.ps1 [-Version v1.2.7]
 
 param(
     [string]$Version = ""
 )
 
 $ErrorActionPreference = "Stop"
+
+# Windows PowerShell 5.1 defaults to TLS 1.0/1.1, which GitHub rejects.
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
 $REPO     = "digiogithub/pando"
 $BINARY   = "pando.exe"
@@ -26,7 +29,9 @@ Write-Step "Detecting architecture..."
 $arch = $env:PROCESSOR_ARCHITECTURE
 switch ($arch) {
     "AMD64"  { $zipArch = "x64"   }
-    "ARM64"  { $zipArch = "arm64" }
+    # Releases ship no native ARM64 build; Windows on ARM runs the x64 one
+    # under emulation.
+    "ARM64"  { $zipArch = "x64"   }
     default  {
         Write-Fail "Unsupported architecture: $arch"
         exit 1
@@ -70,6 +75,8 @@ if ($Version -eq "") {
         exit 1
     }
 }
+# Release tags carry a leading v; accept "-Version 1.2.7" too.
+if ($Version -notmatch '^v') { $Version = "v$Version" }
 Write-Ok "Target version: $Version"
 
 # Skip if already at the correct version
@@ -100,6 +107,33 @@ try {
 }
 Write-Ok "Download complete."
 
+# ── verify download ────────────────────────────────────────────────────────────
+# SHA256SUMS is published with each release. Releases older than that file
+# are installed with a warning instead of failing.
+
+Write-Step "Verifying download..."
+$expectedHash = $null
+try {
+    $sums = (Invoke-WebRequest -Uri "https://github.com/$REPO/releases/download/$Version/SHA256SUMS" -UseBasicParsing).Content
+    if ($sums -is [byte[]]) { $sums = [Text.Encoding]::UTF8.GetString($sums) }
+    foreach ($line in ($sums -split "`n")) {
+        $parts = $line.Trim() -split '\s+', 2
+        if ($parts.Count -eq 2 -and $parts[1].TrimStart('*') -eq $zipName) { $expectedHash = $parts[0] }
+    }
+} catch { }
+
+if ($expectedHash) {
+    $actualHash = (Get-FileHash -Algorithm SHA256 -Path $zipPath).Hash
+    if ($actualHash -ne $expectedHash) {
+        Write-Fail "Checksum mismatch for $zipName (expected $expectedHash, got $actualHash)."
+        Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
+        exit 1
+    }
+    Write-Ok "Checksum verified (SHA-256)."
+} else {
+    Write-Warn "Release $Version publishes no SHA256SUMS entry for ${zipName}: skipping the integrity check."
+}
+
 # ── extract ────────────────────────────────────────────────────────────────────
 
 Write-Step "Extracting archive..."
@@ -123,6 +157,18 @@ if (-not $exeFile) {
     exit 1
 }
 Write-Ok "Found binary: $($exeFile.FullName)"
+
+# Release binaries are Authenticode-signed; refuse one whose signature is broken.
+$sig = Get-AuthenticodeSignature -FilePath $exeFile.FullName
+if ($sig.Status -eq "Valid") {
+    Write-Ok "Authenticode signature valid: $($sig.SignerCertificate.Subject)"
+} elseif ($sig.Status -eq "NotSigned") {
+    Write-Warn "The binary is not Authenticode-signed (older release?)."
+} else {
+    Write-Fail "Authenticode signature is not valid: $($sig.Status)"
+    Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
+    exit 1
+}
 
 # ── install ────────────────────────────────────────────────────────────────────
 

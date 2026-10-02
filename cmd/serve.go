@@ -135,13 +135,15 @@ This is the backend for the Pando Desktop/Web UI.`,
 		}
 
 		// Resolve TLS certificate: use provided files or auto-generate.
+		tlsCAFile := ""
 		if tlsCert == "" || tlsKey == "" {
-			certPaths, err := tlsutil.EnsureCert(dataDir)
+			certPaths, err := tlsutil.EnsureCert(config.TLSCertDir(dataDir))
 			if err != nil {
 				return fmt.Errorf("failed to ensure TLS certificate: %w", err)
 			}
 			tlsCert = certPaths.CertFile
 			tlsKey = certPaths.KeyFile
+			tlsCAFile = certPaths.CAFile
 			logging.Debug("Using auto-generated TLS certificate", "cert", tlsCert)
 		}
 
@@ -175,7 +177,7 @@ This is the backend for the Pando Desktop/Web UI.`,
 			APIToken:            startup.APIToken,
 			WebChildTLSCertFile: tlsCert,
 			WebChildTLSKeyFile:  tlsKey,
-			WebChildTLSDataDir:  dataDir,
+			WebChildTLSDataDir:  config.TLSCertDir(dataDir),
 			InstanceID:          instanceID,
 			Role:                string(rt.Role),
 			PubPort:             rt.PubPort,
@@ -271,7 +273,11 @@ This is the backend for the Pando Desktop/Web UI.`,
 			fmt.Printf("Running as project child: %s (public base %s)\n", projectName, startup.PublicBasePath)
 		}
 		if server.IsTLS() {
-			fmt.Println("TLS enabled (self-signed certificate — accept the browser security warning for local use)")
+			if tlsCAFile != "" {
+				fmt.Printf("TLS enabled — import %s as a trusted certificate authority to avoid the browser security warning\n", tlsCAFile)
+			} else {
+				fmt.Println("TLS enabled")
+			}
 		}
 		fmt.Println("Press Ctrl+C to stop")
 

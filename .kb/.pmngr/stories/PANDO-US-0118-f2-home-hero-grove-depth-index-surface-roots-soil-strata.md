@@ -2,13 +2,14 @@
 id: PANDO-US-0118
 type: story
 title: "F2 Home: hero grove, depth index, Surface / Roots / Soil strata, guides teaser, install block, data/features.yaml"
-status: backlog
+status: in_review
 priority: high
 parent: PANDO-EP-0020
 author: mcp
 labels: [docs, pando-docs, design, hugo]
 created: 2026-10-02T12:15:37Z
-updated: 2026-10-02T12:15:37Z
+updated: 2026-10-02T12:37:13Z
+started: 2026-10-02T12:37:13Z
 ---
 
 ## Description

@@ -165,7 +165,7 @@ func runDesktopMode(cmd *cobra.Command) error {
 		ProjectID:          startup.ProjectID,
 		ProjectName:        startup.ProjectName,
 		PublicBasePath:     startup.PublicBasePath,
-		WebChildTLSDataDir: dataDir,
+		WebChildTLSDataDir: config.TLSCertDir(dataDir),
 		InstanceID:         instanceID,
 		Role:               string(rt.Role),
 		PubPort:            rt.PubPort,

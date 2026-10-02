@@ -164,7 +164,7 @@ func runAGUIServe(cmd *cobra.Command, _ []string) error {
 		if dataDir == "" {
 			dataDir = ".pando"
 		}
-		certPaths, certErr := tlsutil.EnsureCert(dataDir)
+		certPaths, certErr := tlsutil.EnsureCert(config.TLSCertDir(dataDir))
 		if certErr != nil {
 			return fmt.Errorf("failed to ensure TLS certificate: %w", certErr)
 		}

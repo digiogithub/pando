@@ -2,13 +2,14 @@
 id: PANDO-US-0119
 type: story
 title: "F3 Guides: new guides section, guides/list with track filter, guides/single with video, chapters, written steps, shortcodes and seed content"
-status: backlog
+status: in_review
 priority: high
 parent: PANDO-EP-0020
 author: mcp
 labels: [docs, pando-docs, design, hugo]
 created: 2026-10-02T12:15:37Z
-updated: 2026-10-02T12:15:37Z
+updated: 2026-10-02T12:37:13Z
+started: 2026-10-02T12:37:13Z
 ---
 
 ## Description

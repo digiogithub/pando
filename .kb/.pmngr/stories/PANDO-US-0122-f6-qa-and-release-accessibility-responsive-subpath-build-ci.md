@@ -2,13 +2,14 @@
 id: PANDO-US-0122
 type: story
 title: "F6 QA and release: accessibility, responsive, subpath build, CI Hugo version, cleanup, skill and KB docs"
-status: backlog
+status: in_progress
 priority: medium
 parent: PANDO-EP-0020
 author: mcp
 labels: [docs, pando-docs, design, hugo]
 created: 2026-10-02T12:15:37Z
-updated: 2026-10-02T12:15:37Z
+updated: 2026-10-02T12:37:13Z
+started: 2026-10-02T12:37:13Z
 ---
 
 ## Description
