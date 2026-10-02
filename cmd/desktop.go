@@ -49,7 +49,11 @@ Linux requirements: GTK 3 and WebKitGTK 4.1 runtime libraries.
 If the window stays blank on Linux (GPU/driver issues in WebKitGTK), try:
   WEBKIT_DISABLE_DMABUF_RENDERER=1 pando desktop
   WEBKIT_DISABLE_COMPOSITING_MODE=1 pando desktop
-or use the browser UI instead: pando app`,
+or use the browser UI instead: pando app
+
+WSL: the window needs WSLg (WSL 2 with GUI app support). If it fails with
+"failed to init GTK", run 'wsl --update' and 'wsl --shutdown' from Windows, or try:
+  GDK_BACKEND=wayland pando desktop`,
 	Example: `
   # Launch desktop app on default port
   pando desktop
@@ -79,6 +83,10 @@ func init() {
 }
 
 func runDesktopMode(cmd *cobra.Command) error {
+	// Flags are parsed by now: later failures are runtime errors, for which
+	// the usage text is only noise.
+	cmd.SilenceUsage = true
+
 	host, _ := cmd.Flags().GetString("host")
 	port, _ := cmd.Flags().GetInt("port")
 	debug, _ := cmd.Flags().GetBool("debug")

@@ -158,6 +158,13 @@ func runDesktop(binPath, pandoURL string, simpleMode bool) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
 	cmd.Stdin = os.Stdin
+	if runtime.GOOS == "linux" {
+		extra, noDisplay := displayEnv(os.Getenv)
+		if noDisplay {
+			return newNoDisplayError(os.Getenv, nil)
+		}
+		cmd.Env = append(os.Environ(), extra...)
+	}
 
 	if err := cmd.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 0 {
@@ -178,6 +185,13 @@ func startDesktop(binPath string, args []string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
+	if runtime.GOOS == "linux" {
+		extra, noDisplay := displayEnv(os.Getenv)
+		if noDisplay {
+			return newNoDisplayError(os.Getenv, nil)
+		}
+		cmd.Env = append(os.Environ(), extra...)
+	}
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start desktop process: %w", err)
 	}

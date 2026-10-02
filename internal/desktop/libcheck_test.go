@@ -109,6 +109,7 @@ func TestRunDesktopReportsMissingLibraries(t *testing.T) {
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("DISPLAY", ":0")
 	err := runDesktop(script, "http://localhost:1", false)
 	var libErr *MissingLibrariesError
 	if !errors.As(err, &libErr) {

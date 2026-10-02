@@ -206,10 +206,14 @@ func missingLibrariesHelp(r osRelease, glibc string) string {
 }
 
 // diagnoseLaunchFailure turns a failed wrapper run into a MissingLibrariesError
-// when its stderr shows loader errors; otherwise it returns nil.
+// when its stderr shows loader errors, or into a NoDisplayError when GTK could
+// not open a display; otherwise it returns nil.
 func diagnoseLaunchFailure(stderr string, err error) error {
 	libs, glibc := parseLoaderErrors(stderr)
 	if len(libs) == 0 && glibc == "" {
+		if strings.Contains(stderr, gtkInitFailure) {
+			return newNoDisplayError(os.Getenv, err)
+		}
 		return nil
 	}
 	return &MissingLibrariesError{
