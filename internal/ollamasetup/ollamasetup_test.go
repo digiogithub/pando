@@ -75,7 +75,7 @@ func TestPullReportsProgressAndSuccess(t *testing.T) {
 		`{"status":"success"}`,
 	})
 	m := NewManager()
-	job, err := m.Pull(srv.URL, "hf.co/limcheekin/CodeRankEmbed-GGUF:Q4_K_M")
+	job, err := m.Pull(srv.URL, "hf.co/brandtcormorant/CodeRankEmbed-Q4_K_M-GGUF:Q4_K_M")
 	if err != nil {
 		t.Fatal(err)
 	}

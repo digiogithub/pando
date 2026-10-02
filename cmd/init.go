@@ -268,7 +268,7 @@ DocumentEmbeddingAPIKey   = ''
 
 # Embedding model for source code. A code-focused model gives better results.
 CodeEmbeddingProvider = 'ollama'
-CodeEmbeddingModel    = 'hf.co/limcheekin/CodeRankEmbed-GGUF:Q4_K_M'
+CodeEmbeddingModel    = 'hf.co/brandtcormorant/CodeRankEmbed-Q4_K_M-GGUF:Q4_K_M'
 CodeEmbeddingBaseURL  = ''
 CodeEmbeddingAPIKey   = ''
 

@@ -98,7 +98,7 @@ ollama-model: "nomic-embed-text:latest"
 #code-gguf-model-path: "/www/Remembrances/coderankembed.Q4_K_M.gguf"
 
 # Ollama model for code embeddings (default: uses default ollama-model)
-code-ollama-model: "hf.co/limcheekin/CodeRankEmbed-GGUF:Q4_K_M"
+code-ollama-model: "hf.co/brandtcormorant/CodeRankEmbed-Q4_K_M-GGUF:Q4_K_M"
 
 # OpenAI model for code embeddings (default: uses default openai-model)
 #code-openai-model: ""

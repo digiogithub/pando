@@ -40,7 +40,7 @@ the page session only.
    (Linux needs root or passwordless sudo; brew/winget on PATH) and after an inline confirmation;
    output streamed as a job. Installed but stopped → "Start Ollama" (`open -a Ollama` on macOS app,
    else `ollama serve` detached via procgroup). Running → pull rows for the document model
-   (`nomic-embed-text`) and the code model (`hf.co/limcheekin/CodeRankEmbed-GGUF:Q4_K_M`, editable),
+   (`nomic-embed-text`) and the code model (`hf.co/brandtcormorant/CodeRankEmbed-Q4_K_M-GGUF:Q4_K_M`, editable),
    each with its `ollama pull …` command (copyable) and a Download button with a progress bar
    (Ollama HTTP `/api/pull` stream). "Enable Remembrances" saves provider ollama + both models.
 5. **Done**: summary; Finish writes the completed marker.

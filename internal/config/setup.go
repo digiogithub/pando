@@ -20,7 +20,7 @@ const (
 // DefaultSetupCodeEmbeddingModel is the code embedding model the first-run
 // assistant suggests pulling into Ollama. It matches the value written by the
 // annotated config templates.
-const DefaultSetupCodeEmbeddingModel = "hf.co/limcheekin/CodeRankEmbed-GGUF:Q4_K_M"
+const DefaultSetupCodeEmbeddingModel = "hf.co/brandtcormorant/CodeRankEmbed-Q4_K_M-GGUF:Q4_K_M"
 
 // DefaultSetupDocumentEmbeddingModel is the document (RAG) embedding model the
 // first-run assistant suggests pulling into Ollama.
