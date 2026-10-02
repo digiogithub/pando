@@ -403,6 +403,37 @@ Port = 5013
 Enabled = true
 WebUI = false
 
+[ModelAutoMode]
+DefaultAuto = true
+Enabled = true
+HistoryPrompts = 0
+MinConfidence = 0.0
+Threshold = 0.6
+TimeoutMs = 0
+
+[ModelAutoMode.Router]
+KeepAlive = '30m'
+Model = 'tev1:0.8b'
+Provider = 'ollama'
+
+[[ModelAutoMode.Routes]]
+Description = 'Genera la traducción en inglés de la documentación'
+Fallbacks = ['copilot.grok-4.7']
+ID = 'Translate'
+Model = 'copilot.gpt-6-luna'
+
+[[ModelAutoMode.Routes]]
+Description = 'Analiza la funcionalidad siguiente. Genera un informe y una planificación'
+Fallbacks = ['copilot.gpt-6.1-sol']
+ID = 'Analiza'
+Model = 'copilot.claude-opus-5.5'
+
+[[ModelAutoMode.Routes]]
+Description = 'Desarrolla o programa las tareas indicadas'
+Fallbacks = ['copilot.gpt-6.1-sol']
+ID = 'Programa'
+Model = 'copilot.claude-sonnet-5.5'
+
 [ModelsDev]
 Enabled = true
 
@@ -414,6 +445,9 @@ ServiceName = ''
 
 [Permissions]
 AutoApproveTools = true
+
+[Persona]
+Active = 'software-engineer'
 
 [PersonaAutoSelect]
 Enabled = true
