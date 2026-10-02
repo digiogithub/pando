@@ -53,10 +53,45 @@ func TestMinimiseToTrayWithoutContextIsNoop(t *testing.T) {
 	a.SetTrayAvailable(true)
 	// Must not panic before Startup has provided a Wails context.
 	a.MinimiseToTray()
+	a.CloseWindow()
 	a.ShowWindow()
 	a.OpenSettings()
 	a.QuitApp()
 	if !a.TrayAvailable() {
 		t.Fatal("TrayAvailable should reflect SetTrayAvailable")
+	}
+}
+
+func TestSyncShellStateStoresTrayProjects(t *testing.T) {
+	a := NewApp("http://localhost:8765", false)
+	var got ShellState
+	a.SetShellStateListener(func(state ShellState) {
+		got = state
+	})
+
+	a.SyncShellState(`{"title":"Pando — Project One","activeTabId":"proj-1","projectTabs":[{"projectId":"proj-1","name":"Project One"},{"projectId":" ","name":"ignored"}]}`)
+
+	if got.Title != "Pando — Project One" {
+		t.Fatalf("title = %q", got.Title)
+	}
+	if got.ActiveTabID != "proj-1" {
+		t.Fatalf("active tab = %q", got.ActiveTabID)
+	}
+	if len(got.ProjectTabs) != 1 || got.ProjectTabs[0].ProjectID != "proj-1" || got.ProjectTabs[0].Name != "Project One" {
+		t.Fatalf("project tabs = %#v", got.ProjectTabs)
+	}
+}
+
+func TestSyncShellStateFallsBackToDefaultTitle(t *testing.T) {
+	a := NewApp("http://localhost:8765", false)
+	var got ShellState
+	a.SetShellStateListener(func(state ShellState) {
+		got = state
+	})
+
+	a.SyncShellState(`{"title":" ","activeTabId":"main","projectTabs":[]}`)
+
+	if got.Title != "Pando" {
+		t.Fatalf("title = %q, want Pando", got.Title)
 	}
 }

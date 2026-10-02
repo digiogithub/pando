@@ -10,6 +10,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/project"
+	"github.com/digiogithub/pando/internal/pubsub"
 )
 
 type stubProjectService struct {
@@ -22,6 +23,40 @@ func (s stubProjectService) Get(_ context.Context, id string) (*project.Project,
 		return p, nil
 	}
 	return nil, errors.New("not found")
+}
+
+type stubProjectManager struct {
+	project.Service
+	webInstances map[string]project.WebInstanceSnapshot
+}
+
+func (m stubProjectManager) Runtime(string, string) (bool, bool, int)        { return false, false, 0 }
+func (m stubProjectManager) DelegationInfo(string) (int, bool, bool)         { return 0, false, false }
+func (m stubProjectManager) List(context.Context) ([]project.Project, error) { return nil, nil }
+func (m stubProjectManager) Register(context.Context, string, string) (*project.Project, error) {
+	return nil, nil
+}
+func (m stubProjectManager) Unregister(context.Context, string) error                { return nil }
+func (m stubProjectManager) Activate(context.Context, string) error                  { return nil }
+func (m stubProjectManager) Deactivate(context.Context) error                        { return nil }
+func (m stubProjectManager) CompleteInit(context.Context, string) error              { return nil }
+func (m stubProjectManager) ActiveProject(context.Context) (*project.Project, error) { return nil, nil }
+func (m stubProjectManager) StopReport(context.Context, string) (int, error)         { return 0, nil }
+func (m stubProjectManager) Rename(context.Context, string, string) error            { return nil }
+func (m stubProjectManager) Subscribe(context.Context) <-chan pubsub.Event[project.ManagerEvent] {
+	return nil
+}
+func (m stubProjectManager) OpenWeb(context.Context, string) (project.WebInstanceSnapshot, error) {
+	return project.WebInstanceSnapshot{}, nil
+}
+func (m stubProjectManager) CloseWeb(context.Context, string) error { return nil }
+func (m stubProjectManager) WebInstance(projectID string) (project.WebInstanceSnapshot, bool) {
+	inst, ok := m.webInstances[projectID]
+	return inst, ok
+}
+func (m stubProjectManager) WebInstances() []project.WebInstanceSnapshot { return nil }
+func (m stubProjectManager) WebProxyTarget(string) (string, string, http.RoundTripper, bool) {
+	return "", "", nil, false
 }
 
 func openDesktopRequest(t *testing.T, s *Server, id string) *httptest.ResponseRecorder {
@@ -99,5 +134,31 @@ func TestOpenProjectDesktopRejectsNonDesktopAndMissing(t *testing.T) {
 	}
 	if len(*spawned) != 0 {
 		t.Fatalf("expected no spawn, got %v", *spawned)
+	}
+}
+
+func TestOpenProjectDesktopWarnsWhenWebChildAlreadyRunning(t *testing.T) {
+	dir := t.TempDir()
+	spawned := stubDesktopLaunch(t, false)
+	s := &Server{
+		app:    &app.App{Projects: stubProjectService{projects: map[string]*project.Project{"p1": {ID: "p1", Path: dir}}}},
+		config: ServerConfig{StartupMode: "desktop", CWD: t.TempDir()},
+		projectManager: stubProjectManager{
+			webInstances: map[string]project.WebInstanceSnapshot{
+				"p1": {State: project.WebStateRunning},
+			},
+		},
+	}
+
+	rec := openDesktopRequest(t, s, "p1")
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(body, `"status":"opened"`) {
+		t.Fatalf("unexpected response %d: %s", rec.Code, body)
+	}
+	if !strings.Contains(body, `"warning":"web_child_running"`) {
+		t.Fatalf("expected web child warning, got %s", body)
+	}
+	if len(*spawned) != 1 || (*spawned)[0] != dir {
+		t.Fatalf("expected one spawn for %s, got %v", dir, *spawned)
 	}
 }

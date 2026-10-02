@@ -6,6 +6,7 @@ import (
 	goruntime "runtime"
 	"sync"
 
+	"github.com/digiogithub/pando/internal/desktop"
 	"github.com/energye/systray"
 )
 
@@ -15,10 +16,15 @@ type tray struct {
 	app      trayActions
 	stopOnce sync.Once
 	started  bool
+	mu       sync.Mutex
+	ready    bool
+	state    desktop.ShellState
 }
 
 func newTray(app trayActions) *tray {
-	return &tray{app: app}
+	t := &tray{app: app}
+	app.SetShellStateListener(t.UpdateShellState)
+	return t
 }
 
 // Start puts the icon in the tray. It runs its own event loop on a dedicated,
@@ -58,12 +64,11 @@ func (t *tray) onReady() {
 	systray.SetOnClick(func(systray.IMenu) { go t.app.ShowWindow() })
 	systray.SetOnDClick(func(systray.IMenu) { go t.app.ShowWindow() })
 
-	systray.AddMenuItem("Show Pando", "Bring the Pando window back").Click(func() { go t.app.ShowWindow() })
-	systray.AddMenuItem("Settings", "Open Pando settings").Click(func() { go t.app.OpenSettings() })
-	systray.AddSeparator()
-	systray.AddMenuItem("Quit", "Quit Pando").Click(func() { go t.app.QuitApp() })
-
 	t.app.SetTrayAvailable(true)
+	t.mu.Lock()
+	t.ready = true
+	t.mu.Unlock()
+	t.rebuildMenu()
 }
 
 func trayIcon() []byte {
@@ -71,4 +76,56 @@ func trayIcon() []byte {
 		return trayIconICO
 	}
 	return trayIconPNG
+}
+
+func (t *tray) UpdateShellState(state desktop.ShellState) {
+	t.mu.Lock()
+	t.state = state
+	ready := t.ready
+	t.mu.Unlock()
+
+	if ready {
+		t.rebuildMenu()
+	}
+}
+
+func (t *tray) snapshotState() desktop.ShellState {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	snapshot := desktop.ShellState{
+		Title:       t.state.Title,
+		ActiveTabID: t.state.ActiveTabID,
+		ProjectTabs: make([]desktop.ProjectTabState, len(t.state.ProjectTabs)),
+	}
+	copy(snapshot.ProjectTabs, t.state.ProjectTabs)
+	return snapshot
+}
+
+func (t *tray) rebuildMenu() {
+	state := t.snapshotState()
+	systray.ResetMenu()
+
+	systray.AddMenuItem("Show Pando", "Bring the Pando window back").Click(func() { go t.app.ShowWindow() })
+	systray.AddMenuItem("Settings", "Open Pando settings").Click(func() { go t.app.OpenSettings() })
+
+	if len(state.ProjectTabs) > 0 {
+		systray.AddSeparator()
+		section := systray.AddMenuItem("Project workspaces", "Focus an open project workspace tab")
+		section.Disable()
+
+		for _, tab := range state.ProjectTabs {
+			title := tab.Name
+			if tab.ProjectID == state.ActiveTabID {
+				title += " (current)"
+			}
+			projectID := tab.ProjectID
+			systray.AddMenuItem(title, "Focus this project workspace").Click(func() {
+				go t.app.FocusProjectWorkspace(projectID)
+			})
+		}
+	}
+
+	systray.AddSeparator()
+	systray.AddMenuItem("Quit", "Quit Pando").Click(func() { go t.app.QuitApp() })
 }

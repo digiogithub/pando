@@ -17,6 +17,7 @@
     "minimise": "Minimieren",
     "restoreWindow": "Wiederherstellen",
     "maximiseWindow": "Maximieren",
+    "closeToTray": "In den Infobereich schließen",
     "closeWindow": "Schließen",
     "windowControls": "Fenstersteuerung"
   },
@@ -195,6 +196,7 @@
       "desktopCurrent": "Dieses Fenster arbeitet bereits in diesem Projekt",
       "desktopAlreadyOpen": "Dieses Projekt ist bereits in einem anderen Pando-Fenster geöffnet",
       "desktopOpening": "Projekt wird in einem neuen Fenster geöffnet…",
+      "desktopWebChildRunning": "Für dieses Projekt läuft bereits ein Workspace-Tab. Das neue Desktop-Fenster startet eine zweite Instanz für dasselbe Projekt.",
       "deactivated": "Delegationsziel gelöscht",
       "initialized": "Projekt initialisiert",
       "renamed": "Projekt in {{name}} umbenannt",

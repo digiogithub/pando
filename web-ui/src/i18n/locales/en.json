@@ -17,6 +17,7 @@
     "minimise": "Minimise",
     "restoreWindow": "Restore",
     "maximiseWindow": "Maximise",
+    "closeToTray": "Close to tray",
     "closeWindow": "Close",
     "windowControls": "Window controls"
   },
@@ -195,6 +196,7 @@
       "desktopCurrent": "This window already works in that project",
       "desktopAlreadyOpen": "That project is already open in another Pando window",
       "desktopOpening": "Opening project in a new window…",
+      "desktopWebChildRunning": "This project already has a running workspace tab. The new desktop window starts a second instance for the same project.",
       "deactivated": "Delegation target cleared",
       "initialized": "Project initialized",
       "renamed": "Project renamed to {{name}}",

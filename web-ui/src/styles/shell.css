@@ -50,6 +50,11 @@
   --wails-draggable: drag;
 }
 
+.shell-titlebar--embedded .shell-title {
+  justify-content: flex-start;
+  padding-left: 0;
+}
+
 .shell-titlebar button,
 .shell-titlebar a,
 .shell-titlebar input,
@@ -166,6 +171,11 @@
   border-top: 1px solid var(--border);
   border-left: 1px solid var(--border);
   border-top-left-radius: var(--radius-lg);
+}
+
+.shell-main--workspace {
+  border-left: 0;
+  border-top-left-radius: 0;
 }
 
 .shell-main-inner {

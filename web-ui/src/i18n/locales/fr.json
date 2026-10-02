@@ -17,6 +17,7 @@
     "minimise": "Réduire",
     "restoreWindow": "Restaurer",
     "maximiseWindow": "Agrandir",
+    "closeToTray": "Fermer vers la zone de notification",
     "closeWindow": "Fermer",
     "windowControls": "Contrôles de la fenêtre"
   },
@@ -195,6 +196,7 @@
       "desktopCurrent": "Cette fenêtre travaille déjà dans ce projet",
       "desktopAlreadyOpen": "Ce projet est déjà ouvert dans une autre fenêtre Pando",
       "desktopOpening": "Ouverture du projet dans une nouvelle fenêtre…",
+      "desktopWebChildRunning": "Ce projet a déjà un onglet d’espace de travail en cours d’exécution. La nouvelle fenêtre desktop démarre une seconde instance pour le même projet.",
       "deactivated": "Cible de délégation effacée",
       "initialized": "Projet initialisé",
       "renamed": "Projet renommé en {{name}}",

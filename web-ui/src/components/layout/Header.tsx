@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
@@ -16,7 +17,7 @@ import {
 } from '@/components/ui/icons'
 import { isMacPlatform } from './shellHooks'
 import DesktopWindowControls from './DesktopWindowControls'
-import { onTitleBarDoubleClick, useDesktopShell } from '@/services/desktopWindow'
+import { onTitleBarDoubleClick, syncDesktopShellState, useDesktopShell } from '@/services/desktopWindow'
 import { resolveHeaderSection } from './headerSections'
 
 const DOCS_URL = 'https://madeindigio.github.io/pando-docs/'
@@ -27,7 +28,15 @@ const DOCS_URL = 'https://madeindigio.github.io/pando-docs/'
  * action: only the way back to the full view and the theme toggle remain;
  * settings live in the sidebar.
  */
-export default function Header({ isMobile = false, simple = false }: { isMobile?: boolean; simple?: boolean }) {
+export default function Header({
+  isMobile = false,
+  simple = false,
+  hideSidebarToggle = false,
+}: {
+  isMobile?: boolean
+  simple?: boolean
+  hideSidebarToggle?: boolean
+}) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
@@ -40,6 +49,7 @@ export default function Header({ isMobile = false, simple = false }: { isMobile?
   const activeSession = useSessionStore((s) => s.sessions.find((x) => x.id === s.activeSessionId))
   const extensionPanels = useExtensionPanelsStore((s) => s.panels)
   const activeTabId = useProjectTabsStore((s) => s.activeTabId)
+  const tabs = useProjectTabsStore((s) => s.tabs)
   const activeProjectTab = useProjectTabsStore((s) =>
     s.activeTabId === 'main'
       ? null
@@ -47,6 +57,10 @@ export default function Header({ isMobile = false, simple = false }: { isMobile?
   )
   const desktopShell = useDesktopShell()
   const childMode = startupMode === 'project-child' || isProjectChildMode()
+  const embedded = childMode && window.parent !== window
+  // While a project tab is shown, the persona, chat-mode and settings actions
+  // would act on the main instance; the framed child carries its own.
+  const hostingProject = !childMode && activeTabId !== 'main'
 
   // Title: section name, plus the active session on chat routes.
   const section = resolveHeaderSection(location.pathname, (key) => t(key), extensionPanels)
@@ -83,29 +97,49 @@ export default function Header({ isMobile = false, simple = false }: { isMobile?
     : activeTabId !== 'main'
       ? projectTabDetail
       : sessionTitle
+  const desktopTitle = titleDetail
+    ? `Pando — ${titleSection} / ${titleDetail}`
+    : titleSection
+      ? `Pando — ${titleSection}`
+      : 'Pando'
+
+  useEffect(() => {
+    if (!desktopShell || window.parent !== window) return
+    syncDesktopShellState({
+      title: desktopTitle,
+      activeTabId,
+      projectTabs: tabs.map((tab) => ({ projectId: tab.projectId, name: tab.name })),
+    })
+  }, [activeTabId, desktopShell, desktopTitle, tabs])
 
   return (
-    <header className="shell-titlebar" onDoubleClick={desktopShell ? onTitleBarDoubleClick : undefined}>
+    <header
+      className={`shell-titlebar${embedded ? ' shell-titlebar--embedded' : ''}`}
+      onDoubleClick={desktopShell ? onTitleBarDoubleClick : undefined}
+    >
       <div className="shell-titlebar-group">
-        <IconButton
-          aria-label={sidebarLabel}
-          tooltip={`${sidebarLabel} (Ctrl+B)`}
-          icon={!isMobile && sidebarOpen ? <PanelLeftClose /> : <PanelLeft />}
-          onClick={toggleSidebar}
-        />
-        {/* Version lives in the tooltip only: the title bar stays quiet. */}
-        <div className="shell-brand" aria-label="Pando" title={versionLabel ? `Pando ${versionLabel}` : 'Pando'}>
-          <span className="shell-brand-glyph"><BrandMark size={18} pulse={busy} /></span>
-          <span className="shell-brand-name">Pando</span>
-        </div>
+        {!hideSidebarToggle && (
+          <IconButton
+            aria-label={sidebarLabel}
+            tooltip={`${sidebarLabel} (Ctrl+B)`}
+            icon={!isMobile && sidebarOpen ? <PanelLeftClose /> : <PanelLeft />}
+            onClick={toggleSidebar}
+          />
+        )}
+        {!embedded && (
+          <div className="shell-brand" aria-label="Pando" title={versionLabel ? `Pando ${versionLabel}` : 'Pando'}>
+            <span className="shell-brand-glyph"><BrandMark size={18} pulse={busy} /></span>
+            <span className="shell-brand-name">Pando</span>
+          </div>
+        )}
       </div>
 
       <div className="shell-title" aria-live="polite">
         {titleDetail ? (
           <>
-              <span className="shell-title-section">{titleSection}</span>
-              <span className="shell-title-sep" aria-hidden="true">/</span>
-              <span className="shell-title-text shell-title-strong">{titleDetail}</span>
+            <span className="shell-title-section">{titleSection}</span>
+            <span className="shell-title-sep" aria-hidden="true">/</span>
+            <span className="shell-title-text shell-title-strong">{titleDetail}</span>
           </>
         ) : (
           titleSection && <span className="shell-title-text">{titleSection}</span>
@@ -113,7 +147,7 @@ export default function Header({ isMobile = false, simple = false }: { isMobile?
       </div>
 
       <div className="shell-titlebar-actions">
-        {simple ? (
+        {hostingProject ? null : simple ? (
           <Tooltip content={t('header.fullViewHint', 'Switch back to the full view')}>
             <button
               type="button"
@@ -127,28 +161,28 @@ export default function Header({ isMobile = false, simple = false }: { isMobile?
           </Tooltip>
         ) : (
           <>
-          <span className="shell-hide-mobile">
-            <PersonaSelector />
-          </span>
-          <span className="shell-titlebar-divider shell-hide-mobile" aria-hidden="true" />
-          <IconButton
-            className="shell-hide-mobile"
-            aria-label={t('header.simpleChat', 'Simple Chat')}
-            tooltip
-            icon={<MessageSquare />}
-            onClick={() => { setChatMode('simple'); navigate('/chat/simple') }}
-          />
-          <Tooltip content={t('shell.documentation', 'Documentation')}>
-            <a
-              className="ui-btn ui-btn--ghost ui-btn--icon shell-hide-mobile"
-              href={DOCS_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={t('shell.documentation', 'Documentation')}
-            >
-              <CircleQuestionMark />
-            </a>
-          </Tooltip>
+            <span className="shell-hide-mobile">
+              <PersonaSelector />
+            </span>
+            <span className="shell-titlebar-divider shell-hide-mobile" aria-hidden="true" />
+            <IconButton
+              className="shell-hide-mobile"
+              aria-label={t('header.simpleChat', 'Simple Chat')}
+              tooltip
+              icon={<MessageSquare />}
+              onClick={() => { setChatMode('simple'); navigate('/chat/simple') }}
+            />
+            <Tooltip content={t('shell.documentation', 'Documentation')}>
+              <a
+                className="ui-btn ui-btn--ghost ui-btn--icon shell-hide-mobile"
+                href={DOCS_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={t('shell.documentation', 'Documentation')}
+              >
+                <CircleQuestionMark />
+              </a>
+            </Tooltip>
           </>
         )}
         <IconButton
@@ -157,14 +191,14 @@ export default function Header({ isMobile = false, simple = false }: { isMobile?
           icon={resolvedMode === 'dark' ? <Sun /> : <Moon />}
           onClick={toggleMode}
         />
-        {!simple && (
+        {!simple && !hostingProject && (
           <Tooltip content={t('nav.settings')}>
             <NavLink to="/settings" className="shell-icon-link" aria-label={t('nav.settings')}>
               <Settings />
             </NavLink>
           </Tooltip>
         )}
-        <DesktopWindowControls />
+        {!embedded && <DesktopWindowControls />}
       </div>
     </header>
   )

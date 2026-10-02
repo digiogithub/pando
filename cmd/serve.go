@@ -235,6 +235,13 @@ This is the backend for the Pando Desktop/Web UI.`,
 			versionPrefix = "v"
 		}
 		fmt.Printf("Pando API server %s%s listening on %s\n", versionPrefix, version.Normalize(), baseURL)
+		if startup.Mode == startupModeProjectChild {
+			projectName := startup.ProjectName
+			if projectName == "" {
+				projectName = cwd
+			}
+			fmt.Printf("Running as project child: %s (public base %s)\n", projectName, startup.PublicBasePath)
+		}
 		if server.IsTLS() {
 			fmt.Println("TLS enabled (self-signed certificate — accept the browser security warning for local use)")
 		}

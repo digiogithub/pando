@@ -8,6 +8,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/desktop"
 	"github.com/digiogithub/pando/internal/instanceregistry"
+	"github.com/digiogithub/pando/internal/project"
 )
 
 // spawnDesktopInstance starts an independent `pando desktop` for a directory.
@@ -30,8 +31,13 @@ var liveDesktopForPath = func(path string) bool {
 
 // handleOpenProjectDesktop handles POST /api/v1/projects/{id}/open-desktop.
 // It launches a separate Pando desktop window working in the project's folder.
-// Unlike /web/open, it does not start the background project WebUI child or
-// affect the ACP delegation child.
+// Unlike /web/open, it does not start or reuse the background project WebUI
+// child. Pointing a desktop wrapper directly at the child's HTTPS URL is not a
+// viable alternative because that child serves a loopback-only, self-signed
+// certificate. When a project WebUI child is already running we still spawn
+// `pando desktop --cwd <path>`, but return warning `web_child_running` so the
+// WebUI can explain that the project now has both a child workspace and a
+// second desktop instance.
 // Only a desktop-mode server may do this: spawning native windows is a local
 // GUI action that makes no sense for a headless or remotely reached server.
 func (s *Server) handleOpenProjectDesktop(w http.ResponseWriter, r *http.Request) {
@@ -75,5 +81,18 @@ func (s *Server) handleOpenProjectDesktop(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "opened", "project_id": id})
+
+	resp := map[string]string{"status": "opened", "project_id": id}
+	if hasRunningProjectWebChild(s.projectManager, id) {
+		resp["warning"] = "web_child_running"
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func hasRunningProjectWebChild(manager projectManagerAPI, projectID string) bool {
+	if manager == nil || strings.TrimSpace(projectID) == "" {
+		return false
+	}
+	inst, ok := manager.WebInstance(projectID)
+	return ok && inst.State != project.WebStateStopped
 }

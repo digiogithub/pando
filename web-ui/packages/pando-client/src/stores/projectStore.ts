@@ -219,7 +219,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   // separate `pando desktop --cwd <path>` process).
   openProjectDesktop: async (id: string) => {
     try {
-      const resp = await api.post<{ status?: string }>(`/api/v1/projects/${id}/open-desktop`, {})
+      const resp = await api.post<{ status?: string; warning?: string }>(`/api/v1/projects/${id}/open-desktop`, {})
       const toasts = useToastStore.getState()
       switch (resp?.status) {
         case 'current':
@@ -230,6 +230,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
           break
         default:
           toasts.addToastKey('projects.toasts.desktopOpening', 'success')
+      }
+      if (resp?.warning === 'web_child_running') {
+        toasts.addToastKey('projects.toasts.desktopWebChildRunning', 'warning')
       }
     } catch (e) {
       let message = e instanceof Error ? e.message : ''

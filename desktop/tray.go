@@ -17,6 +17,8 @@ var (
 
 // trayActions are the window operations the tray menu drives.
 type trayActions interface {
+	FocusProjectWorkspace(string)
+	SetShellStateListener(func(desktop.ShellState))
 	ShowWindow()
 	OpenSettings()
 	QuitApp()

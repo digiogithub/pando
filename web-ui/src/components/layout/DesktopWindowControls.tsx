@@ -31,7 +31,9 @@ export default function DesktopWindowControls() {
   const maximiseLabel = maximised
     ? t('shell.restoreWindow', 'Restore')
     : t('shell.maximiseWindow', 'Maximise')
-  const closeLabel = t('shell.closeWindow', 'Close')
+  const closeLabel = tray
+    ? t('shell.closeToTray', 'Close to tray')
+    : t('shell.closeWindow', 'Close')
 
   return (
     <div className="shell-window-controls" role="group" aria-label={t('shell.windowControls', 'Window controls')}>

@@ -17,13 +17,27 @@ interface WailsRuntime {
   WindowMinimise?: () => void
   WindowToggleMaximise?: () => void
   WindowIsMaximised?: () => Promise<boolean>
+  WindowSetTitle?: (title: string) => void
   Quit?: () => void
 }
 
 interface DesktopAppBindings {
   MinimiseToTray?: () => Promise<void>
   TrayAvailable?: () => Promise<boolean>
+  CloseWindow?: () => Promise<void>
   QuitApp?: () => Promise<void>
+  SyncShellState?: (payload: string) => Promise<void>
+}
+
+export interface DesktopProjectTabState {
+  projectId: string
+  name: string
+}
+
+export interface DesktopShellState {
+  title: string
+  activeTabId: string
+  projectTabs: DesktopProjectTabState[]
 }
 
 type ShellWindow = Window & {
@@ -67,11 +81,34 @@ export function toggleMaximiseWindow(): void {
 export function closeWindow(): void {
   const win = w()
   const app = win?.go?.desktop?.App
+  if (app?.CloseWindow) {
+    void app.CloseWindow()
+    return
+  }
   if (app?.QuitApp) {
     void app.QuitApp()
     return
   }
   win?.runtime?.Quit?.()
+}
+
+export function syncDesktopShellState(state: DesktopShellState): void {
+  const win = w()
+  const title = state.title.trim() || 'Pando'
+  if (win?.runtime?.WindowSetTitle) {
+    win.runtime.WindowSetTitle(title)
+  } else if (typeof document !== 'undefined') {
+    document.title = title
+  }
+  const app = win?.go?.desktop?.App
+  if (!app?.SyncShellState) return
+  void app.SyncShellState(
+    JSON.stringify({
+      title,
+      activeTabId: state.activeTabId,
+      projectTabs: state.projectTabs,
+    } satisfies DesktopShellState),
+  )
 }
 
 /**

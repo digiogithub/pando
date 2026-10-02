@@ -2,14 +2,15 @@
 id: PANDO-US-0114
 type: story
 title: "Desktop and TUI follow-ups: tab bar in the Wails window, tray entries, TUI instances browser shows web children"
-status: backlog
+status: done
 priority: medium
 parent: PANDO-EP-0019
 author: mcp
 labels: [projects, desktop, tui]
 estimate: 3
 created: 2026-10-01T19:24:43Z
-updated: 2026-10-01T19:24:43Z
+updated: 2026-10-02T09:07:33Z
+closed: 2026-10-02T09:07:33Z
 ---
 
 ## Description

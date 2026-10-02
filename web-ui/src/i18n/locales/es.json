@@ -17,6 +17,7 @@
     "minimise": "Minimizar",
     "restoreWindow": "Restaurar",
     "maximiseWindow": "Maximizar",
+    "closeToTray": "Cerrar a la bandeja",
     "closeWindow": "Cerrar",
     "windowControls": "Controles de ventana"
   },
@@ -195,6 +196,7 @@
       "desktopCurrent": "Esta ventana ya trabaja en ese proyecto",
       "desktopAlreadyOpen": "Ese proyecto ya está abierto en otra ventana de Pando",
       "desktopOpening": "Abriendo el proyecto en una ventana nueva…",
+      "desktopWebChildRunning": "Este proyecto ya tiene una pestaña de espacio de trabajo en ejecución. La nueva ventana de escritorio inicia una segunda instancia para el mismo proyecto.",
       "deactivated": "Se borró el destino de delegación",
       "initialized": "Proyecto inicializado",
       "renamed": "Proyecto renombrado a {{name}}",

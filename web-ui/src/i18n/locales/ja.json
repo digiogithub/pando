@@ -17,6 +17,7 @@
     "minimise": "最小化",
     "restoreWindow": "元に戻す",
     "maximiseWindow": "最大化",
+    "closeToTray": "トレイに閉じる",
     "closeWindow": "閉じる",
     "windowControls": "ウィンドウ操作"
   },
@@ -195,6 +196,7 @@
       "desktopCurrent": "このウィンドウはすでにそのプロジェクトで動作しています",
       "desktopAlreadyOpen": "そのプロジェクトは別の Pando ウィンドウですでに開かれています",
       "desktopOpening": "新しいウィンドウでプロジェクトを開いています…",
+      "desktopWebChildRunning": "このプロジェクトでは、すでにワークスペースタブが実行中です。新しいデスクトップウィンドウは同じプロジェクトの 2 つ目のインスタンスを起動します。",
       "deactivated": "委譲先を解除しました",
       "initialized": "プロジェクトを初期化しました",
       "renamed": "プロジェクト名を {{name}} に変更しました",

@@ -17,6 +17,7 @@
     "minimise": "最小化",
     "restoreWindow": "还原",
     "maximiseWindow": "最大化",
+    "closeToTray": "关闭到托盘",
     "closeWindow": "关闭",
     "windowControls": "窗口控制"
   },
@@ -195,6 +196,7 @@
       "desktopCurrent": "此窗口已在该项目中工作",
       "desktopAlreadyOpen": "该项目已在另一个 Pando 窗口中打开",
       "desktopOpening": "正在新窗口中打开项目…",
+      "desktopWebChildRunning": "该项目已经有一个正在运行的工作区标签页。新的桌面窗口会为同一项目启动第二个实例。",
       "deactivated": "委派目标已清除",
       "initialized": "项目已初始化",
       "renamed": "项目已重命名为 {{name}}",

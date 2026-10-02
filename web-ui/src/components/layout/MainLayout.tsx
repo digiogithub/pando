@@ -55,6 +55,7 @@ export default function MainLayout() {
   useProvidesWindowTitleBar()
   useProjectTabRouteSync()
   const workspaceProjectId = readWorkspaceProjectId(location.pathname)
+  const workspaceRoute = Boolean(workspaceProjectId)
   const shortcutActions = useMemo(
     () => ({
       openQuickMenu: () => setQuickMenuOpen(true),
@@ -155,39 +156,39 @@ export default function MainLayout() {
 
   return (
     <div className="shell" data-mac-inset={macInset || undefined}>
-      <Header isMobile={isMobile} simple={simple} />
+      <Header isMobile={isMobile} simple={simple} hideSidebarToggle={workspaceRoute} />
       <NetworkErrorBanner />
-      <ConfigInitBanner />
+      {!workspaceRoute && <ConfigInitBanner />}
 
       <div className="shell-body">
-        {isMobile ? (
+        {!workspaceRoute && isMobile ? (
           sidebarOpen && (
             <>
               <div className="shell-scrim" onClick={() => setSidebarOpen(false)} aria-hidden="true" />
               <Sidebar variant="drawer" simple={simple} />
             </>
           )
-        ) : simple ? (
+        ) : !workspaceRoute && simple ? (
           // No rail in simple mode: collapsed means hidden, the title bar
           // toggle brings the sessions panel back.
           sidebarOpen && <Sidebar variant="full" simple />
-        ) : (
+        ) : !workspaceRoute ? (
           <Sidebar variant={sidebarVariant} />
-        )}
+        ) : null}
 
-        <main className="shell-main" id={SHELL_MAIN_PANEL_ID}>
+        <main className={workspaceRoute ? 'shell-main shell-main--workspace' : 'shell-main'} id={SHELL_MAIN_PANEL_ID}>
           {!projectChildMode && (
             <ProjectFrameHost controller={projectTabBar} shortcutActions={shortcutActions} />
           )}
           <div
-            className={workspaceProjectId ? 'shell-main-inner shell-main-inner--workspace' : 'shell-main-inner'}
+            className={workspaceRoute ? 'shell-main-inner shell-main-inner--workspace' : 'shell-main-inner'}
           >
             <Outlet />
           </div>
         </main>
       </div>
 
-      {!simple && <StatusBar />}
+      {!simple && !workspaceRoute && <StatusBar />}
       <ProjectTabBar simple={simple} controller={projectTabBar} />
 
       {/* Overlays */}

@@ -144,12 +144,18 @@ func renderInstancesPanel(
 		if entry.IsPrimary {
 			ml += "*"
 		}
-		path := truncatePath(entry.Path, innerW-len(ml)-4)
+		meta := instanceMeta(entry)
+		suffix := ml
+		if meta != "" {
+			suffix += " " + meta
+		}
+		pathWidth := max(innerW-len(suffix)-4, 8)
+		path := truncatePath(entry.Path, pathWidth)
 		prefix := "  "
 		if absIdx == selected {
 			prefix = "▶ "
 		}
-		line := fmt.Sprintf("%s%-*s %s", prefix, innerW-len(ml)-4, path, ml)
+		line := fmt.Sprintf("%s%-*s %s", prefix, pathWidth, path, suffix)
 
 		var ls lipgloss.Style
 		if absIdx == selected {
@@ -459,6 +465,25 @@ func modeStr(e *instanceregistry.Entry) string {
 	default:
 		return "TUI"
 	}
+}
+
+func instanceMeta(e *instanceregistry.Entry) string {
+	var parts []string
+	if e.WebPort > 0 {
+		parts = append(parts, fmt.Sprintf("web :%d", e.WebPort))
+	}
+	if e.ParentInstanceID != "" {
+		parts = append(parts, "child "+shortInstanceID(e.ParentInstanceID))
+	}
+	return strings.Join(parts, " ")
+}
+
+func shortInstanceID(id string) string {
+	id = strings.TrimSpace(id)
+	if len(id) <= 8 {
+		return id
+	}
+	return id[:8]
 }
 
 // truncatePath truncates a file path to fit within maxLen characters.

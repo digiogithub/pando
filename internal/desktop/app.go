@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -16,6 +18,19 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/menu/keys"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+// ProjectTabState is the desktop shell's live view of one open project tab.
+type ProjectTabState struct {
+	ProjectID string `json:"projectId"`
+	Name      string `json:"name"`
+}
+
+// ShellState is the desktop shell state mirrored from the WebUI.
+type ShellState struct {
+	Title       string            `json:"title"`
+	ActiveTabID string            `json:"activeTabId"`
+	ProjectTabs []ProjectTabState `json:"projectTabs"`
+}
 
 // App holds the Wails desktop application state.
 type App struct {
@@ -31,6 +46,10 @@ type App struct {
 	// trayAvailable reports whether a system tray icon is live, which decides
 	// whether "minimise" hides the window into the tray or to the taskbar.
 	trayAvailable atomic.Bool
+
+	shellStateMu       sync.RWMutex
+	shellState         ShellState
+	shellStateListener func(ShellState)
 }
 
 // NewApp creates a new desktop App that wraps the given Pando URL in a WebView.
@@ -256,6 +275,70 @@ func (a *App) SetTrayAvailable(ok bool) {
 	a.trayAvailable.Store(ok)
 }
 
+// SyncShellState mirrors the current WebUI shell state into the desktop
+// wrapper, updating the window title and tray menu entries.
+// Exposed as Wails binding.
+func (a *App) SyncShellState(payload string) {
+	var raw ShellState
+	if err := json.Unmarshal([]byte(payload), &raw); err != nil {
+		return
+	}
+
+	next := ShellState{
+		Title:       strings.TrimSpace(raw.Title),
+		ActiveTabID: strings.TrimSpace(raw.ActiveTabID),
+		ProjectTabs: make([]ProjectTabState, 0, len(raw.ProjectTabs)),
+	}
+	if next.Title == "" {
+		next.Title = "Pando"
+	}
+	for _, tab := range raw.ProjectTabs {
+		projectID := strings.TrimSpace(tab.ProjectID)
+		name := strings.TrimSpace(tab.Name)
+		if projectID == "" || name == "" {
+			continue
+		}
+		next.ProjectTabs = append(next.ProjectTabs, ProjectTabState{
+			ProjectID: projectID,
+			Name:      name,
+		})
+	}
+
+	a.shellStateMu.Lock()
+	a.shellState = next
+	listener := a.shellStateListener
+	a.shellStateMu.Unlock()
+
+	if a.ctx != nil {
+		runtime.WindowSetTitle(a.ctx, next.Title)
+	}
+	if listener != nil {
+		listener(next)
+	}
+}
+
+// SetShellStateListener registers a listener for WebUI shell-state changes.
+func (a *App) SetShellStateListener(listener func(ShellState)) {
+	a.shellStateMu.Lock()
+	a.shellStateListener = listener
+	snapshot := a.shellStateLocked()
+	a.shellStateMu.Unlock()
+
+	if listener != nil {
+		listener(snapshot)
+	}
+}
+
+func (a *App) shellStateLocked() ShellState {
+	snapshot := ShellState{
+		Title:       a.shellState.Title,
+		ActiveTabID: a.shellState.ActiveTabID,
+		ProjectTabs: make([]ProjectTabState, len(a.shellState.ProjectTabs)),
+	}
+	copy(snapshot.ProjectTabs, a.shellState.ProjectTabs)
+	return snapshot
+}
+
 // OpenSettings shows the window on the Settings view. The WebUI handles the
 // event with its router (no reload); a page without that listener, such as the
 // loading page, gets a plain navigation.
@@ -266,6 +349,30 @@ func (a *App) OpenSettings() {
 	}
 	a.ShowWindow()
 	a.navigateInApp("/settings")
+}
+
+// FocusProjectWorkspace shows the window and focuses one project workspace tab.
+func (a *App) FocusProjectWorkspace(projectID string) {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" || a.ctx == nil {
+		return
+	}
+	a.ShowWindow()
+	a.navigateInApp("/projects/" + url.PathEscape(projectID) + "/workspace")
+}
+
+// CloseWindow closes the shell into the tray when a tray icon is live, and
+// falls back to quitting when the tray is unavailable.
+// Exposed as Wails binding.
+func (a *App) CloseWindow() {
+	if a.ctx == nil {
+		return
+	}
+	if a.trayAvailable.Load() {
+		runtime.WindowHide(a.ctx)
+		return
+	}
+	runtime.Quit(a.ctx)
 }
 
 // QuitApp closes the application.

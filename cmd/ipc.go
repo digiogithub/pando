@@ -6,6 +6,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -128,17 +129,19 @@ var ipcInstancesCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "INSTANCE ID\tROLE\tPID\tMODE\tSTARTED")
+		fmt.Fprintln(w, "INSTANCE ID\tROLE\tPID\tMODE\tWEB\tCHILD\tSTARTED")
 		for _, e := range entries {
 			role := "secondary"
 			if e.IsPrimary {
 				role = "primary"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\n",
+			fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
 				e.InstanceID,
 				role,
 				e.PID,
 				e.Mode,
+				formatInstanceWebPort(e.WebPort),
+				formatInstanceParent(e.ParentInstanceID),
 				e.StartedAt.Format(time.RFC3339),
 			)
 		}
@@ -157,4 +160,22 @@ func init() {
 	// Both subcommands accept an optional --path flag.
 	ipcStatusCmd.Flags().String("path", "", "Working directory to inspect (defaults to current directory)")
 	ipcInstancesCmd.Flags().String("path", "", "Working directory to inspect (defaults to current directory)")
+}
+
+func formatInstanceWebPort(port int) string {
+	if port <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("web :%d", port)
+}
+
+func formatInstanceParent(parentID string) string {
+	parentID = strings.TrimSpace(parentID)
+	if parentID == "" {
+		return ""
+	}
+	if len(parentID) > 8 {
+		parentID = parentID[:8]
+	}
+	return "child " + parentID
 }
