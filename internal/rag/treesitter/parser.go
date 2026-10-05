@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -96,6 +97,8 @@ func (p *Parser) ParseFile(ctx context.Context, filePath string) (*sitter.Tree, 
 	if err != nil {
 		return nil, lang, fmt.Errorf("failed to read file: %w", err)
 	}
+	// Ambiguous extensions (".h") are resolved from content.
+	lang, _ = DetectLanguageForContent(filePath, content)
 
 	tree, err := p.Parse(ctx, content, lang)
 	return tree, lang, err
@@ -331,4 +334,65 @@ func GetNodeLocation(node *sitter.Node) (startLine, endLine int, startByte, endB
 		int(endPoint.Row) + 1,
 		int(node.StartByte()),
 		int(node.EndByte())
+}
+
+// DetectLanguageForContent detects the language of a file using its path and,
+// for ambiguous extensions, its content. Today only ".h" is ambiguous (C, C++
+// or Objective-C): it is classified by DetectHeaderLanguage. All other
+// extensions behave exactly like DetectLanguage.
+func DetectLanguageForContent(filePath string, content []byte) (Language, bool) {
+	if strings.EqualFold(filepath.Ext(filePath), ".h") {
+		return DetectHeaderLanguage(content), true
+	}
+	return DetectLanguage(filePath)
+}
+
+// DetectHeaderLanguage classifies the content of a ".h" header as Objective-C,
+// C++ or C. Objective-C markers win over C++ markers (Objective-C++ headers
+// are parsed with the Objective-C grammar); anything else is plain C.
+func DetectHeaderLanguage(content []byte) Language {
+	src := string(content)
+	if len(src) > 64*1024 {
+		src = src[:64*1024]
+	}
+	src = stripCComments(src)
+	for _, m := range []string{"@interface", "@protocol", "@implementation", "@end", "@property", "@class ", "@import ", "#import", "NS_ASSUME_NONNULL_BEGIN", "NS_ENUM(", "NS_OPTIONS("} {
+		if strings.Contains(src, m) {
+			return LanguageObjectiveC
+		}
+	}
+	if cppHeaderRe.MatchString(src) {
+		return LanguageCPP
+	}
+	return LanguageC
+}
+
+var cppHeaderRe = regexp.MustCompile(`(?m)^\s*(?:namespace\s+\w*\s*\{|template\s*<|class\s+\w+[^;{]*\{|(?:struct)\s+\w+\s*:\s*(?:public|private|protected)\b[^;{]*\{|using\s+(?:namespace\s+)?[\w:]+|extern\s+"C\+\+"|#\s*include\s*<(?:iostream|string|vector|map|memory|cstdint|cstdio|cstdlib|cstring|algorithm|utility)>)|\b(?:public|private|protected)\s*:|\bstd::|\bconstexpr\b|\bnullptr\b|\bvirtual\b`)
+
+// stripCComments removes // and /* */ comments so markers inside comments do
+// not influence header detection. String literals are not handled; this is a
+// heuristic only.
+func stripCComments(s string) string {
+	var sb strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '/' && i+1 < len(s) {
+			switch s[i+1] {
+			case '/':
+				for i < len(s) && s[i] != '\n' {
+					i++
+				}
+				sb.WriteByte('\n')
+				continue
+			case '*':
+				i += 2
+				for i+1 < len(s) && !(s[i] == '*' && s[i+1] == '/') {
+					i++
+				}
+				i++
+				continue
+			}
+		}
+		sb.WriteByte(s[i])
+	}
+	return sb.String()
 }

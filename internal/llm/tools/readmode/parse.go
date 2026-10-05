@@ -33,7 +33,7 @@ func ensureParser() {
 // is not a supported source language or parsing/extraction fails — callers must
 // fall back to the raw window in that case.
 func ParseSymbols(ctx context.Context, path string, content []byte) ([]*treesitter.CodeSymbol, treesitter.Language, bool) {
-	lang, ok := treesitter.DetectLanguage(path)
+	lang, ok := treesitter.DetectLanguageForContent(path, content)
 	if !ok {
 		return nil, "", false
 	}

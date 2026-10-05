@@ -243,6 +243,15 @@ func (c *CodeIndexer) indexProjectSync(ctx context.Context, job *IndexingJob, la
 		if treesitter.IsSupportedFile(path) {
 			if len(allowedLangs) > 0 {
 				lang, ok := treesitter.DetectLanguage(path)
+				if ok && strings.EqualFold(filepath.Ext(path), ".h") {
+					// Ambiguous header: language is decided from content at
+					// parse time, so accept it for any C-family filter.
+					ok = allowedLangs[lang] || allowedLangs[treesitter.LanguageObjectiveC] || allowedLangs[treesitter.LanguageCPP]
+					if ok {
+						files = append(files, path)
+					}
+					return nil
+				}
 				if ok && allowedLangs[lang] {
 					files = append(files, path)
 				}
@@ -378,7 +387,7 @@ func (c *CodeIndexer) indexFile(ctx context.Context, projectID, rootPath, filePa
 	hash := fmt.Sprintf("%x", sha256.Sum256(content))
 
 	// Detect language
-	lang, ok := treesitter.DetectLanguage(filePath)
+	lang, ok := treesitter.DetectLanguageForContent(filePath, content)
 	if !ok {
 		return nil // Skip unsupported
 	}

@@ -15,6 +15,7 @@ import (
 	"github.com/madeindigio/go-tree-sitter/kotlin"
 	"github.com/madeindigio/go-tree-sitter/lua"
 	"github.com/madeindigio/go-tree-sitter/markdown"
+	"github.com/madeindigio/go-tree-sitter/objc"
 	"github.com/madeindigio/go-tree-sitter/php"
 	"github.com/madeindigio/go-tree-sitter/python"
 	"github.com/madeindigio/go-tree-sitter/ruby"
@@ -127,13 +128,13 @@ var supportedLanguages = map[Language]LanguageInfo{
 	LanguageObjectiveC: {
 		Language:   LanguageObjectiveC,
 		Name:       "Objective-C",
-		Extensions: []string{"m", "mm", "h"},
-		Grammar:    c.GetLanguage, // Use C grammar as fallback for Objective-C
+		Extensions: []string{"m", "mm"},
+		Grammar:    objc.GetLanguage,
 	},
 	LanguageC: {
 		Language:   LanguageC,
 		Name:       "C",
-		Extensions: []string{"c"},
+		Extensions: []string{"c", "h"},
 		Grammar:    c.GetLanguage,
 	},
 	LanguageCPP: {

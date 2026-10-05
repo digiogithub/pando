@@ -66,8 +66,24 @@ func (k *KotlinExtractor) extractNode(node *sitter.Node, sourceCode []byte, file
 		symbols = append(symbols, k.extractObject(node, sourceCode, filePath, projectID, parentPath, parentID)...)
 
 	case "interface_declaration":
+		// Not produced by current grammar versions; kept for older ones.
 		if symbol := k.extractInterface(node, sourceCode, filePath, projectID, parentPath, parentID); symbol != nil {
 			symbols = append(symbols, symbol)
+		}
+
+	case "companion_object":
+		symbols = append(symbols, k.extractObject(node, sourceCode, filePath, projectID, parentPath, parentID)...)
+
+	case "enum_entry":
+		if id := FindChildByType(node, "simple_identifier"); id != nil {
+			name := GetNodeContent(id, sourceCode)
+			symbols = append(symbols, k.CreateSymbol(node, sourceCode, SymbolTypeEnumMember, name, k.BuildNamePath(parentPath, name), filePath, projectID, parentID))
+		}
+
+	case "type_alias":
+		if id := FindChildByType(node, "type_identifier"); id != nil {
+			name := GetNodeContent(id, sourceCode)
+			symbols = append(symbols, k.CreateSymbol(node, sourceCode, SymbolTypeTypeAlias, name, k.BuildNamePath(parentPath, name), filePath, projectID, parentID))
 		}
 
 	case "function_declaration":
@@ -108,12 +124,31 @@ func (k *KotlinExtractor) extractClass(node *sitter.Node, sourceCode []byte, fil
 	name := GetNodeContent(nameNode, sourceCode)
 	namePath := k.BuildNamePath(parentPath, name)
 
-	symbol := k.CreateSymbol(node, sourceCode, SymbolTypeClass, name, namePath, filePath, projectID, parentID)
+	// The grammar has no interface_declaration: `interface` and `enum class`
+	// are class_declaration nodes told apart by an anonymous keyword token.
+	symbolType := SymbolTypeClass
+	for i := 0; i < int(node.ChildCount()); i++ {
+		if c := node.Child(i); c != nil {
+			if c.Type() == "interface" {
+				symbolType = SymbolTypeInterface
+				break
+			}
+			if c.Type() == "enum_class_body" {
+				symbolType = SymbolTypeEnum
+				break
+			}
+		}
+	}
+
+	symbol := k.CreateSymbol(node, sourceCode, symbolType, name, namePath, filePath, projectID, parentID)
 	symbol.DocString = k.ExtractDocString(node, sourceCode)
 	symbols = append(symbols, symbol)
 
-	// Extract class body members
+	// Extract class body members (enum entries live in enum_class_body)
 	body := FindChildByType(node, "class_body")
+	if body == nil {
+		body = FindChildByType(node, "enum_class_body")
+	}
 	if body != nil {
 		for i := 0; i < int(body.NamedChildCount()); i++ {
 			member := body.NamedChild(i)
@@ -132,12 +167,12 @@ func (k *KotlinExtractor) extractClass(node *sitter.Node, sourceCode []byte, fil
 func (k *KotlinExtractor) extractObject(node *sitter.Node, sourceCode []byte, filePath string, projectID string, parentPath string, parentID *string) []*CodeSymbol {
 	var symbols []*CodeSymbol
 
-	nameNode := FindChildByType(node, "type_identifier")
-	if nameNode == nil {
+	name := "Companion" // unnamed companion objects are called Companion
+	if nameNode := FindChildByType(node, "type_identifier"); nameNode != nil {
+		name = GetNodeContent(nameNode, sourceCode)
+	} else if node.Type() != "companion_object" {
 		return symbols
 	}
-
-	name := GetNodeContent(nameNode, sourceCode)
 	namePath := k.BuildNamePath(parentPath, name)
 
 	symbol := k.CreateSymbol(node, sourceCode, SymbolTypeClass, name, namePath, filePath, projectID, parentID)
@@ -218,11 +253,13 @@ func (k *KotlinExtractor) extractProperty(node *sitter.Node, sourceCode []byte, 
 
 	// Check if const (val with no getter/setter usually)
 	symbolType := SymbolTypeProperty
-	for i := 0; i < int(node.ChildCount()); i++ {
-		child := node.Child(i)
-		if child != nil && GetNodeContent(child, sourceCode) == "const" {
-			symbolType = SymbolTypeConstant
-			break
+	// `const` is a property_modifier inside the modifiers node.
+	if mods := FindChildByType(node, "modifiers"); mods != nil {
+		for _, m := range FindChildrenByType(mods, "property_modifier") {
+			if GetNodeContent(m, sourceCode) == "const" {
+				symbolType = SymbolTypeConstant
+				break
+			}
 		}
 	}
 

@@ -67,12 +67,16 @@ func NewASTWalker(config WalkerConfig) *ASTWalker {
 	walker.RegisterExtractor(NewKotlinExtractor(config))
 	walker.RegisterExtractor(NewSwiftExtractor(config))
 	walker.RegisterExtractor(NewCExtractor(config))
+	walker.RegisterExtractor(NewCSharpExtractor(config))
+	walker.RegisterExtractor(NewCPPExtractor(config))
 	walker.RegisterExtractor(NewPythonExtractor(config))
 	walker.RegisterExtractor(NewLuaExtractor(config))
 	walker.RegisterExtractor(NewSvelteExtractor(config))
 	walker.RegisterExtractor(NewTOMLExtractor(config))
 	walker.RegisterExtractor(NewMarkdownExtractor(config))
 	walker.RegisterExtractor(NewVueExtractor(config))
+	walker.RegisterExtractor(NewObjCExtractor(config))
+	walker.RegisterExtractor(NewRubyExtractor(config))
 
 	return walker
 }

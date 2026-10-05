@@ -154,7 +154,7 @@ function go() {
 
 func TestEdgeCapableLanguages(t *testing.T) {
 	walker := NewASTWalker(DefaultWalkerConfig())
-	for _, lang := range []Language{LanguageGo, LanguageTypeScript, LanguageJavaScript} {
+	for _, lang := range []Language{LanguageGo, LanguageTypeScript, LanguageJavaScript, LanguageRust, LanguageJava, LanguageSwift, LanguageKotlin, LanguageRuby, LanguageObjectiveC, LanguageCSharp, LanguageCPP} {
 		if !walker.SupportsEdges(lang) {
 			t.Errorf("expected %s to support edges", lang)
 		}
