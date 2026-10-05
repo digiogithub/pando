@@ -59,7 +59,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.20.0
 	github.com/stretchr/testify v1.11.1
-	github.com/toon-format/toon-go v0.0.0-20251108125615-44b4cd22477f
+	github.com/toon-format/toon-go v0.1.0
 	github.com/vadv/gopher-lua-libs v0.8.0
 	github.com/wailsapp/wails/v2 v2.16.0
 	github.com/yuin/gopher-lua v1.1.1
@@ -298,5 +298,3 @@ require (
 
 //replace github.com/madeindigio/go-tree-sitter => /www/MCP/Remembrances/go-tree-sitter
 //replace github.com/madeindigio/acp-go-sdk => /www/MCP/Pando/acp-go-sdk
-
-replace github.com/toon-format/toon-go => github.com/madeindigio/toon-go v0.0.0-20260824122047-953870f65a68
