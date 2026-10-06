@@ -203,6 +203,12 @@ type AppOptions struct {
 	// StartupMode identifies the mode in which Pando is starting so background
 	// remembrances behaviors can be aligned consistently across entrypoints.
 	StartupMode string
+	// SkipStartupIndexing disables the startup KB import, the KB watcher and
+	// the code-index startup scan/watcher. Set it for one-shot runs (`-p`,
+	// `--goal`, mesnada pando-cli subagents): those processes are short-lived,
+	// often started several at a time, and re-running a full embedding sync in
+	// each one saturates the embedding backend (e.g. Ollama at 100% CPU).
+	SkipStartupIndexing bool
 	// ChildParentInstanceID is set when this process was spawned as a project
 	// child by another Pando instance. Child instances must not spawn nested
 	// project children, but they still import peer projects for IPC delegation.
@@ -379,8 +385,8 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 			app.Remembrances = remembrances
 			if remembrances != nil {
 				logging.Info("Remembrances service initialized", "startup_mode", opt.StartupMode)
-				app.initRemembrancesProjectIndexing(ctx, remembrances, &cfg.Remembrances, opt.StartupMode)
-				app.initRemembrancesKBSync(ctx, remembrances, &cfg.Remembrances)
+				app.initRemembrancesProjectIndexing(ctx, remembrances, &cfg.Remembrances, opt.StartupMode, opt.SkipStartupIndexing)
+				app.initRemembrancesKBSync(ctx, remembrances, &cfg.Remembrances, opt.SkipStartupIndexing)
 				app.initKBLinkBackfill(ctx, remembrances)
 				app.initKBEmbeddingStalenessCheck(ctx, remembrances, &cfg.Remembrances)
 				app.initRemembrancesSessionIndexing(ctx, remembrances, &cfg.Remembrances)

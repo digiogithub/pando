@@ -116,7 +116,7 @@ func (app *App) initKBEmbeddingStalenessCheck(ctx context.Context, svc *rag.Reme
 	))
 }
 
-func (app *App) initRemembrancesKBSync(ctx context.Context, svc *rag.RemembrancesService, cfg *config.RemembrancesConfig) {
+func (app *App) initRemembrancesKBSync(ctx context.Context, svc *rag.RemembrancesService, cfg *config.RemembrancesConfig, skipStartupIndexing bool) {
 	if svc == nil || svc.KB == nil || cfg == nil {
 		return
 	}
@@ -141,6 +141,14 @@ func (app *App) initRemembrancesKBSync(ctx context.Context, svc *rag.Remembrance
 	if cfg.KBConvertDocuments {
 		svc.KB.SetDocumentConverter(convert.NewWithConvertibleExtensions(cfg.KBConvertExtensions))
 		logging.Info("remembrances kb: document conversion enabled", "path", kbPath)
+	}
+
+	// One-shot runs keep the filesystem mirror (so their own KB writes still
+	// land on disk) but neither re-import the directory nor watch it: the
+	// long-lived instance owns that work.
+	if skipStartupIndexing {
+		logging.Info("remembrances kb: startup import and watcher skipped (one-shot run)", "path", kbPath)
+		return
 	}
 
 	if cfg.KBAutoImport {

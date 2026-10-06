@@ -2,7 +2,11 @@ package embeddings
 
 import (
 	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -310,4 +314,81 @@ func ExampleNewEmbedder() {
 
 	// Use embeddings
 	_ = embeddings
+}
+
+// ollamaTestServer counts hits per path and answers with handler.
+func ollamaTestServer(t *testing.T, handler func(w http.ResponseWriter, r *http.Request)) (*httptest.Server, map[string]*atomic.Int32) {
+	t.Helper()
+	hits := map[string]*atomic.Int32{"/api/embed": {}, "/api/embeddings": {}}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if c, ok := hits[r.URL.Path]; ok {
+			c.Add(1)
+		}
+		handler(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, hits
+}
+
+func TestOllamaEmbedDocuments_TimeoutDoesNotFanOut(t *testing.T) {
+	release := make(chan struct{})
+	srv, hits := ollamaTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	})
+	defer close(release)
+
+	e, _ := NewOllamaEmbedder("m", srv.URL)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	_, err := e.EmbedDocuments(ctx, []string{"a", "b", "c"})
+	if err == nil || !IsBackendUnavailable(err) {
+		t.Fatalf("EmbedDocuments() error = %v, want a backend-unavailable error", err)
+	}
+	if got := hits["/api/embed"].Load(); got != 1 {
+		t.Errorf("/api/embed hits = %d, want 1 (the batch only)", got)
+	}
+	if got := hits["/api/embeddings"].Load(); got != 0 {
+		t.Errorf("/api/embeddings hits = %d, want 0", got)
+	}
+}
+
+func TestOllamaEmbedDocuments_ServerBusyStops(t *testing.T) {
+	srv, hits := ollamaTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"server busy, please try again"}`, http.StatusServiceUnavailable)
+	})
+
+	e, _ := NewOllamaEmbedder("m", srv.URL)
+	_, err := e.EmbedDocuments(context.Background(), []string{"a", "b"})
+	if !errors.Is(err, ErrBackendUnavailable) {
+		t.Fatalf("EmbedDocuments() error = %v, want ErrBackendUnavailable", err)
+	}
+	if got := hits["/api/embed"].Load() + hits["/api/embeddings"].Load(); got != 1 {
+		t.Errorf("total hits = %d, want 1", got)
+	}
+}
+
+func TestOllamaEmbedDocuments_LegacyFallbackOnMissingEndpoint(t *testing.T) {
+	srv, hits := ollamaTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/embed" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`{"embedding":[0.1,0.2,0.3]}`))
+	})
+
+	e, _ := NewOllamaEmbedder("m", srv.URL)
+	got, err := e.EmbedDocuments(context.Background(), []string{"a", "b"})
+	if err != nil {
+		t.Fatalf("EmbedDocuments() error = %v", err)
+	}
+	if len(got) != 2 || len(got[0]) != 3 {
+		t.Fatalf("EmbedDocuments() = %v, want 2 vectors of 3 dims", got)
+	}
+	if n := hits["/api/embeddings"].Load(); n != 2 {
+		t.Errorf("/api/embeddings hits = %d, want 2", n)
+	}
 }

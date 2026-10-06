@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -73,15 +74,64 @@ func normalizeOllamaNativeBaseURL(baseURL string) string {
 	return strings.TrimRight(parsed.String(), "/")
 }
 
-// EmbedDocuments generates embeddings for multiple documents.
-// Ollama doesn't have a batch endpoint, so we make individual calls.
+// ollamaHTTPError is a non-200 answer from Ollama. Keeping the status lets the
+// embedder tell "endpoint not supported" (fall back to the legacy API) from
+// "server overloaded" (stop).
+type ollamaHTTPError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *ollamaHTTPError) Error() string {
+	return fmt.Sprintf("HTTP %d: %s", e.StatusCode, e.Body)
+}
+
+// Unwrap marks 503 answers (Ollama's "server busy" when its queue is full)
+// as ErrBackendUnavailable.
+func (e *ollamaHTTPError) Unwrap() error {
+	if e.StatusCode == http.StatusServiceUnavailable {
+		return ErrBackendUnavailable
+	}
+	return nil
+}
+
+// isEndpointUnsupported reports whether err means the endpoint does not exist
+// on this Ollama version, the only case where the legacy endpoint can help.
+func isEndpointUnsupported(err error) bool {
+	var httpErr *ollamaHTTPError
+	if !errors.As(err, &httpErr) {
+		return false
+	}
+	switch httpErr.StatusCode {
+	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
+		return true
+	}
+	return false
+}
+
+// shouldStop reports whether a failed request must not be followed by more
+// requests: the caller's context is done or the backend is unavailable. Every
+// retry would queue more work on an Ollama that is already saturated, and
+// Ollama keeps computing requests the client has abandoned.
+func shouldStop(ctx context.Context, err error) bool {
+	return ctx.Err() != nil || IsBackendUnavailable(err)
+}
+
+// EmbedDocuments generates embeddings for multiple documents with one batch
+// call to /api/embed. It falls back to one call per text only when the batch
+// fails for a reason other than an unavailable backend (for example an old
+// Ollama without batch input support).
 func (e *OllamaEmbedder) EmbedDocuments(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return nil, ErrNoTexts
 	}
 
-	if embeddings, err := e.requestEmbedBatch(ctx, texts); err == nil {
-		return embeddings, nil
+	batch, batchErr := e.requestEmbedBatch(ctx, texts)
+	if batchErr == nil {
+		return batch, nil
+	}
+	if shouldStop(ctx, batchErr) {
+		return nil, batchErr
 	}
 
 	embeddings := make([][]float32, len(texts))
@@ -90,6 +140,9 @@ func (e *OllamaEmbedder) EmbedDocuments(ctx context.Context, texts []string) ([]
 	for i, text := range texts {
 		emb, err := e.embedSingle(ctx, text)
 		if err != nil {
+			if shouldStop(ctx, err) {
+				return nil, fmt.Errorf("ollama: text %d: %w", i, err)
+			}
 			// Continue on individual failures but record the first error
 			if firstErr == nil {
 				firstErr = fmt.Errorf("ollama: text %d: %w", i, err)
@@ -146,7 +199,11 @@ func (e *OllamaEmbedder) embedSingle(ctx context.Context, text string) ([]float3
 
 	embedding, err := e.requestEmbed(ctx, e.baseURL+"/api/embed", bodyBytes)
 	if err != nil {
-		// Fallback for legacy Ollama endpoint.
+		// Fall back to the legacy endpoint only when /api/embed does not exist
+		// on this Ollama; a timeout or overload would just fail again there.
+		if !isEndpointUnsupported(err) {
+			return nil, err
+		}
 		type legacyReq struct {
 			Model  string `json:"model"`
 			Prompt string `json:"prompt"`
@@ -200,7 +257,7 @@ func (e *OllamaEmbedder) requestEmbedBatch(ctx context.Context, texts []string) 
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("ollama: batch HTTP %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("ollama: batch %w", &ollamaHTTPError{StatusCode: resp.StatusCode, Body: string(body)})
 	}
 
 	var embResp ollamaEmbeddingResponse
@@ -259,7 +316,7 @@ func (e *OllamaEmbedder) requestEmbed(ctx context.Context, url string, bodyBytes
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("ollama: HTTP %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("ollama: %w", &ollamaHTTPError{StatusCode: resp.StatusCode, Body: string(body)})
 	}
 
 	var embResp ollamaEmbeddingResponse

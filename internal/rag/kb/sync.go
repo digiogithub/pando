@@ -2,6 +2,7 @@ package kb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/rag/embeddings"
 )
 
 type syncJob struct {
@@ -35,6 +37,17 @@ type walkSummary struct {
 }
 
 const kbSyncPerFileTimeout = 5 * time.Minute
+
+// kbSyncBackendFailureLimit is how many documents in a row may fail because
+// the embedding backend is unavailable (timeout, refused connection, 503)
+// before the sync gives up. Without it a slow or saturated backend makes every
+// document wait for its own timeout while piling more requests on it, and the
+// documents never get stored, so the next start repeats the whole run.
+const kbSyncBackendFailureLimit = 2
+
+// ErrSyncEmbeddingBackendUnavailable is returned (wrapped) when a sync stops
+// early because the embedding backend kept failing.
+var ErrSyncEmbeddingBackendUnavailable = errors.New("kb: sync aborted: embedding backend unavailable")
 
 // SyncDirectoryWithStats imports or syncs all markdown files from a directory.
 // It recursively scans for .md files, upserts modified documents, and optionally
@@ -178,6 +191,23 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 	processed := 0
 	var firstErr error
 	errorCount := 0
+	backendFailures := 0
+	backendTripped := false
+
+	// recordWriteErr counts a failed add/update and reports whether the sync
+	// must stop because the embedding backend keeps failing.
+	recordWriteErr := func(err error) bool {
+		errorCount++
+		if firstErr == nil {
+			firstErr = err
+		}
+		if !embeddings.IsBackendUnavailable(err) {
+			backendFailures = 0
+			return false
+		}
+		backendFailures++
+		return backendFailures >= kbSyncBackendFailureLimit
+	}
 
 	for res := range results {
 		processed++
@@ -214,9 +244,9 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 			)
 			if addErr := s.AddDocument(processingCtx, res.job.docPath, bodyContent, meta); addErr != nil {
 				cancel()
-				errorCount++
-				if firstErr == nil {
-					firstErr = fmt.Errorf("kb: add %s: %w", res.job.docPath, addErr)
+				if recordWriteErr(fmt.Errorf("kb: add %s: %w", res.job.docPath, addErr)) {
+					backendTripped = true
+					break
 				}
 				if processed%10 == 0 {
 					logSyncProgress(processed, -1, stats, errorCount)
@@ -224,6 +254,7 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 				continue
 			}
 			cancel()
+			backendFailures = 0
 			stats.Added++
 			stats.LinksIndexed += s.countIndexedLinks(bodyContent)
 			existingByPath[res.job.docPath] = documentMetadata{FilePath: res.job.docPath, Metadata: meta}
@@ -240,9 +271,9 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 		)
 		if updateErr := s.UpdateDocument(processingCtx, res.job.docPath, bodyContent, meta); updateErr != nil {
 			cancel()
-			errorCount++
-			if firstErr == nil {
-				firstErr = fmt.Errorf("kb: update %s: %w", res.job.docPath, updateErr)
+			if recordWriteErr(fmt.Errorf("kb: update %s: %w", res.job.docPath, updateErr)) {
+				backendTripped = true
+				break
 			}
 			if processed%10 == 0 {
 				logSyncProgress(processed, -1, stats, errorCount)
@@ -250,6 +281,7 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 			continue
 		}
 		cancel()
+		backendFailures = 0
 		stats.Updated++
 		stats.LinksIndexed += s.countIndexedLinks(bodyContent)
 		existingByPath[res.job.docPath] = documentMetadata{FilePath: res.job.docPath, Metadata: meta}
@@ -257,6 +289,24 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 		if processed%10 == 0 {
 			logSyncProgress(processed, -1, stats, errorCount)
 		}
+	}
+
+	if backendTripped {
+		// Stop the walker and the loaders; they exit on ctxSync and close
+		// results, which is drained so no goroutine stays blocked on a send.
+		cancel()
+		for range results {
+		}
+		<-summaryCh
+		<-walkErrCh
+		logging.Warn("kb sync: aborted, embedding backend unavailable",
+			"dir", baseDir,
+			"elapsed", time.Since(syncStartedAt).String(),
+			"processed", processed,
+			"consecutive_failures", backendFailures,
+			"error", firstErr,
+		)
+		return stats, fmt.Errorf("%w: %w", ErrSyncEmbeddingBackendUnavailable, firstErr)
 	}
 
 	summary := <-summaryCh

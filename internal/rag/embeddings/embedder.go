@@ -4,7 +4,11 @@ package embeddings
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
+	"strings"
+	"syscall"
 )
 
 // Embedder is the main interface for generating embeddings from text.
@@ -36,3 +40,31 @@ var ErrNoTexts = fmt.Errorf("no texts provided for embedding")
 
 // ErrDimensionMismatch is returned when embeddings have unexpected dimensions.
 var ErrDimensionMismatch = fmt.Errorf("embedding dimension mismatch")
+
+// ErrBackendUnavailable marks an embedding failure caused by the backend being
+// unreachable, overloaded or too slow (timeouts, refused connections, 503).
+// Retrying another text against the same backend right away will not help and
+// only adds load, so callers should stop instead of falling back or moving on.
+var ErrBackendUnavailable = errors.New("embedding backend unavailable")
+
+// IsBackendUnavailable reports whether err means the embedding backend cannot
+// serve requests right now: a deadline or client timeout, a refused or reset
+// connection, or an error already marked with ErrBackendUnavailable. A plain
+// cancellation (context.Canceled) is not a backend problem and returns false.
+func IsBackendUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrBackendUnavailable) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	if errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "connection refused") || strings.Contains(msg, "Client.Timeout exceeded")
+}

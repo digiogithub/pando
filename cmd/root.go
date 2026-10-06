@@ -245,6 +245,9 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 			DBQuerier:   rt.Querier,
 			StartupMode: "tui",
 			InstanceID:  instanceID,
+			// One-shot runs (`-p`, `--goal`, mesnada pando-cli subagents)
+			// must not re-run the startup KB/code indexing.
+			SkipStartupIndexing: prompt != "" || goalObjective != "",
 		})
 		if err != nil {
 			logging.Error("Failed to create app: %v", err)

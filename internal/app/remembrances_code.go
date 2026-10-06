@@ -13,7 +13,7 @@ import (
 	rag "github.com/digiogithub/pando/internal/rag"
 )
 
-func (app *App) initRemembrancesProjectIndexing(ctx context.Context, svc *rag.RemembrancesService, cfg *config.RemembrancesConfig, startupMode string) {
+func (app *App) initRemembrancesProjectIndexing(ctx context.Context, svc *rag.RemembrancesService, cfg *config.RemembrancesConfig, startupMode string, skipStartupIndexing bool) {
 	if svc == nil || svc.Code == nil || cfg == nil || !cfg.Enabled {
 		return
 	}
@@ -61,6 +61,15 @@ func (app *App) initRemembrancesProjectIndexing(ctx context.Context, svc *rag.Re
 
 	if cfg.ContextEnrichmentCodeProject == "" {
 		cfg.ContextEnrichmentCodeProject = projectID
+	}
+
+	if skipStartupIndexing {
+		logging.Info("remembrances code: startup indexing skipped (one-shot run)",
+			"project_id", projectID,
+			"path", rootPath,
+			"startup_mode", startupMode,
+		)
+		return
 	}
 
 	logging.Info("remembrances code: startup indexing scheduled",
