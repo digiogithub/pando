@@ -42,7 +42,7 @@ require (
 	github.com/layeh/gopher-json v0.0.0-20201124131017-552bb3c4c3bf
 	github.com/lrstanley/bubblezone v0.0.0-20250315020633-c249a3fe1231
 	github.com/madeindigio/acp-go-sdk v0.15.1
-	github.com/madeindigio/go-tree-sitter v0.2.0
+	github.com/madeindigio/go-tree-sitter v0.2.1
 	github.com/mark3labs/mcp-go v0.57.0
 	github.com/mistakenelf/teacup v0.4.1
 	github.com/modelcontextprotocol/go-sdk v1.4.1

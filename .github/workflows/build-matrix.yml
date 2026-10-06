@@ -39,13 +39,22 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Install system dependencies
+        # ./desktop (wails) links gtk+-3.0 and webkit2gtk through cgo, so
+        # `go vet ./...` needs their headers. ubuntu-latest only ships
+        # WebKit2GTK 4.1, hence the webkit2_41 tag in the vet step (the
+        # Makefile picks the same tag through WAILS_TAGS).
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
       - name: Prepare embed placeholders
         # web-ui/dist and the desktop binary are gitignored build artifacts, but
         # their go:embed patterns must resolve for vet/build to run.
         run: make embed-stubs
 
       - name: Vet
-        run: go vet ${{ matrix.module_tags && format('-tags {0}', matrix.module_tags) || '' }} ./...
+        run: go vet -tags ${{ matrix.module_tags && format('{0},webkit2_41', matrix.module_tags) || 'webkit2_41' }} ./...
 
       - name: Build
         run: make build-fast MODULE_TAGS=${{ matrix.module_tags }}
