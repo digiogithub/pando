@@ -2,9 +2,13 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unsafe"
@@ -13,7 +17,11 @@ import (
 	"github.com/digiogithub/pando/internal/pubsub"
 	rag "github.com/digiogithub/pando/internal/rag"
 	"github.com/digiogithub/pando/internal/rag/embeddings"
+	"github.com/digiogithub/pando/internal/rag/events"
 	"github.com/digiogithub/pando/internal/session"
+
+	_ "github.com/ncruces/go-sqlite3/driver"
+	_ "github.com/ncruces/go-sqlite3/embed"
 )
 
 type recordingEmbedder struct {
@@ -114,18 +122,50 @@ func TestCloneSessionMetadataCreatesIndependentCopy(t *testing.T) {
 	}
 }
 
+// newIndexingService returns a remembrances service with an in-memory event
+// store and the given document embedder.
+func newIndexingService(t *testing.T, embedder embeddings.Embedder) *rag.RemembrancesService {
+	t.Helper()
+	conn, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("sql.Open() error = %v", err)
+	}
+	conn.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = conn.Close() })
+	if _, err := conn.Exec(`
+	CREATE TABLE events (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		subject TEXT NOT NULL,
+		content TEXT NOT NULL,
+		metadata TEXT NOT NULL DEFAULT '{}',
+		embedding BLOB,
+		event_at DATETIME NOT NULL,
+		created_at DATETIME NOT NULL
+	);
+	CREATE VIRTUAL TABLE events_fts USING fts5(subject, content, content='events', content_rowid='id');
+	`); err != nil {
+		t.Fatalf("create events schema: %v", err)
+	}
+	svc := &rag.RemembrancesService{Events: events.NewEventStore(conn, embedder)}
+	setDocumentEmbedderForTest(svc, embedder)
+	return svc
+}
+
+func textMessage(role message.MessageRole, text string) message.Message {
+	return message.Message{
+		SessionID: "session-1",
+		Role:      role,
+		Parts:     []message.ContentPart{message.TextContent{Text: text}},
+	}
+}
+
 func TestIndexSessionConversationPropagatesEmbedErrors(t *testing.T) {
 	embedder := &recordingEmbedder{err: errors.New("boom")}
 	app := &App{
 		Sessions: &indexingSessionService{sess: session.Session{ID: "session-1", Title: "Chunky"}},
-		Messages: &indexingMessagesService{msgs: []message.Message{{
-			SessionID: "session-1",
-			Role:      message.User,
-			Parts:     []message.ContentPart{message.TextContent{Text: "hello"}},
-		}}},
+		Messages: &indexingMessagesService{msgs: []message.Message{textMessage(message.User, "hello")}},
 	}
-	svc := &rag.RemembrancesService{}
-	setDocumentEmbedderForTest(svc, embedder)
+	svc := newIndexingService(t, embedder)
 
 	err := app.indexSessionConversation(context.Background(), svc, "session-1")
 	if err == nil || !strings.Contains(err.Error(), "embed session chunks") {
@@ -142,18 +182,12 @@ func TestIndexSessionConversationChunksContentForEmbeddings(t *testing.T) {
 			Title:     "Chunky session",
 			UpdatedAt: time.Now().Unix(),
 		}},
-		Messages: &indexingMessagesService{msgs: []message.Message{{
-			SessionID: "session-1",
-			Role:      message.User,
-			Parts:     []message.ContentPart{message.TextContent{Text: content}},
-		}}},
+		Messages: &indexingMessagesService{msgs: []message.Message{textMessage(message.User, content)}},
 	}
-	svc := &rag.RemembrancesService{}
-	setDocumentEmbedderForTest(svc, embedder)
+	svc := newIndexingService(t, embedder)
 
-	err := app.indexSessionConversation(context.Background(), svc, "session-1")
-	if err == nil || !strings.Contains(err.Error(), "session event store not configured") {
-		t.Fatalf("expected missing store error, got %v", err)
+	if err := app.indexSessionConversation(context.Background(), svc, "session-1"); err != nil {
+		t.Fatalf("indexSessionConversation() error = %v", err)
 	}
 
 	expected := embeddings.ChunkText("Session title: Chunky session\n\nUSER:\n"+content, embeddings.DefaultChunkSize, embeddings.DefaultChunkOverlap)
@@ -162,6 +196,123 @@ func TestIndexSessionConversationChunksContentForEmbeddings(t *testing.T) {
 	}
 	if !reflect.DeepEqual(embedder.texts, expected) {
 		t.Fatalf("embedded chunks = %#v, want %#v", embedder.texts, expected)
+	}
+}
+
+// TestIndexSessionConversationReusesEmbeddings checks that a growing session
+// only embeds its new chunks and that an unchanged session embeds nothing.
+func TestIndexSessionConversationReusesEmbeddings(t *testing.T) {
+	embedder := &recordingEmbedder{}
+	msgs := &indexingMessagesService{}
+	for i := 0; i < 8; i++ {
+		msgs.msgs = append(msgs.msgs, textMessage(message.User, fmt.Sprintf("Question %d. %s", i, strings.Repeat("words here. ", 40))))
+	}
+	app := &App{
+		Sessions: &indexingSessionService{sess: session.Session{ID: "session-1", Title: "Long"}},
+		Messages: msgs,
+	}
+	svc := newIndexingService(t, embedder)
+	ctx := context.Background()
+
+	if err := app.indexSessionConversation(ctx, svc, "session-1"); err != nil {
+		t.Fatalf("first pass error = %v", err)
+	}
+	firstPass := len(embedder.texts)
+	if firstPass < 4 {
+		t.Fatalf("first pass embedded %d chunks, want a multi-chunk session", firstPass)
+	}
+
+	embedder.texts = nil
+	if err := app.indexSessionConversation(ctx, svc, "session-1"); err != nil {
+		t.Fatalf("unchanged pass error = %v", err)
+	}
+	if embedder.texts != nil {
+		t.Fatalf("unchanged session embedded %d chunks, want 0", len(embedder.texts))
+	}
+
+	msgs.msgs = append(msgs.msgs, textMessage(message.Assistant, "A short answer."))
+	if err := app.indexSessionConversation(ctx, svc, "session-1"); err != nil {
+		t.Fatalf("grown pass error = %v", err)
+	}
+	if n := len(embedder.texts); n == 0 || n >= firstPass {
+		t.Fatalf("grown session embedded %d chunks, want only the changed tail (< %d)", n, firstPass)
+	}
+
+	stored, err := svc.Events.SessionChunks(ctx, sessionIndexSubject, "session-1")
+	if err != nil {
+		t.Fatalf("SessionChunks() error = %v", err)
+	}
+	for i, c := range stored {
+		if len(c.Embedding) == 0 {
+			t.Fatalf("stored chunk %d has no embedding", i)
+		}
+	}
+}
+
+func TestExtractMessageSearchPartsSkipsReasoningAndCapsTools(t *testing.T) {
+	msg := message.Message{
+		Role: message.Assistant,
+		Parts: []message.ContentPart{
+			message.ReasoningContent{Thinking: "secret chain of thought"},
+			message.TextContent{Text: "visible answer"},
+			message.ToolResult{Name: "view", Content: strings.Repeat("x", sessionIndexToolResultMaxChars*3)},
+		},
+	}
+	parts := extractMessageSearchParts(msg)
+	joined := strings.Join(parts, "\n")
+	if strings.Contains(joined, "secret chain of thought") {
+		t.Errorf("reasoning was indexed: %q", joined)
+	}
+	if !strings.Contains(joined, "visible answer") {
+		t.Errorf("text missing: %q", joined)
+	}
+	if len(joined) > sessionIndexToolResultMaxChars+200 {
+		t.Errorf("tool result not capped: %d bytes", len(joined))
+	}
+}
+
+func TestSessionIndexSchedulerCoalescesAndBacksOff(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var runs atomic.Int32
+	var mu sync.Mutex
+	fail := true
+	done := make(chan struct{}, 4)
+	s := newSessionIndexScheduler(ctx, 20*time.Millisecond, func(context.Context, string) error {
+		runs.Add(1)
+		mu.Lock()
+		defer mu.Unlock()
+		defer func() { done <- struct{}{} }()
+		if fail {
+			fail = false
+			return fmt.Errorf("embed: %w", context.DeadlineExceeded)
+		}
+		return nil
+	})
+	s.cooldown = 150 * time.Millisecond
+	defer s.stop()
+
+	for i := 0; i < 5; i++ {
+		s.schedule("session-1")
+	}
+	start := time.Now()
+	<-done
+	if got := runs.Load(); got != 1 {
+		t.Fatalf("runs after burst = %d, want 1 (coalesced)", got)
+	}
+
+	// The backend failure pauses indexing and retries after the cooldown.
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("session was not retried after the cooldown")
+	}
+	if elapsed := time.Since(start); elapsed < s.cooldown {
+		t.Errorf("retry after %v, want at least the %v cooldown", elapsed, s.cooldown)
+	}
+	if got := runs.Load(); got != 2 {
+		t.Errorf("runs = %d, want 2", got)
 	}
 }
 

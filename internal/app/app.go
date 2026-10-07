@@ -389,7 +389,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 				app.initRemembrancesKBSync(ctx, remembrances, &cfg.Remembrances, opt.SkipStartupIndexing)
 				app.initKBLinkBackfill(ctx, remembrances)
 				app.initKBEmbeddingStalenessCheck(ctx, remembrances, &cfg.Remembrances)
-				app.initRemembrancesSessionIndexing(ctx, remembrances, &cfg.Remembrances)
+				app.initRemembrancesSessionIndexing(ctx, remembrances, &cfg.Remembrances, opt.SkipStartupIndexing)
 
 				// Decision-model relevance filter targets, wired after both injection
 				// points are built (see startRelevanceFilterWiring).
