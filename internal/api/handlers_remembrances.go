@@ -89,6 +89,10 @@ func (s *Server) handleIndexCodeProject(w http.ResponseWriter, r *http.Request) 
 		projectID = sanitizeProjectID(targetPath)
 	}
 
+	if resolvedID, resolveErr := s.app.Remembrances.Code.ResolveProjectID(r.Context(), projectID, targetPath); resolveErr == nil {
+		projectID = resolvedID
+	}
+
 	jobID, err := s.app.Remembrances.Code.IndexProject(r.Context(), projectID, targetPath, nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to start indexing: "+err.Error())

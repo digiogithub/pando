@@ -49,7 +49,8 @@ func (app *App) initRemembrancesProjectIndexing(ctx context.Context, svc *rag.Re
 		return
 	}
 
-	projectID := strings.TrimSpace(cfg.ContextEnrichmentCodeProject)
+	configuredID := strings.TrimSpace(cfg.ContextEnrichmentCodeProject)
+	projectID := configuredID
 	if projectID == "" {
 		projectID = sanitizeRemembrancesProjectID(rootPath)
 	}
@@ -59,7 +60,24 @@ func (app *App) initRemembrancesProjectIndexing(ctx context.Context, svc *rag.Re
 		return
 	}
 
-	if cfg.ContextEnrichmentCodeProject == "" {
+	// Reuse the id this directory is already indexed under (the code tools
+	// derive ids differently), and never move a configured id that belongs to
+	// another directory onto this one: either would re-index a whole tree.
+	resolvedID, err := svc.Code.ResolveProjectID(ctx, projectID, rootPath)
+	if err != nil {
+		logging.Warn("remembrances code: resolve startup project id failed", "project_id", projectID, "path", rootPath, "error", err)
+		return
+	}
+	if resolvedID != projectID {
+		logging.Info("remembrances code: using the project id already indexed for this directory",
+			"requested", projectID,
+			"project_id", resolvedID,
+			"path", rootPath,
+		)
+		projectID = resolvedID
+	}
+
+	if configuredID == "" || configuredID != projectID {
 		cfg.ContextEnrichmentCodeProject = projectID
 	}
 

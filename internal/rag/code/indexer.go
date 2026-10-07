@@ -119,7 +119,20 @@ func (c *CodeIndexer) SetWriteProxy(proxy *dbproxy.DBProxy) {
 // IndexProject indexes all supported source files in a project directory.
 // It runs asynchronously and updates the job status in the jobs map.
 // Returns the job ID immediately.
+//
+// projectID is passed through ResolveProjectID first, so a directory that is
+// already indexed keeps its id; callers that report the id should resolve it
+// themselves beforehand to show the one actually used.
 func (c *CodeIndexer) IndexProject(ctx context.Context, projectID, projectPath string, languages []Language) (string, error) {
+	resolvedID, err := c.ResolveProjectID(ctx, projectID, projectPath)
+	if err != nil {
+		return "", err
+	}
+	if resolvedID != projectID {
+		logging.Info("code: index request mapped to existing project id",
+			"requested", projectID, "project_id", resolvedID, "path", projectPath)
+		projectID = resolvedID
+	}
 	jobID := uuid.New().String()
 	// Upsert project record
 	now := time.Now().UTC()
@@ -595,16 +608,7 @@ func (c *CodeIndexer) HasProject(ctx context.Context, projectID, rootPath string
 		return false, fmt.Errorf("code: project_id is required")
 	}
 
-	var existingRoot string
-	err := c.db.QueryRowContext(ctx, `SELECT root_path FROM code_projects WHERE project_id = ?`, projectID).Scan(&existingRoot)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return false, nil
-		}
-		return false, fmt.Errorf("code: get project: %w", err)
-	}
-
-	return filepath.Clean(existingRoot) == filepath.Clean(rootPath), nil
+	return c.projectRootMatches(ctx, projectID, rootPath)
 }
 
 // ListIndexedFiles returns up to limit indexed file paths (relative to the

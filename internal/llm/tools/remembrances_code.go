@@ -227,6 +227,13 @@ func (t *CodeIndexProjectTool) Run(ctx context.Context, params ToolCall) (ToolRe
 		}
 	}
 
+	// A directory that is already indexed keeps its id, whatever name was asked.
+	resolvedID, err := t.indexer.ResolveProjectID(ctx, projectID, req.ProjectPath)
+	if err != nil {
+		return NewTextErrorResponse(fmt.Sprintf("index project error: %v", err)), nil
+	}
+	projectID = resolvedID
+
 	jobID, err := t.indexer.IndexProject(ctx, projectID, req.ProjectPath, langs)
 	if err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("index project error: %v", err)), nil

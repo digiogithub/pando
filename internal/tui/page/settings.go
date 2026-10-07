@@ -865,6 +865,9 @@ func (p *settingsPage) indexWorkingDirectory() tea.Cmd {
 		}
 		cwd := config.WorkingDirectory()
 		projectID := sanitizeTUIProjectID(cwd)
+		if resolvedID, resolveErr := p.app.Remembrances.Code.ResolveProjectID(context.Background(), projectID, cwd); resolveErr == nil {
+			projectID = resolvedID
+		}
 		jobID, err := p.app.Remembrances.Code.IndexProject(context.Background(), projectID, cwd, nil)
 		return codeIndexStartedMsg{projectID: projectID, jobID: jobID, err: err}
 	}
