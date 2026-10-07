@@ -41,6 +41,8 @@ interface SessionStore {
   insertBeforeLast: (msg: Message) => void
   updateLastMessage: (content: string) => void
   updateLastMessageParts: (parts: import('../types').ContentPart[]) => void
+  /** set a session's title manually (PATCH /api/v1/sessions/{id}) */
+  renameSession: (id: string, title: string) => Promise<void>
   markSessionRunning: (id: string, running: boolean) => void
   /** apply a live (possibly estimated) context-window token update to a session */
   updateSessionTokens: (
@@ -204,6 +206,15 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       msgs[msgs.length - 1] = last
       return { messages: msgs }
     }),
+
+  renameSession: async (id, title) => {
+    const trimmed = title.trim()
+    if (!trimmed) return
+    await api.patch(`/api/v1/sessions/${encodeURIComponent(id)}`, { title: trimmed })
+    set((s) => ({
+      sessions: s.sessions.map((sess) => (sess.id === id ? { ...sess, title: trimmed } : sess)),
+    }))
+  },
 
   markSessionRunning: (id, running) =>
     set((s) => ({

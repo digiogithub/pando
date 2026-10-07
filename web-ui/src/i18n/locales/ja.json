@@ -19,7 +19,9 @@
     "maximiseWindow": "最大化",
     "closeToTray": "トレイに閉じる",
     "closeWindow": "閉じる",
-    "windowControls": "ウィンドウ操作"
+    "windowControls": "ウィンドウ操作",
+    "renameSession": "セッション名を変更",
+    "renameSessionFailed": "セッション名を変更できませんでした"
   },
   "common": {
     "save": "保存",

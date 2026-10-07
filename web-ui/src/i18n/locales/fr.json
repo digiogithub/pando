@@ -19,7 +19,9 @@
     "maximiseWindow": "Agrandir",
     "closeToTray": "Fermer vers la zone de notification",
     "closeWindow": "Fermer",
-    "windowControls": "Contrôles de la fenêtre"
+    "windowControls": "Contrôles de la fenêtre",
+    "renameSession": "Renommer la session",
+    "renameSessionFailed": "Impossible de renommer la session"
   },
   "common": {
     "save": "Enregistrer",

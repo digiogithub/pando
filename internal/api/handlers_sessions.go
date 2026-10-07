@@ -174,7 +174,12 @@ func (s *Server) handlePatchSession(w http.ResponseWriter, r *http.Request, id s
 	}
 
 	if req.Title != nil {
-		sess.Title = *req.Title
+		title := strings.TrimSpace(*req.Title)
+		if title == "" {
+			writeError(w, http.StatusBadRequest, "title must not be empty")
+			return
+		}
+		sess.Title = title
 	}
 
 	updated, err := s.app.Sessions.Save(r.Context(), sess)

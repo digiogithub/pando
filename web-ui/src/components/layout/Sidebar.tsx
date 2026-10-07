@@ -1,18 +1,19 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { format } from 'date-fns'
 import { useSessionStore } from '@pando/client/stores/sessionStore'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useExtensionPanelsStore } from '@pando/client/stores/extensionPanelsStore'
 import { useServerStore } from '@pando/client/stores/serverStore'
+import { useToastStore } from '@pando/client/stores/toastStore'
 import { isChildModeRestrictedPath, isProjectChildMode } from '@pando/client/services/api'
 import { localBrowserStorage } from '@pando/client/services/storage'
 import { IconButton, Input, Tooltip } from '@/components/ui'
 import { BrandMark } from '@/components/brand'
 import {
   ChevronDown, Code, FolderOpen, GitBranch, type LucideIcon, MessageSquare, MessageSquarePlus,
-  Network, Palette, Puzzle, ScrollText, Search, Server, Settings, Sparkles, SquarePen,
+  Network, Palette, Pencil, Puzzle, ScrollText, Search, Server, Settings, Sparkles, SquarePen,
   SquareTerminal, X,
 } from '@/components/ui/icons'
 import { isMobileViewport } from './shellHooks'
@@ -118,6 +119,38 @@ export default function Sidebar({ variant = 'full', simple = false }: { variant?
   const EXT_ITEMS: NavItem[] = extensionPanels
     .filter((p) => p.slot === 'sidebar')
     .map((p) => ({ path: `/ext/${p.id}`, label: p.title || p.id, icon: Puzzle }))
+
+  // Inline manual rename of a session title (pencil shown on row hover).
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  // Mirrors editingId synchronously: Enter/Escape unmount the input, which can
+  // fire a trailing blur with a stale closure — the ref makes it a no-op.
+  const editingRef = useRef<string | null>(null)
+  const startRename = (id: string, title: string) => {
+    editingRef.current = id
+    setEditingId(id)
+    setEditTitle(title)
+  }
+  const cancelRename = () => {
+    editingRef.current = null
+    setEditingId(null)
+  }
+  const commitRename = async () => {
+    const id = editingRef.current
+    if (!id) return
+    cancelRename()
+    const title = editTitle.trim()
+    const current = sessions.find((x) => x.id === id)?.title ?? ''
+    if (!title || title === current) return
+    try {
+      await useSessionStore.getState().renameSession(id, title)
+    } catch (err) {
+      useToastStore.getState().addToast(
+        t('shell.renameSessionFailed', 'Failed to rename session') + ': ' + (err instanceof Error ? err.message : String(err)),
+        'error',
+      )
+    }
+  }
 
   const filteredSessions = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -236,9 +269,38 @@ export default function Sidebar({ variant = 'full', simple = false }: { variant?
             >
               {filteredSessions.map((s) => {
                 const active = s.id === activeSessionId
+                if (editingId === s.id) {
+                  return (
+                    <div key={s.id} className="shell-session is-editing">
+                      <span
+                        className={`shell-dot${s.is_running ? ' is-running' : active ? ' is-active' : ''}`}
+                        aria-hidden="true"
+                      />
+                      <input
+                        className="shell-session-input"
+                        autoFocus
+                        value={editTitle}
+                        maxLength={200}
+                        aria-label={t('shell.renameSession', 'Rename session')}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        onFocus={(e) => e.currentTarget.select()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            void commitRename()
+                          } else if (e.key === 'Escape') {
+                            e.preventDefault()
+                            cancelRename()
+                          }
+                        }}
+                        onBlur={() => void commitRename()}
+                      />
+                    </div>
+                  )
+                }
                 return (
+                  <div key={s.id} className="shell-session-row">
                   <button
-                    key={s.id}
                     type="button"
                     className="shell-session"
                     aria-current={active ? 'true' : undefined}
@@ -262,6 +324,16 @@ export default function Sidebar({ variant = 'full', simple = false }: { variant?
                       </span>
                     </span>
                   </button>
+                  <button
+                    type="button"
+                    className="shell-session-edit"
+                    aria-label={t('shell.renameSession', 'Rename session')}
+                    title={t('shell.renameSession', 'Rename session')}
+                    onClick={() => startRename(s.id, s.title)}
+                  >
+                    <Pencil size={13} />
+                  </button>
+                  </div>
                 )
               })}
               {sessionsHasMore && !query && (

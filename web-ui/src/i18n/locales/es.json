@@ -19,7 +19,9 @@
     "maximiseWindow": "Maximizar",
     "closeToTray": "Cerrar a la bandeja",
     "closeWindow": "Cerrar",
-    "windowControls": "Controles de ventana"
+    "windowControls": "Controles de ventana",
+    "renameSession": "Renombrar sesión",
+    "renameSessionFailed": "No se pudo renombrar la sesión"
   },
   "common": {
     "save": "Guardar",

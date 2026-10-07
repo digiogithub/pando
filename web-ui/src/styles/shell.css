@@ -373,6 +373,47 @@
 }
 .shell-session-meta.is-running { color: var(--success); }
 
+/* Manual rename: pencil revealed on row hover/focus, inline title input. */
+.shell-session-row { position: relative; }
+.shell-session-row .shell-session { padding-right: 30px; }
+.shell-session-edit {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-faint);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.shell-session-row:hover .shell-session-edit,
+.shell-session-edit:focus-visible { opacity: 1; }
+.shell-session-edit:hover { color: var(--fg); background: var(--bg-hover); }
+@media (hover: none) { .shell-session-edit { opacity: 0.7; } }
+/* Same height as a title + meta row so the list does not jump while editing. */
+.shell-session.is-editing { min-height: 47px; cursor: default; background: var(--bg-raised); }
+.shell-session-input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--accent, var(--border));
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--text-sm);
+  outline: none;
+}
+
 .shell-dot {
   display: inline-block;
   flex-shrink: 0;

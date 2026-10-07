@@ -19,7 +19,9 @@
     "maximiseWindow": "Maximise",
     "closeToTray": "Close to tray",
     "closeWindow": "Close",
-    "windowControls": "Window controls"
+    "windowControls": "Window controls",
+    "renameSession": "Rename session",
+    "renameSessionFailed": "Failed to rename session"
   },
   "common": {
     "save": "Save",

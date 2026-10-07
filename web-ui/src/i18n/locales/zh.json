@@ -19,7 +19,9 @@
     "maximiseWindow": "最大化",
     "closeToTray": "关闭到托盘",
     "closeWindow": "关闭",
-    "windowControls": "窗口控制"
+    "windowControls": "窗口控制",
+    "renameSession": "重命名会话",
+    "renameSessionFailed": "重命名会话失败"
   },
   "common": {
     "save": "保存",

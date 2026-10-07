@@ -19,7 +19,9 @@
     "maximiseWindow": "Maximieren",
     "closeToTray": "In den Infobereich schließen",
     "closeWindow": "Schließen",
-    "windowControls": "Fenstersteuerung"
+    "windowControls": "Fenstersteuerung",
+    "renameSession": "Sitzung umbenennen",
+    "renameSessionFailed": "Sitzung konnte nicht umbenannt werden"
   },
   "common": {
     "save": "Speichern",
