@@ -70,3 +70,19 @@ func mapToWriteError(method string, err error) *WriteError {
 		return &WriteError{Code: ErrCodeInternal, Method: method, Message: msg}
 	}
 }
+
+// IsMethodNotFound reports whether err means the primary instance does not
+// handle the forwarded write method (an older primary, or one started by an
+// entrypoint that did not register the handler). Retrying will not help until
+// the primary changes. The code is matched in the message too, because the
+// structured error is flattened to text when it crosses the IPC boundary.
+func IsMethodNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	var we *WriteError
+	if errors.As(err, &we) && we.Code == ErrCodeMethodNotFound {
+		return true
+	}
+	return strings.Contains(err.Error(), string(ErrCodeMethodNotFound))
+}

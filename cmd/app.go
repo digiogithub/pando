@@ -176,6 +176,7 @@ func runAppMode(cmd *cobra.Command) error {
 		appCoord := writecoordinator.New(ctx, rt.Querier, 256)
 		defer appCoord.Shutdown()
 		dbproxy.RegisterHandlersWithCoordinator(appBus, appCoord)
+		pandoApp.RegisterRemembrancesWriteDispatcher()
 		registerBridgeHandlers(appBus, instanceID, pandoApp)
 		if busErr := ipc.StartBusWithRetry(ctx, appBus, rt.PubPort, rt.RPCPort); busErr != nil {
 			logging.Error("IPC: app mode failed to start bus; this instance is primary but unreachable over IPC", "error", busErr)

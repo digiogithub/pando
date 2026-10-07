@@ -199,6 +199,7 @@ func runDesktopMode(cmd *cobra.Command) error {
 		desktopPub := changepub.NewBusPublisher(desktopBus.Publish, instanceID, cwd)
 		desktopCoord.SetPublisher(desktopPub)
 		dbproxy.RegisterHandlersWithCoordinator(desktopBus, desktopCoord)
+		pandoApp.RegisterRemembrancesWriteDispatcher()
 		registerBridgeHandlers(desktopBus, instanceID, pandoApp)
 		if busErr := ipc.StartBusWithRetry(ctx, desktopBus, rt.PubPort, rt.RPCPort); busErr != nil {
 			logging.Error("IPC: desktop mode failed to start bus; this instance is primary but unreachable over IPC", "error", busErr)

@@ -2317,16 +2317,24 @@ func (app *App) SetupIPC(bus *ipc.Bus) {
 	// create/update/delete events are broadcast over PUB to other instances.
 	session.SetIPCPublisher(bus)
 
-	// Register the Remembrances write dispatcher so that KB, Events and Code
-	// indexing writes forwarded from secondary instances via IPC are correctly
-	// applied to the primary's read-write SQLite database.
-	if app.Remembrances != nil {
-		dispatcher := ragproxy.NewRemembrancesWriteDispatcher(app.Remembrances)
-		dbproxy.RegisterRemembrancesDispatcher(dispatcher)
-		logging.Info("Remembrances IPC write dispatcher registered on primary")
-	}
+	app.RegisterRemembrancesWriteDispatcher()
 
 	logging.Info("IPC bus wired to session service", "pubAddr", bus.PubAddr, "rpcAddr", bus.RPCAddr)
+}
+
+// RegisterRemembrancesWriteDispatcher lets this primary instance apply the KB,
+// event (session index) and code-index writes that secondary instances forward
+// over IPC. Every entrypoint that can become primary must call it (SetupIPC
+// does for the TUI and ACP); without it those writes fail with
+// METHOD_NOT_FOUND and the secondary keeps recomputing embeddings it can never
+// store.
+func (app *App) RegisterRemembrancesWriteDispatcher() {
+	if app == nil || app.Remembrances == nil {
+		return
+	}
+	dispatcher := ragproxy.NewRemembrancesWriteDispatcher(app.Remembrances)
+	dbproxy.RegisterRemembrancesDispatcher(dispatcher)
+	logging.Info("Remembrances IPC write dispatcher registered on primary")
 }
 
 // SetIPCSecondaryContext stores the secondary IPC state and registers the active-probe

@@ -211,6 +211,7 @@ This is the backend for the Pando Desktop/Web UI.`,
 			servePub := changepub.NewBusPublisher(serveBus.Publish, instanceID, cwd)
 			serveCoord.SetPublisher(servePub)
 			dbproxy.RegisterHandlersWithCoordinator(serveBus, serveCoord)
+			pandoApp.RegisterRemembrancesWriteDispatcher()
 			registerBridgeHandlers(serveBus, instanceID, pandoApp)
 			if busErr := ipc.StartBusWithRetry(ctx, serveBus, rt.PubPort, rt.RPCPort); busErr != nil {
 				logging.Error("IPC: serve mode failed to start bus; this instance is primary but unreachable over IPC", "error", busErr)
