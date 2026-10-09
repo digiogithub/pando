@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/digiogithub/pando/internal/fswatch"
 	"maps"
 	"os/exec"
 	"path/filepath"
@@ -398,6 +399,10 @@ func (app *App) createAndStartLSPClient(ctx context.Context, name string, comman
 	// Store the cancel function to be called during cleanup
 	app.cancelFuncsMutex.Lock()
 	app.watcherCancelFuncs = append(app.watcherCancelFuncs, cancelFunc)
+	if app.lspWatchers == nil {
+		app.lspWatchers = make(map[string]lspWatcherEntry)
+	}
+	app.lspWatchers[name] = lspWatcherEntry{cancel: cancelFunc, parent: ctx}
 	app.cancelFuncsMutex.Unlock()
 
 	// Add the watcher to a WaitGroup to track active goroutines
@@ -419,7 +424,7 @@ func (app *App) runWorkspaceWatcher(ctx context.Context, name string, workspaceW
 		app.restartLSPClient(ctx, name)
 	})
 
-	workspaceWatcher.WatchWorkspace(ctx, config.WorkingDirectory())
+	workspaceWatcher.WatchWorkspace(ctx, config.WorkingDirectory(), app.workspaceHub())
 	logging.Info("Workspace watcher stopped", "client", name)
 }
 
@@ -450,6 +455,20 @@ func (app *App) restartLSPClient(ctx context.Context, name string) {
 		return
 	}
 
+	// Stop the old watcher and recover the parent context: the ctx we were
+	// given belongs to the old watcher and dies with it.
+	app.cancelFuncsMutex.Lock()
+	if entry, ok := app.lspWatchers[name]; ok {
+		entry.cancel()
+		delete(app.lspWatchers, name)
+		ctx = entry.parent
+	}
+	if app.lspRestarts == nil {
+		app.lspRestarts = newRestartLimiter(lspMaxRestarts, lspRestartWindow)
+	}
+	limiter := app.lspRestarts
+	app.cancelFuncsMutex.Unlock()
+
 	// Clean up the old client if it exists
 	app.clientsMutex.Lock()
 	oldClient, exists := app.LSPClients[name]
@@ -459,13 +478,46 @@ func (app *App) restartLSPClient(ctx context.Context, name string) {
 	app.clientsMutex.Unlock()
 
 	if exists && oldClient != nil {
-		// Try to shut it down gracefully, but don't block on errors
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		_ = oldClient.Shutdown(shutdownCtx)
-		cancel()
+		// Fully dispose the old client so its process and pipes are released.
+		disposeLSPClient(oldClient)
+	}
+
+	if !limiter.allow(name, time.Now()) {
+		logging.Error("LSP client restarted too often, giving up", "client", name,
+			"max", lspMaxRestarts, "window", lspRestartWindow)
+		app.markLSPUnavailable(name, LSPResolution{
+			Availability: LSPManual,
+			Reason:       "crashed repeatedly and was disabled for this session",
+		})
+		return
 	}
 
 	// Create a new client using the shared function
 	app.createAndStartLSPClient(ctx, name, res.Command, res.Args...)
 	logging.Info("Successfully restarted LSP client", "client", name)
+}
+
+// workspaceHub returns the app-wide shared workspace watcher hub, creating it
+// on first use. The underlying fsnotify watcher only starts when the first
+// subscriber (LSP client or bootstrap watcher) subscribes.
+func (app *App) workspaceHub() *fswatch.Hub {
+	app.cancelFuncsMutex.Lock()
+	defer app.cancelFuncsMutex.Unlock()
+	if app.wsHub == nil {
+		root := config.WorkingDirectory()
+		app.wsHub = fswatch.NewHub(root, newWatchExcluder(root))
+	}
+	return app.wsHub
+}
+
+// WorkspaceWatchPathCount reports how many directories the shared workspace
+// watcher has registered with the OS (0 when it has not started).
+func (app *App) WorkspaceWatchPathCount() int {
+	app.cancelFuncsMutex.Lock()
+	hub := app.wsHub
+	app.cancelFuncsMutex.Unlock()
+	if hub == nil {
+		return 0
+	}
+	return hub.PathCount()
 }

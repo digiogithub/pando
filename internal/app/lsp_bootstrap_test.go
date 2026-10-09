@@ -2,20 +2,17 @@ package app
 
 import "testing"
 
-func TestBootstrapShouldExcludeDir(t *testing.T) {
-	cases := map[string]bool{
-		"/repo/src":          false,
-		"/repo/internal/app": false,
-		"/repo/.git":         true,
-		"/repo/.idea":        true,
-		"/repo/node_modules": true,
-		"/repo/vendor":       true,
-		"/repo/dist":         true,
-		"/repo/target":       true,
+func TestBootstrapExcluder(t *testing.T) {
+	root := t.TempDir()
+	e := newWatchExcluder(root)
+	for _, n := range []string{".git", ".idea", "node_modules", "vendor", "dist", "target", "DerivedData", "Pods"} {
+		if !e.ShouldSkipDir(root + "/" + n) {
+			t.Errorf("%s should be excluded", n)
+		}
 	}
-	for path, want := range cases {
-		if got := bootstrapShouldExcludeDir(path); got != want {
-			t.Errorf("bootstrapShouldExcludeDir(%q) = %v, want %v", path, got, want)
+	for _, n := range []string{"src", "internal/app"} {
+		if e.ShouldSkipDir(root + "/" + n) {
+			t.Errorf("%s should not be excluded", n)
 		}
 	}
 }

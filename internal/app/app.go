@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/digiogithub/pando/internal/fswatch"
 	"io"
 	"maps"
 	"net"
@@ -188,8 +189,21 @@ type App struct {
 	lspUnavailable map[string]lspUnavailableEntry
 
 	watcherCancelFuncs []context.CancelFunc
-	cancelFuncsMutex   sync.Mutex
-	watcherWG          sync.WaitGroup
+	// lspWatchers maps an LSP client name to its current watcher, so a restart
+	// can stop the old one. Guarded by cancelFuncsMutex.
+	lspWatchers map[string]lspWatcherEntry
+	lspRestarts *restartLimiter
+	// wsHub is the single shared recursive workspace watcher consumed by every
+	// LSP client and the bootstrap watcher. Created lazily; guarded by
+	// cancelFuncsMutex and closed in Shutdown.
+	wsHub            *fswatch.Hub
+	cancelFuncsMutex sync.Mutex
+	watcherWG        sync.WaitGroup
+
+	// deferredCodeIndex holds the startup code indexing/watching skipped while
+	// this instance was an IPC secondary; PromoteToPrimary runs it once.
+	deferredCodeIndex   func()
+	deferredCodeIndexMu sync.Mutex
 }
 
 // AppOptions configures optional behaviour for New().
@@ -2511,6 +2525,10 @@ func (app *App) PromoteToPrimary(ctx context.Context, lockFile *os.File) error {
 	app.rwConn = rwConn
 	app.SetupIPC(bus)
 
+	// The code index and its filesystem watcher run only on the primary: start
+	// them now if they were skipped while this instance was a secondary.
+	app.startDeferredCodeIndex()
+
 	// 5. Publish instance.promoted so other secondaries reset their heartbeat timers
 	//    and reconnect to the new primary.
 	_ = bus.Publish(protocol.TopicInstancePromoted, protocol.PromotedPayload{
@@ -2603,8 +2621,13 @@ func (app *App) Shutdown() {
 	for _, cancel := range app.watcherCancelFuncs {
 		cancel()
 	}
+	hub := app.wsHub
 	app.cancelFuncsMutex.Unlock()
 	app.watcherWG.Wait()
+	// Release the shared workspace watcher's file descriptors.
+	if hub != nil {
+		hub.Close()
+	}
 
 	// Perform additional cleanup for LSP clients
 	app.clientsMutex.RLock()

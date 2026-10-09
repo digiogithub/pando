@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/digiogithub/pando/internal/fswatch"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/rag"
 	"github.com/digiogithub/pando/internal/rag/treesitter"
@@ -24,7 +25,10 @@ func (app *App) watchIndexedProject(ctx context.Context, svc *rag.RemembrancesSe
 	}
 	defer watcher.Close()
 
-	if err := addProjectWatchRecursively(watcher, rootPath, func(path string, err error) {
+	excluder := newWatchExcluder(rootPath)
+	budget := fswatch.NewWatchBudget("code-index", rootPath)
+
+	if err := addProjectWatchRecursively(watcher, rootPath, excluder, budget, func(path string, err error) {
 		logProjectWatchPermissionWarning(projectID, path, startupMode, err)
 	}); err != nil {
 		return err
@@ -81,7 +85,7 @@ func (app *App) watchIndexedProject(ctx context.Context, svc *rag.RemembrancesSe
 
 			if event.Op&fsnotify.Create != 0 {
 				if fi, statErr := os.Stat(event.Name); statErr == nil && fi.IsDir() {
-					if err := addProjectWatchRecursively(watcher, event.Name, func(path string, err error) {
+					if err := addProjectWatchRecursively(watcher, event.Name, excluder, budget, func(path string, err error) {
 						logProjectWatchPermissionWarning(projectID, path, startupMode, err)
 					}); err != nil {
 						logging.Warn("remembrances code: add recursive watch failed",
@@ -164,13 +168,13 @@ func (app *App) handleIndexedProjectEvent(ctx context.Context, svc *rag.Remembra
 	}
 }
 
-func addProjectWatchRecursively(w *fsnotify.Watcher, root string, onIgnored func(path string, err error)) error {
+func addProjectWatchRecursively(w *fsnotify.Watcher, root string, excluder *fswatch.Excluder, budget *fswatch.WatchBudget, onIgnored func(path string, err error)) error {
 	rootAbs, err := filepath.Abs(root)
 	if err != nil {
 		return fmt.Errorf("remembrances code: abs watch root %q: %w", root, err)
 	}
 
-	return filepath.WalkDir(rootAbs, func(path string, d os.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(rootAbs, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			if shouldIgnoreProjectWatchPathError(walkErr) {
 				if onIgnored != nil {
@@ -184,14 +188,13 @@ func addProjectWatchRecursively(w *fsnotify.Watcher, root string, onIgnored func
 			return walkErr
 		}
 		if !d.IsDir() {
+			// Files directly inside a watched directory cost one FD each on kqueue.
+			budget.AddFile()
 			return nil
 		}
 
-		name := d.Name()
-		if strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor" || name == "dist" || name == "build" || name == "__pycache__" {
-			if path != rootAbs {
-				return filepath.SkipDir
-			}
+		if excluder != nil && path != rootAbs && excluder.ShouldSkipDir(path) {
+			return filepath.SkipDir
 		}
 
 		if err := w.Add(path); err != nil {
@@ -203,8 +206,11 @@ func addProjectWatchRecursively(w *fsnotify.Watcher, root string, onIgnored func
 			}
 			return fmt.Errorf("remembrances code: watch directory %q: %w", path, err)
 		}
+		budget.AddDir()
 		return nil
 	})
+	budget.Check()
+	return err
 }
 
 func shouldIgnoreProjectWatchPathError(err error) bool {

@@ -292,6 +292,20 @@ func (o *openaiClient) send(ctx context.Context, messages []message.Message, too
 			return nil, retryErr
 		}
 
+		// Guard against HTTP 200 responses with an empty choices array.
+		if len(openaiResponse.Choices) == 0 {
+			if attempts <= o.providerOptions.retryLimit() {
+				logging.Warn("OpenAI returned no choices, retrying", "model", o.providerOptions.model.APIModel, "attempt", attempts)
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(emptyChoicesBackoff(attempts)):
+					continue
+				}
+			}
+			return nil, fmt.Errorf("openai: empty response (no choices) from model %s", o.providerOptions.model.APIModel)
+		}
+
 		content := ""
 		if openaiResponse.Choices[0].Message.Content != "" {
 			content = openaiResponse.Choices[0].Message.Content

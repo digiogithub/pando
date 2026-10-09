@@ -1287,7 +1287,12 @@ type Config struct {
 	// LSPInstallTimeout replaces LSPStartupTimeout while a server is being
 	// installed, since a cold install is far slower than a cold start.
 	// Duration string, defaults to "120s".
-	LSPInstallTimeout string                  `json:"lspInstallTimeout,omitempty" toml:"LSPInstallTimeout"`
+	LSPInstallTimeout string `json:"lspInstallTimeout,omitempty" toml:"LSPInstallTimeout"`
+	// WatchExclude lists extra directories the workspace file watchers (code
+	// index, LSP) must not watch: plain directory names or doublestar globs
+	// relative to the workspace root, e.g. "mobile-app/www/svg" or
+	// "**/generated". Added on top of the built-in defaults and .gitignore.
+	WatchExclude      []string                `json:"watchExclude,omitempty" toml:"WatchExclude"`
 	Agents            map[AgentName]Agent     `json:"agents,omitempty"`
 	Debug             bool                    `json:"debug,omitempty"`
 	LogFile           string                  `json:"logFile,omitempty"`

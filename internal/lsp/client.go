@@ -44,6 +44,12 @@ type Client struct {
 	serverRequestHandlers map[string]ServerRequestHandler
 	serverHandlersMu      sync.RWMutex
 
+	// File watch registrations sent by the server (client/registerCapability),
+	// routed to this client's workspace watcher.
+	fileWatchMu      sync.Mutex
+	fileWatchHandler FileWatchRegistrationHandler
+	pendingFileWatch []pendingFileWatch
+
 	// Notification handlers
 	notificationHandlers map[string]NotificationHandler
 	notificationMu       sync.RWMutex
@@ -231,7 +237,8 @@ func (c *Client) InitializeLSPClient(ctx context.Context, workspaceDir string) (
 	// Register handlers
 	c.RegisterServerRequestHandler("workspace/applyEdit", HandleApplyEdit)
 	c.RegisterServerRequestHandler("workspace/configuration", HandleWorkspaceConfiguration)
-	c.RegisterServerRequestHandler("client/registerCapability", HandleRegisterCapability)
+	c.RegisterServerRequestHandler("client/registerCapability",
+		func(params json.RawMessage) (any, error) { return HandleRegisterCapability(c, params) })
 	c.RegisterNotificationHandler("window/showMessage", HandleServerMessage)
 	c.RegisterNotificationHandler("textDocument/publishDiagnostics",
 		func(params json.RawMessage) { HandleDiagnostics(c, params) })

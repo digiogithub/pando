@@ -12,6 +12,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/fileutil"
+	"github.com/digiogithub/pando/internal/fswatch"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/lsp"
 	"github.com/digiogithub/pando/internal/lsp/protocol"
@@ -22,6 +23,7 @@ import (
 type WorkspaceWatcher struct {
 	client        *lsp.Client
 	workspacePath string
+	excluder      *fswatch.Excluder
 
 	debounceTime time.Duration
 	debounceMap  map[string]*time.Timer
@@ -156,7 +158,7 @@ func (w *WorkspaceWatcher) AddRegistrations(ctx context.Context, id string, watc
 
 				// Skip directories that should be excluded
 				if d.IsDir() {
-					if path != w.workspacePath && shouldExcludeDir(path) {
+					if w.excluder.ShouldSkipDir(path) {
 						if cnf.DebugLSP {
 							logging.Debug("Skipping excluded directory", "path", path)
 						}
@@ -312,10 +314,15 @@ func (w *WorkspaceWatcher) openHighPriorityFiles(ctx context.Context, serverName
 	return filesOpened
 }
 
-// WatchWorkspace sets up file watching for a workspace
-func (w *WorkspaceWatcher) WatchWorkspace(ctx context.Context, workspacePath string) {
+// WatchWorkspace runs the per-client watching logic for a workspace: it
+// receives filesystem events from the shared hub (it owns no fsnotify watcher
+// itself), preloads files, and turns matching events into debounced
+// workspace/didChangeWatchedFiles notifications for its LSP client. It blocks
+// until ctx is cancelled or the hub is closed, and unsubscribes on return.
+func (w *WorkspaceWatcher) WatchWorkspace(ctx context.Context, workspacePath string, hub *fswatch.Hub) {
 	cnf := config.Get()
 	w.workspacePath = workspacePath
+	w.excluder = hub.Excluder()
 
 	// Store the watcher in the context for later use
 	ctx = context.WithValue(ctx, "workspaceWatcher", w)
@@ -329,83 +336,36 @@ func (w *WorkspaceWatcher) WatchWorkspace(ctx context.Context, workspacePath str
 	serverName := getServerNameFromContext(ctx)
 	logging.Debug("Starting workspace watcher", "workspacePath", workspacePath, "serverName", serverName)
 
-	// Register handler for file watcher registrations from the server
-	lsp.RegisterFileWatchHandler(func(id string, watchers []protocol.FileSystemWatcher) {
+	// Route this client's file watch registrations to this watcher. The handler
+	// lives on the client, so several clients no longer overwrite each other.
+	w.client.SetFileWatchHandler(func(id string, watchers []protocol.FileSystemWatcher) {
 		w.AddRegistrations(ctx, id, watchers)
 	})
+	defer w.client.SetFileWatchHandler(nil)
 
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		logging.Error("Error creating watcher", "error", err)
+	sub := hub.Subscribe()
+	if sub == nil {
+		return
 	}
-	defer watcher.Close()
-
-	// Only watch the workspace recursively when it is a recognised project
-	// directory. Skipping the walk prevents pando from registering thousands
-	// of fsnotify watches (and reading hundreds of GB) when the user runs it
-	// from their home directory or the filesystem root.
-	if !fileutil.IsSafeWorkingDirectory(workspacePath) {
-		logging.Debug("workspace watcher: skipping recursive walk – not a project directory", "path", workspacePath)
-		// Still watch the top-level directory so LSP events for files created
-		// directly in the workspace root are delivered.
-		if err := watcher.Add(workspacePath); err != nil {
-			logging.Error("Error watching workspace root", "path", workspacePath, "error", err)
-		}
-	} else {
-		// Watch the workspace recursively
-		err = filepath.WalkDir(workspacePath, func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-
-			// Skip excluded directories (except workspace root)
-			if d.IsDir() && path != workspacePath {
-				if shouldExcludeDir(path) {
-					if cnf.DebugLSP {
-						logging.Debug("Skipping excluded directory", "path", path)
-					}
-					return filepath.SkipDir
-				}
-			}
-
-			// Add directories to watcher
-			if d.IsDir() {
-				err = watcher.Add(path)
-				if err != nil {
-					logging.Error("Error watching path", "path", path, "error", err)
-				}
-			}
-
-			return nil
-		})
-		if err != nil {
-			logging.Error("Error walking workspace", "error", err)
-		}
-	}
+	defer sub.Close()
 
 	// Event loop
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case event, ok := <-watcher.Events:
+		case event, ok := <-sub.Events:
 			if !ok {
 				return
 			}
 
 			uri := fmt.Sprintf("file://%s", event.Name)
 
-			// Add new directories to the watcher
+			// Preload newly created files
 			if event.Op&fsnotify.Create != 0 {
 				if info, err := os.Stat(event.Name); err == nil {
-					if info.IsDir() {
-						// Skip excluded directories
-						if !shouldExcludeDir(event.Name) {
-							if err := watcher.Add(event.Name); err != nil {
-								logging.Error("Error adding directory to watcher", "path", event.Name, "error", err)
-							}
-						}
-					} else {
+					// New directories are added to the watch set by the shared hub.
+					if !info.IsDir() {
 						// For newly created files
 						if !shouldExcludeFile(event.Name) {
 							w.openMatchingFile(ctx, event.Name)
@@ -438,8 +398,10 @@ func (w *WorkspaceWatcher) WatchWorkspace(ctx context.Context, workspacePath str
 					// Just send the notification if needed
 					info, err := os.Stat(event.Name)
 					if err != nil {
-						logging.Error("Error getting file info", "path", event.Name, "error", err)
-						return
+						// Transient files (e.g. Xcode temp files) vanish quickly;
+						// skip the event instead of ending the watcher.
+						logging.Debug("Skipping create event, file vanished", "path", event.Name, "error", err)
+						continue
 					}
 					if !info.IsDir() && watchKind&protocol.WatchCreate != 0 {
 						w.debounceHandleFileEvent(ctx, uri, protocol.FileChangeType(protocol.Created))
@@ -462,11 +424,6 @@ func (w *WorkspaceWatcher) WatchWorkspace(ctx context.Context, workspacePath str
 					}
 				}
 			}
-		case err, ok := <-watcher.Errors:
-			if !ok {
-				return
-			}
-			logging.Error("Error watching file", "error", err)
 		}
 	}
 }
@@ -757,21 +714,6 @@ func shouldPreloadFiles(serverName string) bool {
 // Common patterns for directories and files to exclude
 // TODO: make configurable
 var (
-	excludedDirNames = map[string]bool{
-		".git":         true,
-		"node_modules": true,
-		"dist":         true,
-		"build":        true,
-		"out":          true,
-		"bin":          true,
-		".idea":        true,
-		".vscode":      true,
-		".cache":       true,
-		"coverage":     true,
-		"target":       true, // Rust build output
-		"vendor":       true, // Go vendor directory
-	}
-
 	excludedFileExtensions = map[string]bool{
 		".swp":   true,
 		".swo":   true,
@@ -812,23 +754,6 @@ var (
 	// Maximum file size to open (5MB)
 	maxFileSize int64 = 5 * 1024 * 1024
 )
-
-// shouldExcludeDir returns true if the directory should be excluded from watching/opening
-func shouldExcludeDir(dirPath string) bool {
-	dirName := filepath.Base(dirPath)
-
-	// Skip dot directories
-	if strings.HasPrefix(dirName, ".") {
-		return true
-	}
-
-	// Skip common excluded directories
-	if excludedDirNames[dirName] {
-		return true
-	}
-
-	return false
-}
 
 // shouldExcludeFile returns true if the file should be excluded from opening
 func shouldExcludeFile(filePath string) bool {

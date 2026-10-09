@@ -8,23 +8,10 @@ import (
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/fileutil"
+	"github.com/digiogithub/pando/internal/fswatch"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/fsnotify/fsnotify"
 )
-
-// bootstrapExcludedDirs lists directory names the bootstrap watcher never
-// descends into. Per-client LSP watchers maintain their own (richer) exclusion
-// logic; this set only needs to keep the lightweight bootstrap watcher from
-// drowning in churn-heavy build/dependency folders.
-var bootstrapExcludedDirs = map[string]struct{}{
-	"node_modules": {},
-	"vendor":       {},
-	"dist":         {},
-	"build":        {},
-	"target":       {},
-	"out":          {},
-	".git":         {},
-}
 
 // startLSPBootstrapWatcher launches a single, lightweight workspace-wide file
 // watcher whose only job is to lazily activate language servers on demand.
@@ -45,29 +32,9 @@ func (app *App) startLSPBootstrapWatcher(ctx context.Context) {
 		return
 	}
 
-	fsWatcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		logging.Error("Failed to create LSP bootstrap watcher", "error", err)
+	sub := app.workspaceHub().Subscribe()
+	if sub == nil {
 		return
-	}
-
-	// Recursively register the workspace directories.
-	if err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return nil //nolint:nilerr // skip unreadable entries, keep walking
-		}
-		if !d.IsDir() {
-			return nil
-		}
-		if path != root && bootstrapShouldExcludeDir(path) {
-			return filepath.SkipDir
-		}
-		if addErr := fsWatcher.Add(path); addErr != nil {
-			logging.Debug("LSP bootstrap watcher could not watch dir", "path", path, "error", addErr)
-		}
-		return nil
-	}); err != nil {
-		logging.Debug("LSP bootstrap watcher walk error", "error", err)
 	}
 
 	watchCtx, cancel := context.WithCancel(ctx)
@@ -78,7 +45,7 @@ func (app *App) startLSPBootstrapWatcher(ctx context.Context) {
 	app.watcherWG.Add(1)
 	go func() {
 		defer app.watcherWG.Done()
-		defer fsWatcher.Close()
+		defer sub.Close()
 		defer logging.RecoverPanic("lsp-bootstrap-watcher", nil)
 
 		logging.Info("LSP bootstrap watcher started", "root", root)
@@ -87,35 +54,20 @@ func (app *App) startLSPBootstrapWatcher(ctx context.Context) {
 			case <-watchCtx.Done():
 				logging.Debug("LSP bootstrap watcher stopped")
 				return
-			case event, ok := <-fsWatcher.Events:
+			case event, ok := <-sub.Events:
 				if !ok {
 					return
 				}
-				app.handleBootstrapEvent(watchCtx, fsWatcher, event)
-			case err, ok := <-fsWatcher.Errors:
-				if !ok {
-					return
-				}
-				logging.Debug("LSP bootstrap watcher error", "error", err)
+				app.handleBootstrapEvent(watchCtx, event)
 			}
 		}
 	}()
 }
 
-// handleBootstrapEvent reacts to a single fsnotify event: it keeps the watch set
-// in sync as directories appear and triggers lazy LSP activation for edited
-// files.
-func (app *App) handleBootstrapEvent(ctx context.Context, fsWatcher *fsnotify.Watcher, event fsnotify.Event) {
-	// Track newly created directories so freshly added subtrees are watched too.
-	if event.Op&fsnotify.Create != 0 {
-		if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
-			if !bootstrapShouldExcludeDir(event.Name) {
-				_ = fsWatcher.Add(event.Name)
-			}
-			return
-		}
-	}
-
+// handleBootstrapEvent reacts to a single fsnotify event from the shared
+// workspace watcher and triggers lazy LSP activation for edited files. The hub
+// itself keeps the watch set in sync as directories appear.
+func (app *App) handleBootstrapEvent(ctx context.Context, event fsnotify.Event) {
 	// Only writes and creates of files can introduce a new language to activate.
 	if event.Op&(fsnotify.Write|fsnotify.Create) == 0 {
 		return
@@ -126,16 +78,21 @@ func (app *App) handleBootstrapEvent(ctx context.Context, fsWatcher *fsnotify.Wa
 	if filepath.Ext(event.Name) == "" {
 		return
 	}
+	// A freshly created directory is not a file to activate a server for.
+	if event.Op&fsnotify.Create != 0 {
+		if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
+			return
+		}
+	}
 	app.EnsureLSPForFileTrigger(ctx, event.Name, config.LSPTriggerWorkspace)
 }
 
-// bootstrapShouldExcludeDir reports whether the bootstrap watcher should skip a
-// directory (hidden directories and well-known build/dependency folders).
-func bootstrapShouldExcludeDir(path string) bool {
-	name := filepath.Base(path)
-	if strings.HasPrefix(name, ".") {
-		return true
+// newWatchExcluder builds the shared directory excluder for a workspace watcher
+// from the configured WatchExclude patterns.
+func newWatchExcluder(root string) *fswatch.Excluder {
+	var extra []string
+	if cfg := config.Get(); cfg != nil {
+		extra = cfg.WatchExclude
 	}
-	_, excluded := bootstrapExcludedDirs[name]
-	return excluded
+	return fswatch.NewExcluder(root, extra)
 }

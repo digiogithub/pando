@@ -464,6 +464,21 @@ func (c *copilotClient) send(ctx context.Context, messages []message.Message, to
 			return nil, retryErr
 		}
 
+		// Copilot occasionally answers HTTP 200 with an empty choices array.
+		// Treat it as transient and never index Choices[0] blindly.
+		if len(copilotResponse.Choices) == 0 {
+			if attempts <= c.providerOptions.retryLimit() {
+				logging.Warn("Copilot returned no choices, retrying", "model", c.providerOptions.model.APIModel, "attempt", attempts)
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(emptyChoicesBackoff(attempts)):
+					continue
+				}
+			}
+			return nil, fmt.Errorf("copilot: empty response (no choices) from model %s", c.providerOptions.model.APIModel)
+		}
+
 		content := ""
 		if copilotResponse.Choices[0].Message.Content != "" {
 			content = copilotResponse.Choices[0].Message.Content
@@ -610,7 +625,9 @@ func (c *copilotClient) stream(ctx context.Context, messages []message.Message, 
 						}
 						if choice.FinishReason == "tool_calls" {
 							msgToolCalls = append(msgToolCalls, currentToolCall)
-							acc.ChatCompletion.Choices[0].Message.ToolCalls = msgToolCalls
+							if len(acc.ChatCompletion.Choices) > 0 {
+								acc.ChatCompletion.Choices[0].Message.ToolCalls = msgToolCalls
+							}
 						}
 					}
 				}
@@ -622,7 +639,18 @@ func (c *copilotClient) stream(ctx context.Context, messages []message.Message, 
 					respFilepath := logging.WriteChatResponseJson(sessionId, requestSeqId, acc.ChatCompletion)
 					logging.Debug("Chat completion response", "filepath", respFilepath)
 				}
-				// Stream completed successfully
+				// Stream completed successfully. Guard against empty choices.
+				if len(acc.ChatCompletion.Choices) == 0 {
+					logging.Warn("Copilot stream completed with no choices", "model", c.providerOptions.model.APIModel)
+					eventChan <- ProviderEvent{Type: EventComplete, Response: &ProviderResponse{
+						Content:      currentContent,
+						ToolCalls:    toolCalls,
+						Usage:        c.usage(acc.ChatCompletion),
+						FinishReason: message.FinishReasonUnknown,
+					}}
+					close(eventChan)
+					return
+				}
 				finishReason := c.finishReason(string(acc.ChatCompletion.Choices[0].FinishReason))
 				if len(acc.ChatCompletion.Choices[0].Message.ToolCalls) > 0 {
 					toolCalls = append(toolCalls, c.toolCalls(acc.ChatCompletion)...)
@@ -1194,4 +1222,14 @@ func WithCopilotBaseURL(baseURL string) CopilotOption {
 	return func(options *copilotOptions) {
 		options.baseURL = strings.TrimSpace(baseURL)
 	}
+}
+
+// emptyChoicesBackoff returns a short, capped delay before retrying a response
+// that carried no choices.
+func emptyChoicesBackoff(attempt int) time.Duration {
+	d := time.Duration(attempt) * 500 * time.Millisecond
+	if d > 3*time.Second {
+		d = 3 * time.Second
+	}
+	return d
 }

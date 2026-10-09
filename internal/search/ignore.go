@@ -119,3 +119,12 @@ func LoadIgnoreFiles(rootPath string) (*IgnoreMatcher, error) {
 	}
 	return m, nil
 }
+
+// AddDir loads the .gitignore and .pandoignore files located directly in dir
+// and appends their patterns to the matcher, anchored at dir. It is used to pick
+// up nested ignore files lazily while walking a tree. Missing files are ignored.
+func (m *IgnoreMatcher) AddDir(dir string) {
+	for _, name := range []string{".gitignore", ".pandoignore"} {
+		_ = parseIgnoreFile(filepath.Join(dir, name), dir, m)
+	}
+}

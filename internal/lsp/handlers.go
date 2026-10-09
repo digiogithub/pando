@@ -15,7 +15,10 @@ func HandleWorkspaceConfiguration(params json.RawMessage) (any, error) {
 	return []map[string]any{{}}, nil
 }
 
-func HandleRegisterCapability(params json.RawMessage) (any, error) {
+// HandleRegisterCapability processes client/registerCapability requests sent by
+// the server of client c. File watch registrations are routed to that client's
+// own handler (see Client.SetFileWatchHandler).
+func HandleRegisterCapability(c *Client, params json.RawMessage) (any, error) {
 	var registerParams protocol.RegistrationParams
 	if err := json.Unmarshal(params, &registerParams); err != nil {
 		logging.Error("Error unmarshaling registration params", "error", err)
@@ -39,7 +42,7 @@ func HandleRegisterCapability(params json.RawMessage) (any, error) {
 			}
 
 			// Store the file watchers registrations
-			notifyFileWatchRegistration(reg.ID, options.Watchers)
+			c.notifyFileWatchRegistration(reg.ID, options.Watchers)
 		}
 	}
 
@@ -64,18 +67,41 @@ func HandleApplyEdit(params json.RawMessage) (any, error) {
 // FileWatchRegistrationHandler is a function that will be called when file watch registrations are received
 type FileWatchRegistrationHandler func(id string, watchers []protocol.FileSystemWatcher)
 
-// fileWatchHandler holds the current handler for file watch registrations
-var fileWatchHandler FileWatchRegistrationHandler
-
-// RegisterFileWatchHandler sets the handler for file watch registrations
-func RegisterFileWatchHandler(handler FileWatchRegistrationHandler) {
-	fileWatchHandler = handler
+type pendingFileWatch struct {
+	id       string
+	watchers []protocol.FileSystemWatcher
 }
 
-// notifyFileWatchRegistration notifies the handler about new file watch registrations
-func notifyFileWatchRegistration(id string, watchers []protocol.FileSystemWatcher) {
-	if fileWatchHandler != nil {
-		fileWatchHandler(id, watchers)
+// SetFileWatchHandler sets the handler that receives this client's file watch
+// registrations. Registrations that arrived before a handler was set (servers
+// often register during initialization) are replayed to it immediately.
+func (c *Client) SetFileWatchHandler(handler FileWatchRegistrationHandler) {
+	c.fileWatchMu.Lock()
+	c.fileWatchHandler = handler
+	pending := c.pendingFileWatch
+	c.pendingFileWatch = nil
+	c.fileWatchMu.Unlock()
+
+	if handler == nil {
+		return
+	}
+	for _, p := range pending {
+		handler(p.id, p.watchers)
+	}
+}
+
+// notifyFileWatchRegistration delivers a registration to this client's handler,
+// or queues it until one is set.
+func (c *Client) notifyFileWatchRegistration(id string, watchers []protocol.FileSystemWatcher) {
+	c.fileWatchMu.Lock()
+	handler := c.fileWatchHandler
+	if handler == nil {
+		c.pendingFileWatch = append(c.pendingFileWatch, pendingFileWatch{id: id, watchers: watchers})
+	}
+	c.fileWatchMu.Unlock()
+
+	if handler != nil {
+		handler(id, watchers)
 	}
 }
 

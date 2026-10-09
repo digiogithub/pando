@@ -202,6 +202,11 @@ Directory = './.pando/data'
 # LSPStartupTimeout = "20s"    # how long a tool waits for a server to be ready
 # LSPInstallTimeout = "120s"   # extended wait while a server is being installed
 #
+# WatchExclude adds directories the file watchers (code index, LSP) never watch,
+# on top of the built-in defaults (node_modules, DerivedData, Pods, ...) and
+# .gitignore/.pandoignore. Names or doublestar globs relative to the workspace.
+# WatchExclude = ["mobile-app/www/svg", "**/generated"]
+#
 # A few presets are opt-in and stay off until you declare them here, because
 # they need project configuration or compete with a general-purpose server:
 # eslint-language-server, biome, sql-language-server and deno. Declaring the

@@ -1277,7 +1277,7 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 	}
 	if len(msgs) == 0 {
 		go func() {
-			defer logging.RecoverPanic("agent.Run", func() {
+			defer logging.RecoverPanic("agent.generateTitle", func() {
 				logging.ErrorPersist("panic while generating title")
 			})
 			titleErr := a.generateTitle(context.Background(), sessionID, content)
