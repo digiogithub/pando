@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"strings"
 	"time"
@@ -14,7 +13,6 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/ipc/bridge"
-	"github.com/digiogithub/pando/internal/ipc/protocol"
 	"github.com/digiogithub/pando/internal/llm/agent"
 )
 
@@ -72,21 +70,4 @@ func registerBridgeHandlers(bus *ipc.Bus, instanceID string, pandoApp *app.App) 
 		runner, interrupter, delRunner, delRunner != nil,
 	)
 
-	// db.compact — run a VACUUM on this (primary) instance's writer connection so
-	// secondaries and the `pando db compact` CLI can reclaim space without opening
-	// a second writer. CompactDatabase runs locally here because this bus only ever
-	// exists on the primary.
-	bus.RegisterMethod(protocol.MethodDBCompact, func(ctx context.Context, _ string, params json.RawMessage) (json.RawMessage, error) {
-		var p protocol.DBCompactParams
-		if len(params) > 0 {
-			if err := json.Unmarshal(params, &p); err != nil {
-				return nil, err
-			}
-		}
-		res, err := pandoApp.CompactDatabase(ctx, p.Incremental, p.EnableAutoVacuum)
-		if err != nil {
-			return nil, err
-		}
-		return json.Marshal(res)
-	})
 }

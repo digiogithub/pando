@@ -9,8 +9,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/rag/kb"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
+	_ "github.com/digiogithub/pando/internal/db"
 )
 
 // openMarkOutdatedTestStore builds an in-memory KB store with just enough schema
@@ -19,7 +18,7 @@ import (
 // AddDocument (which would embed non-empty content).
 func openMarkOutdatedTestStore(t *testing.T) (*kb.KBStore, *sql.DB) {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("pando-sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("sql.Open() error = %v", err)
 	}

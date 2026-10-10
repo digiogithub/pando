@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
 	"github.com/pressly/goose/v3"
 )
 
@@ -14,7 +12,7 @@ import (
 // design tables land, so a broken design migration fails here instead of at a
 // user's first start.
 func TestMigrationsIncludeDesignSchema(t *testing.T) {
-	conn, err := sql.Open("sqlite3", filepath.Join(t.TempDir(), "pando.db"))
+	conn, err := sql.Open(DriverName, filepath.Join(t.TempDir(), "pando.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

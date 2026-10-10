@@ -8,10 +8,9 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
+	_ "github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/mcpgateway"
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
 )
 
 // discoveryStubTool is a minimal BaseTool for discovery wiring tests.
@@ -29,7 +28,7 @@ func (d *discoveryStubTool) Run(_ context.Context, _ tools.ToolCall) (tools.Tool
 
 func newDiscoveryTestGateway(t *testing.T) *mcpgateway.Gateway {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("pando-sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

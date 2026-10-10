@@ -22,12 +22,7 @@ import (
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/format"
 	"github.com/digiogithub/pando/internal/instanceregistry"
-	"github.com/digiogithub/pando/internal/ipc"
-	"github.com/digiogithub/pando/internal/ipc/bridge"
-	"github.com/digiogithub/pando/internal/ipc/changepub"
-	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	ipcruntime "github.com/digiogithub/pando/internal/ipc/runtime"
-	"github.com/digiogithub/pando/internal/ipc/writecoordinator"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/logging"
@@ -219,8 +214,8 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		}
 		defer rt.Cleanup()
 
-		// Enable automatic failover if requested. The watcher is always created but starts
-		// inactive (Enabled: false) to keep the default behaviour safe.
+		// Auto-failover is on by default (failover.DefaultConfig); the flag
+		// keeps working for scripts that pass it explicitly.
 		if autoFailover, _ := cmd.Flags().GetBool("auto-failover"); autoFailover {
 			rt.Watcher.SetEnabled(true)
 			logging.Info("IPC: auto-failover enabled")
@@ -243,6 +238,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 
 		pandoApp, err := app.New(ctx, conn, app.AppOptions{
 			DBQuerier:   rt.Querier,
+			IPCFollower: rt.Role == ipcruntime.RoleSecondary,
 			StartupMode: "tui",
 			InstanceID:  instanceID,
 			// One-shot runs (`-p`, `--goal`, mesnada pando-cli subagents)
@@ -254,58 +250,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 			return err
 		}
 
-		// Start IPC bus and register handlers only on the primary instance.
-		if rt.Role == ipcruntime.RolePrimary {
-			bus := rt.Bus
-			coord := writecoordinator.New(ctx, db.New(conn), 256)
-			defer coord.Shutdown()
-			pub := changepub.NewBusPublisher(bus.Publish, instanceID, cwd)
-			coord.SetPublisher(pub)
-			dbproxy.RegisterHandlersWithCoordinator(bus, coord)
-			registerBridgeHandlers(bus, instanceID, pandoApp)
-			pandoApp.SetupIPC(bus)
-			if busErr := ipc.StartBusWithRetry(ctx, bus, rt.PubPort, rt.RPCPort); busErr != nil {
-				logging.Error("IPC: failed to start bus; continuing as primary but unreachable over IPC", "error", busErr)
-			} else {
-				br := bridge.New(bus, pandoApp.Sessions, pandoApp.CoderAgent)
-				br.Start(ctx)
-				// Start the primary failover watcher after the bus is up so heartbeat
-				// publishes have a live socket. The bridge also publishes heartbeats, but the
-				// watcher covers the shutdown signal path independently.
-				rt.Watcher.Start(ctx)
-			}
-		} else {
-			// Secondary instance: register IPC context on the app so it can perform
-			// per-prompt probes and promote itself to primary on failure.
-			//
-			// busSetupFunc is the closure that recreates the full primary wiring
-			// (writecoordinator, changepub, bridge) using the new RW connection and Bus.
-			// It captures the current pandoApp and cmd-level vars by reference so it can
-			// reference them after promotion.
-			busSetupFunc := func(busCtx context.Context, newBus *ipc.Bus, rwConn *sql.DB) error {
-				coord := writecoordinator.New(busCtx, db.New(rwConn), 256)
-				pub := changepub.NewBusPublisher(newBus.Publish, instanceID, cwd)
-				coord.SetPublisher(pub)
-				dbproxy.RegisterHandlersWithCoordinator(newBus, coord)
-				registerBridgeHandlers(newBus, instanceID, pandoApp)
-				br := bridge.New(newBus, pandoApp.Sessions, pandoApp.CoderAgent)
-				br.Start(busCtx)
-				return nil
-			}
-			pandoApp.SetIPCSecondaryContext(
-				rt.IPCClient,
-				rt.SQLDB,
-				cwd,
-				instanceID,
-				rt.PubPort,
-				rt.RPCPort,
-				rt.Watcher,
-				busSetupFunc,
-			)
-			// Register the promotion callback so the watcher can call PromoteToPrimary
-			// when it wins the lock race.
-			rt.Watcher.SetPromoteCallback(pandoApp.PromoteToPrimary)
-		}
+		wireIPCRole(ctx, rt, pandoApp, instanceID, cwd, "tui")
 
 		app := pandoApp
 		logging.Debug("App initialized")
@@ -317,7 +262,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		if goalObjective != "" {
 			quiet = true
 			defer app.Shutdown()
-			// Probe primary before processing — detect stale primary before writes fail.
+			// Probe the leader so a dead one is replaced before the run starts.
 			app.EnsurePrimary(ctx)
 			result, err := app.RunNonInteractiveGoal(ctx, goalObjective, outputFormat, quiet, yoloMode)
 			if err != nil {
@@ -329,7 +274,7 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		if prompt != "" {
 			quiet = true
 			defer app.Shutdown()
-			// Probe primary before processing — detect stale primary before writes fail.
+			// Probe the leader so a dead one is replaced before the run starts.
 			app.EnsurePrimary(ctx)
 			// Run non-interactive flow using the App method
 			return app.RunNonInteractive(ctx, prompt, outputFormat, quiet, yoloMode)
@@ -629,6 +574,7 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 	pandoApp, err := app.New(ctx, conn, app.AppOptions{
 		SkipLSP:     true,
 		DBQuerier:   rt.Querier,
+		IPCFollower: rt.Role == ipcruntime.RoleSecondary,
 		StartupMode: "acp",
 		InstanceID:  acpInstanceID,
 	})
@@ -657,46 +603,7 @@ func runACPServerWithOptions(cwd string, debug bool, logFile string, autoPerm bo
 	})
 	defer func() { _ = instanceregistry.Revoke(acpInstanceID) }()
 
-	// Start IPC bus and register handlers only on the primary instance.
-	if rt.Role == ipcruntime.RolePrimary {
-		acpBus := rt.Bus
-		acpCoord := writecoordinator.New(ctx, db.New(conn), 256)
-		defer acpCoord.Shutdown()
-		acpPub := changepub.NewBusPublisher(acpBus.Publish, acpInstanceID, cwd)
-		acpCoord.SetPublisher(acpPub)
-		dbproxy.RegisterHandlersWithCoordinator(acpBus, acpCoord)
-		registerBridgeHandlers(acpBus, acpInstanceID, pandoApp)
-		pandoApp.SetupIPC(acpBus)
-		if busErr := ipc.StartBusWithRetry(ctx, acpBus, rt.PubPort, rt.RPCPort); busErr != nil {
-			logging.Error("IPC: ACP bus failed to start; this instance is primary but unreachable over IPC (it will not appear in the instances browser)", "error", busErr)
-		} else {
-			acpBridge := bridge.New(acpBus, pandoApp.Sessions, pandoApp.CoderAgent)
-			acpBridge.Start(ctx)
-			rt.Watcher.Start(ctx)
-		}
-	} else {
-		busSetupFunc := func(busCtx context.Context, newBus *ipc.Bus, rwConn *sql.DB) error {
-			coord := writecoordinator.New(busCtx, db.New(rwConn), 256)
-			pub := changepub.NewBusPublisher(newBus.Publish, acpInstanceID, cwd)
-			coord.SetPublisher(pub)
-			dbproxy.RegisterHandlersWithCoordinator(newBus, coord)
-			registerBridgeHandlers(newBus, acpInstanceID, pandoApp)
-			br := bridge.New(newBus, pandoApp.Sessions, pandoApp.CoderAgent)
-			br.Start(busCtx)
-			return nil
-		}
-		pandoApp.SetIPCSecondaryContext(
-			rt.IPCClient,
-			rt.SQLDB,
-			cwd,
-			acpInstanceID,
-			rt.PubPort,
-			rt.RPCPort,
-			rt.Watcher,
-			busSetupFunc,
-		)
-		rt.Watcher.SetPromoteCallback(pandoApp.PromoteToPrimary)
-	}
+	wireIPCRole(ctx, rt, pandoApp, acpInstanceID, cwd, "acp")
 
 	// Build adapters (defined below) that bridge internal services to ACP interfaces,
 	// avoiding import cycles between internal/mesnada/acp and internal/llm/agent.

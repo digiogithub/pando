@@ -8,9 +8,8 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/digiogithub/pando/internal/db"
 	llmtools "github.com/digiogithub/pando/internal/llm/tools"
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
 	"github.com/stretchr/testify/require"
 	toon "github.com/toon-format/toon-go"
 )

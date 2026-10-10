@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
 	"github.com/pressly/goose/v3"
 )
 
@@ -15,7 +13,7 @@ import (
 // active skill and checks it is deactivated as legacy, that the queries match
 // the migrated schema, and that the migration rolls back.
 func TestMigrationReviewableSkills(t *testing.T) {
-	conn, err := sql.Open("sqlite3", filepath.Join(t.TempDir(), "pando.db"))
+	conn, err := sql.Open(DriverName, filepath.Join(t.TempDir(), "pando.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

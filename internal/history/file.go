@@ -102,27 +102,25 @@ func (s *service) createWithVersion(ctx context.Context, sessionID, path, conten
 
 	// Retry loop for transaction conflicts
 	for attempt := range maxRetries {
-		// Start a transaction
-		tx, txErr := s.db.Begin()
-		if txErr != nil {
-			return File{}, fmt.Errorf("failed to begin transaction: %w", txErr)
-		}
-
-		// Create a new queries instance with the transaction
-		qtx := s.q.WithTx(tx)
-
-		// Try to create the file within the transaction
-		dbFile, txErr := qtx.CreateFile(ctx, db.CreateFileParams{
-			ID:        uuid.New().String(),
-			SessionID: sessionID,
-			Path:      path,
-			Content:   content,
-			Version:   version,
+		// Create the file inside a transaction. RunTx may run the closure more
+		// than once when the commit loses against a concurrent writer, so the
+		// result is assigned from scratch on every attempt.
+		var dbFile db.File
+		txErr := db.RunTx(ctx, s.db, func(tx *sql.Tx) error {
+			created, err := s.q.WithTx(tx).CreateFile(ctx, db.CreateFileParams{
+				ID:        uuid.New().String(),
+				SessionID: sessionID,
+				Path:      path,
+				Content:   content,
+				Version:   version,
+			})
+			if err != nil {
+				return err
+			}
+			dbFile = created
+			return nil
 		})
 		if txErr != nil {
-			// Rollback the transaction
-			tx.Rollback()
-
 			// Check if this is a uniqueness constraint violation
 			if strings.Contains(txErr.Error(), "UNIQUE constraint failed") {
 				if attempt < maxRetries-1 {
@@ -140,11 +138,6 @@ func (s *service) createWithVersion(ctx context.Context, sessionID, path, conten
 				}
 			}
 			return File{}, txErr
-		}
-
-		// Commit the transaction
-		if txErr = tx.Commit(); txErr != nil {
-			return File{}, fmt.Errorf("failed to commit transaction: %w", txErr)
 		}
 
 		file = s.fromDBItem(dbFile)

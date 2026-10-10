@@ -7,15 +7,14 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/digiogithub/pando/internal/db"
 	llmtools "github.com/digiogithub/pando/internal/llm/tools"
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
 	"github.com/stretchr/testify/require"
 )
 
 func createProxyToolsTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("pando-sqlite", ":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 

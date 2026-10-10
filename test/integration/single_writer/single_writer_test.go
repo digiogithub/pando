@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -262,17 +263,108 @@ func TestDatabaseCreatedByPrimary(t *testing.T) {
 	}
 }
 
-// TestPrimaryFailoverSkipped is a placeholder for Phase 5 (failover) tests.
-// It is skipped until the failover watchdog is implemented.
-func TestPrimaryFailoverSkipped(t *testing.T) {
-	t.Skip("Phase 5: failover not yet implemented — secondary promotion on primary death")
+// TestLeaderFailoverAfterKill kills the leader with SIGKILL and verifies a
+// follower takes the IPC lock over (heartbeat timeout + lock race).
+func TestLeaderFailoverAfterKill(t *testing.T) {
+	env := newTestEnv(t)
+
+	leader := startInstance(t, env.Workdir, "serve", "--port", "19300", "--host", "127.0.0.1")
+	t.Cleanup(func() { leader.stop(t) })
+	info := waitForLockFile(t, env.Workdir, 15*time.Second)
+	if info.PID != leader.PID {
+		t.Fatalf("lock PID=%d, want leader PID=%d", info.PID, leader.PID)
+	}
+
+	follower := startInstance(t, env.Workdir, "serve", "--port", "19301", "--host", "127.0.0.1")
+	t.Cleanup(func() { follower.stop(t) })
+	time.Sleep(3 * time.Second)
+
+	_ = leader.Cmd.Process.Kill()
+	_ = leader.waitForExit(t, 5*time.Second)
+
+	deadline := time.Now().Add(45 * time.Second)
+	for time.Now().Before(deadline) {
+		if cur := readLockFile(t, env.Workdir); cur != nil && cur.PID == follower.PID {
+			t.Logf("follower PID=%d took the leader role", follower.PID)
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Fatalf("follower PID=%d did not take the lock within 45s after the leader died", follower.PID)
 }
 
-// TestConcurrentWritesFromMultipleSecondaries is a placeholder that requires
-// Phase 3 (write coordinator) to be wired up to a real LLM session flow.
-// The coordinator itself is unit-tested in internal/ipc/writecoordinator.
-func TestConcurrentWritesFromMultipleSecondaries(t *testing.T) {
-	t.Skip("Requires LLM provider credentials and Phase 3 coordinator integration; use unit tests in internal/ipc/writecoordinator")
+// TestConcurrentWritesFromManyProcesses runs two serve instances (leader and
+// follower) and, while they are up, 4 waves of 5 concurrent `pando project
+// add` processes, each of them an independent writer of the same database
+// (migrations, project row). Every write must land, and once every process
+// has exited the database must be a plain, intact SQLite file.
+func TestConcurrentWritesFromManyProcesses(t *testing.T) {
+	env := newTestEnv(t)
+
+	s1 := startInstance(t, env.Workdir, "serve", "--port", "19310", "--host", "127.0.0.1")
+	t.Cleanup(func() { s1.stop(t) })
+	waitForLockFile(t, env.Workdir, 15*time.Second)
+	s2 := startInstance(t, env.Workdir, "serve", "--port", "19311", "--host", "127.0.0.1")
+	t.Cleanup(func() { s2.stop(t) })
+	time.Sleep(3 * time.Second)
+
+	const waves, perWave = 4, 5
+	projects := filepath.Join(t.TempDir(), "projects")
+	for w := 0; w < waves; w++ {
+		var wg sync.WaitGroup
+		errs := make(chan error, perWave)
+		for i := 0; i < perWave; i++ {
+			dir := filepath.Join(projects, fmt.Sprintf("p%d_%d", w, i))
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			wg.Add(1)
+			go func(dir string) {
+				defer wg.Done()
+				cmd := exec.Command(pandoBinary, "project", "add", dir)
+				cmd.Dir = env.Workdir
+				out, err := cmd.CombinedOutput()
+				if err != nil {
+					errs <- fmt.Errorf("project add %s: %v\n%s", dir, err, out)
+				}
+			}(dir)
+		}
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			t.Error(err)
+		}
+	}
+
+	out, err := func() ([]byte, error) {
+		cmd := exec.Command(pandoBinary, "project", "list")
+		cmd.Dir = env.Workdir
+		return cmd.CombinedOutput()
+	}()
+	if err != nil {
+		t.Fatalf("project list: %v\n%s", err, out)
+	}
+	got := strings.Count(string(out), projects)
+	if got != waves*perWave {
+		t.Fatalf("project list shows %d of the %d projects added\n%s", got, waves*perWave, out)
+	}
+
+	for _, inst := range []*instance{s1, s2} {
+		if !inst.isRunning() {
+			t.Errorf("serve PID=%d exited during the writes", inst.PID)
+		}
+		inst.stop(t)
+	}
+
+	dataDir := filepath.Join(env.Workdir, ".pando", "data")
+	if leftovers, _ := filepath.Glob(filepath.Join(dataDir, "pando.db-mw*")); len(leftovers) > 0 {
+		t.Errorf("multiwriter log files left after every process exited: %v", leftovers)
+	}
+	check := exec.Command(pandoBinary, "project", "list")
+	check.Dir = env.Workdir
+	if out, err := check.CombinedOutput(); err != nil {
+		t.Fatalf("reopen after shutdown: %v\n%s", err, out)
+	}
 }
 
 // TestPortDeterminism verifies that two serve instances started with the same

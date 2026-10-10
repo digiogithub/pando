@@ -11,7 +11,6 @@ import (
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/fswatch"
-	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	"github.com/digiogithub/pando/internal/logging"
 	rag "github.com/digiogithub/pando/internal/rag"
 )
@@ -116,16 +115,11 @@ func (app *App) initRemembrancesProjectIndexing(ctx context.Context, svc *rag.Re
 	start()
 }
 
-// isSecondaryAtStartup reports whether this instance is an IPC secondary while
-// the app is still being constructed. SetIPCSecondaryContext runs after
-// app.New, so the role is derived from the querier: secondaries get a
-// *dbproxy.DBProxy that forwards writes to the primary.
+// isSecondaryAtStartup reports whether this instance is an IPC follower while
+// the app is still being constructed (AppOptions.IPCFollower; the full
+// follower context is only set later by SetIPCSecondaryContext).
 func (app *App) isSecondaryAtStartup() bool {
-	if app.IPCIsPrimary {
-		return false
-	}
-	_, ok := app.DBQuerier.(*dbproxy.DBProxy)
-	return ok
+	return app.ipcSecondary && !app.IPCIsPrimary
 }
 
 // startDeferredCodeIndex runs the startup code indexing/watching that was

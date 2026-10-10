@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
+	"github.com/digiogithub/pando/internal/db"
 )
 
 // backfillBatchSize is how many documents are re-linked per transaction. Small
@@ -39,13 +41,7 @@ type BackfillStats struct {
 // needed and the pass is idempotent: once a document is indexed it stops being a
 // candidate. A document whose only "[[" occurrences sit inside code fences
 // yields no links and is re-scanned by later passes, which is harmless.
-//
-// The pass is a no-op on instances that write through the IPC proxy: the primary
-// owns the writer connection and runs the backfill itself.
 func (s *KBStore) BackfillLinks(ctx context.Context) (BackfillStats, error) {
-	if s.proxy != nil {
-		return BackfillStats{}, nil
-	}
 	return s.backfillLinks(ctx, false)
 }
 
@@ -55,9 +51,6 @@ func (s *KBStore) BackfillLinks(ctx context.Context) (BackfillStats, error) {
 // in the extractor (a new syntax, a different slug rule) that made the stored
 // rows stale.
 func (s *KBStore) RelinkAll(ctx context.Context) (BackfillStats, error) {
-	if s.proxy != nil {
-		return BackfillStats{}, nil
-	}
 	return s.backfillLinks(ctx, true)
 }
 
@@ -154,50 +147,48 @@ func (s *KBStore) linkBackfillCandidates(ctx context.Context, force bool) ([]int
 func (s *KBStore) relinkBatch(ctx context.Context, ids []int64) (BackfillStats, error) {
 	var stats BackfillStats
 
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return stats, fmt.Errorf("kb: begin link backfill tx: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck // no-op after Commit
+	err := db.RunTx(ctx, s.db, func(tx *sql.Tx) error {
+		stats = BackfillStats{} // reset: the closure may run more than once
 
-	for _, id := range ids {
-		var filePath, content string
-		err := tx.QueryRowContext(ctx,
-			`SELECT file_path, content FROM kb_documents WHERE id = ?`, id,
-		).Scan(&filePath, &content)
-		if err != nil {
-			// The document was deleted between listing and processing: nothing
-			// to link, and its rows are gone with it (ON DELETE CASCADE).
-			if err == sql.ErrNoRows {
+		for _, id := range ids {
+			var filePath, content string
+			err := tx.QueryRowContext(ctx,
+				`SELECT file_path, content FROM kb_documents WHERE id = ?`, id,
+			).Scan(&filePath, &content)
+			if err != nil {
+				// The document was deleted between listing and processing: nothing
+				// to link, and its rows are gone with it (ON DELETE CASCADE).
+				if err == sql.ErrNoRows {
+					continue
+				}
+				return fmt.Errorf("kb: load document %d for backfill: %w", id, err)
+			}
+
+			stats.Scanned++
+
+			links := ExtractWikiLinks(content)
+			if len(links) == 0 {
 				continue
 			}
-			return stats, fmt.Errorf("kb: load document %d for backfill: %w", id, err)
+
+			// Delete first even though the rows should not exist: a concurrent write
+			// may have indexed the document between listing and now, and duplicating
+			// its links would be worse than the wasted statement.
+			if _, err := tx.ExecContext(ctx, `DELETE FROM kb_links WHERE source_document_id = ?`, id); err != nil {
+				return fmt.Errorf("kb: delete links: %w", err)
+			}
+			n, err := insertDocumentLinks(ctx, tx, id, filePath, links)
+			if err != nil {
+				return err
+			}
+
+			stats.Links += n
+			stats.Documents++
 		}
-
-		stats.Scanned++
-
-		links := ExtractWikiLinks(content)
-		if len(links) == 0 {
-			continue
-		}
-
-		// Delete first even though the rows should not exist: a concurrent write
-		// may have indexed the document between listing and now, and duplicating
-		// its links would be worse than the wasted statement.
-		if _, err := tx.ExecContext(ctx, `DELETE FROM kb_links WHERE source_document_id = ?`, id); err != nil {
-			return stats, fmt.Errorf("kb: delete links: %w", err)
-		}
-		n, err := insertDocumentLinks(ctx, tx, id, filePath, links)
-		if err != nil {
-			return stats, err
-		}
-
-		stats.Links += n
-		stats.Documents++
-	}
-
-	if err := tx.Commit(); err != nil {
-		return stats, fmt.Errorf("kb: commit link backfill tx: %w", err)
+		return nil
+	})
+	if err != nil {
+		return stats, fmt.Errorf("kb: link backfill tx: %w", err)
 	}
 	return stats, nil
 }

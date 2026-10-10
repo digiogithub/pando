@@ -60,9 +60,6 @@ link, which is what you want after an upgrade that changed how links are parsed.
 			stats, err = store.BackfillLinks(cmd.Context())
 		}
 		if err != nil {
-			if isDBLockedErr(err) {
-				return fmt.Errorf("%w\nanother Pando instance may be writing to the database; stop it and retry", err)
-			}
 			return err
 		}
 

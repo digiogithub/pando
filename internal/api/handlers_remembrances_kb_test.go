@@ -15,15 +15,11 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
+	_ "github.com/digiogithub/pando/internal/db"
 
 	"github.com/digiogithub/pando/internal/app"
-	"github.com/digiogithub/pando/internal/ipc"
-	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	rag "github.com/digiogithub/pando/internal/rag"
 	"github.com/digiogithub/pando/internal/rag/kb"
-	ragproxy "github.com/digiogithub/pando/internal/rag/proxy"
 )
 
 // openTestKBDB creates an in-memory SQLite DB with the KB schema, mirroring
@@ -32,7 +28,7 @@ import (
 // packages) kept in sync by hand.
 func openTestKBDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("pando-sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("sql.Open() error = %v", err)
 	}
@@ -503,89 +499,5 @@ func TestKBRoutes_RequireValidToken(t *testing.T) {
 				t.Fatalf("status = %d, body = %s, want 401", rec.Code, rec.Body.String())
 			}
 		})
-	}
-}
-
-// ---- Secondary instance proxying (AC6) ----
-
-// TestKBWriteRoutes_SecondaryProxiesToPrimary covers AC6: on a secondary
-// instance (KBStore.SetWriteProxy configured), the upsert route must not write
-// to the secondary's own local database — the write is forwarded over IPC to
-// the primary, exactly as KBStore.AddDocument/UpdateDocument/DeleteDocument
-// already do when s.proxy != nil (kb.go). UpdateDocument and DeleteDocument
-// share the same s.proxy != nil branch as AddDocument, so this one round trip
-// exercises the mechanism common to all three write routes.
-func TestKBWriteRoutes_SecondaryProxiesToPrimary(t *testing.T) {
-	ctx := context.Background()
-
-	// Primary: real KBStore, reachable over IPC via the RemembrancesWriteDispatcher.
-	primaryStore := kb.NewKBStore(openTestKBDB(t), fakeKBEmbedder{}, 0, 0)
-	primarySvc := &rag.RemembrancesService{KB: primaryStore}
-	dbproxy.RegisterRemembrancesDispatcher(ragproxy.NewRemembrancesWriteDispatcher(primarySvc))
-	t.Cleanup(func() { dbproxy.RegisterRemembrancesDispatcher(nil) })
-
-	bus := ipc.NewBus("kb-rest-proxy-test-primary")
-	// The db.write JSON-RPC method itself is registered here; dispatchWrite's
-	// switch has no case for "KBAddDocument" and falls through to the
-	// RemembrancesDispatcher registered above, so a nil db.Querier is fine.
-	dbproxy.RegisterHandlers(bus, nil)
-	busCtx, busCancel := context.WithCancel(ctx)
-	t.Cleanup(busCancel)
-	const pubPort, rpcPort = 48930, 48931
-	if err := bus.Start(busCtx, pubPort, rpcPort); err != nil {
-		t.Fatalf("bus.Start() error = %v", err)
-	}
-	t.Cleanup(func() { _ = bus.Shutdown() })
-
-	client, err := ipc.NewClient(busCtx)
-	if err != nil {
-		t.Fatalf("ipc.NewClient() error = %v", err)
-	}
-	t.Cleanup(func() { _ = client.Close() })
-
-	proxy := dbproxy.New(nil, client, bus.RPCAddr)
-
-	// Secondary: its own separate local DB — proof that a successful write
-	// never lands there directly.
-	secondaryDB := openTestKBDB(t)
-	secondaryStore := kb.NewKBStore(secondaryDB, fakeKBEmbedder{}, 0, 0)
-	secondaryStore.SetWriteProxy(proxy)
-
-	s := &Server{app: &app.App{Remembrances: &rag.RemembrancesService{KB: secondaryStore}}}
-
-	body := `{"file_path":"proxied/doc.md","content":"hello from secondary","metadata":{"k":"v"}}`
-	rec := httptest.NewRecorder()
-	s.handleUpsertKBDocument(rec, doJSONRequest(http.MethodPost, "/api/v1/remembrances/kb/documents", body))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
-	}
-
-	// The primary received it.
-	deadline := time.Now().Add(3 * time.Second)
-	var doc *kb.Document
-	for time.Now().Before(deadline) {
-		doc, err = primaryStore.GetDocument(ctx, "proxied/doc.md")
-		if err != nil {
-			t.Fatalf("primaryStore.GetDocument() error = %v", err)
-		}
-		if doc != nil {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if doc == nil {
-		t.Fatal("expected the primary to have received the proxied write")
-	}
-	if doc.Content != "hello from secondary" {
-		t.Errorf("primary content = %q, want %q", doc.Content, "hello from secondary")
-	}
-
-	// The secondary's own local DB must not have written the row directly.
-	var count int
-	if err := secondaryDB.QueryRow(`SELECT COUNT(*) FROM kb_documents WHERE file_path = ?`, "proxied/doc.md").Scan(&count); err != nil {
-		t.Fatalf("secondary count query error = %v", err)
-	}
-	if count != 0 {
-		t.Fatalf("secondary wrote %d rows locally, want 0 (write must go through the proxy, not local db)", count)
 	}
 }

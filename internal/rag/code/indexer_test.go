@@ -11,8 +11,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
+	_ "modernc.org/sqlite"
 
 	"github.com/digiogithub/pando/internal/rag/treesitter"
 )
@@ -24,7 +23,7 @@ type testEmbedder struct {
 func setupIndexerTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -225,7 +224,7 @@ func (e *testEmbedder) EmbedDocuments(ctx context.Context, texts []string) ([][]
 }
 
 func TestEmbedSymbols_NilContextUsesBackground(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

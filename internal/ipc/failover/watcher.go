@@ -262,14 +262,54 @@ func (w *Watcher) runSecondary(ctx context.Context) {
 		return
 	}
 
-	ch, err := w.client.SubscribeTo(w.pubEndpoint,
-		protocol.TopicInstanceHeartbeat,
-		protocol.TopicInstanceShutdown,
-		protocol.TopicInstancePromoted,
-	)
-	if err != nil {
-		logging.Warn("failover: secondary failed to subscribe to primary events", "error", err)
-		return
+	// Each pass watches the current leader until it looks dead and tries to
+	// take over. When another follower wins, the new leader binds the same
+	// ports, so the next pass simply watches it.
+	for ctx.Err() == nil {
+		w.watchLeader(ctx)
+		w.mu.RLock()
+		promoted := w.role == "primary"
+		w.mu.RUnlock()
+		if promoted {
+			return
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+// watchLeader runs one watch pass of runSecondary. It returns after a
+// failover attempt (successful or not) or when ctx ends.
+func (w *Watcher) watchLeader(ctx context.Context) {
+
+	// The leader binds its bus only after building the whole app, so a
+	// follower started right after it can find nothing listening yet: keep
+	// trying. If the bus never appears within the heartbeat timeout the leader
+	// may have died during startup; try to take over (the lock decides).
+	var ch <-chan ipc.Envelope
+	subscribeDeadline := time.Now().Add(w.cfg.HeartbeatTimeout)
+	for {
+		var err error
+		ch, err = w.client.SubscribeTo(w.pubEndpoint,
+			protocol.TopicInstanceHeartbeat,
+			protocol.TopicInstanceShutdown,
+			protocol.TopicInstancePromoted,
+		)
+		if err == nil {
+			break
+		}
+		if time.Now().After(subscribeDeadline) {
+			logging.Warn("failover: could not subscribe to the leader's events within the heartbeat timeout", "error", err)
+			w.triggerFailover(ctx)
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Second):
+		}
 	}
 
 	w.mu.Lock()
@@ -360,6 +400,9 @@ func (w *Watcher) runProbe(ctx context.Context) {
 	}
 }
 
+// lockRetryWindow is how long a failover attempt keeps trying the IPC lock.
+const lockRetryWindow = 3 * time.Second
+
 // triggerFailover is called on the secondary when the primary appears dead.
 // It checks the feature flag, attempts lock acquisition, and calls onPromote on success.
 // The acquired lock file is passed directly to onPromote so the promotion callback
@@ -379,10 +422,28 @@ func (w *Watcher) triggerFailover(ctx context.Context) {
 		"workdir", w.workdir,
 	)
 
-	isPrimary, _, lockFile, err := ipc.AcquireLock(w.workdir, w.instanceID, w.pubPort, w.rpcPort)
-	if err != nil {
-		logging.Warn("failover: lock acquisition error; aborting promotion", "error", err)
-		return
+	// A leader that was just killed may still hold its flock for a moment while
+	// the kernel tears the process down: poll briefly before concluding that
+	// another follower took over.
+	var (
+		isPrimary bool
+		lockFile  *os.File
+		err       error
+	)
+	for deadline := time.Now().Add(lockRetryWindow); ; {
+		isPrimary, _, lockFile, err = ipc.AcquireLock(w.workdir, w.instanceID, w.pubPort, w.rpcPort)
+		if err != nil {
+			logging.Warn("failover: lock acquisition error; aborting promotion", "error", err)
+			return
+		}
+		if isPrimary || time.Now().After(deadline) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
 
 	if !isPrimary {
@@ -401,12 +462,15 @@ func (w *Watcher) triggerFailover(ctx context.Context) {
 	onPromote := w.onPromote
 	w.mu.RUnlock()
 
-	var promoteErr error
-	if onPromote != nil {
-		promoteErr = onPromote(ctx, lockFile)
+	if onPromote == nil {
+		// Holding the lock without running the leader wiring would leave the
+		// workdir with a leader that serves no bus and runs no singleton jobs.
+		logging.Warn("failover: no promotion callback registered; releasing lock")
+		ipc.ReleaseLock(lockFile)
+		return
 	}
 
-	if promoteErr != nil {
+	if promoteErr := onPromote(ctx, lockFile); promoteErr != nil {
 		logging.Warn("failover: promotion callback returned error; releasing lock", "error", promoteErr)
 		ipc.ReleaseLock(lockFile)
 		return

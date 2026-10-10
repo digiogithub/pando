@@ -164,60 +164,6 @@ func (s *KBStore) upsertMemory(ctx context.Context, opts MemoryUpsertOptions) (c
 }
 
 func (s *KBStore) upsertMemoryByKey(ctx context.Context, opts MemoryUpsertOptions, bodyContent string) (bool, error) {
-	if s.proxy != nil {
-		// Via proxy: check existence first, then route through proxy's Add/Update.
-		existing, err := s.GetMemoryByKey(ctx, opts.Key)
-		if err != nil {
-			return false, err
-		}
-
-		if existing != nil {
-			existingFM := FrontMatter{
-				CreatedAt:  existing.CreatedAt,
-				UpdatedAt:  existing.UpdatedAt,
-				Tags:       existing.Tags,
-				Key:        existing.MemoryKey,
-				Scope:      existing.MemoryScope,
-				Source:     existing.Source,
-				Hits:       existing.Hits,
-				Importance: existing.Importance,
-				ExpiresAt:  existing.ExpiresAt,
-			}
-			incomingFM := FrontMatter{
-				Tags:       opts.Tags,
-				Scope:      opts.Scope,
-				Source:     opts.Source,
-				Importance: opts.Importance,
-			}
-			mergedFM := MergeFrontMatter(existingFM, incomingFM)
-			if err := s.UpdateDocument(ctx, existing.FilePath, bodyContent, opts.Metadata); err != nil {
-				return false, fmt.Errorf("kb: upsert memory key update: %w", err)
-			}
-			mirrorContent := SerializeFrontMatter(mergedFM, bodyContent)
-			if err := s.WriteDocumentToFilesystem(existing.FilePath, mirrorContent); err != nil {
-				return false, fmt.Errorf("kb: upsert memory key mirror: %w", err)
-			}
-			return false, nil
-		}
-
-		memOpts := &MemoryOptions{
-			Key:        opts.Key,
-			Scope:      opts.Scope,
-			Source:     opts.Source,
-			Importance: opts.Importance,
-			TTLDays:    opts.DefaultTTLDays,
-		}
-		newFM := NewFrontMatter(opts.Tags, memOpts)
-		if err := s.AddDocument(ctx, opts.FilePath, bodyContent, opts.Metadata); err != nil {
-			return false, fmt.Errorf("kb: upsert memory key add: %w", err)
-		}
-		mirrorContent := SerializeFrontMatter(newFM, bodyContent)
-		if err := s.WriteDocumentToFilesystem(opts.FilePath, mirrorContent); err != nil {
-			return false, fmt.Errorf("kb: upsert memory key mirror: %w", err)
-		}
-		return true, nil
-	}
-
 	// Direct DB path: use INSERT ... ON CONFLICT for atomicity.
 	metaJSON := "{}"
 	if len(opts.Metadata) > 0 {

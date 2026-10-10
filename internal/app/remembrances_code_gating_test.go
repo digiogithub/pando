@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/digiogithub/pando/internal/db"
-	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 )
 
 func TestIsSecondaryAtStartup(t *testing.T) {
@@ -13,15 +12,24 @@ func TestIsSecondaryAtStartup(t *testing.T) {
 	if standalone.isSecondaryAtStartup() {
 		t.Fatal("standalone app must not be treated as secondary")
 	}
+	if !standalone.isLeader() {
+		t.Fatal("standalone app must run the singleton jobs")
+	}
 
-	secondary := &App{DBQuerier: dbproxy.New(db.New(nil), nil, "")}
+	secondary := &App{DBQuerier: db.New(nil), ipcSecondary: true}
 	if !secondary.isSecondaryAtStartup() {
-		t.Fatal("app with a DBProxy querier must be treated as secondary")
+		t.Fatal("IPC follower must be treated as secondary")
+	}
+	if secondary.isLeader() {
+		t.Fatal("IPC follower must not run the singleton jobs")
 	}
 
 	secondary.IPCIsPrimary = true
 	if secondary.isSecondaryAtStartup() {
 		t.Fatal("app that is already primary must not be treated as secondary")
+	}
+	if !secondary.isLeader() {
+		t.Fatal("promoted follower must run the singleton jobs")
 	}
 }
 

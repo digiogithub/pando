@@ -8,7 +8,7 @@ Available in the TUI, the Web UI and over ACP (editors like Zed or VS Code):
 | --- | --- |
 | `/goal <objective>` (alias `/autopilot`) | Start goal mode with a persistent objective; `/goal-status`, `/goal-cancel` |
 | `/compact` (alias `/summarize`) | Summarize and compact the current session |
-| `/db-compact` | VACUUM the database and reclaim free space |
+| `/db-compact` | Explains how to compact the database: `pando db compact` with every instance closed (see [database.md](database.md)) |
 | `/ponytail [lite\|full\|ultra\|off]` | Toggle "lazy senior developer" mode (build less, keep the diff short) |
 | `/caveman [lite\|full\|ultra]` | Answer with fewer words to spend fewer output tokens (see below) |
 | `/caveman-finish` | Return the session to normal output length |

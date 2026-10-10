@@ -7,8 +7,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
+	_ "github.com/digiogithub/pando/internal/db"
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
@@ -150,7 +149,7 @@ CREATE TABLE IF NOT EXISTS prompt_variant_stats (
 func setupTestDB(t *testing.T) (*sql.DB, db.Querier) {
 	t.Helper()
 
-	conn, err := sql.Open("sqlite3", ":memory:")
+	conn, err := sql.Open("pando-sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

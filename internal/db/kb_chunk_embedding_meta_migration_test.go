@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
 	"github.com/pressly/goose/v3"
 )
 
@@ -19,7 +17,7 @@ func TestMigrationsBackfillKBChunkEmbeddingDims(t *testing.T) {
 	const preMigrationVersion = 20260713000001 // 20260713000001_add_kb_links.sql
 
 	dbPath := filepath.Join(t.TempDir(), "pando.db")
-	conn, err := sql.Open("sqlite3", dbPath)
+	conn, err := sql.Open(DriverName, dbPath)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

@@ -1,9 +1,10 @@
 //go:build integration
 
-// Package single_writer_test contains multi-process integration tests that
-// verify the single-writer SQLite architecture. Tests spawn real Pando
-// subprocesses in a shared temp directory and assert that exactly one process
-// acquires the IPC lock (becomes primary) while others become secondaries.
+// Package single_writer_test contains multi-process integration tests. Tests
+// spawn real Pando subprocesses in a shared temp directory and assert that
+// exactly one process acquires the IPC lock (the leader) while the others
+// follow, and that every process writes the shared database directly through
+// the multi-writer engine without losing or corrupting anything.
 package single_writer_test
 
 import (

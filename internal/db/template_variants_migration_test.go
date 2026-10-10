@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
 	"github.com/pressly/goose/v3"
 )
 
@@ -17,7 +15,7 @@ import (
 func TestMigrationRemovesStaleSeededTemplates(t *testing.T) {
 	const preMigrationVersion = 20260929000002
 
-	conn, err := sql.Open("sqlite3", filepath.Join(t.TempDir(), "pando.db"))
+	conn, err := sql.Open(DriverName, filepath.Join(t.TempDir(), "pando.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

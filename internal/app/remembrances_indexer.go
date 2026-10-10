@@ -9,7 +9,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/digiogithub/pando/internal/config"
-	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/pubsub"
@@ -32,10 +31,6 @@ const (
 	// backend timed out or refused the request, instead of queuing more work
 	// on it.
 	sessionIndexBackendCooldown = 2 * time.Minute
-	// sessionIndexUnsupportedPause pauses session indexing when the primary
-	// instance rejects the write as an unknown method: every pass would embed
-	// the whole conversation again only to have the write refused.
-	sessionIndexUnsupportedPause = 30 * time.Minute
 	// Tool payloads are capped: they are the bulk of a conversation (file
 	// views, search results) and add little to recalling what a session was
 	// about.
@@ -98,9 +93,7 @@ type sessionIndexScheduler struct {
 	delay    time.Duration
 	cooldown time.Duration
 	timeout  time.Duration
-	// unsupportedPause is how long indexing stops after a METHOD_NOT_FOUND.
-	unsupportedPause time.Duration
-	run              func(ctx context.Context, sessionID string) error
+	run      func(ctx context.Context, sessionID string) error
 
 	mu            sync.Mutex
 	timers        map[string]*time.Timer
@@ -112,15 +105,14 @@ type sessionIndexScheduler struct {
 
 func newSessionIndexScheduler(ctx context.Context, delay time.Duration, run func(ctx context.Context, sessionID string) error) *sessionIndexScheduler {
 	return &sessionIndexScheduler{
-		ctx:              ctx,
-		delay:            delay,
-		cooldown:         sessionIndexBackendCooldown,
-		timeout:          sessionIndexTimeout,
-		unsupportedPause: sessionIndexUnsupportedPause,
-		run:              run,
-		timers:           make(map[string]*time.Timer),
-		running:          make(map[string]bool),
-		dirty:            make(map[string]bool),
+		ctx:      ctx,
+		delay:    delay,
+		cooldown: sessionIndexBackendCooldown,
+		timeout:  sessionIndexTimeout,
+		run:      run,
+		timers:   make(map[string]*time.Timer),
+		running:  make(map[string]bool),
+		dirty:    make(map[string]bool),
 	}
 }
 
@@ -176,11 +168,7 @@ func (s *sessionIndexScheduler) fire(sessionID string) {
 	again := s.dirty[sessionID]
 	delete(s.dirty, sessionID)
 	if err != nil && s.ctx.Err() == nil {
-		if dbproxy.IsMethodNotFound(err) {
-			s.cooldownUntil = time.Now().Add(s.unsupportedPause)
-			logging.Warn("remembrances session index paused: the primary instance cannot store session index writes (update it or restart it)",
-				"session_id", sessionID, "retry_in", s.unsupportedPause.String(), "error", err)
-		} else if embeddings.IsBackendUnavailable(err) {
+		if embeddings.IsBackendUnavailable(err) {
 			s.cooldownUntil = time.Now().Add(s.cooldown)
 			again = true
 			logging.Warn("remembrances session index paused: embedding backend unavailable",

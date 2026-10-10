@@ -12,8 +12,7 @@ import (
 	rag "github.com/digiogithub/pando/internal/rag"
 	"github.com/digiogithub/pando/internal/rag/kb"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
+	_ "github.com/digiogithub/pando/internal/db"
 )
 
 // stalenessDimEmbedder returns a fixed-dimension, fixed-direction vector
@@ -44,7 +43,7 @@ func (e stalenessDimEmbedder) Dimension() int { return e.dim }
 // 20260914000001_add_kb_chunk_embedding_meta.sql.
 func openStalenessTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("pando-sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("sql.Open() error = %v", err)
 	}

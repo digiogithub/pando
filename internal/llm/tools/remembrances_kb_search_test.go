@@ -9,8 +9,7 @@ import (
 	"github.com/digiogithub/pando/internal/rag/embeddings"
 	"github.com/digiogithub/pando/internal/rag/kb"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
+	_ "github.com/digiogithub/pando/internal/db"
 )
 
 // openKBSearchTestStore builds an in-memory KB store with the full schema
@@ -20,7 +19,7 @@ import (
 // same database with a different embedder (simulating an embedder swap).
 func openKBSearchTestStore(t *testing.T, embedder embeddings.Embedder) (*kb.KBStore, *sql.DB) {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("pando-sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("sql.Open() error = %v", err)
 	}

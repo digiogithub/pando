@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/digiogithub/pando/internal/db"
 )
 
 // InsertChunk inserts a new chunk and optionally its embedding vector.
@@ -18,48 +20,46 @@ func (s *Store) InsertChunk(ctx context.Context, chunk Chunk, embedding []float3
 		return 0, fmt.Errorf("rag: embedding dim %d != store dim %d", len(embedding), s.dim)
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("rag: begin tx: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
-
 	if chunk.Metadata == "" {
 		chunk.Metadata = "{}"
 	}
-	now := time.Now().UTC()
 
 	var embBlob []byte
 	if len(embedding) > 0 {
 		embBlob = serializeFloat32(embedding)
 	}
 
-	res, err := tx.ExecContext(ctx, `
-		INSERT INTO rag_chunks (collection, source, content, chunk_index, metadata, embedding, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		chunk.Collection, chunk.Source, chunk.Content,
-		chunk.ChunkIndex, chunk.Metadata, embBlob, now, now,
-	)
+	var id int64
+	err := db.RunTx(ctx, s.db, func(tx *sql.Tx) error {
+		now := time.Now().UTC()
+
+		res, err := tx.ExecContext(ctx, `
+			INSERT INTO rag_chunks (collection, source, content, chunk_index, metadata, embedding, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			chunk.Collection, chunk.Source, chunk.Content,
+			chunk.ChunkIndex, chunk.Metadata, embBlob, now, now,
+		)
+		if err != nil {
+			return fmt.Errorf("rag: insert chunk: %w", err)
+		}
+
+		id, err = res.LastInsertId() // assigned fresh on every attempt
+		if err != nil {
+			return fmt.Errorf("rag: last insert id: %w", err)
+		}
+
+		// Keep the FTS5 external-content index in sync.
+		if _, err = tx.ExecContext(ctx, `
+			INSERT INTO rag_fts(rowid, content, source, collection)
+			VALUES (?, ?, ?, ?)`,
+			id, chunk.Content, chunk.Source, chunk.Collection,
+		); err != nil {
+			return fmt.Errorf("rag: insert fts: %w", err)
+		}
+		return nil
+	})
 	if err != nil {
-		return 0, fmt.Errorf("rag: insert chunk: %w", err)
-	}
-
-	id, err := res.LastInsertId()
-	if err != nil {
-		return 0, fmt.Errorf("rag: last insert id: %w", err)
-	}
-
-	// Keep the FTS5 external-content index in sync.
-	if _, err = tx.ExecContext(ctx, `
-		INSERT INTO rag_fts(rowid, content, source, collection)
-		VALUES (?, ?, ?, ?)`,
-		id, chunk.Content, chunk.Source, chunk.Collection,
-	); err != nil {
-		return 0, fmt.Errorf("rag: insert fts: %w", err)
-	}
-
-	if err = tx.Commit(); err != nil {
-		return 0, fmt.Errorf("rag: commit: %w", err)
+		return 0, err
 	}
 	return id, nil
 }
@@ -71,109 +71,107 @@ func (s *Store) UpdateChunk(ctx context.Context, id int64, chunk Chunk, embeddin
 		return fmt.Errorf("rag: embedding dim %d != store dim %d", len(embedding), s.dim)
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("rag: begin tx: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
+	err := db.RunTx(ctx, s.db, func(tx *sql.Tx) error {
+		var err error
 
-	// Read the old text values required to delete the FTS index entry.
-	var oldContent, oldSource, oldCollection string
-	err = tx.QueryRowContext(ctx,
-		`SELECT content, source, collection FROM rag_chunks WHERE id = ?`, id,
-	).Scan(&oldContent, &oldSource, &oldCollection)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return fmt.Errorf("rag: chunk %d not found", id)
+		// Read the old text values required to delete the FTS index entry.
+		var oldContent, oldSource, oldCollection string
+		err = tx.QueryRowContext(ctx,
+			`SELECT content, source, collection FROM rag_chunks WHERE id = ?`, id,
+		).Scan(&oldContent, &oldSource, &oldCollection)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return fmt.Errorf("rag: chunk %d not found", id)
+			}
+			return fmt.Errorf("rag: read old chunk: %w", err)
 		}
-		return fmt.Errorf("rag: read old chunk: %w", err)
-	}
 
-	if chunk.Metadata == "" {
-		chunk.Metadata = "{}"
-	}
-	now := time.Now().UTC()
+		if chunk.Metadata == "" {
+			chunk.Metadata = "{}"
+		}
+		now := time.Now().UTC()
 
-	if len(embedding) > 0 {
-		// Update content and embedding.
+		if len(embedding) > 0 {
+			// Update content and embedding.
+			if _, err = tx.ExecContext(ctx, `
+				UPDATE rag_chunks
+				SET collection = ?, source = ?, content = ?, chunk_index = ?,
+				    metadata = ?, embedding = ?, updated_at = ?
+				WHERE id = ?`,
+				chunk.Collection, chunk.Source, chunk.Content,
+				chunk.ChunkIndex, chunk.Metadata, serializeFloat32(embedding), now, id,
+			); err != nil {
+				return fmt.Errorf("rag: update chunk: %w", err)
+			}
+		} else {
+			// Preserve the existing embedding.
+			if _, err = tx.ExecContext(ctx, `
+				UPDATE rag_chunks
+				SET collection = ?, source = ?, content = ?, chunk_index = ?,
+				    metadata = ?, updated_at = ?
+				WHERE id = ?`,
+				chunk.Collection, chunk.Source, chunk.Content,
+				chunk.ChunkIndex, chunk.Metadata, now, id,
+			); err != nil {
+				return fmt.Errorf("rag: update chunk: %w", err)
+			}
+		}
+
+		// Delete the old FTS entry (must use the OLD content values).
 		if _, err = tx.ExecContext(ctx, `
-			UPDATE rag_chunks
-			SET collection = ?, source = ?, content = ?, chunk_index = ?,
-			    metadata = ?, embedding = ?, updated_at = ?
-			WHERE id = ?`,
-			chunk.Collection, chunk.Source, chunk.Content,
-			chunk.ChunkIndex, chunk.Metadata, serializeFloat32(embedding), now, id,
+			INSERT INTO rag_fts(rag_fts, rowid, content, source, collection)
+			VALUES ('delete', ?, ?, ?, ?)`,
+			id, oldContent, oldSource, oldCollection,
 		); err != nil {
-			return fmt.Errorf("rag: update chunk: %w", err)
+			return fmt.Errorf("rag: fts delete old: %w", err)
 		}
-	} else {
-		// Preserve the existing embedding.
+
+		// Insert the updated FTS entry.
 		if _, err = tx.ExecContext(ctx, `
-			UPDATE rag_chunks
-			SET collection = ?, source = ?, content = ?, chunk_index = ?,
-			    metadata = ?, updated_at = ?
-			WHERE id = ?`,
-			chunk.Collection, chunk.Source, chunk.Content,
-			chunk.ChunkIndex, chunk.Metadata, now, id,
+			INSERT INTO rag_fts(rowid, content, source, collection)
+			VALUES (?, ?, ?, ?)`,
+			id, chunk.Content, chunk.Source, chunk.Collection,
 		); err != nil {
-			return fmt.Errorf("rag: update chunk: %w", err)
+			return fmt.Errorf("rag: fts insert new: %w", err)
 		}
-	}
 
-	// Delete the old FTS entry (must use the OLD content values).
-	if _, err = tx.ExecContext(ctx, `
-		INSERT INTO rag_fts(rag_fts, rowid, content, source, collection)
-		VALUES ('delete', ?, ?, ?, ?)`,
-		id, oldContent, oldSource, oldCollection,
-	); err != nil {
-		return fmt.Errorf("rag: fts delete old: %w", err)
-	}
-
-	// Insert the updated FTS entry.
-	if _, err = tx.ExecContext(ctx, `
-		INSERT INTO rag_fts(rowid, content, source, collection)
-		VALUES (?, ?, ?, ?)`,
-		id, chunk.Content, chunk.Source, chunk.Collection,
-	); err != nil {
-		return fmt.Errorf("rag: fts insert new: %w", err)
-	}
-
-	return tx.Commit()
+		return nil
+	})
+	return err
 }
 
 // DeleteChunk removes a chunk and its FTS entry. It is a no-op when the chunk
 // does not exist.
 func (s *Store) DeleteChunk(ctx context.Context, id int64) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("rag: begin tx: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
+	err := db.RunTx(ctx, s.db, func(tx *sql.Tx) error {
+		var err error
 
-	var content, source, collection string
-	err = tx.QueryRowContext(ctx,
-		`SELECT content, source, collection FROM rag_chunks WHERE id = ?`, id,
-	).Scan(&content, &source, &collection)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil // already gone
+		var content, source, collection string
+		err = tx.QueryRowContext(ctx,
+			`SELECT content, source, collection FROM rag_chunks WHERE id = ?`, id,
+		).Scan(&content, &source, &collection)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return nil // already gone
+			}
+			return fmt.Errorf("rag: read chunk for delete: %w", err)
 		}
-		return fmt.Errorf("rag: read chunk for delete: %w", err)
-	}
 
-	if _, err = tx.ExecContext(ctx, `
-		INSERT INTO rag_fts(rag_fts, rowid, content, source, collection)
-		VALUES ('delete', ?, ?, ?, ?)`,
-		id, content, source, collection,
-	); err != nil {
-		return fmt.Errorf("rag: fts delete: %w", err)
-	}
+		if _, err = tx.ExecContext(ctx, `
+			INSERT INTO rag_fts(rag_fts, rowid, content, source, collection)
+			VALUES ('delete', ?, ?, ?, ?)`,
+			id, content, source, collection,
+		); err != nil {
+			return fmt.Errorf("rag: fts delete: %w", err)
+		}
 
-	if _, err = tx.ExecContext(ctx, `DELETE FROM rag_chunks WHERE id = ?`, id); err != nil {
-		return fmt.Errorf("rag: chunk delete: %w", err)
-	}
+		if _, err = tx.ExecContext(ctx, `DELETE FROM rag_chunks WHERE id = ?`, id); err != nil {
+			return fmt.Errorf("rag: chunk delete: %w", err)
+		}
 
-	return tx.Commit()
+		return nil
+	})
+	return err
 }
 
 // GetChunk retrieves a chunk by ID. Returns (nil, nil) when not found.
@@ -246,54 +244,53 @@ func (s *Store) ListChunks(ctx context.Context, collection string, limit, offset
 // DeleteCollection removes all chunks (and their FTS entries) that belong to
 // the given collection.
 func (s *Store) DeleteCollection(ctx context.Context, collection string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("rag: begin tx: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
+	err := db.RunTx(ctx, s.db, func(tx *sql.Tx) error {
+		var err error
 
-	type row struct {
-		id      int64
-		content string
-		source  string
-	}
-
-	rows, err := tx.QueryContext(ctx,
-		`SELECT id, content, source FROM rag_chunks WHERE collection = ?`, collection)
-	if err != nil {
-		return fmt.Errorf("rag: list collection: %w", err)
-	}
-	var items []row
-	for rows.Next() {
-		var r row
-		if err := rows.Scan(&r.id, &r.content, &r.source); err != nil {
-			rows.Close()
-			return fmt.Errorf("rag: scan: %w", err)
+		type row struct {
+			id      int64
+			content string
+			source  string
 		}
-		items = append(items, r)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
 
-	for _, r := range items {
-		if _, err = tx.ExecContext(ctx, `
-			INSERT INTO rag_fts(rag_fts, rowid, content, source, collection)
-			VALUES ('delete', ?, ?, ?, ?)`,
-			r.id, r.content, r.source, collection,
+		rows, err := tx.QueryContext(ctx,
+			`SELECT id, content, source FROM rag_chunks WHERE collection = ?`, collection)
+		if err != nil {
+			return fmt.Errorf("rag: list collection: %w", err)
+		}
+		var items []row
+		for rows.Next() {
+			var r row
+			if err := rows.Scan(&r.id, &r.content, &r.source); err != nil {
+				rows.Close()
+				return fmt.Errorf("rag: scan: %w", err)
+			}
+			items = append(items, r)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+
+		for _, r := range items {
+			if _, err = tx.ExecContext(ctx, `
+				INSERT INTO rag_fts(rag_fts, rowid, content, source, collection)
+				VALUES ('delete', ?, ?, ?, ?)`,
+				r.id, r.content, r.source, collection,
+			); err != nil {
+				return fmt.Errorf("rag: fts delete: %w", err)
+			}
+		}
+
+		if _, err = tx.ExecContext(ctx,
+			`DELETE FROM rag_chunks WHERE collection = ?`, collection,
 		); err != nil {
-			return fmt.Errorf("rag: fts delete: %w", err)
+			return fmt.Errorf("rag: chunk delete collection: %w", err)
 		}
-	}
 
-	if _, err = tx.ExecContext(ctx,
-		`DELETE FROM rag_chunks WHERE collection = ?`, collection,
-	); err != nil {
-		return fmt.Errorf("rag: chunk delete collection: %w", err)
-	}
-
-	return tx.Commit()
+		return nil
+	})
+	return err
 }
 
 // CountChunks returns the total number of chunks (all when collection="").

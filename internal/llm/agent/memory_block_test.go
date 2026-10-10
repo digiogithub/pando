@@ -11,8 +11,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
+	_ "github.com/digiogithub/pando/internal/db"
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
@@ -182,7 +181,7 @@ func TestSystemPromptWithVariantsIsByteStableAcrossTurnsAndRestarts(t *testing.T
 		t.Fatal(err)
 	}
 
-	conn, err := sql.Open("sqlite3", ":memory:")
+	conn, err := sql.Open("pando-sqlite", ":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +272,7 @@ func TestSystemPromptWithLearnedSkillsIsByteStableWhenSkillApprovedMidSession(t 
 	t.Cleanup(func() { config.SetForTests(prevCfg) })
 	t.Setenv("HOME", t.TempDir())
 
-	conn, err := sql.Open("sqlite3", ":memory:")
+	conn, err := sql.Open("pando-sqlite", ":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}

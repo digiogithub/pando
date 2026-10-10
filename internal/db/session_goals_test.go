@@ -5,8 +5,7 @@ import (
 	"database/sql"
 	"testing"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
+	_ "github.com/digiogithub/pando/internal/db"
 
 	"github.com/digiogithub/pando/internal/db"
 )
@@ -47,7 +46,7 @@ CREATE INDEX IF NOT EXISTS idx_session_goals_session_id ON session_goals(session
 func setupSessionGoalsDB(t *testing.T) (*sql.DB, db.Querier) {
 	t.Helper()
 
-	conn, err := sql.Open("sqlite3", ":memory:")
+	conn, err := sql.Open("pando-sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

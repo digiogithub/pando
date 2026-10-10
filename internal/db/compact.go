@@ -4,9 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"path/filepath"
-
-	"github.com/digiogithub/pando/internal/config"
+	"os"
+	"time"
 )
 
 // CompactOptions controls how Compact reclaims space.
@@ -32,15 +31,6 @@ type CompactResult struct {
 	SizeAfter  int64
 	// Freed is SizeBefore - SizeAfter. It can be negative in rare cases.
 	Freed int64
-}
-
-// DBPath returns the absolute path of the main SQLite database file.
-func DBPath() (string, error) {
-	dataDir := config.Get().Data.Directory
-	if dataDir == "" {
-		return "", fmt.Errorf("data.dir is not set")
-	}
-	return filepath.Join(dataDir, "pando.db"), nil
 }
 
 // Compact reclaims unused space in the SQLite database.
@@ -93,4 +83,47 @@ func dbSizeBytes(ctx context.Context, conn *sql.DB) int64 {
 		return 0
 	}
 	return pageCount * pageSize
+}
+
+// CompactPath compacts the database file at path. VACUUM rewrites the whole
+// file, which no engine can do while another process has the database open, so
+// it takes the exclusive usage lock and fails with ErrDatabaseInUse when any
+// other Pando process (or another Open in this one) still uses the database.
+//
+// Under the multiwriter engine auto_vacuum must stay NONE (the engine never
+// relocates pages): EnableAutoVacuum and Incremental are rejected there.
+func CompactPath(ctx context.Context, path string, opts CompactOptions) (CompactResult, error) {
+	engine := SelectedEngine()
+	if engine == EngineMultiwriter && (opts.Incremental || opts.EnableAutoVacuum) {
+		return CompactResult{}, fmt.Errorf("db: auto_vacuum/incremental compaction is not supported by the %s engine; run a full compaction", engine)
+	}
+	gate, err := os.OpenFile(path+".lock", os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return CompactResult{}, fmt.Errorf("db: open lock file: %w", err)
+	}
+	defer gate.Close()
+	var res CompactResult
+	err = withExclusive(gate, 2*time.Second, func() error {
+		// A crashed multiwriter process can leave commits in the <db>-mw log:
+		// open and close the database once through the engine so they are
+		// recovered and compacted into the file before it is rewritten.
+		if _, statErr := os.Stat(path + "-mw"); statErr == nil {
+			conn, err := openEngine(path, EngineMultiwriter)
+			if err != nil {
+				return fmt.Errorf("db: recover multiwriter log: %w", err)
+			}
+			if err := conn.Close(); err != nil {
+				return fmt.Errorf("db: recover multiwriter log: %w", err)
+			}
+		}
+		conn, err := sql.Open(DriverName, DSN(path, EngineSQLite))
+		if err != nil {
+			return err
+		}
+		defer conn.Close()
+		conn.SetMaxOpenConns(1)
+		res, err = Compact(ctx, conn, opts)
+		return err
+	})
+	return res, err
 }

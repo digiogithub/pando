@@ -14,8 +14,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
+	_ "github.com/digiogithub/pando/internal/db"
 
 	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/llm/tools"
@@ -168,7 +167,7 @@ func TestHandleKBSearch_NilRemembrancesReturnsEmptyNotPanic(t *testing.T) {
 // across packages), kept in sync by hand.
 func setupCodeSearchTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("pando-sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

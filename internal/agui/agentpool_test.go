@@ -8,11 +8,10 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
+	_ "github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/mcpgateway"
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
 )
 
 // fakeAGUITool is a minimal tools.BaseTool stand-in for filter tests: only
@@ -183,7 +182,7 @@ func TestAGUIToolAllowed_ToolSearchAlwaysDeniedOnceAllowListSet(t *testing.T) {
 // allTools, which is exactly the bypass this story closes.
 func newAGUIDiscoveryTestGateway(t *testing.T) *mcpgateway.Gateway {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("pando-sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

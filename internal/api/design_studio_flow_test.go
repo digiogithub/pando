@@ -46,7 +46,7 @@ func designStudioServer(t *testing.T) (*Server, design.Artifact) {
 	config.SetForTests(cfg)
 	t.Cleanup(func() { config.SetForTests(previousCfg) })
 
-	conn, err := sql.Open("sqlite3", filepath.Join(dataDir, "pando.db"))
+	conn, err := sql.Open("pando-sqlite", filepath.Join(dataDir, "pando.db"))
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

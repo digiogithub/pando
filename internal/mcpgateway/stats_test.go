@@ -6,8 +6,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
+	_ "github.com/digiogithub/pando/internal/db"
 
 	"github.com/digiogithub/pando/internal/mcpgateway"
 )
@@ -15,7 +14,7 @@ import (
 // createTestDB opens an in-memory SQLite database and creates the MCP gateway tables.
 func createTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("pando-sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open in-memory db: %v", err)
 	}

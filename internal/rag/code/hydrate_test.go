@@ -10,9 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
 	"github.com/pressly/goose/v3"
+	_ "modernc.org/sqlite"
 
 	pdb "github.com/digiogithub/pando/internal/db"
 )
@@ -22,7 +21,7 @@ import (
 func setupMigratedDB(t *testing.T) *sql.DB {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "pando.db")
-	conn, err := sql.Open("sqlite3", dbPath)
+	conn, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

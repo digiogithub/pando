@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/digiogithub/pando/internal/ipc/dbproxy"
+	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/rag/embeddings"
 )
@@ -25,7 +25,6 @@ const kbEmbeddingsTimeout = 45 * time.Second
 type KBStore struct {
 	db           *sql.DB
 	embedder     embeddings.Embedder
-	proxy        *dbproxy.DBProxy
 	chunkSize    int
 	chunkOverlap int
 	syncWorkers  int
@@ -158,11 +157,6 @@ func (s *KBStore) WikiLinksEnabled() bool {
 	return s.wikiLinks
 }
 
-// SetWriteProxy configures a DB proxy for mutating operations.
-func (s *KBStore) SetWriteProxy(proxy *dbproxy.DBProxy) {
-	s.proxy = proxy
-}
-
 func defaultSyncWorkers() int {
 	n := runtime.NumCPU() / 2
 	if n < 2 {
@@ -217,153 +211,39 @@ func (s *KBStore) addDocument(ctx context.Context, filePath, content string, met
 		return fmt.Errorf("kb: file_path cannot be empty")
 	}
 
-	if s.proxy != nil {
-		chunks := embeddings.ChunkText(content, s.chunkSize, s.chunkOverlap)
-		embedVecs := make([][]float32, 0, len(chunks))
-		if len(chunks) > 0 {
-			logging.Debug("kb add: embedding start", "file_path", filePath, "chunks", len(chunks), "bytes", len(content))
-			embedStartedAt := time.Now()
-			embedCtx, embedCancel := context.WithTimeout(ctx, kbEmbeddingsTimeout)
-			defer embedCancel()
-			var err error
-			embedVecs, err = s.embedder.EmbedDocuments(embedCtx, chunks)
-			if err != nil {
-				logging.Debug("kb add: embedding failed",
-					"file_path", filePath,
-					"chunks", len(chunks),
-					"elapsed", time.Since(embedStartedAt).String(),
-					"error", err,
-				)
-				return fmt.Errorf("kb: embed chunks: %w", err)
-			}
-			logging.Debug("kb add: embedding completed",
+	// Chunk and embed BEFORE the transaction: the embedding call is a network
+	// round trip with side effects, and RunTx may run its closure repeatedly.
+	chunks := embeddings.ChunkText(content, s.chunkSize, s.chunkOverlap)
+	var embedVecs [][]float32
+	if len(chunks) > 0 {
+		logging.Debug("kb add: embedding start", "file_path", filePath, "chunks", len(chunks), "bytes", len(content))
+		embedStartedAt := time.Now()
+		embedCtx, embedCancel := context.WithTimeout(ctx, kbEmbeddingsTimeout)
+		defer embedCancel()
+
+		var err error
+		embedVecs, err = s.embedder.EmbedDocuments(embedCtx, chunks)
+		if err != nil {
+			logging.Debug("kb add: embedding failed",
 				"file_path", filePath,
 				"chunks", len(chunks),
-				"vectors", len(embedVecs),
 				"elapsed", time.Since(embedStartedAt).String(),
+				"error", err,
 			)
-			if len(embedVecs) != len(chunks) {
-				return fmt.Errorf("kb: embedding count mismatch: got %d, expected %d", len(embedVecs), len(chunks))
-			}
+			return fmt.Errorf("kb: embed chunks: %w", err)
 		}
-		return s.proxy.WriteWithRetry(ctx, "KBAddDocument", kbAddDocumentRequest{
-			FilePath:       filePath,
-			Content:        content,
-			Metadata:       metadata,
-			Chunks:         chunks,
-			Embeddings:     embedVecs,
-			EmbeddingModel: s.embeddingModel,
-		}, dbproxy.DefaultWriteTimeouts.Long)
-	}
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("kb: begin tx: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
-
-	// Serialize metadata
-	metaJSON := "{}"
-	if len(metadata) > 0 {
-		b, err := json.Marshal(metadata)
-		if err != nil {
-			return fmt.Errorf("kb: marshal metadata: %w", err)
-		}
-		metaJSON = string(b)
-	}
-
-	now := time.Now().UTC()
-
-	// Insert document
-	res, err := tx.ExecContext(ctx, `
-		INSERT INTO kb_documents (file_path, content, metadata, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?)`,
-		filePath, content, metaJSON, now, now,
-	)
-	if err != nil {
-		return fmt.Errorf("kb: insert document: %w", err)
-	}
-
-	docID, err := res.LastInsertId()
-	if err != nil {
-		return fmt.Errorf("kb: last insert id: %w", err)
-	}
-
-	// Index the [[wiki links]] found in the body, in the same transaction.
-	if _, err := s.indexDocumentLinks(ctx, tx, docID, filePath, content); err != nil {
-		return err
-	}
-
-	// Chunk the content
-	chunks := embeddings.ChunkText(content, s.chunkSize, s.chunkOverlap)
-	if len(chunks) == 0 {
-		// No chunks, still commit the document
-		return tx.Commit()
-	}
-
-	logging.Debug("kb add: embedding start", "file_path", filePath, "chunks", len(chunks), "bytes", len(content))
-	embedStartedAt := time.Now()
-	embedCtx, embedCancel := context.WithTimeout(ctx, kbEmbeddingsTimeout)
-	defer embedCancel()
-
-	// Generate embeddings for all chunks
-	embedVecs, err := s.embedder.EmbedDocuments(embedCtx, chunks)
-	if err != nil {
-		logging.Debug("kb add: embedding failed",
+		logging.Debug("kb add: embedding completed",
 			"file_path", filePath,
 			"chunks", len(chunks),
+			"vectors", len(embedVecs),
 			"elapsed", time.Since(embedStartedAt).String(),
-			"error", err,
 		)
-		return fmt.Errorf("kb: embed chunks: %w", err)
-	}
-	logging.Debug("kb add: embedding completed",
-		"file_path", filePath,
-		"chunks", len(chunks),
-		"vectors", len(embedVecs),
-		"elapsed", time.Since(embedStartedAt).String(),
-	)
-
-	if len(embedVecs) != len(chunks) {
-		return fmt.Errorf("kb: embedding count mismatch: got %d, expected %d", len(embedVecs), len(chunks))
-	}
-
-	// Insert chunks with embeddings
-	for i, chunk := range chunks {
-		var embBlob []byte
-		var embModel string
-		var embDims int
-		if i < len(embedVecs) {
-			embBlob = serializeFloat32(embedVecs[i])
-			embModel = s.embeddingModel
-			embDims = len(embedVecs[i])
-		}
-
-		chunkRes, err := tx.ExecContext(ctx, `
-			INSERT INTO kb_chunks (document_id, chunk_index, content, embedding, created_at, embedding_model, embedding_dims)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			docID, i, chunk, embBlob, now, embModel, embDims,
-		)
-		if err != nil {
-			return fmt.Errorf("kb: insert chunk %d: %w", i, err)
-		}
-
-		chunkID, err := chunkRes.LastInsertId()
-		if err != nil {
-			return fmt.Errorf("kb: chunk last insert id: %w", err)
-		}
-
-		// Update FTS index
-		if _, err = tx.ExecContext(ctx, `
-			INSERT INTO kb_fts(rowid, content)
-			VALUES (?, ?)`,
-			chunkID, chunk,
-		); err != nil {
-			return fmt.Errorf("kb: insert fts: %w", err)
+		if len(embedVecs) != len(chunks) {
+			return fmt.Errorf("kb: embedding count mismatch: got %d, expected %d", len(embedVecs), len(chunks))
 		}
 	}
 
-	return tx.Commit()
+	return s.AddDocumentWithEmbeddings(ctx, filePath, content, metadata, chunks, embedVecs, s.embeddingModel)
 }
 
 // GetDocument retrieves a document by file path.
@@ -476,81 +356,73 @@ func (s *KBStore) DeleteDocument(ctx context.Context, filePath string) error {
 }
 
 func (s *KBStore) deleteDocument(ctx context.Context, filePath string) error {
-	if s.proxy != nil {
-		return s.proxy.WriteWithRetry(ctx, "KBDeleteDocument", filePath, dbproxy.DefaultWriteTimeouts.Default)
-	}
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("kb: begin tx: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
-
-	// Get document ID
-	var docID int64
-	err = tx.QueryRowContext(ctx, `SELECT id FROM kb_documents WHERE file_path = ?`, filePath).Scan(&docID)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil // Already deleted
+	return db.RunTx(ctx, s.db, func(tx *sql.Tx) error {
+		// Get document ID
+		var docID int64
+		err := tx.QueryRowContext(ctx, `SELECT id FROM kb_documents WHERE file_path = ?`, filePath).Scan(&docID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return nil // Already deleted
+			}
+			return fmt.Errorf("kb: find document: %w", err)
 		}
-		return fmt.Errorf("kb: find document: %w", err)
-	}
 
-	// Get chunk IDs and content for FTS deletion
-	rows, err := tx.QueryContext(ctx, `
-		SELECT id, content FROM kb_chunks WHERE document_id = ?`,
-		docID,
-	)
-	if err != nil {
-		return fmt.Errorf("kb: list chunks: %w", err)
-	}
-
-	type chunkInfo struct {
-		id      int64
-		content string
-	}
-	var chunks []chunkInfo
-
-	for rows.Next() {
-		var c chunkInfo
-		if err := rows.Scan(&c.id, &c.content); err != nil {
-			rows.Close()
-			return fmt.Errorf("kb: scan chunk: %w", err)
+		// Get chunk IDs and content for FTS deletion
+		rows, err := tx.QueryContext(ctx, `
+			SELECT id, content FROM kb_chunks WHERE document_id = ?`,
+			docID,
+		)
+		if err != nil {
+			return fmt.Errorf("kb: list chunks: %w", err)
 		}
-		chunks = append(chunks, c)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
 
-	// Delete from FTS index
-	for _, c := range chunks {
-		if _, err = tx.ExecContext(ctx, `
-			INSERT INTO kb_fts(kb_fts, rowid, content)
-			VALUES ('delete', ?, ?)`,
-			c.id, c.content,
-		); err != nil {
-			return fmt.Errorf("kb: fts delete chunk %d: %w", c.id, err)
+		type chunkInfo struct {
+			id      int64
+			content string
 		}
-	}
+		var chunks []chunkInfo
 
-	// Delete chunks (CASCADE will handle this, but being explicit)
-	if _, err = tx.ExecContext(ctx, `DELETE FROM kb_chunks WHERE document_id = ?`, docID); err != nil {
-		return fmt.Errorf("kb: delete chunks: %w", err)
-	}
+		for rows.Next() {
+			var c chunkInfo
+			if err := rows.Scan(&c.id, &c.content); err != nil {
+				rows.Close()
+				return fmt.Errorf("kb: scan chunk: %w", err)
+			}
+			chunks = append(chunks, c)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
 
-	// Same for the document's wiki links.
-	if _, err = tx.ExecContext(ctx, `DELETE FROM kb_links WHERE source_document_id = ?`, docID); err != nil {
-		return fmt.Errorf("kb: delete links: %w", err)
-	}
+		// Delete from FTS index
+		for _, c := range chunks {
+			if _, err = tx.ExecContext(ctx, `
+				INSERT INTO kb_fts(kb_fts, rowid, content)
+				VALUES ('delete', ?, ?)`,
+				c.id, c.content,
+			); err != nil {
+				return fmt.Errorf("kb: fts delete chunk %d: %w", c.id, err)
+			}
+		}
 
-	// Delete document
-	if _, err = tx.ExecContext(ctx, `DELETE FROM kb_documents WHERE id = ?`, docID); err != nil {
-		return fmt.Errorf("kb: delete document: %w", err)
-	}
+		// Delete chunks (CASCADE will handle this, but being explicit)
+		if _, err = tx.ExecContext(ctx, `DELETE FROM kb_chunks WHERE document_id = ?`, docID); err != nil {
+			return fmt.Errorf("kb: delete chunks: %w", err)
+		}
 
-	return tx.Commit()
+		// Same for the document's wiki links.
+		if _, err = tx.ExecContext(ctx, `DELETE FROM kb_links WHERE source_document_id = ?`, docID); err != nil {
+			return fmt.Errorf("kb: delete links: %w", err)
+		}
+
+		// Delete document
+		if _, err = tx.ExecContext(ctx, `DELETE FROM kb_documents WHERE id = ?`, docID); err != nil {
+			return fmt.Errorf("kb: delete document: %w", err)
+		}
+
+		return nil
+	})
 }
 
 // UpdateDocument updates an existing document's content and metadata.
@@ -570,31 +442,6 @@ func (s *KBStore) UpdateDocument(ctx context.Context, filePath, content string, 
 }
 
 func (s *KBStore) updateDocument(ctx context.Context, filePath, content string, metadata map[string]interface{}) error {
-	if s.proxy != nil {
-		chunks := embeddings.ChunkText(content, s.chunkSize, s.chunkOverlap)
-		embedVecs := make([][]float32, 0, len(chunks))
-		if len(chunks) > 0 {
-			embedCtx, embedCancel := context.WithTimeout(ctx, kbEmbeddingsTimeout)
-			defer embedCancel()
-			var err error
-			embedVecs, err = s.embedder.EmbedDocuments(embedCtx, chunks)
-			if err != nil {
-				return fmt.Errorf("kb: embed chunks: %w", err)
-			}
-			if len(embedVecs) != len(chunks) {
-				return fmt.Errorf("kb: embedding count mismatch: got %d, expected %d", len(embedVecs), len(chunks))
-			}
-		}
-		return s.proxy.WriteWithRetry(ctx, "KBUpdateDocument", kbAddDocumentRequest{
-			FilePath:       filePath,
-			Content:        content,
-			Metadata:       metadata,
-			Chunks:         chunks,
-			Embeddings:     embedVecs,
-			EmbeddingModel: s.embeddingModel,
-		}, dbproxy.DefaultWriteTimeouts.Long)
-	}
-
 	// Delete existing document (including chunks), then re-add with the new
 	// content. Both use the unpublished forms: an update is one write and must
 	// reach the observer as one event, not as a delete followed by a create.
@@ -605,21 +452,7 @@ func (s *KBStore) updateDocument(ctx context.Context, filePath, content string, 
 	return s.addDocument(ctx, filePath, content, metadata)
 }
 
-type kbAddDocumentRequest struct {
-	FilePath   string                 `json:"file_path"`
-	Content    string                 `json:"content"`
-	Metadata   map[string]interface{} `json:"metadata"`
-	Chunks     []string               `json:"chunks"`
-	Embeddings [][]float32            `json:"embeddings"`
-	// EmbeddingModel is the originating instance's configured document
-	// embedder model id, recorded per chunk on the primary (PANDO-US-0029).
-	// Dimensions are not forwarded separately: they are derived per chunk
-	// from len(Embeddings[i]) on the receiving end.
-	EmbeddingModel string `json:"embedding_model,omitempty"`
-}
-
 // AddDocumentWithEmbeddings inserts a document using pre-computed chunks and embeddings.
-// Called by the primary IPC dispatcher when a secondary forwards a KBAddDocument write.
 // No embedding generation is performed; the provided values are stored directly.
 // embeddingModel is recorded on every inserted chunk that has an embedding
 // (PANDO-US-0029); embedding_dims is derived from each vector's own length.
@@ -627,12 +460,6 @@ func (s *KBStore) AddDocumentWithEmbeddings(ctx context.Context, filePath, conte
 	if filePath == "" {
 		return fmt.Errorf("kb: file_path cannot be empty")
 	}
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("kb: begin tx: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
 
 	metaJSON := "{}"
 	if len(metadata) > 0 {
@@ -643,66 +470,63 @@ func (s *KBStore) AddDocumentWithEmbeddings(ctx context.Context, filePath, conte
 		metaJSON = string(b)
 	}
 
-	now := time.Now().UTC()
+	return db.RunTx(ctx, s.db, func(tx *sql.Tx) error {
+		now := time.Now().UTC()
 
-	res, err := tx.ExecContext(ctx, `
-		INSERT INTO kb_documents (file_path, content, metadata, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?)`,
-		filePath, content, metaJSON, now, now,
-	)
-	if err != nil {
-		return fmt.Errorf("kb: insert document: %w", err)
-	}
-
-	docID, err := res.LastInsertId()
-	if err != nil {
-		return fmt.Errorf("kb: last insert id: %w", err)
-	}
-
-	// Links are extracted on the primary from the forwarded content: the IPC
-	// request carries no link payload, so no protocol change is needed.
-	if _, err := s.indexDocumentLinks(ctx, tx, docID, filePath, content); err != nil {
-		return err
-	}
-
-	if len(chunks) == 0 {
-		return tx.Commit()
-	}
-
-	for i, chunk := range chunks {
-		var embBlob []byte
-		var embModel string
-		var embDims int
-		if i < len(embeddings) {
-			embBlob = serializeFloat32(embeddings[i])
-			embModel = embeddingModel
-			embDims = len(embeddings[i])
-		}
-
-		chunkRes, err := tx.ExecContext(ctx, `
-			INSERT INTO kb_chunks (document_id, chunk_index, content, embedding, created_at, embedding_model, embedding_dims)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			docID, i, chunk, embBlob, now, embModel, embDims,
+		res, err := tx.ExecContext(ctx, `
+			INSERT INTO kb_documents (file_path, content, metadata, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?)`,
+			filePath, content, metaJSON, now, now,
 		)
 		if err != nil {
-			return fmt.Errorf("kb: insert chunk %d: %w", i, err)
+			return fmt.Errorf("kb: insert document: %w", err)
 		}
 
-		chunkID, err := chunkRes.LastInsertId()
+		docID, err := res.LastInsertId()
 		if err != nil {
-			return fmt.Errorf("kb: chunk last insert id: %w", err)
+			return fmt.Errorf("kb: last insert id: %w", err)
 		}
 
-		if _, err = tx.ExecContext(ctx, `
-			INSERT INTO kb_fts(rowid, content)
-			VALUES (?, ?)`,
-			chunkID, chunk,
-		); err != nil {
-			return fmt.Errorf("kb: insert fts: %w", err)
+		// Index the [[wiki links]] found in the body, in the same transaction.
+		if _, err := s.indexDocumentLinks(ctx, tx, docID, filePath, content); err != nil {
+			return err
 		}
-	}
 
-	return tx.Commit()
+		for i, chunk := range chunks {
+			var embBlob []byte
+			var embModel string
+			var embDims int
+			if i < len(embeddings) {
+				embBlob = serializeFloat32(embeddings[i])
+				embModel = embeddingModel
+				embDims = len(embeddings[i])
+			}
+
+			chunkRes, err := tx.ExecContext(ctx, `
+				INSERT INTO kb_chunks (document_id, chunk_index, content, embedding, created_at, embedding_model, embedding_dims)
+				VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				docID, i, chunk, embBlob, now, embModel, embDims,
+			)
+			if err != nil {
+				return fmt.Errorf("kb: insert chunk %d: %w", i, err)
+			}
+
+			chunkID, err := chunkRes.LastInsertId()
+			if err != nil {
+				return fmt.Errorf("kb: chunk last insert id: %w", err)
+			}
+
+			if _, err = tx.ExecContext(ctx, `
+				INSERT INTO kb_fts(rowid, content)
+				VALUES (?, ?)`,
+				chunkID, chunk,
+			); err != nil {
+				return fmt.Errorf("kb: insert fts: %w", err)
+			}
+		}
+
+		return nil
+	})
 }
 
 // SearchDocuments performs hybrid search combining vector similarity and FTS.

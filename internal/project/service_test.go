@@ -7,8 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
+	_ "github.com/digiogithub/pando/internal/db"
 
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/project"
@@ -34,7 +33,7 @@ CREATE TABLE IF NOT EXISTS projects (
 
 func setupDB(t *testing.T) *sql.DB {
 	t.Helper()
-	conn, err := sql.Open("sqlite3", ":memory:")
+	conn, err := sql.Open("pando-sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open in-memory db: %v", err)
 	}

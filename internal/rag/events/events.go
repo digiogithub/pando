@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/digiogithub/pando/internal/ipc/dbproxy"
+	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/rag/embeddings"
 )
 
@@ -19,7 +19,6 @@ import (
 type EventStore struct {
 	db       *sql.DB
 	embedder embeddings.Embedder
-	proxy    *dbproxy.DBProxy
 }
 
 // NewEventStore creates a new EventStore backed by db.
@@ -29,11 +28,6 @@ func NewEventStore(db *sql.DB, embedder embeddings.Embedder) *EventStore {
 		db:       db,
 		embedder: embedder,
 	}
-}
-
-// SetWriteProxy configures a DB proxy for mutating operations.
-func (s *EventStore) SetWriteProxy(proxy *dbproxy.DBProxy) {
-	s.proxy = proxy
 }
 
 // SaveEvent stores a new event with its embedding and updates the FTS index.
@@ -46,95 +40,20 @@ func (s *EventStore) SaveEvent(ctx context.Context, subject, content string, met
 		return 0, fmt.Errorf("events: embed content: %w", err)
 	}
 
-	// Marshal metadata to JSON.
-	var metaJSON []byte
-	if metadata == nil {
-		metaJSON = []byte("{}")
-	} else {
-		metaJSON, err = json.Marshal(metadata)
-		if err != nil {
-			return 0, fmt.Errorf("events: marshal metadata: %w", err)
-		}
-	}
-
-	if s.proxy != nil {
-		return dbproxy.ProxyWriteWithResult[int64](ctx, s.proxy, "SaveEvent", saveEventRequest{
-			Subject:   subject,
-			Content:   content,
-			Metadata:  metadata,
-			Embedding: embedding,
-		})
-	}
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("events: begin tx: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
-
-	now := time.Now().UTC()
-	embBlob := serializeFloat32(embedding)
-
-	res, err := tx.ExecContext(ctx, `
-		INSERT INTO events (subject, content, metadata, embedding, event_at, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		subject, content, string(metaJSON), embBlob, now, now,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("events: insert event: %w", err)
-	}
-
-	id, err := res.LastInsertId()
-	if err != nil {
-		return 0, fmt.Errorf("events: last insert id: %w", err)
-	}
-
-	// Keep the FTS5 external-content index in sync.
-	if _, err = tx.ExecContext(ctx, `
-		INSERT INTO events_fts(rowid, subject, content)
-		VALUES (?, ?, ?)`,
-		id, subject, content,
-	); err != nil {
-		return 0, fmt.Errorf("events: insert fts: %w", err)
-	}
-
-	if err = tx.Commit(); err != nil {
-		return 0, fmt.Errorf("events: commit: %w", err)
-	}
-	return id, nil
-}
-
-type saveEventRequest struct {
-	Subject   string                 `json:"subject"`
-	Content   string                 `json:"content"`
-	Metadata  map[string]interface{} `json:"metadata"`
-	Embedding []float32              `json:"embedding"`
-}
-
-type replaceSessionEventsRequest struct {
-	SessionID  string                 `json:"session_id"`
-	Subject    string                 `json:"subject"`
-	Metadata   map[string]interface{} `json:"metadata"`
-	Chunks     []string               `json:"chunks"`
-	Embeddings [][]float32            `json:"embeddings"`
+	return s.SaveEventWithEmbedding(ctx, subject, content, metadata, embedding)
 }
 
 // SaveEventWithEmbedding inserts an event using a pre-computed embedding.
-// Called by the primary IPC dispatcher when a secondary forwards a SaveEvent write.
 // No embedding generation is performed; the provided embedding is stored directly.
 func (s *EventStore) SaveEventWithEmbedding(ctx context.Context, subject, content string, metadata map[string]interface{}, embedding []float32) (int64, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("events: begin tx: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
-
-	id, err := s.insertEventTx(ctx, tx, subject, content, metadata, embedding, time.Now().UTC())
+	var id int64
+	err := db.RunTx(ctx, s.db, func(tx *sql.Tx) error {
+		var err error
+		id, err = s.insertEventTx(ctx, tx, subject, content, metadata, embedding, time.Now().UTC())
+		return err
+	})
 	if err != nil {
 		return 0, err
-	}
-	if err = tx.Commit(); err != nil {
-		return 0, fmt.Errorf("events: commit: %w", err)
 	}
 	return id, nil
 }
@@ -153,38 +72,24 @@ func (s *EventStore) ReplaceSessionEvents(ctx context.Context, sessionID, subjec
 		return fmt.Errorf("events: chunk embedding count mismatch: got %d embeddings for %d chunks", len(embeddings), len(chunks))
 	}
 
-	if s.proxy != nil {
-		return s.proxy.WriteWithRetry(ctx, "ReplaceSessionEvents", replaceSessionEventsRequest{
-			SessionID:  sessionID,
-			Subject:    subject,
-			Metadata:   metadata,
-			Chunks:     chunks,
-			Embeddings: embeddings,
-		}, dbproxy.DefaultWriteTimeouts.Long)
-	}
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("events: begin tx: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
-
-	if err := s.deleteSessionEventsTx(ctx, tx, subject, sessionID); err != nil {
-		return err
-	}
-
-	now := time.Now().UTC()
-	for i, chunk := range chunks {
-		chunkMetadata := cloneMetadata(metadata)
-		chunkMetadata["chunk_index"] = i
-		chunkMetadata["chunk_count"] = len(chunks)
-		if _, err := s.insertEventTx(ctx, tx, subject, chunk, chunkMetadata, embeddings[i], now); err != nil {
+	err := db.RunTx(ctx, s.db, func(tx *sql.Tx) error {
+		if err := s.deleteSessionEventsTx(ctx, tx, subject, sessionID); err != nil {
 			return err
 		}
-	}
 
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("events: commit replace session events: %w", err)
+		now := time.Now().UTC()
+		for i, chunk := range chunks {
+			chunkMetadata := cloneMetadata(metadata)
+			chunkMetadata["chunk_index"] = i
+			chunkMetadata["chunk_count"] = len(chunks)
+			if _, err := s.insertEventTx(ctx, tx, subject, chunk, chunkMetadata, embeddings[i], now); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("events: replace session events: %w", err)
 	}
 	return nil
 }
@@ -618,36 +523,31 @@ func (s *EventStore) ListEvents(ctx context.Context, subject string, limit, offs
 // DeleteEvent removes an event and its FTS entry. It is a no-op when the event
 // does not exist.
 func (s *EventStore) DeleteEvent(ctx context.Context, id int64) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("events: begin tx: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
-
-	var subject, content string
-	err = tx.QueryRowContext(ctx,
-		`SELECT subject, content FROM events WHERE id = ?`, id,
-	).Scan(&subject, &content)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil // already gone
+	return db.RunTx(ctx, s.db, func(tx *sql.Tx) error {
+		var subject, content string
+		err := tx.QueryRowContext(ctx,
+			`SELECT subject, content FROM events WHERE id = ?`, id,
+		).Scan(&subject, &content)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return nil // already gone
+			}
+			return fmt.Errorf("events: read event for delete: %w", err)
 		}
-		return fmt.Errorf("events: read event for delete: %w", err)
-	}
 
-	if _, err = tx.ExecContext(ctx, `
-		INSERT INTO events_fts(events_fts, rowid, subject, content)
-		VALUES ('delete', ?, ?, ?)`,
-		id, subject, content,
-	); err != nil {
-		return fmt.Errorf("events: fts delete: %w", err)
-	}
+		if _, err = tx.ExecContext(ctx, `
+			INSERT INTO events_fts(events_fts, rowid, subject, content)
+			VALUES ('delete', ?, ?, ?)`,
+			id, subject, content,
+		); err != nil {
+			return fmt.Errorf("events: fts delete: %w", err)
+		}
 
-	if _, err = tx.ExecContext(ctx, `DELETE FROM events WHERE id = ?`, id); err != nil {
-		return fmt.Errorf("events: delete: %w", err)
-	}
-
-	return tx.Commit()
+		if _, err = tx.ExecContext(ctx, `DELETE FROM events WHERE id = ?`, id); err != nil {
+			return fmt.Errorf("events: delete: %w", err)
+		}
+		return nil
+	})
 }
 
 // CountEvents returns the total number of events.

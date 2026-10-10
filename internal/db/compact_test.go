@@ -6,8 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
+	_ "github.com/digiogithub/pando/internal/db"
 
 	"github.com/digiogithub/pando/internal/db"
 )
@@ -18,7 +17,7 @@ func TestCompactFreesSpace(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "test.db")
 
-	conn, err := sql.Open("sqlite3", dbPath)
+	conn, err := sql.Open("pando-sqlite", dbPath)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

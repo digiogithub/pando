@@ -16,8 +16,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
+	_ "github.com/digiogithub/pando/internal/db"
 
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/instanceregistry"
@@ -53,7 +52,7 @@ func (f fakeRegistry) List() ([]*instanceregistry.Entry, error) {
 
 func setupWebTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	conn, err := sql.Open("sqlite3", ":memory:")
+	conn, err := sql.Open("pando-sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open in-memory db: %v", err)
 	}

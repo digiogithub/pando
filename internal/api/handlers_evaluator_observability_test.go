@@ -10,8 +10,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
+	_ "github.com/digiogithub/pando/internal/db"
 	"github.com/pressly/goose/v3"
 
 	"github.com/digiogithub/pando/internal/db"
@@ -21,7 +20,7 @@ import (
 // evaluated sessions and one unevaluated eligible session.
 func openObservabilityDB(t *testing.T) *sql.DB {
 	t.Helper()
-	conn, err := sql.Open("sqlite3", filepath.Join(t.TempDir(), "pando.db"))
+	conn, err := sql.Open("pando-sqlite", filepath.Join(t.TempDir(), "pando.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

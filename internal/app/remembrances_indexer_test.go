@@ -20,8 +20,7 @@ import (
 	"github.com/digiogithub/pando/internal/rag/events"
 	"github.com/digiogithub/pando/internal/session"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
+	_ "github.com/digiogithub/pando/internal/db"
 )
 
 type recordingEmbedder struct {
@@ -126,7 +125,7 @@ func TestCloneSessionMetadataCreatesIndependentCopy(t *testing.T) {
 // store and the given document embedder.
 func newIndexingService(t *testing.T, embedder embeddings.Embedder) *rag.RemembrancesService {
 	t.Helper()
-	conn, err := sql.Open("sqlite3", ":memory:")
+	conn, err := sql.Open("pando-sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("sql.Open() error = %v", err)
 	}
@@ -319,29 +318,4 @@ func TestSessionIndexSchedulerCoalescesAndBacksOff(t *testing.T) {
 func setDocumentEmbedderForTest(svc *rag.RemembrancesService, embedder embeddings.Embedder) {
 	field := reflect.ValueOf(svc).Elem().FieldByName("docEmbedder")
 	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Set(reflect.ValueOf(embedder))
-}
-
-func TestSessionIndexSchedulerPausesOnMethodNotFound(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	var runs atomic.Int32
-	done := make(chan struct{}, 4)
-	s := newSessionIndexScheduler(ctx, 10*time.Millisecond, func(context.Context, string) error {
-		runs.Add(1)
-		done <- struct{}{}
-		return errors.New(`replace session events: dbproxy: INTERNAL (ReplaceSessionEvents): ipc: RPC error -32000: dbproxy: METHOD_NOT_FOUND (ReplaceSessionEvents): unknown write method "ReplaceSessionEvents"`)
-	})
-	defer s.stop()
-
-	s.schedule("session-1")
-	<-done
-
-	// Later activity must not trigger another full pass while paused.
-	s.schedule("session-1")
-	s.schedule("session-2")
-	time.Sleep(150 * time.Millisecond)
-	if got := runs.Load(); got != 1 {
-		t.Fatalf("runs = %d, want 1 (paused after METHOD_NOT_FOUND)", got)
-	}
 }

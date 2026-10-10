@@ -11,8 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
+	_ "modernc.org/sqlite"
 
 	"github.com/digiogithub/pando/internal/snapshot"
 )
@@ -23,7 +22,7 @@ import (
 // schema is read from the real migration so the test fails when the two drift.
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

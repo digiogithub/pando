@@ -6,13 +6,12 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
+	_ "modernc.org/sqlite"
 )
 
 func openTestEventStoreDB(t *testing.T) *sql.DB {
 	t.Helper()
-	dbConn, err := sql.Open("sqlite3", ":memory:")
+	dbConn, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("sql.Open() error = %v", err)
 	}

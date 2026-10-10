@@ -265,6 +265,7 @@ func (s *Server) projectService() project.Service {
 func NewServer(ctx context.Context, cfg ServerConfig) (*Server, error) {
 	appOpts := app.AppOptions{
 		DBQuerier:             cfg.Querier,
+		IPCFollower:           cfg.Role == "secondary",
 		StartupMode:           cfg.StartupMode,
 		ChildParentInstanceID: cfg.ParentInstanceID,
 		InstanceID:            cfg.InstanceID,

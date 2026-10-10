@@ -11,20 +11,19 @@ import (
 	"testing"
 
 	"github.com/digiogithub/pando/internal/config"
+	_ "github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/permission"
 	"github.com/digiogithub/pando/internal/pubsub"
 	"github.com/digiogithub/pando/internal/session"
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
 )
 
 // newThreadDB builds an in-memory database carrying the same schema as the
 // agui_threads migration.
 func newThreadDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("pando-sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -113,7 +112,7 @@ func TestThreadStoreWithoutDatabase(t *testing.T) {
 // TestThreadStoreDegradesOnBrokenSchema: a database that predates the migration
 // (or a read-only secondary) must not turn every request into a failure.
 func TestThreadStoreDegradesOnBrokenSchema(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("pando-sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

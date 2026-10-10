@@ -31,7 +31,6 @@ import (
 	"github.com/digiogithub/pando/internal/format"
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/ipc"
-	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	"github.com/digiogithub/pando/internal/ipc/failover"
 	"github.com/digiogithub/pando/internal/ipc/protocol"
 	"github.com/digiogithub/pando/internal/llm/agent"
@@ -59,7 +58,6 @@ import (
 	"github.com/digiogithub/pando/internal/pubsub"
 	rag "github.com/digiogithub/pando/internal/rag"
 	"github.com/digiogithub/pando/internal/rag/kb"
-	ragproxy "github.com/digiogithub/pando/internal/rag/proxy"
 	"github.com/digiogithub/pando/internal/savings"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/skills"
@@ -78,11 +76,8 @@ type App struct {
 	UserInput   userinput.Service
 	DBQuerier   db.Querier
 
-	// rwConn is the read-write SQLite connection on the primary instance (the one
-	// db.Connect() opened, or the one acquired on failover promotion). It is used
-	// for whole-database maintenance that bypasses the query layer, notably
-	// CompactDatabase (VACUUM). On a secondary it holds the local RO/RW-secondary
-	// connection and is not used directly — compaction is routed to the primary.
+	// rwConn is the SQLite connection pool New was given; every instance opens
+	// pando.db read-write through the multi-writer engine.
 	rwConn *sql.DB
 
 	CoderAgent agent.Service
@@ -144,33 +139,31 @@ type App struct {
 	// acpResumeUnregister removes the in-app ACP server's resume handler.
 	acpResumeUnregister func()
 
-	// IPCBus is set on the primary instance after calling SetupIPC.
-	// Secondary instances leave this nil.
+	// IPCBus is set on the leader instance after calling SetupIPC.
+	// Followers leave this nil.
 	IPCBus *ipc.Bus
-	// IPCIsPrimary is true when this instance holds the IPC lock.
+	// IPCIsPrimary is true when this instance holds the IPC lock (the leader).
 	IPCIsPrimary bool
 
 	// ipcWatcher is the failover watcher. Non-nil when IPC is active.
 	ipcWatcher *failover.Watcher
 
-	// ---- Secondary-only IPC context (set via SetIPCSecondaryContext) ----
+	// ---- Follower-only IPC context (set via SetIPCSecondaryContext) ----
 
-	// ipcClient is the ZMQ client used by secondary instances.
+	// ipcSecondary is true when this instance started as an IPC follower.
+	ipcSecondary bool
+	// ipcClient is the ZMQ client used by follower instances.
 	ipcClient *ipc.Client
-	// ipcROConn is the read-only SQLite connection held by the secondary.
-	// Closed and replaced with a RW connection on promotion.
-	ipcROConn *sql.DB
 	// ipcWorkdir is the working directory used to derive IPC ports and lock path.
 	ipcWorkdir string
 	// ipcInstanceID is the instance ID used in lock acquisition and IPC messaging.
 	ipcInstanceID string
-	// ipcPubPort and ipcRPCPort are the deterministic ports derived from ipcWorkdir.
+	// ipcPubPort and ipcRPCPort are the leader's ports, rebound on promotion.
 	ipcPubPort int
 	ipcRPCPort int
-	// ipcBusSetupFunc is provided by cmd/root.go and performs the full primary wiring
-	// (writecoordinator, changepub, bridge registration) once the RW DB and Bus are
-	// available after promotion.
-	ipcBusSetupFunc func(ctx context.Context, bus *ipc.Bus, rwConn *sql.DB) error
+	// ipcBusSetupFunc is provided by the entrypoint and registers the bridge
+	// handlers on the bus created at promotion.
+	ipcBusSetupFunc func(ctx context.Context, bus *ipc.Bus) error
 
 	openlitShutdown func(context.Context) error
 
@@ -201,7 +194,7 @@ type App struct {
 	watcherWG        sync.WaitGroup
 
 	// deferredCodeIndex holds the startup code indexing/watching skipped while
-	// this instance was an IPC secondary; PromoteToPrimary runs it once.
+	// this instance was an IPC follower; PromoteToPrimary runs it once.
 	deferredCodeIndex   func()
 	deferredCodeIndexMu sync.Mutex
 }
@@ -229,8 +222,11 @@ type AppOptions struct {
 	ChildParentInstanceID string
 	// DBQuerier overrides the db.Querier used for sessions, messages, and projects.
 	// When non-nil this querier is used instead of db.New(conn).
-	// Primary instances leave this nil; secondary instances pass a dbproxy.DBProxy.
 	DBQuerier db.Querier
+	// IPCFollower is true when another process holds the IPC lock for this
+	// workdir: the singleton jobs (code index + watcher, evaluator sweeps) are
+	// left to the leader until failover promotes this instance.
+	IPCFollower bool
 	// InstanceID identifies the current Pando process for project child ownership.
 	InstanceID string
 	// WebChildTLSCertFile/WebChildTLSKeyFile configure the certificate the
@@ -271,8 +267,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		opt = opts[0]
 	}
 
-	// Use the provided querier override (secondary instances pass a dbproxy.DBProxy),
-	// or fall back to the standard direct querier for primary instances.
+	// Use the provided querier override, or the direct querier on conn.
 	var q db.Querier
 	rawQ := db.New(conn) // always needed for history (uses WithTx)
 	if opt.DBQuerier != nil {
@@ -284,8 +279,6 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	messages := message.NewService(q)
 	files := history.NewService(rawQ, conn)
 	// project.NewService uses *db.Queries directly (UpdateProjectName is not in db.Querier).
-	// Secondary instances will have project writes go through rawQ (read-only conn) which
-	// will fail gracefully; project management on secondaries is a Phase 5+ concern.
 	projects := project.NewService(rawQ)
 
 	app := &App{
@@ -297,6 +290,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		UserInput:      userinput.NewService(),
 		DBQuerier:      q,
 		rwConn:         conn,
+		ipcSecondary:   opt.IPCFollower,
 		Projects:       projects,
 		LSPClients:     make(map[string]*lsp.Client),
 		lspSpawning:    make(map[string]struct{}),
@@ -388,11 +382,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		// internal/app/telemetry.go.
 		app.telemetryShutdown = initTelemetry(cfg, opt.StartupMode)
 
-		var remembrancesProxy *dbproxy.DBProxy
-		if p, ok := q.(*dbproxy.DBProxy); ok {
-			remembrancesProxy = p
-		}
-		remembrances, err := rag.NewRemembrancesServiceWithProxy(conn, &cfg.Remembrances, remembrancesProxy)
+		remembrances, err := rag.NewRemembrancesService(conn, &cfg.Remembrances)
 		if err != nil {
 			logging.Error("Failed to create remembrances service", "error", err)
 		} else {
@@ -596,7 +586,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 			}
 			logging.Info("evaluator: self-improvement system initialized", "model", cfg.Evaluator.Model)
 			// Idle sweeper + startup backfill; they only act while this instance
-			// owns the DB writer (primary or standalone), including after failover.
+			// is the IPC leader (or standalone), including after failover.
 			// Startup diagnostic: log the doctor summary once, after the first
 			// background pass on the primary, so backfill results are included.
 			evalSvc.SetFirstPassHook(func(hctx context.Context) {
@@ -616,7 +606,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 			app.watcherWG.Add(1)
 			go func() {
 				defer app.watcherWG.Done()
-				evalSvc.RunBackground(bgCtx, app.ownsDBWriter)
+				evalSvc.RunBackground(bgCtx, app.isLeader)
 			}()
 		}
 	}
@@ -2319,10 +2309,9 @@ func StartModelRefreshLoop(ctx context.Context) {
 	}
 }
 
-// Shutdown performs a clean shutdown of the application
-// SetupIPC configures the primary IPC bus for this instance.
-// Call this after New() on the primary instance to enable ZMQ event broadcasting
-// and to register the db.write handler so secondary instances can proxy writes.
+// SetupIPC configures the IPC bus of the leader instance (the one holding the
+// IPC lock) for event broadcasting. It is unrelated to database writes: every
+// instance writes pando.db directly through the multi-writer engine.
 // bus must already be started (bus.Start called) before calling SetupIPC.
 func (app *App) SetupIPC(bus *ipc.Bus) {
 	app.IPCBus = bus
@@ -2331,123 +2320,59 @@ func (app *App) SetupIPC(bus *ipc.Bus) {
 	// create/update/delete events are broadcast over PUB to other instances.
 	session.SetIPCPublisher(bus)
 
-	app.RegisterRemembrancesWriteDispatcher()
-
 	logging.Info("IPC bus wired to session service", "pubAddr", bus.PubAddr, "rpcAddr", bus.RPCAddr)
 }
 
-// RegisterRemembrancesWriteDispatcher lets this primary instance apply the KB,
-// event (session index) and code-index writes that secondary instances forward
-// over IPC. Every entrypoint that can become primary must call it (SetupIPC
-// does for the TUI and ACP); without it those writes fail with
-// METHOD_NOT_FOUND and the secondary keeps recomputing embeddings it can never
-// store.
-func (app *App) RegisterRemembrancesWriteDispatcher() {
-	if app == nil || app.Remembrances == nil {
-		return
-	}
-	dispatcher := ragproxy.NewRemembrancesWriteDispatcher(app.Remembrances)
-	dbproxy.RegisterRemembrancesDispatcher(dispatcher)
-	logging.Info("Remembrances IPC write dispatcher registered on primary")
-}
-
-// SetIPCSecondaryContext stores the secondary IPC state and registers the active-probe
-// function on the watcher so it can perform per-prompt and per-minute liveness checks.
+// SetIPCSecondaryContext records that this instance started as an IPC
+// follower (another process holds the IPC lock) and stores what failover
+// promotion needs to take over the leader role.
 //
-// busSetupFunc is called during promotion with the new Bus and RW connection.
-// It must wire the writecoordinator, changepub publisher, and bridge handlers.
+// busSetupFunc is called during promotion with the new Bus; it registers the
+// bridge handlers. The database needs nothing: it is already open read-write.
 func (app *App) SetIPCSecondaryContext(
 	client *ipc.Client,
-	roConn *sql.DB,
 	workdir, instanceID string,
 	pubPort, rpcPort int,
 	watcher *failover.Watcher,
-	busSetupFunc func(ctx context.Context, bus *ipc.Bus, rwConn *sql.DB) error,
+	busSetupFunc func(ctx context.Context, bus *ipc.Bus) error,
 ) {
+	app.ipcSecondary = true
 	app.ipcClient = client
-	app.ipcROConn = roConn
 	app.ipcWorkdir = workdir
 	app.ipcInstanceID = instanceID
 	app.ipcPubPort = pubPort
 	app.ipcRPCPort = rpcPort
 	app.ipcWatcher = watcher
 	app.ipcBusSetupFunc = busSetupFunc
-
-	// Wire the per-prompt probe function on the watcher so it can do active pings.
-	if proxy, ok := app.DBQuerier.(*dbproxy.DBProxy); ok {
-		watcher.SetProbePrimary(proxy.ProbePrimary)
-	}
 }
 
-// ownsDBWriter reports whether this instance owns the SQLite writer: it is the
-// IPC primary, or it runs standalone with no IPC client (a secondary holds one
-// until it is promoted). Background jobs must only run when this is true.
-func (app *App) ownsDBWriter() bool {
-	return app.IPCIsPrimary || app.ipcClient == nil
+// isLeader reports whether this instance runs the singleton background jobs
+// (code index + its watcher, evaluator sweeps): it holds the IPC lock, or it
+// never joined IPC at all (CLI commands, tests). Followers become leader on
+// failover promotion.
+func (app *App) isLeader() bool {
+	return app.IPCIsPrimary || !app.ipcSecondary
 }
 
-// EnsurePrimary performs an active liveness probe of the primary and, if the
-// primary is unreachable and auto-failover is enabled, triggers the failover
-// sequence.  Must be called before processing each user prompt on a secondary
-// instance.  Safe to call on the primary instance (no-op).
+// EnsurePrimary performs an active liveness probe of the leader and, if it is
+// unreachable and auto-failover is enabled, triggers the failover sequence so
+// this instance takes over the singleton jobs. Safe to call on the leader
+// (no-op).
 func (app *App) EnsurePrimary(ctx context.Context) {
 	if app.IPCIsPrimary || app.ipcWatcher == nil {
 		return
 	}
 	if err := app.ipcWatcher.CheckAndMaybeFailover(ctx); err != nil {
-		logging.Warn("EnsurePrimary: primary unavailable", "error", err)
+		logging.Warn("EnsurePrimary: leader unavailable", "error", err)
 	}
 }
 
-// dbCompactCallTimeout bounds how long a secondary waits for the primary to finish
-// a forwarded db.compact RPC. A full VACUUM on a large database can take minutes,
-// so this is far longer than the default IPC call timeout.
-const dbCompactCallTimeout = 30 * time.Minute
-
-// CompactDatabase reclaims unused space in the SQLite database (VACUUM). Because
-// only the primary owns DB writes, this is a single funnel used by every UI
-// (/db-compact in TUI/WebUI/ACP) and the IPC db.compact handler:
-//
-//   - On the primary (or when IPC is not active) it runs db.Compact directly on
-//     the read-write connection.
-//   - On a secondary it forwards the request to the primary over IPC and returns
-//     the primary's result, so two writers never contend for the database.
-//
-// incremental runs only PRAGMA incremental_vacuum; enableAutoVacuum switches the
-// database to auto_vacuum=INCREMENTAL before the full VACUUM.
+// CompactDatabase is the funnel for /db-compact in the TUI, WebUI and ACP.
+// VACUUM rewrites the whole file, which needs every process — this one
+// included — to have closed the database, so a running instance cannot compact
+// it; it explains how to do it instead.
 func (app *App) CompactDatabase(ctx context.Context, incremental, enableAutoVacuum bool) (protocol.DBCompactResult, error) {
-	// Secondary: forward to the primary's writer connection over IPC.
-	if !app.IPCIsPrimary && app.ipcClient != nil {
-		rpcAddr := fmt.Sprintf("tcp://127.0.0.1:%d", app.ipcRPCPort)
-		params := protocol.DBCompactParams{Incremental: incremental, EnableAutoVacuum: enableAutoVacuum}
-		raw, err := app.ipcClient.CallWithTimeout(ctx, rpcAddr, protocol.MethodDBCompact, params, dbCompactCallTimeout)
-		if err != nil {
-			return protocol.DBCompactResult{}, fmt.Errorf("compact via primary: %w", err)
-		}
-		var res protocol.DBCompactResult
-		if err := json.Unmarshal(raw, &res); err != nil {
-			return protocol.DBCompactResult{}, fmt.Errorf("compact: decode primary result: %w", err)
-		}
-		return res, nil
-	}
-
-	// Primary (or standalone): run the VACUUM locally on the writer connection.
-	if app.rwConn == nil {
-		return protocol.DBCompactResult{}, fmt.Errorf("compact: no writable database connection")
-	}
-	r, err := db.Compact(ctx, app.rwConn, db.CompactOptions{
-		Incremental:      incremental,
-		EnableAutoVacuum: enableAutoVacuum,
-	})
-	if err != nil {
-		return protocol.DBCompactResult{}, err
-	}
-	return protocol.DBCompactResult{
-		Mode:       r.Mode,
-		SizeBefore: r.SizeBefore,
-		SizeAfter:  r.SizeAfter,
-		Freed:      r.Freed,
-	}, nil
+	return protocol.DBCompactResult{}, fmt.Errorf("database compaction needs exclusive access: close every Pando instance using this database and run `pando db compact`")
 }
 
 // acpDBCompactorAdapter adapts App.CompactDatabase to the ACP package's
@@ -2471,66 +2396,44 @@ func (a acpDBCompactorAdapter) CompactDatabase(ctx context.Context, incremental,
 // ACPDBCompactor returns an ACP DBCompactor backed by this app's CompactDatabase.
 func (app *App) ACPDBCompactor() mesnadaACP.DBCompactor { return acpDBCompactorAdapter{app: app} }
 
-// PromoteToPrimary is the failover.PromoteFunc implementation.
-// It is called by the Watcher when this secondary wins the lock race.
-// lockFile is the open flock file that must be kept open for the duration of
-// this instance's primary role.
+// PromoteToPrimary is the failover.PromoteFunc implementation, called by the
+// Watcher when this follower wins the IPC lock after the leader died. lockFile
+// is the open flock file that must stay open while this instance leads.
 //
-// The method:
-//  1. Closes the old read-only SQLite connection.
-//  2. Opens a new read-write connection (with migrations).
-//  3. Creates a new IPC Bus and calls ipcBusSetupFunc to wire all handlers.
-//  4. Updates the app's Querier, IPCBus, and IPCIsPrimary fields.
-//  5. Publishes instance.promoted on the new Bus so other secondaries reconnect.
+// It creates and starts the IPC bus (bridge handlers via ipcBusSetupFunc),
+// marks this instance as leader, starts the singleton jobs it skipped as a
+// follower, and publishes instance.promoted. The database connection is left
+// alone: followers already write it directly.
 func (app *App) PromoteToPrimary(ctx context.Context, lockFile *os.File) error {
 	logging.Info("failover: PromoteToPrimary starting",
 		"instance_id", app.ipcInstanceID,
 		"workdir", app.ipcWorkdir,
 	)
 
-	// 1. Close old read-only connection.
-	if app.ipcROConn != nil {
-		_ = app.ipcROConn.Close()
-		app.ipcROConn = nil
-	}
 	if app.ipcClient != nil {
 		_ = app.ipcClient.Close()
 		app.ipcClient = nil
 	}
 
-	// 2. Open read-write SQLite connection.
-	rwConn, err := db.Connect()
-	if err != nil {
-		return fmt.Errorf("failover: open RW DB: %w", err)
-	}
-
-	// 3. Create a new IPC Bus and wire all handlers via the injected setup function.
 	bus := ipc.NewBus(app.ipcInstanceID)
 	if app.ipcBusSetupFunc != nil {
-		if setupErr := app.ipcBusSetupFunc(ctx, bus, rwConn); setupErr != nil {
-			_ = rwConn.Close()
+		if setupErr := app.ipcBusSetupFunc(ctx, bus); setupErr != nil {
 			return fmt.Errorf("failover: bus setup: %w", setupErr)
 		}
 	}
-	// Bind the ports recorded by the outgoing primary (see SetIPCSecondaryContext),
-	// not the ports derived from the path: existing secondaries are already dialling
-	// those and an older primary may have derived them from the previous port range.
+	// Bind the ports recorded by the outgoing leader (see SetIPCSecondaryContext),
+	// not the ports derived from the path: other followers are already dialling
+	// those and an older leader may have derived them from the previous port range.
 	if startErr := ipc.StartBusWithRetry(ctx, bus, app.ipcPubPort, app.ipcRPCPort); startErr != nil {
-		_ = rwConn.Close()
 		return fmt.Errorf("failover: start bus: %w", startErr)
 	}
 
-	// 4. Update app state.
-	app.DBQuerier = db.New(rwConn)
-	app.rwConn = rwConn
 	app.SetupIPC(bus)
 
-	// The code index and its filesystem watcher run only on the primary: start
-	// them now if they were skipped while this instance was a secondary.
+	// The code index and its filesystem watcher run only on the leader: start
+	// them now if they were skipped while this instance was a follower.
 	app.startDeferredCodeIndex()
 
-	// 5. Publish instance.promoted so other secondaries reset their heartbeat timers
-	//    and reconnect to the new primary.
 	_ = bus.Publish(protocol.TopicInstancePromoted, protocol.PromotedPayload{
 		InstanceID: app.ipcInstanceID,
 		PubAddr:    bus.PubAddr,
@@ -2544,7 +2447,7 @@ func (app *App) PromoteToPrimary(ctx context.Context, lockFile *os.File) error {
 	)
 
 	// The lockFile is intentionally NOT closed here — it must remain open for the
-	// duration of this instance's primary role to maintain the flock.
+	// duration of this instance's leader role to maintain the flock.
 	_ = lockFile
 
 	return nil

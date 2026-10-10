@@ -5,8 +5,7 @@ import (
 	"database/sql"
 	"testing"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
+	_ "modernc.org/sqlite"
 )
 
 // openTestKBDB creates an in-memory SQLite DB with the KB schema, mirroring the
@@ -19,7 +18,7 @@ import (
 // this helper with the unit tests.
 func openTestKBDB(t testing.TB) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("sql.Open() error = %v", err)
 	}

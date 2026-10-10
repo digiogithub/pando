@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/digiogithub/pando/internal/config"
-	"github.com/digiogithub/pando/internal/ipc/dbproxy"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/rag/code"
 	"github.com/digiogithub/pando/internal/rag/embeddings"
@@ -34,7 +33,7 @@ func (s *RemembrancesService) DocumentEmbedder() embeddings.Embedder {
 
 // SetDocumentEmbedder overrides the document embedder DocumentEmbedder()
 // returns. docEmbedder is otherwise only set by
-// NewRemembrancesServiceWithProxy; this exists so tests that construct a
+// NewRemembrancesService; this exists so tests that construct a
 // RemembrancesService directly (a bare &RemembrancesService{KB: store}
 // struct literal, common across internal/api and internal/llm/tools tests)
 // can exercise callers of DocumentEmbedder() — e.g. the embedding-staleness
@@ -50,13 +49,6 @@ func (s *RemembrancesService) SetDocumentEmbedder(e embeddings.Embedder) {
 // NewRemembrancesService creates a RemembrancesService from the app configuration and an
 // existing SQLite connection. Returns nil (no error) when remembrances is disabled.
 func NewRemembrancesService(db *sql.DB, cfg *config.RemembrancesConfig) (*RemembrancesService, error) {
-	return NewRemembrancesServiceWithProxy(db, cfg, nil)
-}
-
-// NewRemembrancesServiceWithProxy creates a RemembrancesService from the app configuration and an
-// existing SQLite connection. When proxy is non-nil, mutating KB/events/code-indexing writes are
-// redirected through the primary instance while reads still use the provided DB connection.
-func NewRemembrancesServiceWithProxy(db *sql.DB, cfg *config.RemembrancesConfig, proxy *dbproxy.DBProxy) (*RemembrancesService, error) {
 	if cfg == nil || !cfg.Enabled {
 		return nil, nil
 	}
@@ -109,11 +101,6 @@ func NewRemembrancesServiceWithProxy(db *sql.DB, cfg *config.RemembrancesConfig,
 	// flag lives on the top-level config, not RemembrancesConfig; config.Get()
 	// is nil-safe and defaults to graph-on.
 	codeIndexer.SetGraphEnabled(config.Get().BuildCodeGraphEnabled())
-	if proxy != nil {
-		kbStore.SetWriteProxy(proxy)
-		eventStore.SetWriteProxy(proxy)
-		codeIndexer.SetWriteProxy(proxy)
-	}
 
 	return &RemembrancesService{
 		KB:           kbStore,

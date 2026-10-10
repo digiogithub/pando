@@ -8,9 +8,8 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
-	_ "github.com/ncruces/go-sqlite3/embed"
 	"github.com/pressly/goose/v3"
+	_ "modernc.org/sqlite"
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
@@ -38,7 +37,7 @@ func (constEmbedder) Dimension() int { return 3 }
 // so the KB and events tables match production.
 func openMigratedDB(t *testing.T) *sql.DB {
 	t.Helper()
-	conn, err := sql.Open("sqlite3", filepath.Join(t.TempDir(), "pando.db"))
+	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "pando.db"))
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

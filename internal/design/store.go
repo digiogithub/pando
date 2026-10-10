@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/digiogithub/pando/internal/db"
 )
 
 // ErrNotFound is returned when an artifact, version or node does not exist.
@@ -162,29 +164,23 @@ func (s *Store) AddVersion(ctx context.Context, v Version) error {
 	if v.CreatedAt.IsZero() {
 		v.CreatedAt = time.Now()
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("design: add version: begin: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck // no-op once committed
+	err := db.RunTx(ctx, s.db, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+	INSERT INTO design_versions (artifact_id, number, snapshot_id, summary, created_at)
+	VALUES (?, ?, ?, ?, ?)`,
+			v.ArtifactID, v.Number, v.SnapshotID, v.Summary, v.CreatedAt.Unix()); err != nil {
+			return fmt.Errorf("design: insert version %s v%d: %w", v.ArtifactID, v.Number, err)
+		}
 
-	if _, err := tx.ExecContext(ctx, `
-INSERT INTO design_versions (artifact_id, number, snapshot_id, summary, created_at)
-VALUES (?, ?, ?, ?, ?)`,
-		v.ArtifactID, v.Number, v.SnapshotID, v.Summary, v.CreatedAt.Unix()); err != nil {
-		return fmt.Errorf("design: insert version %s v%d: %w", v.ArtifactID, v.Number, err)
-	}
+		if _, err := tx.ExecContext(ctx, `
+	UPDATE design_artifacts SET current_version = ?, updated_at = ? WHERE id = ?`,
+			v.Number, time.Now().Unix(), v.ArtifactID); err != nil {
+			return fmt.Errorf("design: bump current version %s: %w", v.ArtifactID, err)
+		}
 
-	if _, err := tx.ExecContext(ctx, `
-UPDATE design_artifacts SET current_version = ?, updated_at = ? WHERE id = ?`,
-		v.Number, time.Now().Unix(), v.ArtifactID); err != nil {
-		return fmt.Errorf("design: bump current version %s: %w", v.ArtifactID, err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("design: add version: commit: %w", err)
-	}
-	return nil
+		return nil
+	})
+	return err
 }
 
 // GetVersion returns one version of an artifact.
@@ -250,47 +246,41 @@ UPDATE design_artifacts SET current_version = ?, updated_at = ? WHERE id = ?`,
 // ReplaceNodes swaps the whole structure index of one artifact version. The
 // index is a render product, so it is rebuilt wholesale rather than merged.
 func (s *Store) ReplaceNodes(ctx context.Context, artifactID string, version int, nodes []Node) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("design: replace nodes: begin: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck // no-op once committed
+	err := db.RunTx(ctx, s.db, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx,
+			`DELETE FROM design_nodes WHERE artifact_id = ? AND version = ?`, artifactID, version); err != nil {
+			return fmt.Errorf("design: clear nodes %s v%d: %w", artifactID, version, err)
+		}
 
-	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM design_nodes WHERE artifact_id = ? AND version = ?`, artifactID, version); err != nil {
-		return fmt.Errorf("design: clear nodes %s v%d: %w", artifactID, version, err)
-	}
+		stmt, err := tx.PrepareContext(ctx, `
+	INSERT INTO design_nodes (
+	    artifact_id, version, node_id, parent_id, selector, role, text, slide,
+	    box_x, box_y, box_w, box_h, styles
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		if err != nil {
+			return fmt.Errorf("design: prepare node insert: %w", err)
+		}
+		defer stmt.Close()
 
-	stmt, err := tx.PrepareContext(ctx, `
-INSERT INTO design_nodes (
-    artifact_id, version, node_id, parent_id, selector, role, text, slide,
-    box_x, box_y, box_w, box_h, styles
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-	if err != nil {
-		return fmt.Errorf("design: prepare node insert: %w", err)
-	}
-	defer stmt.Close()
-
-	for _, n := range nodes {
-		styles := "{}"
-		if len(n.Styles) > 0 {
-			encoded, err := json.Marshal(n.Styles)
-			if err != nil {
-				return fmt.Errorf("design: encode styles for node %s: %w", n.NodeID, err)
+		for _, n := range nodes {
+			styles := "{}"
+			if len(n.Styles) > 0 {
+				encoded, err := json.Marshal(n.Styles)
+				if err != nil {
+					return fmt.Errorf("design: encode styles for node %s: %w", n.NodeID, err)
+				}
+				styles = string(encoded)
 			}
-			styles = string(encoded)
+			if _, err := stmt.ExecContext(ctx,
+				artifactID, version, n.NodeID, n.ParentID, n.Selector, n.Role, n.Text, n.Slide,
+				n.Box.X, n.Box.Y, n.Box.W, n.Box.H, styles); err != nil {
+				return fmt.Errorf("design: insert node %s: %w", n.NodeID, err)
+			}
 		}
-		if _, err := stmt.ExecContext(ctx,
-			artifactID, version, n.NodeID, n.ParentID, n.Selector, n.Role, n.Text, n.Slide,
-			n.Box.X, n.Box.Y, n.Box.W, n.Box.H, styles); err != nil {
-			return fmt.Errorf("design: insert node %s: %w", n.NodeID, err)
-		}
-	}
 
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("design: replace nodes: commit: %w", err)
-	}
-	return nil
+		return nil
+	})
+	return err
 }
 
 // ListNodes returns the structure index of one version. A slide >= 0 narrows

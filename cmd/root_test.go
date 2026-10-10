@@ -32,17 +32,23 @@ func TestRunACPServerWithOptions_ConfiguresSecondaryIPCFailoverPath(t *testing.T
 	if err != nil {
 		t.Fatalf("read root.go: %v", err)
 	}
-	body := string(source)
+	if !strings.Contains(string(source), `wireIPCRole(ctx, rt, pandoApp, acpInstanceID, cwd, "acp")`) {
+		t.Fatal("runACPServerWithOptions does not wire its IPC role through wireIPCRole")
+	}
 
+	helper, err := os.ReadFile("ipc_wiring.go")
+	if err != nil {
+		t.Fatalf("read ipc_wiring.go: %v", err)
+	}
 	checks := []string{
 		"pandoApp.SetIPCSecondaryContext(",
 		"rt.Watcher.SetPromoteCallback(pandoApp.PromoteToPrimary)",
-		"pandoApp.SetupIPC(acpBus)",
+		"pandoApp.SetupIPC(bus)",
 		"rt.Watcher.Start(ctx)",
 	}
 	for _, needle := range checks {
-		if !strings.Contains(body, needle) {
-			t.Fatalf("runACPServerWithOptions is missing %q", needle)
+		if !strings.Contains(string(helper), needle) {
+			t.Fatalf("wireIPCRole is missing %q", needle)
 		}
 	}
 }
