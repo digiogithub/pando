@@ -23,7 +23,7 @@ require (
 	github.com/chromedp/chromedp v0.16.0
 	github.com/conductor-oss/markitdown v0.0.1
 	github.com/creack/pty v1.1.24
-	github.com/digiogithub/go-sqlite-multiwriter v0.1.1
+	github.com/digiogithub/go-sqlite-multiwriter v0.1.2
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-units v0.5.0
 	github.com/ebitengine/purego v0.10.2

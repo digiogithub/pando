@@ -166,3 +166,38 @@ func TestSelectReleaseForTargetsPrefersLinuxX64Asset(t *testing.T) {
 		t.Fatalf("selected version = %q", release.Version.String())
 	}
 }
+
+func testRelease(tag string, pre, draft bool) *github.RepositoryRelease {
+	name := "pando-linux-amd64.zip"
+	url := "https://example.com/" + tag + "/" + name
+	return &github.RepositoryRelease{
+		TagName:    github.String(tag),
+		Prerelease: github.Bool(pre),
+		Draft:      github.Bool(draft),
+		Assets:     []*github.ReleaseAsset{{Name: github.String(name), BrowserDownloadURL: github.String(url)}},
+	}
+}
+
+func TestStableReleasesSkipsNewerPrerelease(t *testing.T) {
+	releases := []*github.RepositoryRelease{
+		testRelease("v1.3.0", true, false),
+		testRelease("v1.4.0-rc1", false, false),
+		testRelease("v1.5.0", false, true),
+		testRelease("v1.2.14", false, false),
+	}
+	release, found, err := selectReleaseForTargets(stableReleases(releases), "o", "r", []releaseTarget{{OS: "linux", Arch: "amd64"}})
+	if err != nil || !found {
+		t.Fatalf("found=%v err=%v", found, err)
+	}
+	if release.Version.String() != "1.2.14" {
+		t.Fatalf("selected %s, want 1.2.14", release.Version)
+	}
+}
+
+func TestStableReleasesOnlyPrereleaseMeansNoUpdate(t *testing.T) {
+	releases := []*github.RepositoryRelease{testRelease("v1.3.0", true, false)}
+	_, found, err := selectReleaseForTargets(stableReleases(releases), "o", "r", []releaseTarget{{OS: "linux", Arch: "amd64"}})
+	if err != nil || found {
+		t.Fatalf("found=%v err=%v, want not found", found, err)
+	}
+}

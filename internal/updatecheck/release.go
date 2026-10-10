@@ -18,7 +18,7 @@ import (
 // RepoSlug is the GitHub repository releases are published to.
 const RepoSlug = "digiogithub/pando"
 
-// DetectLatest returns the newest non-draft GitHub release that ships an asset
+// DetectLatest returns the newest stable (non-draft, non-prerelease) GitHub release that ships an asset
 // for the running platform. The lookup is abandoned when ctx is done.
 func DetectLatest(ctx context.Context) (*Result, error) {
 	type response struct {
@@ -105,7 +105,24 @@ func detectLatestReleaseManual() (*selfupdate.Release, bool, error) {
 		return nil, false, err
 	}
 
-	return selectReleaseForTargets(releases, repo[0], repo[1], releaseArchAliases(runtime.GOOS, runtime.GOARCH))
+	return selectReleaseForTargets(stableReleases(releases), repo[0], repo[1], releaseArchAliases(runtime.GOOS, runtime.GOARCH))
+}
+
+// stableReleases drops drafts, releases flagged prerelease on GitHub and tags
+// carrying a semver pre-release suffix, so "latest" never resolves to a
+// pre-release. Explicit version pins (DetectVersion) bypass this filter.
+func stableReleases(releases []*github.RepositoryRelease) []*github.RepositoryRelease {
+	out := make([]*github.RepositoryRelease, 0, len(releases))
+	for _, rel := range releases {
+		if rel == nil || rel.GetDraft() || rel.GetPrerelease() {
+			continue
+		}
+		if v, ok := parseReleaseVersion(rel.GetTagName()); ok && len(v.Pre) > 0 {
+			continue
+		}
+		out = append(out, rel)
+	}
+	return out
 }
 
 func selectReleaseForTargets(releases []*github.RepositoryRelease, repoOwner, repoName string, targets []releaseTarget) (*selfupdate.Release, bool, error) {

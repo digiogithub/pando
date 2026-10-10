@@ -15,7 +15,8 @@ the writes and no write traffic over IPC.
 | Windows | Stock SQLite, WAL, `BEGIN IMMEDIATE`, 10 s busy timeout | Writers take turns on SQLite's write lock. |
 
 The multiwriter engine keeps recent commits in a log next to the database (`pando.db-mw`,
-`pando.db-mw.000001`, `pando.db-mwlock`) and compacts them into `pando.db` in the background. When the
+`pando.db-mw.000001`, `pando.db-mwlock`, and on macOS also `pando.db-mwfcntl`, which holds the
+cross-process commit locks) and compacts them into `pando.db` in the background. When the
 last process closes the database everything is in `pando.db` and the log files are removed. A process
 killed at any point leaves nothing to repair: the next opener replays the log.
 
