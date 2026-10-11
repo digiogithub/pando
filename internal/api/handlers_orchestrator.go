@@ -26,6 +26,26 @@ type TaskResponse struct {
 	ToolCalls   []*mesnadaModels.ToolCall `json:"tool_calls,omitempty"`
 	CreatedAt   time.Time                 `json:"created_at"`
 	UpdatedAt   time.Time                 `json:"updated_at"`
+
+	// Additive, optional fields mirroring models.Task (all omitempty, so
+	// existing clients are unaffected).
+	WorkDir         string                    `json:"work_dir,omitempty"`
+	Tags            []string                  `json:"tags,omitempty"`
+	Dependencies    []string                  `json:"dependencies,omitempty"`
+	Error           string                    `json:"error,omitempty"`
+	ExitCode        *int                      `json:"exit_code,omitempty"`
+	OutputTail      string                    `json:"output_tail,omitempty"`
+	StartedAt       *time.Time                `json:"started_at,omitempty"`
+	CompletedAt     *time.Time                `json:"completed_at,omitempty"`
+	ACPSessionID    string                    `json:"acp_session_id,omitempty"`
+	ACPMode         string                    `json:"acp_mode,omitempty"`
+	ACPStatus       *mesnadaModels.ACPStatus  `json:"acp_status,omitempty"`
+	ParentSessionID string                    `json:"parent_session_id,omitempty"`
+	ParentTaskID    string                    `json:"parent_task_id,omitempty"`
+	ProjectID       string                    `json:"project_id,omitempty"`
+	ProjectPath     string                    `json:"project_path,omitempty"`
+	ProjectName     string                    `json:"project_name,omitempty"`
+	Conclusion      *mesnadaModels.Conclusion `json:"conclusion,omitempty"`
 }
 
 // taskToResponse converts a models.Task into a TaskResponse.
@@ -56,6 +76,24 @@ func taskToResponse(t *mesnadaModels.Task) TaskResponse {
 		ToolCalls:   t.ToolCalls,
 		CreatedAt:   t.CreatedAt,
 		UpdatedAt:   updatedAt,
+
+		WorkDir:         t.WorkDir,
+		Tags:            t.Tags,
+		Dependencies:    t.Dependencies,
+		Error:           t.Error,
+		ExitCode:        t.ExitCode,
+		OutputTail:      t.OutputTail,
+		StartedAt:       t.StartedAt,
+		CompletedAt:     t.CompletedAt,
+		ACPSessionID:    t.ACPSessionID,
+		ACPMode:         t.ACPMode,
+		ACPStatus:       t.ACPStatus,
+		ParentSessionID: t.ParentSessionID,
+		ParentTaskID:    t.ParentTaskID,
+		ProjectID:       t.ProjectID,
+		ProjectPath:     t.ProjectPath,
+		ProjectName:     t.ProjectName,
+		Conclusion:      t.Conclusion,
 	}
 }
 
