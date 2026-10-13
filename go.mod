@@ -1,6 +1,6 @@
 module github.com/digiogithub/pando
 
-go 1.26.0
+go 1.27.2
 
 require (
 	filippo.io/age v1.2.1
