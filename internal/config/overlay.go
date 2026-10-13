@@ -760,7 +760,7 @@ func configTree(c *Config) (map[string]any, error) {
 // gained an element reports as one changed path rather than as an index.
 func changedPaths(before, after map[string]any, prefix []string) []string {
 	var out []string
-	seen := make(map[string]bool, len(before)+len(after))
+	seen := make(map[string]bool)
 
 	walk := func(key string) {
 		lower := strings.ToLower(key)

@@ -1176,7 +1176,7 @@ func rrfFuse(vecResults, ftsResults []SearchResult, limit int) []SearchResult {
 		return fused[i].rrf > fused[j].rrf
 	})
 
-	results := make([]SearchResult, 0, limit)
+	results := make([]SearchResult, 0, min(limit, len(fused)))
 	for i, e := range fused {
 		if i >= limit {
 			break

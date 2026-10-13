@@ -177,7 +177,13 @@ func readGrowingFile(path string, offset *int64, limit int64) (string, int64, bo
 		return "", 0, false, err
 	}
 
-	buf := make([]byte, int(min64(limit, size-start)))
+	// Callers cap limit at maxLogTailBytes; re-check here so the int
+	// conversion below is bounded on 32-bit platforms too.
+	toRead := min64(limit, size-start)
+	if toRead > maxLogTailBytes {
+		toRead = maxLogTailBytes
+	}
+	buf := make([]byte, int(toRead))
 	n, err := io.ReadFull(f, buf)
 	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
 		return "", 0, false, err

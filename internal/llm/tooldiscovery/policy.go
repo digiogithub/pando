@@ -85,7 +85,7 @@ func (p *SelectionPolicy) Apply(reg *Registry, toolSearch tools.BaseTool) []tool
 		return visible
 	}
 
-	visible := make([]tools.BaseTool, 0, p.cfg.MaxDirectTools)
+	visible := make([]tools.BaseTool, 0, min(p.cfg.MaxDirectTools, total+1))
 
 	// Always add tool_search first so it is the most prominent tool.
 	if toolSearch != nil {

@@ -27,16 +27,24 @@ function resolveInitialBaseURL(): string {
   return ''
 }
 
+// trimTrailingSlashes strips every trailing "/" without a regex: /\/+$/ is
+// quadratic on long runs of slashes that are not at the end of the input.
+function trimTrailingSlashes(value: string): string {
+  let end = value.length
+  while (end > 0 && value[end - 1] === '/') end--
+  return value.slice(0, end)
+}
+
 function normalizeBaseURL(url: string): string {
   const trimmed = url.trim()
   if (!trimmed || trimmed === '/') return ''
 
   try {
     const parsed = new URL(trimmed)
-    const pathname = parsed.pathname.replace(/\/+$/, '') || '/'
+    const pathname = trimTrailingSlashes(parsed.pathname) || '/'
     return `${parsed.origin}${pathname === '/' ? '' : pathname}`
   } catch {
-    return trimmed.replace(/\/+$/, '')
+    return trimTrailingSlashes(trimmed)
   }
 }
 
@@ -49,10 +57,10 @@ function getConfiguredBasePath(url: string): string {
 
   try {
     const parsed = new URL(trimmed, 'http://pando.local')
-    return (parsed.pathname.replace(/\/+$/, '') || '/')
+    return (trimTrailingSlashes(parsed.pathname) || '/')
   } catch {
     const normalized = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
-    return normalized.replace(/\/+$/, '') || '/'
+    return trimTrailingSlashes(normalized) || '/'
   }
 }
 
@@ -73,7 +81,7 @@ export function setServerProjectChildMode(startupMode: string | null | undefined
 }
 
 export function isChildModeRestrictedPath(path: string): boolean {
-  const normalized = (path.replace(/\/+$/, '') || '/')
+  const normalized = (trimTrailingSlashes(path) || '/')
   return CHILD_MODE_RESTRICTED_PATHS.has(normalized)
 }
 

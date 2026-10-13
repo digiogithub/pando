@@ -58,8 +58,8 @@ export async function fetchUIPolicy(): Promise<UIPolicy> {
  * because the section contains a restricted path.
  */
 export function pathsOverlap(a: string, b: string): boolean {
-  const left = a.trim().replace(/^\.+|\.+$/g, '').split('.').filter(Boolean)
-  const right = b.trim().replace(/^\.+|\.+$/g, '').split('.').filter(Boolean)
+  const left = a.trim().split('.').filter(Boolean)
+  const right = b.trim().split('.').filter(Boolean)
   if (left.length === 0 || right.length === 0) return false
   const shorter = left.length < right.length ? left : right
   const longer = left.length < right.length ? right : left
