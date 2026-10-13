@@ -2,12 +2,13 @@
 id: PANDO-EP-0022
 type: epic
 title: "SQLite multi-writer engine: every instance writes pando.db directly (v1.3.0)"
-status: in_progress
+status: done
 priority: high
 labels: [db, ipc, release]
 created: 2026-10-10T20:30:13Z
-updated: 2026-10-10T20:30:13Z
+updated: 2026-10-10T22:10:02Z
 started: 2026-10-10T20:30:13Z
+closed: 2026-10-10T22:10:02Z
 ---
 
 ## Description
