@@ -151,7 +151,7 @@ xpando:
 
 ## Run multi-process single-writer integration tests (requires compiled binary)
 test-integration: build-fast
-	PANDO_BINARY=./pando$(DIST_SUFFIX) go test -tags=integration ./test/integration/single_writer/... -v -timeout 180s
+	PANDO_BINARY=$(CURDIR)/pando$(DIST_SUFFIX) go test -tags=integration ./test/integration/single_writer/... -v -timeout 180s
 
 ## Full desktop build: compile pando-desktop Wails binary (requires wails CLI)
 desktop-build:

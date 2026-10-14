@@ -122,8 +122,10 @@ func (inst *instance) isRunning() bool {
 	}
 }
 
-// stop sends SIGTERM to the instance and waits up to 5 seconds for it to exit,
-// then sends SIGKILL. Safe to call after waitForExit or multiple times.
+// stop sends SIGTERM to the instance and waits up to 5 seconds for it to exit.
+// A process still running by then gets SIGQUIT, so the Go runtime prints every
+// goroutine to the test output (a hung shutdown is diagnosable from the log),
+// and finally SIGKILL. Safe to call after waitForExit or multiple times.
 func (inst *instance) stop(t *testing.T) {
 	t.Helper()
 	if inst.Cmd.Process == nil {
@@ -135,6 +137,12 @@ func (inst *instance) stop(t *testing.T) {
 	case <-inst.exited:
 		// exited cleanly
 	case <-time.After(5 * time.Second):
+		t.Logf("PID %d ignored SIGTERM for 5s; sending SIGQUIT for a goroutine dump", inst.PID)
+		_ = inst.Cmd.Process.Signal(syscall.SIGQUIT)
+		select {
+		case <-inst.exited:
+		case <-time.After(3 * time.Second):
+		}
 		_ = inst.Cmd.Process.Kill()
 		select {
 		case <-inst.exited:
@@ -171,21 +179,34 @@ type lockInfo struct {
 
 // readLockFile reads and parses the IPC lock file from the given workdir.
 // Returns nil if the file does not exist.
+//
+// The lock file is not written atomically: it is created empty before its
+// owner takes the flock, and a failover winner rewrites the previous leader's
+// file in place. A read that lands in that window sees an empty or partial
+// document, so parse failures are retried for a short grace period (like the
+// production readers in internal/ipc) before failing the test.
 func readLockFile(t *testing.T, workdir string) *lockInfo {
 	t.Helper()
 	path := filepath.Join(workdir, ".pando", "ipc.lock")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			t.Fatalf("readLockFile: %v", err)
 		}
-		t.Fatalf("readLockFile: %v", err)
+		var info lockInfo
+		err = json.Unmarshal(data, &info)
+		if err == nil {
+			return &info
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("readLockFile: parse %s: %v (content %q)", path, err, data)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	var info lockInfo
-	if err := json.Unmarshal(data, &info); err != nil {
-		t.Fatalf("readLockFile: parse %s: %v", path, err)
-	}
-	return &info
 }
 
 // waitForLockFile polls until the IPC lock file appears in workdir or timeout elapses.

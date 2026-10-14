@@ -32,17 +32,23 @@ func lockFilePath(workdir string) string {
 	return filepath.Join(workdir, ".pando", "ipc.lock")
 }
 
-// writeLockInfo serialises info into f, truncating it first.
+// writeLockInfo serialises info into f, replacing its previous content.
+//
+// The document is encoded up front and written at offset 0 before the file is
+// truncated to its new length, so the file is never left empty while it is
+// rewritten (a failover winner rewrites the previous leader's file in place).
+// Readers can still observe a mix of the new document and the tail of a longer
+// old one, which is why every reader goes through waitForLockInfoRetry.
 func writeLockInfo(f *os.File, info *LockInfo) error {
-	if err := f.Truncate(0); err != nil {
+	data, err := json.MarshalIndent(info, "", "  ")
+	if err != nil {
 		return err
 	}
-	if _, err := f.Seek(0, 0); err != nil {
+	data = append(data, '\n')
+	if _, err := f.WriteAt(data, 0); err != nil {
 		return err
 	}
-	enc := json.NewEncoder(f)
-	enc.SetIndent("", "  ")
-	return enc.Encode(info)
+	return f.Truncate(int64(len(data)))
 }
 
 // readLockInfo reads the LockInfo from path without holding the lock.
@@ -81,8 +87,9 @@ func waitForLockInfoRetry(path string) (*LockInfo, error) {
 }
 
 // ReadLockForPath reads the IPC lock file for the given workdir and returns
-// the LockInfo written by the primary instance. Returns nil if no lock file
-// exists or the primary is no longer running.
+// the LockInfo written by the primary instance. It returns an error satisfying
+// os.IsNotExist when no lock file exists. A file caught mid-rewrite (empty or
+// half-written) is retried briefly instead of being reported as unparseable.
 func ReadLockForPath(workdir string) (*LockInfo, error) {
-	return readLockInfo(lockFilePath(workdir))
+	return waitForLockInfoRetry(lockFilePath(workdir))
 }

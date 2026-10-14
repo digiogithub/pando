@@ -30,7 +30,10 @@ const (
 	caKeyFile  = "ca.key"
 	certFile   = "server.crt"
 	keyFile    = "server.key"
-	lockDir    = ".lock"
+	// lockFileName is the file whose OS lock serialises certificate
+	// generation. (Older releases used a ".lock" directory, which a process
+	// killed while holding it left behind for a minute.)
+	lockFileName = ".lock.flock"
 
 	// The CA is long-lived so the trust import survives; the server
 	// certificate stays under the 398 days browsers accept for a leaf.
@@ -43,7 +46,6 @@ const (
 	maxLeafIPs = 64
 
 	lockTimeout = 10 * time.Second
-	lockStale   = 60 * time.Second
 
 	// LoopbackServerName is the DNS name the generated certificate always
 	// carries, so callers can pin it while connecting to 127.0.0.1.
@@ -165,23 +167,33 @@ func LoadPinnedLoopbackTLSConfig(certPath string) (*tls.Config, error) {
 }
 
 // lockTLSDir takes an inter-process lock on tlsDir and returns its release.
+//
+// The lock is an OS file lock (flock / LockFileEx), so the kernel drops it
+// when its holder exits for any reason. A process killed while generating the
+// certificate (a SIGTERM during startup, a SIGKILL) therefore cannot leave a
+// stale lock behind that makes every other Pando process on the machine time
+// out in EnsureCert.
 func lockTLSDir(tlsDir string) (func(), error) {
-	lock := filepath.Join(tlsDir, lockDir)
+	lock := filepath.Join(tlsDir, lockFileName)
+	f, err := os.OpenFile(lock, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("failed to lock tls directory: %w", err)
+	}
 	deadline := time.Now().Add(lockTimeout)
 	for {
-		err := os.Mkdir(lock, 0o700)
+		err := tryLockFile(f)
 		if err == nil {
-			return func() { _ = os.Remove(lock) }, nil
+			return func() {
+				_ = unlockFile(f)
+				_ = f.Close()
+			}, nil
 		}
-		if !errors.Is(err, os.ErrExist) {
+		if !errors.Is(err, errLockBusy) {
+			_ = f.Close()
 			return nil, fmt.Errorf("failed to lock tls directory: %w", err)
 		}
-		// A crashed process may have left the lock behind.
-		if info, statErr := os.Stat(lock); statErr == nil && time.Since(info.ModTime()) > lockStale {
-			_ = os.Remove(lock)
-			continue
-		}
 		if time.Now().After(deadline) {
+			_ = f.Close()
 			return nil, fmt.Errorf("timed out waiting for the tls directory lock %s", lock)
 		}
 		time.Sleep(50 * time.Millisecond)
