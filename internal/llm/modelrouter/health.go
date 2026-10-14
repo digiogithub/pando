@@ -2,6 +2,7 @@ package modelrouter
 
 import (
 	"context"
+	"maps"
 	"sync"
 	"time"
 
@@ -63,18 +64,20 @@ var warmupSections = map[string]bool{
 // every change of a section in warmupSections, drops the cached health reports
 // and warms the decision model up in the background when it is configured and
 // at least one consumer is enabled.
+//
+// The listener is synchronous (config.Bus.SubscribeFunc): the configuration is
+// read on the goroutine that published the change, right after it wrote it,
+// and the background warm-up only gets copies. A channel subscriber reading
+// config.Get() later on its own goroutine raced with every later writer
+// (config handlers, Reload, tests swapping the configuration).
 func StartWarmupOnReload() {
 	warmupOnce.Do(func() {
-		ch := make(chan config.ConfigChangeEvent, 16)
-		config.Bus.Subscribe(ch)
-		go func() {
-			for ev := range ch {
-				if !warmupSections[ev.Section] && ev.Event != config.EventConfigReloaded {
-					continue
-				}
-				warmupFromConfig()
+		config.Bus.SubscribeFunc(func(ev config.ConfigChangeEvent) {
+			if !warmupSections[ev.Section] && ev.Event != config.EventConfigReloaded {
+				return
 			}
-		}()
+			warmupFromConfig()
+		})
 	})
 }
 
@@ -83,22 +86,29 @@ func warmupFromConfig() { startWarmup(config.Get()) }
 // startWarmup drops the cached health reports and, when the decision model is
 // configured and at least one consumer is on, warms it up in the background.
 // The returned channel closes when the warm-up ends; it is nil when none ran.
+//
+// Everything read from c (and from the global configuration, which
+// EffectiveBaseURL consults for the Ollama provider) is resolved before the
+// goroutine starts, so the warm-up never touches configuration that a later
+// change may be rewriting.
 func startWarmup(c *config.Config) <-chan struct{} {
 	sharedHealth.Invalidate()
 	if c == nil || c.DecisionModel.Router.Model == "" || !c.AnyDecisionConsumerEnabled() {
 		return nil
 	}
-	cfg := c.DecisionModel
+	router := c.DecisionModel.Router
+	router.Headers = maps.Clone(router.Headers)
+	model := router.Model
+	p, err := ProviderWithTimeout(router, warmupTimeout)
+	if err != nil {
+		return nil
+	}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		ctx, cancel := context.WithTimeout(context.Background(), warmupTimeout)
 		defer cancel()
-		p, err := ProviderWithTimeout(cfg.Router, warmupTimeout)
-		if err != nil {
-			return
-		}
-		_ = systemone.Warmup(ctx, p, cfg.Router.Model)
+		_ = systemone.Warmup(ctx, p, model)
 	}()
 	return done
 }
