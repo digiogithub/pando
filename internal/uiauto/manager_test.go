@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,6 +33,9 @@ type fakeBackend struct {
 	childrenOf map[*core.Element][]*core.Element
 	rootByWin  map[string][]*core.Element
 
+	// findMu guards findResult/findErr for tests that change them while the
+	// manager polls Find on another goroutine (use setFind there).
+	findMu     sync.Mutex
 	findResult []*core.Element
 	findErr    error
 
@@ -79,7 +83,16 @@ func (b *fakeBackend) Windows(ctx context.Context, appID string) ([]core.WindowI
 }
 
 func (b *fakeBackend) Find(ctx context.Context, scope core.Scope, sel *core.Selector, limit int) ([]*core.Element, error) {
+	b.findMu.Lock()
+	defer b.findMu.Unlock()
 	return b.findResult, b.findErr
+}
+
+// setFind changes what Find returns; safe while Find runs concurrently.
+func (b *fakeBackend) setFind(res []*core.Element, err error) {
+	b.findMu.Lock()
+	defer b.findMu.Unlock()
+	b.findResult, b.findErr = res, err
 }
 
 func (b *fakeBackend) Children(ctx context.Context, el *core.Element) ([]*core.Element, error) {
@@ -855,11 +868,10 @@ func TestManagerWaitUsesLiveSubscriptionWhenBackendSupportsIt(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	fb.findErr = core.NewElementNotFoundError("not yet")
+	fb.setFind(nil, core.NewElementNotFoundError("not yet"))
 	go func() {
 		time.Sleep(30 * time.Millisecond)
-		fb.findResult = []*core.Element{target}
-		fb.findErr = nil
+		fb.setFind([]*core.Element{target}, nil)
 		sub.ch <- events.Event{Kind: events.KindCreated}
 	}()
 

@@ -3189,10 +3189,11 @@ func TestPandoACPAgent_LoadSession_SkipsReplayForXcode(t *testing.T) {
 		{client: "", wantSkip: false},
 	} {
 		t.Run(tc.client, func(t *testing.T) {
-			var logs bytes.Buffer
+			// The history replay LoadSession starts logs on its own goroutine.
+			logs := &syncBuffer{}
 			sessions := newMockSessionService()
 			sessions.sessions["existing-session-1"] = ACPSessionInfo{ID: "existing-session-1"}
-			agent := NewPandoACPAgent("1.0.0-test", "/tmp", log.New(&logs, "", 0), &mockAgentService{}, sessions, nil)
+			agent := NewPandoACPAgent("1.0.0-test", "/tmp", log.New(logs, "", 0), &mockAgentService{}, sessions, nil)
 			req := acpsdk.InitializeRequest{ProtocolVersion: 1}
 			if tc.client != "" {
 				req.ClientInfo = &acpsdk.Implementation{Name: tc.client, Version: "1"}

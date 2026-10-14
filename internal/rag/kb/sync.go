@@ -98,6 +98,11 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 		offset += len(items)
 	}
 	logging.Debug("kb sync: metadata preloaded", "documents", len(existingByPath))
+	// existingByPath is read-only from here on: the walker goroutine looks
+	// paths up in it while this goroutine consumes results, so writing to it
+	// below would be a concurrent map read/write. Nothing needs the written
+	// entries anyway: every added or updated path is in seen, so the
+	// deleteMissing pass never considers it.
 
 	workerCount := s.getSyncWorkers()
 	jobs := make(chan syncJob, workerCount*2)
@@ -257,7 +262,6 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 			backendFailures = 0
 			stats.Added++
 			stats.LinksIndexed += s.countIndexedLinks(bodyContent)
-			existingByPath[res.job.docPath] = documentMetadata{FilePath: res.job.docPath, Metadata: meta}
 			if processed%10 == 0 {
 				logSyncProgress(processed, -1, stats, errorCount)
 			}
@@ -284,7 +288,6 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 		backendFailures = 0
 		stats.Updated++
 		stats.LinksIndexed += s.countIndexedLinks(bodyContent)
-		existingByPath[res.job.docPath] = documentMetadata{FilePath: res.job.docPath, Metadata: meta}
 
 		if processed%10 == 0 {
 			logSyncProgress(processed, -1, stats, errorCount)
