@@ -829,9 +829,13 @@ func (s *KBStore) searchVector(ctx context.Context, queryEmb []float32, limit in
 		return nil, 0, err
 	}
 
-	// Sort by descending similarity
+	// Sort by descending similarity; equal scores keep a fixed (chunk id)
+	// order so the top-k cut and the ranks fed to RRF are reproducible.
 	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].score > candidates[j].score
+		if candidates[i].score != candidates[j].score {
+			return candidates[i].score > candidates[j].score
+		}
+		return candidates[i].chunkID < candidates[j].chunkID
 	})
 
 	// Return top-k
@@ -1172,8 +1176,18 @@ func rrfFuse(vecResults, ftsResults []SearchResult, limit int) []SearchResult {
 		fused = append(fused, e)
 	}
 
+	// fused comes from a map, whose iteration order is random: break RRF ties
+	// (common, e.g. ranks 1+2 vs 2+1 across the two lists) on the document id
+	// and chunk text so the same query over the same data always returns the
+	// same order and the same top-limit cut.
 	sort.Slice(fused, func(i, j int) bool {
-		return fused[i].rrf > fused[j].rrf
+		if fused[i].rrf != fused[j].rrf {
+			return fused[i].rrf > fused[j].rrf
+		}
+		if fused[i].doc.ID != fused[j].doc.ID {
+			return fused[i].doc.ID < fused[j].doc.ID
+		}
+		return fused[i].chunkContent < fused[j].chunkContent
 	})
 
 	results := make([]SearchResult, 0, min(limit, len(fused)))

@@ -176,18 +176,7 @@ func TestBuildMemoryBlockWithResultAgainstRealStore(t *testing.T) {
 		MemoryDefaultTTLDays:           30,
 	}
 
-	// Filter off: byte-identical to the legacy entry point, nothing reported.
-	legacy := BuildMemoryBlock(ctx, store, "relevance memory", cfg)
-	offBlock, offRes := BuildMemoryBlockWithResult(ctx, store, "relevance memory", cfg, nil)
-	if legacy != offBlock || offRes.Applied {
-		t.Fatalf("nil filter must match BuildMemoryBlock: res=%+v", offRes)
-	}
-	for _, key := range []string{"jj instead", "pasta", "English"} {
-		if !strings.Contains(offBlock, key) {
-			t.Fatalf("baseline missing %s:\n%s", key, offBlock)
-		}
-	}
-
+	keys := []string{"memory/project-vcs.md", "memory/project-noise.md", "memory/rules-pinned.md"}
 	waitHits := func(key string, want int) int {
 		var got int
 		for i := 0; i < 50; i++ {
@@ -198,8 +187,44 @@ func TestBuildMemoryBlockWithResultAgainstRealStore(t *testing.T) {
 		}
 		return got
 	}
+
+	// Filter off: byte-identical to the legacy entry point, nothing reported.
+	//
+	// Every build bumps the injected memories' hits and updated_at in
+	// background goroutines, and both feed the injection score (recency
+	// breaks the tie between the two equally relevant project memories). So
+	// let the legacy build's bumps land and put updated_at back before the
+	// second build: both must rank the same data, otherwise their order
+	// depends on which goroutine committed first.
+	updatedAt := make(map[string]string, len(keys))
+	for _, key := range keys {
+		var ts string
+		if err := conn.QueryRow(`SELECT updated_at FROM kb_documents WHERE file_path = ?`, key).Scan(&ts); err != nil {
+			t.Fatalf("updated_at(%s): %v", key, err)
+		}
+		updatedAt[key] = ts
+	}
+	legacy := BuildMemoryBlock(ctx, store, "relevance memory", cfg)
+	for _, key := range keys {
+		if got := waitHits(key, 1); got != 1 {
+			t.Fatalf("%s hits after legacy build = %d, want 1", key, got)
+		}
+		if _, err := conn.Exec(`UPDATE kb_documents SET updated_at = ? WHERE file_path = ?`, updatedAt[key], key); err != nil {
+			t.Fatalf("restore updated_at(%s): %v", key, err)
+		}
+	}
+	offBlock, offRes := BuildMemoryBlockWithResult(ctx, store, "relevance memory", cfg, nil)
+	if legacy != offBlock || offRes.Applied {
+		t.Fatalf("nil filter must match BuildMemoryBlock: res=%+v\nlegacy:\n%s\nnil filter:\n%s", offRes, legacy, offBlock)
+	}
+	for _, key := range []string{"jj instead", "pasta", "English"} {
+		if !strings.Contains(offBlock, key) {
+			t.Fatalf("baseline missing %s:\n%s", key, offBlock)
+		}
+	}
+
 	// Two baseline builds (legacy + nil-filter) injected every memory twice.
-	for _, key := range []string{"memory/project-vcs.md", "memory/project-noise.md", "memory/rules-pinned.md"} {
+	for _, key := range keys {
 		if got := waitHits(key, 2); got != 2 {
 			t.Fatalf("%s hits after baseline = %d, want 2", key, got)
 		}
