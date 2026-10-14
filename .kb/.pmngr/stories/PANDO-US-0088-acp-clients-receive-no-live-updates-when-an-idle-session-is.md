@@ -2,14 +2,15 @@
 id: PANDO-US-0088
 type: story
 title: ACP clients receive no live updates when an idle session is resumed after delegated subagents finish
-status: in_review
+status: done
 priority: high
 parent: PANDO-EP-0016
 author: mcp
 labels: [bug, acp, delegation]
 created: 2026-10-01T12:26:47Z
-updated: 2026-10-01T13:02:21Z
+updated: 2026-10-14T20:15:01Z
 started: 2026-10-01T13:02:21Z
+closed: 2026-10-14T20:15:01Z
 ---
 
 ## Description

@@ -2,13 +2,14 @@
 id: PANDO-EP-0015
 type: epic
 title: "Model auto mode: route each prompt to a configured model with a decision model (System One / Jev API: Ollama, TypeSafe Jev or any compatible provider)"
-status: in_review
+status: done
 priority: high
 author: mcp
 labels: [model-routing, ollama, config, agent, webui, tui, acp]
 created: 2026-09-30T19:33:11Z
-updated: 2026-09-30T21:00:23Z
+updated: 2026-10-14T20:13:30Z
 started: 2026-09-30T21:00:23Z
+closed: 2026-10-14T20:13:30Z
 ---
 
 ## Description

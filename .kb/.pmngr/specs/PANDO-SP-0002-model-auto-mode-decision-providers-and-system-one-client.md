@@ -2,13 +2,14 @@
 id: PANDO-SP-0002
 type: spec
 title: "Model auto mode: decision providers and System One client"
-status: in_review
+status: done
 priority: high
 author: mcp
 labels: [model-routing, ollama, providers, PANDO-EP-0015]
 created: 2026-09-30T20:01:14Z
-updated: 2026-10-01T07:57:58Z
+updated: 2026-10-14T20:13:30Z
 started: 2026-09-30T21:06:56Z
+closed: 2026-10-14T20:13:30Z
 requirements:
   R1:
     status: done

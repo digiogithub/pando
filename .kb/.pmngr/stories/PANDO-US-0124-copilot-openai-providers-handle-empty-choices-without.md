@@ -2,13 +2,14 @@
 id: PANDO-US-0124
 type: story
 title: Copilot/OpenAI providers handle empty choices without panicking
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0021
 author: mcp
 labels: [copilot, bug, provider]
 created: 2026-10-09T12:25:14Z
-updated: 2026-10-09T12:25:14Z
+updated: 2026-10-14T20:14:17Z
+closed: 2026-10-14T20:14:17Z
 ---
 
 ## Description

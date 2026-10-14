@@ -2,12 +2,13 @@
 id: PANDO-SP-0006
 type: spec
 title: "Decision model: shared engine and consumers"
-status: backlog
+status: done
 priority: high
 author: mcp
 labels: [decision-model, model-routing, PANDO-EP-0018]
 created: 2026-10-01T17:06:48Z
-updated: 2026-10-01T17:10:58Z
+updated: 2026-10-14T20:15:23Z
+closed: 2026-10-14T20:15:23Z
 requirements:
   R1:
     status: backlog

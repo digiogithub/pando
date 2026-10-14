@@ -2,15 +2,16 @@
 id: PANDO-US-0098
 type: story
 title: "Relevance filter core: `rag.RelevanceFilter` driven by the decision model drops non-useful code/KB/event candidates and memories; fail-open, token-aware batching, Remembrances config"
-status: in_review
+status: done
 priority: high
 parent: PANDO-EP-0018
 author: mcp
 labels: [decision-model, remembrances, context-enrichment, memory, rag]
 estimate: 8
 created: 2026-10-01T16:19:43Z
-updated: 2026-10-01T16:44:24Z
+updated: 2026-10-14T20:13:30Z
 started: 2026-10-01T16:44:24Z
+closed: 2026-10-14T20:13:30Z
 ---
 
 ## Description

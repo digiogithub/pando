@@ -2,14 +2,15 @@
 id: PANDO-T-0012
 type: task
 title: "LSP hygiene: restartLSPClient closes old client, handle fsnotify.NewWatcher error, Create-stat error must not exit watcher loop"
-status: in_review
+status: done
 priority: high
 parent: PANDO-US-0125
 author: mcp
 labels: [lsp, watcher, bug]
 created: 2026-10-09T12:25:37Z
-updated: 2026-10-09T12:30:41Z
+updated: 2026-10-14T20:14:05Z
 started: 2026-10-09T12:30:41Z
+closed: 2026-10-14T20:14:05Z
 ---
 
 ## Description

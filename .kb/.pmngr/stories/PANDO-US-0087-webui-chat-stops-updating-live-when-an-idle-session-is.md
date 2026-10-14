@@ -2,14 +2,15 @@
 id: PANDO-US-0087
 type: story
 title: WebUI chat stops updating live when an idle session is resumed after delegated subagents finish
-status: in_review
+status: done
 priority: high
 parent: PANDO-EP-0016
 author: mcp
 labels: [bug, webui, sse, delegation, api]
 created: 2026-10-01T09:48:40Z
-updated: 2026-10-01T13:02:21Z
+updated: 2026-10-14T20:15:01Z
 started: 2026-10-01T13:02:21Z
+closed: 2026-10-14T20:15:01Z
 ---
 
 ## Description

@@ -2,12 +2,13 @@
 id: PANDO-SP-0009
 type: spec
 title: "Decision model: settings surfaces (WebUI, TUI, ACP)"
-status: backlog
+status: done
 priority: medium
 author: mcp
 labels: [decision-model, webui, tui, acp, PANDO-EP-0018]
 created: 2026-10-01T17:06:48Z
-updated: 2026-10-01T17:11:14Z
+updated: 2026-10-14T20:15:23Z
+closed: 2026-10-14T20:15:23Z
 requirements:
   R1:
     status: backlog

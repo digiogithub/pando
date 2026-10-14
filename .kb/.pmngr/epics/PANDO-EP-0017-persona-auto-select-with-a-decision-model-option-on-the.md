@@ -2,13 +2,14 @@
 id: PANDO-EP-0017
 type: epic
 title: "Persona auto-select with a decision model: option on the `persona-selector` agent to classify with the System One / Jev router of model auto mode, keeping the agent's LLM as fallback"
-status: in_review
+status: done
 priority: high
 author: mcp
 labels: [persona, model-routing, ollama, config, agent, webui, tui, acp]
 created: 2026-10-01T14:31:10Z
-updated: 2026-10-01T15:00:47Z
+updated: 2026-10-14T20:13:30Z
 started: 2026-10-01T15:00:47Z
+closed: 2026-10-14T20:13:30Z
 ---
 
 ## Description

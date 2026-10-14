@@ -2,7 +2,7 @@
 id: PANDO-US-0099
 type: story
 title: "Agent integration and observability: filter wired into the turn, `Context filter: kept n/m` notice in every client only when something is dropped, `ContextFiltered` event, telemetry, doctor"
-status: in_review
+status: done
 priority: high
 parent: PANDO-EP-0018
 author: mcp
@@ -16,8 +16,9 @@ labels:
   - tui
 estimate: 5
 created: 2026-10-01T16:19:43Z
-updated: 2026-10-01T16:50:55Z
+updated: 2026-10-14T20:13:30Z
 started: 2026-10-01T16:50:55Z
+closed: 2026-10-14T20:13:30Z
 ---
 
 ## Description

@@ -2,14 +2,15 @@
 id: PANDO-T-0015
 type: task
 title: Cross-process per-project lock so only one Pando process (incl. mcp-server) runs the code-index watcher
-status: in_review
+status: done
 priority: high
 parent: PANDO-US-0125
 author: mcp
 labels: [watcher, mcp-server, macos]
 created: 2026-10-09T12:28:44Z
-updated: 2026-10-09T12:30:18Z
+updated: 2026-10-14T20:14:05Z
 started: 2026-10-09T12:30:18Z
+closed: 2026-10-14T20:14:05Z
 ---
 
 ## Description

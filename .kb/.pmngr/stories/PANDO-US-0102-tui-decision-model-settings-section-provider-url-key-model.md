@@ -2,15 +2,16 @@
 id: PANDO-US-0102
 type: story
 title: "TUI: \"Decision model\" settings section (provider, URL, key, model discovery/pull/test, health); info rows and filter toggles in Model auto mode, persona-selector and Remembrances; status notice"
-status: in_review
+status: done
 priority: medium
 parent: PANDO-EP-0018
 author: mcp
 labels: [decision-model, tui, settings]
 estimate: 5
 created: 2026-10-01T16:20:29Z
-updated: 2026-10-01T16:56:14Z
+updated: 2026-10-14T20:13:30Z
 started: 2026-10-01T16:56:14Z
+closed: 2026-10-14T20:13:30Z
 ---
 
 ## Description

@@ -2,12 +2,13 @@
 id: PANDO-SP-0005
 type: spec
 title: "Decision model: configuration, migration and REST"
-status: backlog
+status: done
 priority: high
 author: mcp
 labels: [decision-model, config, PANDO-EP-0018]
 created: 2026-10-01T17:06:38Z
-updated: 2026-10-01T17:10:58Z
+updated: 2026-10-14T20:15:23Z
+closed: 2026-10-14T20:15:23Z
 requirements:
   R1:
     status: backlog

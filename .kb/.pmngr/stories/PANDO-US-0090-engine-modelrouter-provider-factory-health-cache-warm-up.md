@@ -2,15 +2,16 @@
 id: PANDO-US-0090
 type: story
 title: "Engine: `modelrouter` provider factory, health cache, warm-up and engine cache keyed on `DecisionModelConfig`; model auto mode and persona auto-select migrated as consumers with unchanged behaviour"
-status: in_review
+status: done
 priority: high
 parent: PANDO-EP-0018
 author: mcp
 labels: [decision-model, model-routing, persona, engine]
 estimate: 5
 created: 2026-10-01T16:18:26Z
-updated: 2026-10-01T16:37:00Z
+updated: 2026-10-14T20:13:30Z
 started: 2026-10-01T16:37:00Z
+closed: 2026-10-14T20:13:30Z
 ---
 
 ## Description

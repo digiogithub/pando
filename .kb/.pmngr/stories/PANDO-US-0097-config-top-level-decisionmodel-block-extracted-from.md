@@ -2,15 +2,16 @@
 id: PANDO-US-0097
 type: story
 title: "Config: top-level `decisionModel` block extracted from `modelAutoMode.router`, one-shot migration, validation, encrypted key, REST + legacy aliases, JSON schema"
-status: in_review
+status: done
 priority: high
 parent: PANDO-EP-0018
 author: mcp
 labels: [decision-model, config, api, migration]
 estimate: 5
 created: 2026-10-01T16:19:43Z
-updated: 2026-10-01T16:33:26Z
+updated: 2026-10-14T20:13:43Z
 started: 2026-10-01T16:33:26Z
+closed: 2026-10-14T20:13:43Z
 ---
 
 ## Description

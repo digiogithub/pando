@@ -2,12 +2,13 @@
 id: PANDO-US-0050
 type: story
 title: Verify the macOS Seatbelt sandbox backend on real hardware
-status: backlog
+status: done
 priority: high
 labels: [sandbox, macos, security]
 estimate: 3
 created: 2026-09-18T11:01:14Z
-updated: 2026-09-18T11:01:14Z
+updated: 2026-10-14T20:03:37Z
+closed: 2026-10-14T20:03:31Z
 ---
 
 ## Description
@@ -18,11 +19,11 @@ PANDO-EP-0009 shipped the macOS backend (`internal/sandbox/sbpl.go`, `wrapper_da
 
 ## Acceptance Criteria
 
-- [ ] `go test ./internal/sandbox -count=1 -v` passes on macOS 14/15/26 (arm64, ideally also Intel) with the probe reporting `seatbelt` enforced and full protection.
-- [ ] `python3 -m unittest tests/test_sandbox_cli.py` passes on macOS.
-- [ ] The `sandbox-e2e` GitHub workflow macOS job is green.
-- [ ] Verified inside the signed, notarized desktop app and the signed CLI zip (hardened runtime, `scripts/pando.entitlements` unchanged).
-- [ ] Real workflows in workspace-write: `go build`, `npm install`, `git commit`, `brew`, `xcrun clang`, zsh login shell.
+- [x] `go test ./internal/sandbox -count=1 -v` passes on macOS 14/15/26 (arm64, ideally also Intel) with the probe reporting `seatbelt` enforced and full protection.
+- [x] `python3 -m unittest tests/test_sandbox_cli.py` passes on macOS.
+- [x] The `sandbox-e2e` GitHub workflow macOS job is green.
+- [x] Verified inside the signed, notarized desktop app and the signed CLI zip (hardened runtime, `scripts/pando.entitlements` unchanged).
+- [x] Real workflows in workspace-write: `go build`, `npm install`, `git commit`, `brew`, `xcrun clang`, zsh login shell.
 
 ## Notes
 

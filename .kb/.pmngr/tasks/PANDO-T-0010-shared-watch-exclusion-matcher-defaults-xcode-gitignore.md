@@ -2,14 +2,15 @@
 id: PANDO-T-0010
 type: task
 title: "Shared watch exclusion matcher: defaults + Xcode, .gitignore, config watchExclude; apply in code-index, LSP and bootstrap watchers"
-status: in_review
+status: done
 priority: high
 parent: PANDO-US-0125
 author: mcp
 labels: [watcher, config, macos]
 created: 2026-10-09T12:25:37Z
-updated: 2026-10-09T12:29:17Z
+updated: 2026-10-14T20:14:05Z
 started: 2026-10-09T12:29:17Z
+closed: 2026-10-14T20:14:05Z
 ---
 
 ## Description

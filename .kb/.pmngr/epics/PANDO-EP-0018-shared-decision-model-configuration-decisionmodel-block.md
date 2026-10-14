@@ -2,7 +2,7 @@
 id: PANDO-EP-0018
 type: epic
 title: Shared decision model configuration (`decisionModel` block) used by model auto mode, persona auto-select and a new relevance filter for injected context (code, KB, events, memories)
-status: backlog
+status: done
 priority: high
 author: mcp
 labels:
@@ -16,7 +16,8 @@ labels:
   - tui
   - acp
 created: 2026-10-01T16:15:51Z
-updated: 2026-10-01T16:15:51Z
+updated: 2026-10-14T20:13:30Z
+closed: 2026-10-14T20:13:30Z
 ---
 
 ## Description

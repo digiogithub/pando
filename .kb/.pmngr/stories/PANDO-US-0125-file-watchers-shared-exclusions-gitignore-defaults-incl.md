@@ -2,13 +2,14 @@
 id: PANDO-US-0125
 type: story
 title: "File watchers: shared exclusions (.gitignore, defaults incl. Xcode, watchExclude), primary-only code watcher, shared LSP watcher, FD hygiene"
-status: backlog
+status: done
 priority: high
 parent: PANDO-EP-0021
 author: mcp
 labels: [watcher, macos, bug, lsp, config]
 created: 2026-10-09T12:25:14Z
-updated: 2026-10-09T12:25:14Z
+updated: 2026-10-14T20:14:17Z
+closed: 2026-10-14T20:14:17Z
 ---
 
 ## Description

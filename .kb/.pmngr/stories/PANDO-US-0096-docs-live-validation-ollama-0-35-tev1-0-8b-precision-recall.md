@@ -2,15 +2,16 @@
 id: PANDO-US-0096
 type: story
 title: Docs, live validation (Ollama 0.35 `tev1:0.8b`), precision/recall benchmark of the relevance filter on a labelled set, spec coverage and KB summary
-status: in_review
+status: done
 priority: medium
 parent: PANDO-EP-0018
 author: mcp
 labels: [decision-model, docs, benchmark, spec-coverage, kb]
 estimate: 5
 created: 2026-10-01T16:18:26Z
-updated: 2026-10-01T17:12:57Z
+updated: 2026-10-14T20:13:30Z
 started: 2026-10-01T17:12:57Z
+closed: 2026-10-14T20:13:30Z
 ---
 
 ## Description

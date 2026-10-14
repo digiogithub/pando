@@ -2,13 +2,14 @@
 id: PANDO-EP-0016
 type: epic
 title: Live updates for runs resumed after delegated subagents finish (WebUI and ACP)
-status: in_review
+status: done
 priority: high
 author: mcp
 labels: [bug, delegation, webui, acp]
 created: 2026-10-01T12:26:30Z
-updated: 2026-10-01T13:02:21Z
+updated: 2026-10-14T20:15:01Z
 started: 2026-10-01T13:02:21Z
+closed: 2026-10-14T20:15:01Z
 ---
 
 ## Description

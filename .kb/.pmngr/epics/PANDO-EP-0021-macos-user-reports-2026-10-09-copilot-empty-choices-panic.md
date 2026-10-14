@@ -2,12 +2,13 @@
 id: PANDO-EP-0021
 type: epic
 title: "macOS user reports 2026-10-09: Copilot empty-choices panic and file-watcher FD exhaustion"
-status: backlog
+status: done
 priority: high
 author: mcp
 labels: [macos, bug, watcher, copilot]
 created: 2026-10-09T12:25:05Z
-updated: 2026-10-09T12:25:05Z
+updated: 2026-10-14T20:15:15Z
+closed: 2026-10-14T20:15:15Z
 ---
 
 ## Description

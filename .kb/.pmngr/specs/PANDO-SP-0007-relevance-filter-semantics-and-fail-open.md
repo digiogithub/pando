@@ -2,12 +2,13 @@
 id: PANDO-SP-0007
 type: spec
 title: "Relevance filter: semantics and fail-open"
-status: backlog
+status: done
 priority: high
 author: mcp
 labels: [decision-model, remembrances, context-enrichment, PANDO-EP-0018]
 created: 2026-10-01T17:06:48Z
-updated: 2026-10-01T17:12:19Z
+updated: 2026-10-14T20:15:23Z
+closed: 2026-10-14T20:15:23Z
 requirements:
   R1:
     status: backlog

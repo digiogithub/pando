@@ -2,14 +2,15 @@
 id: PANDO-T-0009
 type: task
 title: Guard empty Choices in copilot.go/openai.go send+stream, retry/err, rename title recover label, tests
-status: in_review
+status: done
 priority: high
 parent: PANDO-US-0124
 author: mcp
 labels: [copilot, bug]
 created: 2026-10-09T12:25:37Z
-updated: 2026-10-09T12:27:41Z
+updated: 2026-10-14T20:14:05Z
 started: 2026-10-09T12:27:41Z
+closed: 2026-10-14T20:14:05Z
 ---
 
 ## Description

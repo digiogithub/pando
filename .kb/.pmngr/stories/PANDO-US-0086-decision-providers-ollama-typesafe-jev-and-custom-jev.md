@@ -2,15 +2,16 @@
 id: PANDO-US-0086
 type: story
 title: "Decision providers: Ollama, TypeSafe Jev and custom Jev-compatible backends — discovery of decision models, health check and \"Test connection\""
-status: in_review
+status: done
 priority: high
 parent: PANDO-EP-0015
 author: mcp
 labels: [model-routing, ollama, providers, api]
 estimate: 5
 created: 2026-09-30T19:59:53Z
-updated: 2026-09-30T21:00:23Z
+updated: 2026-10-14T20:13:30Z
 started: 2026-09-30T21:00:23Z
+closed: 2026-10-14T20:13:30Z
 ---
 
 ## Description

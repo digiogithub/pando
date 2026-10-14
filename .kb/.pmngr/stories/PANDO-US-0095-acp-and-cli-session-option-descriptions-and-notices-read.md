@@ -2,15 +2,16 @@
 id: PANDO-US-0095
 type: story
 title: "ACP and CLI: session option descriptions and notices read `decisionModel`; `pando_setup decision-model` subcommand (show/set/test) and ACP `available_commands` entry; `pando init` template; ACP docs"
-status: in_review
+status: done
 priority: medium
 parent: PANDO-EP-0018
 author: mcp
 labels: [decision-model, acp, cli, pando-setup]
 estimate: 5
 created: 2026-10-01T16:18:26Z
-updated: 2026-10-01T16:56:53Z
+updated: 2026-10-14T20:13:30Z
 started: 2026-10-01T16:56:53Z
+closed: 2026-10-14T20:13:30Z
 ---
 
 ## Description

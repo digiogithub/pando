@@ -2,14 +2,15 @@
 id: PANDO-T-0013
 type: task
 title: Single shared fsnotify workspace watcher fanned out to all LSP clients
-status: in_review
+status: done
 priority: medium
 parent: PANDO-US-0125
 author: mcp
 labels: [lsp, watcher]
 created: 2026-10-09T12:25:37Z
-updated: 2026-10-09T12:33:30Z
+updated: 2026-10-14T20:14:05Z
 started: 2026-10-09T12:33:30Z
+closed: 2026-10-14T20:14:05Z
 ---
 
 ## Description

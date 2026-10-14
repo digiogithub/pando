@@ -2,15 +2,16 @@
 id: PANDO-US-0100
 type: story
 title: "WebUI: \"Decision model\" settings page; read-only \"decision model in use\" row in Model auto mode, persona-selector and Remembrances; filter toggles; context-filter chat notice"
-status: in_review
+status: done
 priority: medium
 parent: PANDO-EP-0018
 author: mcp
 labels: [decision-model, webui, settings, i18n]
 estimate: 8
 created: 2026-10-01T16:19:43Z
-updated: 2026-10-01T17:01:06Z
+updated: 2026-10-14T20:13:30Z
 started: 2026-10-01T17:01:06Z
+closed: 2026-10-14T20:13:30Z
 ---
 
 ## Description
