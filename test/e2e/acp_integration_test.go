@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -112,17 +111,20 @@ func TestSessionTimeout(t *testing.T) {
 	server := startTestACPServerWithTimeout(t, 500*time.Millisecond)
 	defer server.Close()
 
-	sessionID := initializeClient(t, server.URL)
+	initializeClient(t, server.URL)
 
-	// Wait for session to timeout
-	time.Sleep(1 * time.Second)
-
-	// Session should be cleaned up
-	stats := getServerStats(t, server.URL)
-	if activeSessions, ok := stats["active_sessions"].(float64); ok {
-		if int(activeSessions) != 0 {
-			t.Errorf("Expected 0 active sessions after timeout, got %d", int(activeSessions))
+	// The idle session must be swept shortly after the timeout.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		stats := getServerStats(t, server.URL)
+		activeSessions, _ := stats["active_sessions"].(float64)
+		if int(activeSessions) == 0 {
+			break
 		}
+		if time.Now().After(deadline) {
+			t.Fatalf("Expected 0 active sessions after timeout, got %d", int(activeSessions))
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -280,7 +282,7 @@ func startTestACPServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/mesnada/acp/events", transport.HandleSSE)
 	mux.HandleFunc("/mesnada/acp/health", transport.HandleHealth)
 	mux.HandleFunc("/api/acp/sessions", func(w http.ResponseWriter, r *http.Request) {
-		sessions := transport.GetSessions()
+		sessions := transport.ListSessions()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"sessions": sessions,
@@ -312,20 +314,16 @@ func startTestACPServerWithTimeout(t *testing.T, timeout time.Duration) *httptes
 	mux.HandleFunc("/mesnada/acp/health", transport.HandleHealth)
 	mux.HandleFunc("/api/acp/stats", func(w http.ResponseWriter, r *http.Request) {
 		stats := transport.GetStats()
-		w.Header.Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(stats)
 	})
 
 	server := httptest.NewServer(mux)
 
-	// Start cleanup goroutine
-	go func() {
-		ticker := time.NewTicker(100 * time.Millisecond)
-		defer ticker.Stop()
-		for range ticker.C {
-			// This would call transport cleanup method if available
-		}
-	}()
+	// Sweep idle sessions for the lifetime of the test.
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go transport.Cleanup(ctx)
 
 	return server
 }
