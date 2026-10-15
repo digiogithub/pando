@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/digiogithub/pando/internal/message"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
@@ -52,9 +53,12 @@ func TestReplayIncludesRoutingNotice(t *testing.T) {
 	}
 
 	// A fresh agent loads the session: the persisted notice is replayed.
-	updates.Reset()
+	// LoadSession replays the history on its own goroutine, so collect the
+	// updates in a goroutine-safe buffer and wait for that replay rather than
+	// running a second, concurrent one.
+	replayed := &syncBuffer{}
 	agent2 := NewPandoACPAgent("1.0.0-test", "/tmp", log.New(io.Discard, "", 0), &mockAgentService{currentModel: "coder-model"}, sessions, nil)
-	agent2.conn = acpsdk.NewAgentSideConnection(NewSimpleACPAgent("1.0.0-test", log.New(io.Discard, "", 0)), &updates, bytes.NewReader(nil))
+	agent2.conn = acpsdk.NewAgentSideConnection(NewSimpleACPAgent("1.0.0-test", log.New(io.Discard, "", 0)), replayed, bytes.NewReader(nil))
 	if _, err := agent2.LoadSession(ctx, acpsdk.LoadSessionRequest{SessionId: acpsdk.SessionId(sid), Cwd: "/tmp"}); err != nil {
 		t.Fatalf("LoadSession: %v", err)
 	}
@@ -62,12 +66,20 @@ func TestReplayIncludesRoutingNotice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent2.streamSessionHistory(ctx, acpsdk.SessionId(sid), sid)
 
+	agentChunks := func() []string {
+		var texts []string
+		for _, r := range decodeSessionUpdateRecords(t, replayed.String()) {
+			if r.Kind == "agent_message_chunk" {
+				texts = append(texts, r.Text)
+			}
+		}
+		return texts
+	}
 	var texts []string
-	for _, r := range decodeSessionUpdateRecords(t, updates.String()) {
-		if r.Kind == "agent_message_chunk" {
-			texts = append(texts, r.Text)
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if texts = agentChunks(); len(texts) >= 2 {
+			break
 		}
 	}
 	if len(texts) != 2 || texts[0] != "hello" || !strings.HasPrefix(texts[1], "Auto: code") {

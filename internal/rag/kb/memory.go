@@ -494,9 +494,13 @@ func (s *KBStore) GetMemoriesForInjection(ctx context.Context, query string, lim
 		}
 	}
 
-	// Sort descending by score.
+	// Sort descending by score; ties fall back to the file path so the
+	// injected block is stable for the same data.
 	sort.Slice(merged, func(i, j int) bool {
-		return merged[i].Score > merged[j].Score
+		if merged[i].Score != merged[j].Score {
+			return merged[i].Score > merged[j].Score
+		}
+		return merged[i].Document.FilePath < merged[j].Document.FilePath
 	})
 
 	// Trim to limit.
