@@ -114,6 +114,7 @@ func (s *userInputService) Ask(req CreateAskRequest) AskResponse {
 
 	respCh := make(chan AskResponse, 1)
 	s.pendingRequests.Store(request.ID, respCh)
+	// Respond already removes both entries; these cover a return without one.
 	defer s.pendingRequests.Delete(request.ID)
 
 	s.trackPending(request)
@@ -126,9 +127,31 @@ func (s *userInputService) Ask(req CreateAskRequest) AskResponse {
 	return resp
 }
 
+// Respond delivers the first response for a request and drops the request from
+// the pending set before returning, so a client polling the pending list right
+// after answering cannot see it again. Later responses for the same id are
+// no-ops (and never block).
 func (s *userInputService) Respond(id string, resp AskResponse) {
-	if respCh, ok := s.pendingRequests.Load(id); ok {
-		respCh.(chan AskResponse) <- resp
+	respCh, ok := s.pendingRequests.LoadAndDelete(id)
+	if !ok {
+		return
+	}
+	s.removePendingByID(id)
+	respCh.(chan AskResponse) <- resp // buffered (1) and only ever sent once
+}
+
+// removePendingByID clears a tracked request when its session is not known.
+func (s *userInputService) removePendingByID(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for sessionID, bySession := range s.pendingBySession {
+		if _, ok := bySession[id]; ok {
+			delete(bySession, id)
+			if len(bySession) == 0 {
+				delete(s.pendingBySession, sessionID)
+			}
+			return
+		}
 	}
 }
 
