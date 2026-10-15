@@ -9,6 +9,14 @@ import { RUN_SEQ_STALE } from '../services/runSeq'
 /** page size used by the session list; the API caps a request at 500 */
 export const SESSIONS_PAGE_SIZE = 100
 
+/** how many answered prompt ids are remembered to ignore late re-deliveries */
+const RESOLVED_IDS_LIMIT = 200
+
+function markResolved(ids: string[], id: string): string[] {
+  if (ids.includes(id)) return ids
+  return [...ids, id].slice(-RESOLVED_IDS_LIMIT)
+}
+
 interface SessionStore {
   sessions: Session[]
   /** total sessions on the server (not only the loaded page) */
@@ -28,6 +36,12 @@ interface SessionStore {
   pendingPermissions: PermissionRequest[]
   /** pending AskUserQuestion prompts awaiting a user answer */
   pendingQuestions: QuestionRequest[]
+  /**
+   * ids of permission/question prompts the user already answered. A poll that
+   * was in flight, or an SSE replay, can deliver one again before the server
+   * has dropped it; those must not reopen the dialog. Bounded, oldest first.
+   */
+  resolvedRequestIds: string[]
   /** whether the active session auto-approves tool permissions ("auto mode") */
   autoApprove: boolean
   fetchSessions: () => Promise<void>
@@ -89,6 +103,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   isStreaming: false,
   pendingPermissions: [],
   pendingQuestions: [],
+  resolvedRequestIds: [],
   autoApprove: false,
 
   fetchSessions: async () => {
@@ -245,14 +260,17 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   addPermissionRequest: (req) =>
     set((s) =>
-      s.pendingPermissions.some((p) => p.id === req.id)
+      s.pendingPermissions.some((p) => p.id === req.id) || s.resolvedRequestIds.includes(req.id)
         ? s
         : { pendingPermissions: [...s.pendingPermissions, req] }
     ),
 
   respondPermission: async (id, sessionId, action) => {
     // Optimistically remove the prompt; the agent unblocks server-side.
-    set((s) => ({ pendingPermissions: s.pendingPermissions.filter((p) => p.id !== id) }))
+    set((s) => ({
+      pendingPermissions: s.pendingPermissions.filter((p) => p.id !== id),
+      resolvedRequestIds: markResolved(s.resolvedRequestIds, id),
+    }))
     try {
       await api.post('/api/v1/permissions/respond', { id, sessionId, action })
     } catch {
@@ -262,14 +280,17 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   addQuestionRequest: (req) =>
     set((s) =>
-      s.pendingQuestions.some((q) => q.id === req.id)
+      s.pendingQuestions.some((q) => q.id === req.id) || s.resolvedRequestIds.includes(req.id)
         ? s
         : { pendingQuestions: [...s.pendingQuestions, req] }
     ),
 
   respondQuestion: async (id, sessionId, answers) => {
     // Optimistically remove the prompt; the agent unblocks server-side.
-    set((s) => ({ pendingQuestions: s.pendingQuestions.filter((q) => q.id !== id) }))
+    set((s) => ({
+      pendingQuestions: s.pendingQuestions.filter((q) => q.id !== id),
+      resolvedRequestIds: markResolved(s.resolvedRequestIds, id),
+    }))
     try {
       await api.post('/api/v1/questions/respond', { id, sessionId, answers })
     } catch {
@@ -278,7 +299,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
 
   cancelQuestion: async (id, sessionId) => {
-    set((s) => ({ pendingQuestions: s.pendingQuestions.filter((q) => q.id !== id) }))
+    set((s) => ({
+      pendingQuestions: s.pendingQuestions.filter((q) => q.id !== id),
+      resolvedRequestIds: markResolved(s.resolvedRequestIds, id),
+    }))
     try {
       await api.post('/api/v1/questions/respond', { id, sessionId, cancelled: true })
     } catch {
@@ -303,8 +327,9 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         if (s.activeSessionId !== sessionId) return s
         const perms = data.permissions ?? []
         const questions = data.questions ?? []
-        const newPerms = perms.filter((p) => !s.pendingPermissions.some((x) => x.id === p.id))
-        const newQuestions = questions.filter((q) => !s.pendingQuestions.some((x) => x.id === q.id))
+        const isNew = (id: string) => !s.resolvedRequestIds.includes(id)
+        const newPerms = perms.filter((p) => isNew(p.id) && !s.pendingPermissions.some((x) => x.id === p.id))
+        const newQuestions = questions.filter((q) => isNew(q.id) && !s.pendingQuestions.some((x) => x.id === q.id))
         // The server owns the run state: a dropped SSE stream must not leave the
         // session marked as finished while the agent keeps working (or stays
         // blocked on a tool). This is what lets the UI reattach to the stream.

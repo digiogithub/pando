@@ -121,3 +121,49 @@ func TestPendingRequests_ReplayAndCleanup(t *testing.T) {
 		t.Fatalf("expected pending requests cleared, got %d", len(pending))
 	}
 }
+
+func TestRespond_RemovesPendingSynchronouslyAndIsIdempotent(t *testing.T) {
+	svc := NewService()
+	events := svc.Subscribe(context.Background())
+
+	done := make(chan AskResponse, 1)
+	go func() {
+		done <- svc.Ask(CreateAskRequest{SessionID: "s1", Questions: sampleQuestions()})
+	}()
+
+	var reqID string
+	select {
+	case ev := <-events:
+		reqID = ev.Payload.ID
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for the published request")
+	}
+
+	svc.Respond(reqID, AskResponse{Answers: []Answer{{QuestionID: "q", Selected: []string{"A"}}}})
+	// No waiting for Ask to wake up: the request must already be gone.
+	if got := svc.PendingRequests("s1"); len(got) != 0 {
+		t.Fatalf("pending after Respond = %d, want 0", len(got))
+	}
+
+	// A duplicate response must neither block nor change the outcome.
+	dup := make(chan struct{})
+	go func() {
+		svc.Respond(reqID, AskResponse{Cancelled: true})
+		svc.Cancel(reqID)
+		close(dup)
+	}()
+	select {
+	case <-dup:
+	case <-time.After(2 * time.Second):
+		t.Fatal("duplicate Respond blocked")
+	}
+
+	select {
+	case resp := <-done:
+		if resp.Cancelled || len(resp.Answers) != 1 {
+			t.Fatalf("unexpected response %+v", resp)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Ask did not return")
+	}
+}
