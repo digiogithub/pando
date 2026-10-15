@@ -14,6 +14,9 @@ func (s *LLMProxyServer) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/chat/completions", s.handleChatCompletions)
 	mux.HandleFunc("POST /v1/messages", s.handleAnthropicMessages)
 	mux.HandleFunc("POST /v1/embeddings", s.handleEmbeddings)
+	if s.config.Convert != nil {
+		mux.Handle("POST /v1/convert", s.config.Convert)
+	}
 }
 
 // writeJSON writes a JSON response with the given status code.

@@ -34,6 +34,8 @@ pando convert report.docx              # prints Markdown to stdout
 pando convert data.xlsx -o data.md     # writes to a file
 pando convert https://example.com/page # converts a web page
 pando convert --list-formats           # list supported input formats
+cat a.pdf | pando convert --stdin-format pdf   # reads the document from stdin
+# HTTP: pando llm-proxy --api-key K --convert serves POST /v1/convert (docs/convert-endpoint.md)
 
 # Remote diagnostics: off by default, see docs/telemetry.md
 pando telemetry status

@@ -3,14 +3,17 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/config"
+	"github.com/digiogithub/pando/internal/convert"
 	"github.com/digiogithub/pando/internal/instanceregistry"
 	"github.com/digiogithub/pando/internal/llmproxy"
 	"github.com/digiogithub/pando/internal/logging"
@@ -36,12 +39,19 @@ Compatible with any OpenAI client (LiteLLM, Continue.dev, etc.).`,
   pando llm-proxy --api-key mysecretkey
 
   # Debug mode
-  pando llm-proxy --debug`,
+  pando llm-proxy --debug
+
+  # Also serve POST /v1/convert (documents to Markdown)
+  pando llm-proxy --api-key mysecretkey --convert`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		host, _ := cmd.Flags().GetString("host")
 		port, _ := cmd.Flags().GetInt("port")
 		debug, _ := cmd.Flags().GetBool("debug")
 		apiKey, _ := cmd.Flags().GetString("api-key")
+		convertHandler, err := llmProxyConvertHandler(cmd, host, apiKey)
+		if err != nil {
+			return err
+		}
 
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -64,10 +74,11 @@ Compatible with any OpenAI client (LiteLLM, Continue.dev, etc.).`,
 		defer func() { _ = instanceregistry.Revoke(instanceID) }()
 
 		cfg := llmproxy.ProxyConfig{
-			Host:   host,
-			Port:   port,
-			Debug:  debug,
-			APIKey: apiKey,
+			Host:    host,
+			Port:    port,
+			Debug:   debug,
+			APIKey:  apiKey,
+			Convert: convertHandler,
 		}
 
 		server := llmproxy.NewServer(cfg)
@@ -113,8 +124,55 @@ Compatible with any OpenAI client (LiteLLM, Continue.dev, etc.).`,
 	},
 }
 
+// llmProxyConvertHandler builds the /v1/convert handler from the --convert*
+// flags, or returns nil when --convert is off. The endpoint converts
+// untrusted uploads, so it refuses to start without an API key unless the
+// proxy only listens on loopback.
+func llmProxyConvertHandler(cmd *cobra.Command, host, apiKey string) (http.Handler, error) {
+	enabled, _ := cmd.Flags().GetBool("convert")
+	if !enabled {
+		return nil, nil
+	}
+	if apiKey == "" && !isLoopbackHost(host) {
+		return nil, fmt.Errorf("--convert on a non-loopback host (%s) requires --api-key", host)
+	}
+	maxBytes, _ := cmd.Flags().GetInt64("convert-max-bytes")
+	maxOutput, _ := cmd.Flags().GetInt64("convert-max-output-bytes")
+	timeout, _ := cmd.Flags().GetDuration("convert-timeout")
+	concurrent, _ := cmd.Flags().GetInt("convert-max-concurrent")
+	memLimit, _ := cmd.Flags().GetString("convert-memory-limit")
+	inProcess, _ := cmd.Flags().GetBool("convert-in-process")
+
+	var runner convert.Runner = convert.ProcessRunner{MemoryLimit: memLimit}
+	if inProcess {
+		runner = convert.InProcessRunner{Converter: convert.New()}
+	}
+	return convert.NewHTTPHandler(convert.HTTPOptions{
+		MaxInputBytes:  maxBytes,
+		MaxOutputBytes: maxOutput,
+		Timeout:        timeout,
+		MaxConcurrent:  concurrent,
+		Runner:         runner,
+	}), nil
+}
+
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
+}
+
 func init() {
 	rootCmd.AddCommand(llmProxyCmd)
+	llmProxyCmd.Flags().Bool("convert", false, "Serve POST /v1/convert: convert an uploaded document (PDF, Office, HTML, …) to Markdown")
+	llmProxyCmd.Flags().Int64("convert-max-bytes", convert.DefaultMaxInputBytes, "Largest document /v1/convert accepts, in bytes")
+	llmProxyCmd.Flags().Int64("convert-max-output-bytes", convert.DefaultMaxOutputBytes, "Largest Markdown /v1/convert returns, in bytes")
+	llmProxyCmd.Flags().Duration("convert-timeout", convert.DefaultTimeout, "Time limit of one /v1/convert conversion, including the wait for a slot")
+	llmProxyCmd.Flags().Int("convert-max-concurrent", convert.DefaultMaxConcurrent, "Conversions /v1/convert runs at once")
+	llmProxyCmd.Flags().String("convert-memory-limit", "1GiB", "GOMEMLIMIT of each conversion child process (soft limit; empty for none)")
+	llmProxyCmd.Flags().Bool("convert-in-process", false, "Convert inside the proxy process instead of a killable child process (trusted input only)")
 	llmProxyCmd.Flags().String("host", "localhost", "Host to bind to")
 	llmProxyCmd.Flags().Int("port", 11434, "Port to listen on")
 	llmProxyCmd.Flags().Bool("debug", false, "Enable debug logging")
