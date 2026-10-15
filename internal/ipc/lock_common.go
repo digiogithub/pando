@@ -5,7 +5,9 @@ package ipc
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -92,4 +94,35 @@ func waitForLockInfoRetry(path string) (*LockInfo, error) {
 // half-written) is retried briefly instead of being reported as unparseable.
 func ReadLockForPath(workdir string) (*LockInfo, error) {
 	return waitForLockInfoRetry(lockFilePath(workdir))
+}
+
+// readHeldLockInfo reads the LockInfo through lockFile, the open lock file this
+// process holds as leader (see AcquireLock). Reading through the held handle
+// works on every platform, including Windows where the file is held open.
+func readHeldLockInfo(lockFile *os.File) (*LockInfo, error) {
+	st, err := lockFile.Stat()
+	if err != nil {
+		return nil, err
+	}
+	data := make([]byte, st.Size())
+	if _, err := lockFile.ReadAt(data, 0); err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	var info LockInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		return nil, fmt.Errorf("parse lock file: %w", err)
+	}
+	return &info, nil
+}
+
+// updateLockPorts records pubPort and rpcPort in the lock file this process
+// holds as leader, keeping every other field.
+func updateLockPorts(lockFile *os.File, pubPort, rpcPort int) error {
+	info, err := readHeldLockInfo(lockFile)
+	if err != nil {
+		return err
+	}
+	info.PubPort = pubPort
+	info.RPCPort = rpcPort
+	return writeLockInfo(lockFile, info)
 }

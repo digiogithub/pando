@@ -2424,6 +2424,9 @@ func (app *App) PromoteToPrimary(ctx context.Context, lockFile *os.File) error {
 	// Bind the ports recorded by the outgoing leader (see SetIPCSecondaryContext),
 	// not the ports derived from the path: other followers are already dialling
 	// those and an older leader may have derived them from the previous port range.
+	// If an unrelated process took them meanwhile, ClaimLeaderPorts moves to
+	// free ports and records them in the lock file, where followers re-read them.
+	app.ipcPubPort, app.ipcRPCPort = ipc.ClaimLeaderPorts(ctx, lockFile, app.ipcPubPort, app.ipcRPCPort)
 	if startErr := ipc.StartBusWithRetry(ctx, bus, app.ipcPubPort, app.ipcRPCPort); startErr != nil {
 		return fmt.Errorf("failover: start bus: %w", startErr)
 	}

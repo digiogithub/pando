@@ -6,9 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/digiogithub/pando/internal/api"
@@ -85,7 +83,12 @@ func runAppMode(cmd *cobra.Command) error {
 		return err
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	// Capture SIGINT/SIGTERM before any startup work, so a stop during
+	// startup winds down and runs the deferred cleanups (see notifyShutdown).
+	sigCtx, _, releaseShutdown := notifyShutdown("App")
+	defer releaseShutdown()
+
+	ctx, cancel := context.WithCancel(sigCtx)
 	defer cancel()
 
 	// --- IPC bootstrap: determine primary/secondary role, open DB, wire services ---
@@ -166,19 +169,6 @@ func runAppMode(cmd *cobra.Command) error {
 	defer func() { _ = instanceregistry.Revoke(instanceID) }()
 
 	wireIPCRole(ctx, rt, server.PandoApp(), instanceID, cwd, "app")
-
-	sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stopSignals()
-
-	// Watchdog: unconditionally force-exit if the process has not terminated
-	// within 6 seconds of receiving the shutdown signal, in case something in
-	// the graceful-shutdown path hangs (watcher WaitGroup, SSE connections, etc.).
-	go func() {
-		<-sigCtx.Done()
-		time.Sleep(6 * time.Second)
-		logging.Error("App shutdown watchdog: forced exit after 6s")
-		os.Exit(1)
-	}()
 
 	go func() {
 		<-sigCtx.Done()

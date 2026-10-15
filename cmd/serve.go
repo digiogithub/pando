@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"runtime"
 	"strconv"
 	"strings"
@@ -110,33 +109,16 @@ This is the backend for the Pando Desktop/Web UI.`,
 			}
 		}
 
-		// Capture SIGINT/SIGTERM before any startup work. Without a handler the
-		// default action kills the process on the spot, so a stop that lands
-		// while it starts up (opening the database, generating the TLS
-		// certificate, binding the IPC bus) would skip every deferred cleanup:
-		// the database would not be closed through the engine (leaving its
-		// shared log files behind) and the IPC lock file would not be removed.
-		// With the handler installed, startup winds down, the shutdown
-		// goroutine below stops the server before it serves, and the deferred
-		// cleanups run.
-		shutdownBase, requestShutdown := context.WithCancel(context.Background())
-		defer requestShutdown()
-		sigCtx, stopSignals := signal.NotifyContext(shutdownBase, syscall.SIGINT, syscall.SIGTERM)
-		defer stopSignals()
+		// Capture SIGINT/SIGTERM before any startup work (see notifyShutdown):
+		// a stop during startup winds down, the shutdown goroutine below stops
+		// the server before it serves, and the deferred cleanups run.
+		sigCtx, requestShutdown, releaseShutdown := notifyShutdown("Server")
+		defer releaseShutdown()
 
 		// The startup context ends with the shutdown signal, so startup steps
 		// that wait (the IPC bus bind retry) give up as soon as a stop arrives.
 		ctx, cancel := context.WithCancel(sigCtx)
 		defer cancel()
-
-		// Watchdog: unconditionally force-exit if the process has not terminated
-		// within 6 seconds of receiving the shutdown signal.
-		go func() {
-			<-sigCtx.Done()
-			time.Sleep(6 * time.Second)
-			logging.Error("Server shutdown watchdog: forced exit after 6s")
-			os.Exit(1)
-		}()
 
 		// --- IPC bootstrap: determine primary/secondary role, open DB, wire services ---
 		instanceID := uuid.New().String()

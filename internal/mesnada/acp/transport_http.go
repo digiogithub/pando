@@ -133,6 +133,14 @@ func (t *HTTPTransport) HandleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A message without a method is not a request the SDK answers (it only
+	// logs it), so forwarding it would block this handler forever waiting for
+	// a response that never comes.
+	if method, _ := jsonrpcReq["method"].(string); method == "" {
+		t.writeError(w, sessionID, -32600, "Invalid Request", "missing method")
+		return
+	}
+
 	t.logger.Printf("[ACP HTTP] Request: session=%s, method=%v", sessionID, jsonrpcReq["method"])
 
 	// Increment request counter
@@ -396,9 +404,14 @@ func (t *HTTPTransport) CloseSession(sessionID string) error {
 	return nil
 }
 
-// Cleanup removes idle sessions.
+// Cleanup removes idle sessions until ctx ends. It sweeps every 5 minutes, or
+// every idle timeout when that is shorter.
 func (t *HTTPTransport) Cleanup(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Minute)
+	interval := 5 * time.Minute
+	if t.idleTimeout > 0 && t.idleTimeout < interval {
+		interval = t.idleTimeout
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {

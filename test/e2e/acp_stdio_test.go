@@ -131,8 +131,8 @@ func (c *noopClient) WaitForTerminalExit(_ context.Context, _ acpsdk.WaitForTerm
 	return acpsdk.WaitForTerminalExitResponse{}, nil
 }
 
-func (c *noopClient) KillTerminalCommand(_ context.Context, _ acpsdk.KillTerminalCommandRequest) (acpsdk.KillTerminalCommandResponse, error) {
-	return acpsdk.KillTerminalCommandResponse{}, nil
+func (c *noopClient) KillTerminal(_ context.Context, _ acpsdk.KillTerminalRequest) (acpsdk.KillTerminalResponse, error) {
+	return acpsdk.KillTerminalResponse{}, nil
 }
 
 // startACPSubprocess starts pando acp as a subprocess and returns a client connection.
@@ -189,7 +189,7 @@ func TestACPInitialize(t *testing.T) {
 	resp, err := conn.Initialize(ctx, acpsdk.InitializeRequest{
 		ProtocolVersion: acpsdk.ProtocolVersionNumber,
 		ClientCapabilities: acpsdk.ClientCapabilities{
-			Fs: acpsdk.FileSystemCapability{
+			Fs: acpsdk.FileSystemCapabilities{
 				ReadTextFile:  true,
 				WriteTextFile: true,
 			},
@@ -307,7 +307,7 @@ func TestACPMultipleSessions(t *testing.T) {
 		if resp.SessionId == "" {
 			t.Fatalf("session %d: empty sessionId", i)
 		}
-		sessionIDs[i] = resp.SessionId
+		sessionIDs[i] = string(resp.SessionId)
 	}
 
 	// Verify all session IDs are unique

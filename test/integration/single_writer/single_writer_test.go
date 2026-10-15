@@ -3,7 +3,9 @@
 package single_writer_test
 
 import (
+	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +14,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/digiogithub/pando/internal/ipc"
 )
 
 // TestFirstInstanceCreatesLockAndDB verifies that when pando starts in
@@ -255,12 +259,22 @@ func TestDatabaseCreatedByPrimary(t *testing.T) {
 	dbPath := waitForDB(t, env.Workdir, 10*time.Second)
 	t.Logf("database created at %s", dbPath)
 
-	info, err := os.Stat(dbPath)
-	if err != nil {
-		t.Fatalf("stat database: %v", err)
-	}
-	if info.Size() == 0 {
-		t.Error("database file is empty — migrations may not have run")
+	// The file is created empty when the database is opened and gets its
+	// first pages a moment later, so poll for content instead of checking the
+	// instant the file appears.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		info, err := os.Stat(dbPath)
+		if err != nil {
+			t.Fatalf("stat database: %v", err)
+		}
+		if info.Size() > 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("database file is still empty — migrations may not have run")
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -368,30 +382,134 @@ func TestConcurrentWritesFromManyProcesses(t *testing.T) {
 	}
 }
 
-// TestStopDuringStartupShutsDownCleanly stops a serve instance while it is
-// still starting up (right after it took the IPC lock, before it listens). The
-// SIGTERM must be handled, not take the default kill: the process exits 0 and
-// closes the database through the engine, so no multiwriter files and no IPC
-// lock file are left behind for the next process to recover.
+// TestStopDuringStartupShutsDownCleanly stops a serve or app instance while it
+// is still starting up (right after it took the IPC lock, before it listens).
+// The SIGTERM must be handled, not take the default kill: the process exits 0
+// and closes the database through the engine, so no multiwriter files and no
+// IPC lock file are left behind for the next process to recover.
+//
+// desktop shares the same shutdown handling (notifyShutdown) but opens a
+// native window, so it is not exercised here.
 func TestStopDuringStartupShutsDownCleanly(t *testing.T) {
-	env := newTestEnv(t)
+	// `pando app` opens the browser once it serves; shadow xdg-open/open with a
+	// no-op so a late stop cannot open a browser window on the test machine.
+	noBrowser := t.TempDir()
+	for _, name := range []string{"xdg-open", "open"} {
+		if err := os.WriteFile(filepath.Join(noBrowser, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pathEnv := []string{"PATH=" + noBrowser + string(os.PathListSeparator) + os.Getenv("PATH")}
 
-	inst := startInstance(t, env.Workdir, "serve", "--port", "19320", "--host", "127.0.0.1")
-	t.Cleanup(func() { inst.stop(t) })
+	for _, tc := range []struct {
+		mode string
+		port string
+	}{
+		{"serve", "19320"},
+		{"app", "19321"},
+	} {
+		t.Run(tc.mode, func(t *testing.T) {
+			env := newTestEnv(t)
+
+			inst := startInstanceWithEnv(t, env.Workdir, pathEnv, tc.mode, "--port", tc.port, "--host", "127.0.0.1")
+			t.Cleanup(func() { inst.stop(t) })
+			waitForLockFile(t, env.Workdir, 15*time.Second)
+
+			_ = inst.Cmd.Process.Signal(syscall.SIGTERM)
+			if err := inst.waitForExit(t, 10*time.Second); err != nil {
+				t.Fatalf("%s stopped during startup exited with %v, want a clean exit", tc.mode, err)
+			}
+
+			dataDir := filepath.Join(env.Workdir, ".pando", "data")
+			if leftovers, _ := filepath.Glob(filepath.Join(dataDir, "pando.db-mw*")); len(leftovers) > 0 {
+				t.Errorf("multiwriter files left after a stop during startup: %v", leftovers)
+			}
+			if info := readLockFile(t, env.Workdir); info != nil {
+				t.Errorf("ipc.lock left behind by PID %d after a stop during startup", info.PID)
+			}
+		})
+	}
+}
+
+// TestLeaderFallsBackWhenDerivedPortTaken occupies the IPC PUB port derived
+// for the workdir with an unrelated listener before the leader starts. The
+// leader must move to free ports, record them in ipc.lock, and stay reachable
+// over IPC on them; a second process must still join as follower and write.
+func TestLeaderFallsBackWhenDerivedPortTaken(t *testing.T) {
+	env := newTestEnv(t)
+	workdir, err := filepath.EvalSymlinks(env.Workdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	derivedPub, derivedRPC := ipc.PortsForPath(workdir)
+	squatter, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", derivedPub))
+	if err != nil {
+		t.Skipf("derived PUB port %d is already taken on this machine: %v", derivedPub, err)
+	}
+	defer squatter.Close()
+
+	leader := startInstance(t, env.Workdir, "serve", "--port", "19330", "--host", "127.0.0.1")
+	t.Cleanup(func() { leader.stop(t) })
 	waitForLockFile(t, env.Workdir, 15*time.Second)
 
-	_ = inst.Cmd.Process.Signal(syscall.SIGTERM)
-	if err := inst.waitForExit(t, 10*time.Second); err != nil {
-		t.Fatalf("serve stopped during startup exited with %v, want a clean exit", err)
+	// The lock is written with the derived ports first, then rewritten with
+	// the fallback ports once the leader gives up on the taken one.
+	var info *lockInfo
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		info = readLockFile(t, env.Workdir)
+		if info != nil && info.PubPort != derivedPub {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("lock file still records the taken PUB port %d (derived RPC %d)", derivedPub, derivedRPC)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if info.PID != leader.PID {
+		t.Fatalf("lock PID = %d, want leader PID %d", info.PID, leader.PID)
+	}
+	t.Logf("leader moved from derived pub=%d rpc=%d to pub=%d rpc=%d", derivedPub, derivedRPC, info.PubPort, info.RPCPort)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	client, err := ipc.NewClient(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	rpcEndpoint := fmt.Sprintf("tcp://127.0.0.1:%d", info.RPCPort)
+	pingLeader := func() {
+		t.Helper()
+		var lastErr error
+		for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(250 * time.Millisecond) {
+			if _, lastErr = client.CallWithTimeout(ctx, rpcEndpoint, "ipc.ping", nil, 2*time.Second); lastErr == nil {
+				return
+			}
+		}
+		t.Fatalf("leader unreachable over IPC on the recorded RPC endpoint %s: %v", rpcEndpoint, lastErr)
+	}
+	pingLeader()
+
+	follower := startInstance(t, env.Workdir, "serve", "--port", "19331", "--host", "127.0.0.1")
+	t.Cleanup(func() { follower.stop(t) })
+	time.Sleep(3 * time.Second)
+
+	add := exec.Command(pandoBinary, "project", "add", t.TempDir())
+	add.Dir = env.Workdir
+	if out, err := add.CombinedOutput(); err != nil {
+		t.Fatalf("write from another process: %v\n%s", err, out)
 	}
 
-	dataDir := filepath.Join(env.Workdir, ".pando", "data")
-	if leftovers, _ := filepath.Glob(filepath.Join(dataDir, "pando.db-mw*")); len(leftovers) > 0 {
-		t.Errorf("multiwriter files left after a stop during startup: %v", leftovers)
+	if got := readLockFile(t, env.Workdir); got == nil || got.PID != leader.PID {
+		t.Fatalf("lock changed hands while the leader was running: %+v", got)
 	}
-	if info := readLockFile(t, env.Workdir); info != nil {
-		t.Errorf("ipc.lock left behind by PID %d after a stop during startup", info.PID)
+	for name, inst := range map[string]*instance{"leader": leader, "follower": follower} {
+		if !inst.isRunning() {
+			t.Errorf("%s PID=%d exited", name, inst.PID)
+		}
 	}
+	pingLeader()
 }
 
 // TestPortDeterminism verifies that two serve instances started with the same

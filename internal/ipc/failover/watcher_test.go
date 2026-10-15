@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/ipc/failover"
 )
 
@@ -116,3 +117,47 @@ func TestLastHeartbeatZeroOnPrimary(t *testing.T) {
 type noopPublisher struct{}
 
 func (n *noopPublisher) Publish(_ string, _ any) error { return nil }
+
+// recordingSubscriber records the endpoints a secondary watcher subscribes to.
+type recordingSubscriber struct {
+	endpoints chan string
+}
+
+func (s *recordingSubscriber) SubscribeTo(pubEndpoint string, _ ...string) (<-chan ipc.Envelope, error) {
+	s.endpoints <- pubEndpoint
+	return make(chan ipc.Envelope), nil
+}
+
+// A follower must watch the PUB port the leader recorded in the lock file, not
+// the one it was started with: a leader whose derived ports were taken moves to
+// other ports (ipc.ClaimLeaderPorts) after followers may have read the old ones.
+func TestSecondaryWatcherFollowsPortsRecordedInLockFile(t *testing.T) {
+	workdir := t.TempDir()
+	isPrimary, _, lockFile, err := ipc.AcquireLock(workdir, "leader", 40010, 40011)
+	if err != nil || !isPrimary {
+		t.Fatalf("AcquireLock: primary=%v err=%v", isPrimary, err)
+	}
+	defer ipc.ReleaseLock(lockFile)
+
+	sub := &recordingSubscriber{endpoints: make(chan string, 4)}
+	w := failover.NewWatcherForSecondary(
+		failover.DefaultConfig(),
+		"follower", workdir, 40000, 40001,
+		sub,
+		"tcp://127.0.0.1:40000", // the stale endpoint read at startup
+		nil,
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	w.Start(ctx)
+	defer w.Shutdown(context.Background())
+
+	select {
+	case got := <-sub.endpoints:
+		if want := "tcp://127.0.0.1:40010"; got != want {
+			t.Fatalf("watcher subscribed to %s, want the lock file's %s", got, want)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("watcher never subscribed")
+	}
+}
