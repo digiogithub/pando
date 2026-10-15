@@ -333,11 +333,15 @@ func (a *anthropicClient) finishReason(reason string) message.FinishReason {
 func (a *anthropicClient) preparedMessages(messages []anthropic.MessageParam, tools []anthropic.ToolUnionParam) anthropic.MessageNewParams {
 	var thinkingParam anthropic.ThinkingConfigParamUnion
 	temperature := anthropic.Float(0)
-	if budgetTokens := thinkingBudgetTokens(a.options.thinkingMode, a.options.reasoningEffort, a.providerOptions.maxTokens); budgetTokens > 0 {
+	if budgetTokens := a.thinkingBudget(); budgetTokens > 0 {
 		if !isAdaptiveThinkingModel(a.providerOptions.model.APIModel) {
 			thinkingParam = anthropic.ThinkingConfigParamOfEnabled(budgetTokens)
 		}
 		temperature = anthropic.Float(1)
+	}
+	var toolChoice anthropic.ToolChoiceUnionParam
+	if len(tools) > 0 {
+		toolChoice = anthropicToolChoiceParam(a.providerOptions.toolChoice)
 	}
 
 	return anthropic.MessageNewParams{
@@ -346,6 +350,7 @@ func (a *anthropicClient) preparedMessages(messages []anthropic.MessageParam, to
 		Temperature: temperature,
 		Messages:    messages,
 		Tools:       tools,
+		ToolChoice:  toolChoice,
 		Thinking:    thinkingParam,
 		System: []anthropic.TextBlockParam{
 			{
@@ -872,8 +877,23 @@ func isAdaptiveThinkingModel(apiModel string) bool {
 	}
 }
 
+// thinkingBudget is the extended thinking budget of a request, or 0 when
+// thinking is off. Anthropic rejects a forced tool choice ({type:"any"} or
+// {type:"tool"}) together with extended thinking, so a forcing tool choice
+// turns thinking off for the request: the caller asked for a tool call, not
+// for reasoning.
+func (a *anthropicClient) thinkingBudget() int64 {
+	budget := thinkingBudgetTokens(a.options.thinkingMode, a.options.reasoningEffort, a.providerOptions.maxTokens)
+	if budget > 0 && a.providerOptions.toolChoice.Forces() {
+		logging.Debug("Disabling extended thinking for a forced tool choice",
+			"model", a.providerOptions.model.APIModel, "tool_choice", a.providerOptions.toolChoice.String())
+		return 0
+	}
+	return budget
+}
+
 func (a *anthropicClient) thinkingRequestOptions() []option.RequestOption {
-	if budgetTokens := thinkingBudgetTokens(a.options.thinkingMode, a.options.reasoningEffort, a.providerOptions.maxTokens); budgetTokens > 0 &&
+	if budgetTokens := a.thinkingBudget(); budgetTokens > 0 &&
 		isAdaptiveThinkingModel(a.providerOptions.model.APIModel) {
 		// anthropic-sdk-go v1.4.0 has no ThinkingConfigParamOfAdaptive helper yet.
 		return []option.RequestOption{

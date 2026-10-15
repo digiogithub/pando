@@ -245,6 +245,7 @@ func (g *geminiClient) send(ctx context.Context, messages []message.Message, too
 	}
 	if len(tools) > 0 {
 		config.Tools = g.convertTools(tools)
+		config.ToolConfig = geminiToolConfig(g.providerOptions.toolChoice)
 	}
 	chat, err := g.client.Chats.Create(ctx, g.providerOptions.model.APIModel, config, history)
 	if err != nil {
@@ -349,6 +350,7 @@ func (g *geminiClient) stream(ctx context.Context, messages []message.Message, t
 	}
 	if len(tools) > 0 {
 		config.Tools = g.convertTools(tools)
+		config.ToolConfig = geminiToolConfig(g.providerOptions.toolChoice)
 	}
 	chat, err := g.client.Chats.Create(ctx, g.providerOptions.model.APIModel, config, history)
 	if err != nil {

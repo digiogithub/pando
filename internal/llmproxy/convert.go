@@ -36,6 +36,9 @@ type openAIChatRequest struct {
 	MaxTokens   *int64              `json:"max_tokens,omitempty"`
 	Temperature *float64            `json:"temperature,omitempty"`
 	Tools       []openAIToolDef     `json:"tools,omitempty"`
+	// ToolChoice is "auto", "none", "required" or
+	// {"type":"function","function":{"name":"..."}}; see parseOpenAIToolChoice.
+	ToolChoice json.RawMessage `json:"tool_choice,omitempty"`
 }
 
 type openAIToolDef struct {

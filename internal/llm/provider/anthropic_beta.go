@@ -200,11 +200,15 @@ func (a *anthropicClient) convertToolsBeta(tools []toolsPkg.BaseTool) []anthropi
 func (a *anthropicClient) preparedMessagesBeta(messages []anthropic.BetaMessageParam, tools []anthropic.BetaToolUnionParam) anthropic.BetaMessageNewParams {
 	var thinkingParam anthropic.BetaThinkingConfigParamUnion
 	temperature := anthropic.Float(0)
-	if budgetTokens := thinkingBudgetTokens(a.options.thinkingMode, a.options.reasoningEffort, a.providerOptions.maxTokens); budgetTokens > 0 {
+	if budgetTokens := a.thinkingBudget(); budgetTokens > 0 {
 		if !isAdaptiveThinkingModel(a.providerOptions.model.APIModel) {
 			thinkingParam = anthropic.BetaThinkingConfigParamOfEnabled(budgetTokens)
 		}
 		temperature = anthropic.Float(1)
+	}
+	var toolChoice anthropic.BetaToolChoiceUnionParam
+	if len(tools) > 0 {
+		toolChoice = anthropicBetaToolChoiceParam(a.providerOptions.toolChoice)
 	}
 
 	return anthropic.BetaMessageNewParams{
@@ -213,6 +217,7 @@ func (a *anthropicClient) preparedMessagesBeta(messages []anthropic.BetaMessageP
 		Temperature: temperature,
 		Messages:    messages,
 		Tools:       tools,
+		ToolChoice:  toolChoice,
 		Thinking:    thinkingParam,
 		System: []anthropic.BetaTextBlockParam{
 			{

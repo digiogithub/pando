@@ -239,6 +239,9 @@ func (o *openaiClient) preparedParams(messages []openai.ChatCompletionMessagePar
 		Messages: messages,
 		Tools:    tools,
 	}
+	if len(tools) > 0 && o.providerOptions.toolChoice != nil {
+		params.ToolChoice = openAIToolChoiceParam(o.providerOptions.toolChoice)
+	}
 
 	if o.providerOptions.model.CanReason == true {
 		params.MaxCompletionTokens = openai.Int(o.providerOptions.maxTokens)

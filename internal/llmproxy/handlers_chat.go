@@ -111,14 +111,37 @@ func (s *LLMProxyServer) handleChatCompletions(w http.ResponseWriter, r *http.Re
 		maxTokens = *req.MaxTokens
 	}
 
+	var toolChoiceOpts []provider.ProviderClientOption
+
 	// Extract system message
 	systemMsg := extractSystemMessage(req.Messages)
 
 	// Convert inbound tool definitions so the upstream model can call them.
 	reqTools := openAIToolsToBaseTools(req.Tools)
 
+	// Map tool_choice onto the upstream provider, or emulate it when the
+	// provider has no equivalent parameter.
+	toolChoice, err := parseOpenAIToolChoice(req.ToolChoice)
+	if err == nil {
+		var plan toolChoicePlan
+		plan, err = planToolChoice(toolChoice, reqTools, account.Type, string(model.ID))
+		if err == nil {
+			reqTools = plan.tools
+			plan.setHeader(w)
+			toolChoiceOpts = plan.opts
+		}
+	}
+	if err != nil {
+		writeOpenAIError(w, http.StatusBadRequest, openAIErrorDetail{
+			Message: err.Error(),
+			Type:    "invalid_request_error",
+			Code:    "invalid_tool_choice",
+		})
+		return
+	}
+
 	// Create provider
-	prov, err := provider.NewProviderFromAccount(account, model, maxTokens, systemMsg)
+	prov, err := provider.NewProviderFromAccount(account, model, maxTokens, systemMsg, toolChoiceOpts...)
 	if err != nil {
 		writeOpenAIError(w, http.StatusInternalServerError, openAIErrorDetail{
 			Message: fmt.Sprintf("failed to create provider: %s", err.Error()),

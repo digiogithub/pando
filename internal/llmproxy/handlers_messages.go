@@ -23,6 +23,8 @@ type anthropicMessagesRequest struct {
 	Temperature *float64                `json:"temperature,omitempty"`
 	Stream      bool                    `json:"stream,omitempty"`
 	Tools       []anthropicToolDef      `json:"tools,omitempty"`
+	// ToolChoice is {"type":"auto"|"any"|"none"} or {"type":"tool","name":"..."}.
+	ToolChoice json.RawMessage `json:"tool_choice,omitempty"`
 }
 
 type anthropicInputMessage struct {
@@ -143,7 +145,19 @@ func (s *LLMProxyServer) handleAnthropicMessages(w http.ResponseWriter, r *http.
 	reqTools := anthropicToolsToBaseTools(req.Tools)
 	internalMsgs := anthropicMessagesToInternal(req.Messages)
 
-	prov, err := provider.NewProviderFromAccount(account, model, maxTokens, systemMsg)
+	toolChoice, err := parseAnthropicToolChoice(req.ToolChoice)
+	var plan toolChoicePlan
+	if err == nil {
+		plan, err = planToolChoice(toolChoice, reqTools, account.Type, string(model.ID))
+	}
+	if err != nil {
+		writeAnthropicError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	reqTools = plan.tools
+	plan.setHeader(w)
+
+	prov, err := provider.NewProviderFromAccount(account, model, maxTokens, systemMsg, plan.opts...)
 	if err != nil {
 		writeAnthropicError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create provider: %s", err.Error()))
 		return

@@ -80,6 +80,10 @@ type providerClientOptions struct {
 	bedrockOptions   []BedrockOption
 	copilotOptions   []CopilotOption
 
+	// toolChoice, when non-nil, is sent with every request that declares
+	// tools (see WithToolChoice). Nil keeps the provider default.
+	toolChoice *ToolChoice
+
 	// maxRetries overrides the package retry budget for this client when > 0.
 	// Auto-mode failover uses a small budget on every candidate except the
 	// last so a failing provider hands over quickly instead of backing off

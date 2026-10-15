@@ -400,6 +400,9 @@ func (c *copilotClient) preparedParams(messages []openai.ChatCompletionMessagePa
 		Messages: messages,
 		Tools:    tools,
 	}
+	if len(tools) > 0 && c.providerOptions.toolChoice != nil {
+		params.ToolChoice = openAIToolChoiceParam(c.providerOptions.toolChoice)
+	}
 
 	if c.providerOptions.model.CanReason {
 		params.MaxCompletionTokens = openai.Int(c.providerOptions.maxTokens)
@@ -886,6 +889,9 @@ func (c *copilotClient) sendWithResponsesAPI(ctx context.Context, msgs []message
 	}
 	if len(respTools) > 0 {
 		params.Tools = respTools
+		if c.providerOptions.toolChoice != nil {
+			params.ToolChoice = responsesToolChoiceParam(c.providerOptions.toolChoice)
+		}
 	}
 	if reasoning, ok := c.responsesReasoningParam(); ok {
 		params.Reasoning = reasoning
@@ -981,6 +987,9 @@ func (c *copilotClient) streamWithResponsesAPI(ctx context.Context, msgs []messa
 	}
 	if len(respTools) > 0 {
 		params.Tools = respTools
+		if c.providerOptions.toolChoice != nil {
+			params.ToolChoice = responsesToolChoiceParam(c.providerOptions.toolChoice)
+		}
 	}
 	if reasoning, ok := c.responsesReasoningParam(); ok {
 		params.Reasoning = reasoning
