@@ -6,11 +6,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/digiogithub/pando/internal/api"
@@ -122,7 +120,12 @@ func runDesktopMode(cmd *cobra.Command) error {
 		return err
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	// Capture SIGINT/SIGTERM before any startup work, so a stop during
+	// startup winds down and runs the deferred cleanups (see notifyShutdown).
+	sigCtx, _, releaseShutdown := notifyShutdown("Desktop")
+	defer releaseShutdown()
+
+	ctx, cancel := context.WithCancel(sigCtx)
 	defer cancel()
 
 	// --- IPC bootstrap: determine primary/secondary role, open DB, wire services ---
@@ -186,16 +189,6 @@ func runDesktopMode(cmd *cobra.Command) error {
 	defer func() { _ = instanceregistry.Revoke(instanceID) }()
 
 	wireIPCRole(ctx, rt, server.PandoApp(), instanceID, cwd, "desktop")
-
-	sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stopSignals()
-
-	go func() {
-		<-sigCtx.Done()
-		time.Sleep(6 * time.Second)
-		logging.Error("Desktop shutdown watchdog: forced exit after 6s")
-		os.Exit(1)
-	}()
 
 	go func() {
 		<-sigCtx.Done()
@@ -267,8 +260,12 @@ func runDesktopMode(cmd *cobra.Command) error {
 		}
 	}()
 
-	if err := desktop.Launch(desktop.EmbeddedDesktopBinary(), baseURL, simpleMode); err != nil {
-		return fmt.Errorf("desktop window exited with error: %w", err)
+	// A stop that arrived during startup has already shut the API server
+	// down: do not open a window onto it.
+	if ctx.Err() == nil {
+		if err := desktop.Launch(desktop.EmbeddedDesktopBinary(), baseURL, simpleMode); err != nil {
+			return fmt.Errorf("desktop window exited with error: %w", err)
+		}
 	}
 
 	// Desktop window closed — shut down the API server gracefully.

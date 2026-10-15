@@ -368,29 +368,52 @@ func TestConcurrentWritesFromManyProcesses(t *testing.T) {
 	}
 }
 
-// TestStopDuringStartupShutsDownCleanly stops a serve instance while it is
-// still starting up (right after it took the IPC lock, before it listens). The
-// SIGTERM must be handled, not take the default kill: the process exits 0 and
-// closes the database through the engine, so no multiwriter files and no IPC
-// lock file are left behind for the next process to recover.
+// TestStopDuringStartupShutsDownCleanly stops a serve or app instance while it
+// is still starting up (right after it took the IPC lock, before it listens).
+// The SIGTERM must be handled, not take the default kill: the process exits 0
+// and closes the database through the engine, so no multiwriter files and no
+// IPC lock file are left behind for the next process to recover.
+//
+// desktop shares the same shutdown handling (notifyShutdown) but opens a
+// native window, so it is not exercised here.
 func TestStopDuringStartupShutsDownCleanly(t *testing.T) {
-	env := newTestEnv(t)
-
-	inst := startInstance(t, env.Workdir, "serve", "--port", "19320", "--host", "127.0.0.1")
-	t.Cleanup(func() { inst.stop(t) })
-	waitForLockFile(t, env.Workdir, 15*time.Second)
-
-	_ = inst.Cmd.Process.Signal(syscall.SIGTERM)
-	if err := inst.waitForExit(t, 10*time.Second); err != nil {
-		t.Fatalf("serve stopped during startup exited with %v, want a clean exit", err)
+	// `pando app` opens the browser once it serves; shadow xdg-open/open with a
+	// no-op so a late stop cannot open a browser window on the test machine.
+	noBrowser := t.TempDir()
+	for _, name := range []string{"xdg-open", "open"} {
+		if err := os.WriteFile(filepath.Join(noBrowser, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
+	pathEnv := []string{"PATH=" + noBrowser + string(os.PathListSeparator) + os.Getenv("PATH")}
 
-	dataDir := filepath.Join(env.Workdir, ".pando", "data")
-	if leftovers, _ := filepath.Glob(filepath.Join(dataDir, "pando.db-mw*")); len(leftovers) > 0 {
-		t.Errorf("multiwriter files left after a stop during startup: %v", leftovers)
-	}
-	if info := readLockFile(t, env.Workdir); info != nil {
-		t.Errorf("ipc.lock left behind by PID %d after a stop during startup", info.PID)
+	for _, tc := range []struct {
+		mode string
+		port string
+	}{
+		{"serve", "19320"},
+		{"app", "19321"},
+	} {
+		t.Run(tc.mode, func(t *testing.T) {
+			env := newTestEnv(t)
+
+			inst := startInstanceWithEnv(t, env.Workdir, pathEnv, tc.mode, "--port", tc.port, "--host", "127.0.0.1")
+			t.Cleanup(func() { inst.stop(t) })
+			waitForLockFile(t, env.Workdir, 15*time.Second)
+
+			_ = inst.Cmd.Process.Signal(syscall.SIGTERM)
+			if err := inst.waitForExit(t, 10*time.Second); err != nil {
+				t.Fatalf("%s stopped during startup exited with %v, want a clean exit", tc.mode, err)
+			}
+
+			dataDir := filepath.Join(env.Workdir, ".pando", "data")
+			if leftovers, _ := filepath.Glob(filepath.Join(dataDir, "pando.db-mw*")); len(leftovers) > 0 {
+				t.Errorf("multiwriter files left after a stop during startup: %v", leftovers)
+			}
+			if info := readLockFile(t, env.Workdir); info != nil {
+				t.Errorf("ipc.lock left behind by PID %d after a stop during startup", info.PID)
+			}
+		})
 	}
 }
 

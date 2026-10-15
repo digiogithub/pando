@@ -74,6 +74,13 @@ type instance struct {
 // Register inst.stop(t) in t.Cleanup after calling startInstance.
 func startInstance(t *testing.T, workdir string, args ...string) *instance {
 	t.Helper()
+	return startInstanceWithEnv(t, workdir, nil, args...)
+}
+
+// startInstanceWithEnv is startInstance with extra environment variables
+// (KEY=value) appended after the inherited ones, so they take precedence.
+func startInstanceWithEnv(t *testing.T, workdir string, extraEnv []string, args ...string) *instance {
+	t.Helper()
 	binary := pandoBinary
 	if binary == "" {
 		t.Fatal("pandoBinary is empty; set PANDO_BINARY or use 'make test-integration'")
@@ -86,6 +93,7 @@ func startInstance(t *testing.T, workdir string, args ...string) *instance {
 		// Disable browser open in desktop mode.
 		"DO_NOT_OPEN_BROWSER=1",
 	)
+	cmd.Env = append(cmd.Env, extraEnv...)
 	// Forward output to test log so failures are diagnosable.
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
