@@ -263,9 +263,11 @@ func (w *Watcher) runSecondary(ctx context.Context) {
 	}
 
 	// Each pass watches the current leader until it looks dead and tries to
-	// take over. When another follower wins, the new leader binds the same
-	// ports, so the next pass simply watches it.
+	// take over. A new leader normally binds the same ports, but it can move to
+	// other ones (see ipc.ClaimLeaderPorts), so every pass re-reads the
+	// leader's PUB port from the lock file first.
 	for ctx.Err() == nil {
+		w.refreshLeaderEndpoint()
 		w.watchLeader(ctx)
 		w.mu.RLock()
 		promoted := w.role == "primary"
@@ -277,6 +279,26 @@ func (w *Watcher) runSecondary(ctx context.Context) {
 		case <-ctx.Done():
 		case <-time.After(time.Second):
 		}
+	}
+}
+
+// refreshLeaderEndpoint points the watcher at the PUB port the current leader
+// recorded in the lock file. It differs from the one this follower started
+// with when a leader moved off ports held by an unrelated process. Without a
+// readable lock file (no leader right now) the endpoint is left unchanged.
+func (w *Watcher) refreshLeaderEndpoint() {
+	info, err := ipc.ReadLockForPath(w.workdir)
+	if err != nil || info.PubPort <= 0 {
+		return
+	}
+	endpoint := fmt.Sprintf("tcp://127.0.0.1:%d", info.PubPort)
+	w.mu.Lock()
+	previous := w.pubEndpoint
+	w.pubEndpoint = endpoint
+	w.mu.Unlock()
+	if endpoint != previous {
+		logging.Info("failover: leader PUB endpoint changed in the lock file",
+			"previous", previous, "current", endpoint, "leader_pid", info.PID)
 	}
 }
 
@@ -292,7 +314,10 @@ func (w *Watcher) watchLeader(ctx context.Context) {
 	subscribeDeadline := time.Now().Add(w.cfg.HeartbeatTimeout)
 	for {
 		var err error
-		ch, err = w.client.SubscribeTo(w.pubEndpoint,
+		w.mu.RLock()
+		pubEndpoint := w.pubEndpoint
+		w.mu.RUnlock()
+		ch, err = w.client.SubscribeTo(pubEndpoint,
 			protocol.TopicInstanceHeartbeat,
 			protocol.TopicInstanceShutdown,
 			protocol.TopicInstancePromoted,

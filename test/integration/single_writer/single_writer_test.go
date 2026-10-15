@@ -3,7 +3,9 @@
 package single_writer_test
 
 import (
+	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +14,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/digiogithub/pando/internal/ipc"
 )
 
 // TestFirstInstanceCreatesLockAndDB verifies that when pando starts in
@@ -255,12 +259,22 @@ func TestDatabaseCreatedByPrimary(t *testing.T) {
 	dbPath := waitForDB(t, env.Workdir, 10*time.Second)
 	t.Logf("database created at %s", dbPath)
 
-	info, err := os.Stat(dbPath)
-	if err != nil {
-		t.Fatalf("stat database: %v", err)
-	}
-	if info.Size() == 0 {
-		t.Error("database file is empty — migrations may not have run")
+	// The file is created empty when the database is opened and gets its
+	// first pages a moment later, so poll for content instead of checking the
+	// instant the file appears.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		info, err := os.Stat(dbPath)
+		if err != nil {
+			t.Fatalf("stat database: %v", err)
+		}
+		if info.Size() > 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("database file is still empty — migrations may not have run")
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -415,6 +429,87 @@ func TestStopDuringStartupShutsDownCleanly(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestLeaderFallsBackWhenDerivedPortTaken occupies the IPC PUB port derived
+// for the workdir with an unrelated listener before the leader starts. The
+// leader must move to free ports, record them in ipc.lock, and stay reachable
+// over IPC on them; a second process must still join as follower and write.
+func TestLeaderFallsBackWhenDerivedPortTaken(t *testing.T) {
+	env := newTestEnv(t)
+	workdir, err := filepath.EvalSymlinks(env.Workdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	derivedPub, derivedRPC := ipc.PortsForPath(workdir)
+	squatter, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", derivedPub))
+	if err != nil {
+		t.Skipf("derived PUB port %d is already taken on this machine: %v", derivedPub, err)
+	}
+	defer squatter.Close()
+
+	leader := startInstance(t, env.Workdir, "serve", "--port", "19330", "--host", "127.0.0.1")
+	t.Cleanup(func() { leader.stop(t) })
+	waitForLockFile(t, env.Workdir, 15*time.Second)
+
+	// The lock is written with the derived ports first, then rewritten with
+	// the fallback ports once the leader gives up on the taken one.
+	var info *lockInfo
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		info = readLockFile(t, env.Workdir)
+		if info != nil && info.PubPort != derivedPub {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("lock file still records the taken PUB port %d (derived RPC %d)", derivedPub, derivedRPC)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if info.PID != leader.PID {
+		t.Fatalf("lock PID = %d, want leader PID %d", info.PID, leader.PID)
+	}
+	t.Logf("leader moved from derived pub=%d rpc=%d to pub=%d rpc=%d", derivedPub, derivedRPC, info.PubPort, info.RPCPort)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	client, err := ipc.NewClient(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	rpcEndpoint := fmt.Sprintf("tcp://127.0.0.1:%d", info.RPCPort)
+	pingLeader := func() {
+		t.Helper()
+		var lastErr error
+		for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(250 * time.Millisecond) {
+			if _, lastErr = client.CallWithTimeout(ctx, rpcEndpoint, "ipc.ping", nil, 2*time.Second); lastErr == nil {
+				return
+			}
+		}
+		t.Fatalf("leader unreachable over IPC on the recorded RPC endpoint %s: %v", rpcEndpoint, lastErr)
+	}
+	pingLeader()
+
+	follower := startInstance(t, env.Workdir, "serve", "--port", "19331", "--host", "127.0.0.1")
+	t.Cleanup(func() { follower.stop(t) })
+	time.Sleep(3 * time.Second)
+
+	add := exec.Command(pandoBinary, "project", "add", t.TempDir())
+	add.Dir = env.Workdir
+	if out, err := add.CombinedOutput(); err != nil {
+		t.Fatalf("write from another process: %v\n%s", err, out)
+	}
+
+	if got := readLockFile(t, env.Workdir); got == nil || got.PID != leader.PID {
+		t.Fatalf("lock changed hands while the leader was running: %+v", got)
+	}
+	for name, inst := range map[string]*instance{"leader": leader, "follower": follower} {
+		if !inst.isRunning() {
+			t.Errorf("%s PID=%d exited", name, inst.PID)
+		}
+	}
+	pingLeader()
 }
 
 // TestPortDeterminism verifies that two serve instances started with the same

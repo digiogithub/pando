@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"time"
 
@@ -94,4 +95,70 @@ func describePortHolder(port int) string {
 		return "in use by another process"
 	}
 	return "unavailable: " + msg
+}
+
+// ClaimLeaderPorts settles the ports a new leader binds its bus on and returns
+// them. lockFile is the IPC lock file this process just acquired (AcquireLock
+// or a failover promotion) and pubPort/rpcPort are the ports recorded in it.
+//
+// Those ports are derived from the workdir (or inherited from the previous
+// leader), so an unrelated process can own one of them. Followers, `pando ipc
+// status` and cross-project delegation all dial the ports recorded in the lock
+// file, never the derived ones, so when the recorded ports stay taken for
+// busBindRetryFor this falls back to two OS-assigned loopback ports and records
+// them in the lock file, instead of leaving the leader unreachable over IPC.
+// If that fails, the recorded ports are returned unchanged and
+// StartBusWithRetry reports the conflict as before.
+func ClaimLeaderPorts(ctx context.Context, lockFile *os.File, pubPort, rpcPort int) (int, int) {
+	if lockFile == nil {
+		return pubPort, rpcPort
+	}
+
+	deadline := time.Now().Add(busBindRetryFor)
+	for {
+		if portsFree(pubPort, rpcPort) {
+			return pubPort, rpcPort
+		}
+		if ctx.Err() != nil || !time.Now().Before(deadline) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(busBindRetryEvery):
+		}
+	}
+	if ctx.Err() != nil {
+		return pubPort, rpcPort
+	}
+
+	freePub, freeRPC, err := FindFreePorts()
+	if err != nil {
+		logging.Warn("IPC: preferred bus ports are taken and no free ports were found", "error", err)
+		return pubPort, rpcPort
+	}
+	if err := updateLockPorts(lockFile, freePub, freeRPC); err != nil {
+		logging.Warn("IPC: cannot record fallback bus ports in the lock file", "error", err)
+		return pubPort, rpcPort
+	}
+	logging.Warn("IPC: preferred bus ports are taken by another process; using OS-assigned ports recorded in the lock file",
+		"preferred_pub_port", pubPort,
+		"preferred_rpc_port", rpcPort,
+		"pub_port_state", describePortHolder(pubPort),
+		"rpc_port_state", describePortHolder(rpcPort),
+		"pub_port", freePub,
+		"rpc_port", freeRPC,
+	)
+	return freePub, freeRPC
+}
+
+// portsFree reports whether both loopback ports can be bound right now.
+func portsFree(ports ...int) bool {
+	for _, port := range ports {
+		l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err != nil {
+			return false
+		}
+		_ = l.Close()
+	}
+	return true
 }

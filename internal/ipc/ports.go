@@ -51,17 +51,19 @@ func PortsForPath(absPath string) (pub, rpc int) {
 	return base, base + 1
 }
 
-// FindFreePorts finds two consecutive free TCP ports. This is useful for
-// secondary instances (serve, app, desktop) that cannot bind the deterministic
-// ports already held by a primary TUI instance on the same path.
+// FindFreePorts finds two distinct free loopback TCP ports (not necessarily
+// consecutive). ClaimLeaderPorts uses them when the ports derived for a
+// workdir are held by an unrelated process.
 func FindFreePorts() (pub, rpc int, err error) {
 	// Request two OS-assigned ports, then close and return the numbers.
 	l1, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return 0, 0, err
 	}
+	// Keep the first listener open while asking for the second so the OS
+	// cannot hand out the same port twice.
+	defer func() { _ = l1.Close() }()
 	p1 := l1.Addr().(*net.TCPAddr).Port
-	_ = l1.Close()
 
 	l2, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

@@ -82,7 +82,8 @@ type BootstrapResult struct {
 //     across processes by internal/db).
 //  2. Derive deterministic PUB/RPC ports from the path.
 //  3. Attempt to acquire the exclusive IPC lock.
-//  4. Leader: create the Bus and the leader watcher.
+//  4. Leader: settle its bus ports (ipc.ClaimLeaderPorts), create the Bus and
+//     the leader watcher.
 //  5. Follower: create the IPC client and a follower watcher.
 //
 // On lock error the function continues as leader so the caller does not lose
@@ -117,6 +118,12 @@ func Bootstrap(ctx context.Context, workdir, instanceID string) (*BootstrapResul
 	}
 	if lockErr != nil {
 		logging.Warn("IPC lock acquisition failed, continuing as leader without IPC", "error", lockErr)
+	}
+	if isPrimary {
+		// The derived ports can be held by an unrelated process: settle the
+		// ports this leader will bind and record them in the lock file, which
+		// is where followers and CLI tools look them up.
+		pubPort, rpcPort = ipc.ClaimLeaderPorts(ctx, lockFile, pubPort, rpcPort)
 	}
 
 	res := &BootstrapResult{
