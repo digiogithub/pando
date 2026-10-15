@@ -50,7 +50,7 @@ func authMiddleware(apiKey string, next http.Handler) http.Handler {
 			return
 		}
 
-		if token != apiKey {
+		if !keyMatches(apiKey, token) {
 			http.Error(w, `{"error":{"message":"invalid API key","type":"invalid_request_error"}}`, http.StatusUnauthorized)
 			return
 		}

@@ -24,7 +24,14 @@ var llmProxyCmd = &cobra.Command{
 	Long: `Start an OpenAI-compatible HTTP proxy server that exposes all configured
 Pando LLM providers through a single unified API endpoint.
 
-Compatible with any OpenAI client (LiteLLM, Continue.dev, etc.).`,
+Compatible with any OpenAI client (LiteLLM, Continue.dev, etc.).
+
+API key authentication is optional. The key is taken from --api-key, else from
+the file given by --api-key-file, else from the PANDO_LLM_PROXY_API_KEY
+environment variable (precedence: flag > file > env). --api-key and
+--api-key-file together are an error. Prefer the file or the environment
+variable: a key passed with --api-key is visible in the process arguments
+(ps, /proc/<pid>/cmdline).`,
 	Example: `
   # Start with defaults (port 11434)
   pando llm-proxy
@@ -35,13 +42,22 @@ Compatible with any OpenAI client (LiteLLM, Continue.dev, etc.).`,
   # Require API key authentication
   pando llm-proxy --api-key mysecretkey
 
+  # Keep the key out of the process arguments
+  pando llm-proxy --api-key-file /run/secrets/proxy_key
+  PANDO_LLM_PROXY_API_KEY=mysecretkey pando llm-proxy
+
   # Debug mode
   pando llm-proxy --debug`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		host, _ := cmd.Flags().GetString("host")
 		port, _ := cmd.Flags().GetInt("port")
 		debug, _ := cmd.Flags().GetBool("debug")
-		apiKey, _ := cmd.Flags().GetString("api-key")
+		apiKeyFlag, _ := cmd.Flags().GetString("api-key")
+		apiKeyFile, _ := cmd.Flags().GetString("api-key-file")
+		apiKey, err := llmproxy.ResolveAPIKey(apiKeyFlag, apiKeyFile, nil)
+		if err != nil {
+			return err
+		}
 
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -118,5 +134,6 @@ func init() {
 	llmProxyCmd.Flags().String("host", "localhost", "Host to bind to")
 	llmProxyCmd.Flags().Int("port", 11434, "Port to listen on")
 	llmProxyCmd.Flags().Bool("debug", false, "Enable debug logging")
-	llmProxyCmd.Flags().String("api-key", "", "Optional API key for proxy authentication")
+	llmProxyCmd.Flags().String("api-key", "", "Optional API key for proxy authentication (visible in the process arguments; prefer --api-key-file)")
+	llmProxyCmd.Flags().String("api-key-file", "", "Read the API key from this file (trailing newline trimmed); precedence: --api-key > --api-key-file > "+llmproxy.APIKeyEnv)
 }
