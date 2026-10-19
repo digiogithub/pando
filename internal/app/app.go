@@ -2135,7 +2135,7 @@ func RefreshDynamicModels(ctx context.Context) {
 		return
 	}
 
-	accounts := config.GetProviderAccounts()
+	accounts := config.GetResolvedProviderAccounts()
 	logging.Debug("Refreshing dynamic models", "accountCount", len(accounts))
 
 	// Fill pricing/limits the curated static catalogues omit (Bedrock,

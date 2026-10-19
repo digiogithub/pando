@@ -92,6 +92,36 @@ debug = false
 autoCompact = true
 ```
 
+## Provider accounts
+
+`providerAccounts` (TOML: `[[providerAccounts]]`) declares named provider accounts. Each has an
+`id`, a `type` (`anthropic`, `openai`, `openai-compatible`, `ollama`, ...), an optional `baseUrl`,
+an optional `apiKey` and optional `extraHeaders`.
+
+```toml
+[[providerAccounts]]
+id      = 'local-llm'
+type    = 'openai-compatible'
+baseUrl = 'http://127.0.0.1:11434/v1'
+apiKey  = 'env:LOCAL_LLM_KEY'
+
+[providerAccounts.extraHeaders]
+X-Tenant = 'env:LOCAL_LLM_TENANT'
+```
+
+**Secret references.** `apiKey` and every `extraHeaders` value may be `env:NAME`, where `NAME`
+matches `[A-Za-z_][A-Za-z0-9_]*`. The variable is read from the process environment each time the
+account is used, so the file never holds the secret and a restart with a different environment
+takes effect. The reference, not the resolved value, is what is saved and what the API returns.
+An unset or empty variable resolves to an empty value (the account behaves as if it had no key)
+and a warning naming the variable, never a value, is logged once.
+
+**Providers from the environment.** Providers whose credentials exist only in the environment
+(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, ...) stay available
+when `providerAccounts` is present: an in-memory account with `id` equal to the provider type is
+added for each type that has no account yet. A type that already has an account is never
+duplicated or overridden. These added accounts are not written to the configuration file.
+
 ## Decision model
 
 Features that need a small, fast classifier (model auto mode, persona auto-select and the context

@@ -18,7 +18,7 @@ type resolvedModel struct {
 
 // activeAccounts returns all configured, non-disabled provider accounts.
 func activeAccounts() []config.ProviderAccount {
-	all := config.GetProviderAccounts()
+	all := config.GetResolvedProviderAccounts()
 	out := make([]config.ProviderAccount, 0, len(all))
 	for _, a := range all {
 		if a.Disabled {

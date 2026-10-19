@@ -1231,13 +1231,17 @@ type SandboxEnvConfig struct {
 // It allows multiple accounts of the same provider type (e.g., two Anthropic API keys).
 // The ID field is a unique slug used to identify the account (e.g., "anthropic-work").
 type ProviderAccount struct {
-	ID           string               `json:"id" toml:"id"`
-	DisplayName  string               `json:"displayName,omitempty" toml:"displayName,omitempty"`
-	Type         models.ModelProvider `json:"type" toml:"type"`
-	APIKey       string               `json:"apiKey,omitempty" toml:"apiKey,omitempty"`
-	BaseURL      string               `json:"baseUrl,omitempty" toml:"baseUrl,omitempty"`
-	ExtraHeaders map[string]string    `json:"extraHeaders,omitempty" toml:"extraHeaders,omitempty"`
-	Disabled     bool                 `json:"disabled,omitempty" toml:"disabled,omitempty"`
+	ID          string               `json:"id" toml:"id"`
+	DisplayName string               `json:"displayName,omitempty" toml:"displayName,omitempty"`
+	Type        models.ModelProvider `json:"type" toml:"type"`
+	// APIKey is the credential, or an "env:NAME" reference to an environment
+	// variable that holds it (see ResolveSecretRef). The reference, not the
+	// resolved value, is what is stored and returned.
+	APIKey  string `json:"apiKey,omitempty" toml:"apiKey,omitempty"`
+	BaseURL string `json:"baseUrl,omitempty" toml:"baseUrl,omitempty"`
+	// ExtraHeaders are sent on every request; each value may be an "env:NAME" reference.
+	ExtraHeaders map[string]string `json:"extraHeaders,omitempty" toml:"extraHeaders,omitempty"`
+	Disabled     bool              `json:"disabled,omitempty" toml:"disabled,omitempty"`
 }
 
 // Config is the main configuration structure for the application.
@@ -2196,6 +2200,8 @@ func Load(workingDir string, debug bool, logFile ...string) (*Config, error) {
 	if err := decryptSensitiveConfigFields(cfg); err != nil {
 		return cfg, fmt.Errorf("failed to decrypt sensitive config fields: %w", err)
 	}
+	// Keep providers backed only by the environment next to explicit accounts.
+	mergeEnvProvidersIntoAccounts(cfg)
 	// If providerAccounts (new format) is in use, override the legacy Providers
 	// map so that local project accounts take precedence over profile-level
 	// legacy providers. This prevents the profile's legacy keys from bleeding
@@ -3602,6 +3608,11 @@ func Validate() error {
 		if acc.Type == models.ProviderCopilot && hasCopilotCredentials() {
 			continue
 		}
+		if IsSecretRef(acc.APIKey) {
+			// Resolved at use; an unset variable is warned about there, and
+			// disabling here would be written back to the file on a save.
+			continue
+		}
 		if providerAccountRequiresAPIKey(acc.Type) && strings.TrimSpace(acc.APIKey) == "" {
 			logging.Warn("provider account has no API key, marking as disabled", "account", acc.ID, "type", acc.Type)
 			cfg.ProviderAccounts[i].Disabled = true
@@ -3748,7 +3759,7 @@ func syncProvidersFromAccounts(c *Config) {
 		}
 		seen[acc.Type] = true
 		c.Providers[acc.Type] = Provider{
-			APIKey:   acc.APIKey,
+			APIKey:   ResolveSecretRef(acc.APIKey),
 			BaseURL:  acc.BaseURL,
 			Disabled: acc.Disabled,
 		}
@@ -3947,7 +3958,7 @@ func ResolveProviderAccountByID(id string) (*ProviderAccount, error) {
 	}
 	for i := range cfg.ProviderAccounts {
 		if cfg.ProviderAccounts[i].ID == id {
-			acc := cfg.ProviderAccounts[i]
+			acc := cfg.ProviderAccounts[i].Resolved()
 			return &acc, nil
 		}
 	}
@@ -3966,6 +3977,7 @@ func ResolveProviderAccountForType(providerType models.ModelProvider) (*Provider
 	for i := range cfg.ProviderAccounts {
 		acc := cfg.ProviderAccounts[i]
 		if acc.Type == providerType && !acc.Disabled {
+			acc = acc.Resolved()
 			return &acc, nil
 		}
 	}
@@ -3990,7 +4002,7 @@ func AccountsForProviderType(providerType models.ModelProvider) []ProviderAccoun
 	var result []ProviderAccount
 	for _, acc := range cfg.ProviderAccounts {
 		if acc.Type == providerType && !acc.Disabled {
-			result = append(result, acc)
+			result = append(result, acc.Resolved())
 		}
 	}
 	return result

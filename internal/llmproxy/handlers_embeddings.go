@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/digiogithub/pando/internal/auth"
 	"github.com/digiogithub/pando/internal/config"
@@ -45,61 +46,8 @@ func (s *LLMProxyServer) handleEmbeddings(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Normalize the model ID and try to find its provider.
-	normalizedID := models.NormalizeModelID(req.Model)
-
-	// Find a matching provider account.
-	accounts := config.GetProviderAccounts()
-
-	// Try to find from SupportedModels() first.
-	var providerType models.ModelProvider
-	if m, ok := models.SupportedModels()[normalizedID]; ok {
-		providerType = m.Provider
-	}
-
-	// Find the account for this provider.
-	var account *config.ProviderAccount
-	for i := range accounts {
-		if accounts[i].Disabled {
-			continue
-		}
-		if providerType != "" && accounts[i].Type == providerType {
-			a := accounts[i]
-			account = &a
-			break
-		}
-	}
-
-	// If we couldn't find via SupportedModels(), try matching model prefix against account types.
-	// Dynamic models use the format "{provider}.{model}" e.g. "openai.text-embedding-3-small".
-	if account == nil {
-		for i := range accounts {
-			if accounts[i].Disabled {
-				continue
-			}
-			prefix := string(accounts[i].Type) + "."
-			if len(string(normalizedID)) > len(prefix) && string(normalizedID)[:len(prefix)] == prefix {
-				a := accounts[i]
-				account = &a
-				providerType = a.Type
-				break
-			}
-		}
-	}
-
-	// If still not found, use first non-disabled account as fallback (for unknown model IDs).
-	if account == nil && len(accounts) > 0 {
-		for i := range accounts {
-			if !accounts[i].Disabled {
-				a := accounts[i]
-				account = &a
-				providerType = a.Type
-				break
-			}
-		}
-	}
-
-	if account == nil {
+	account, providerType, upstreamModel, ok := resolveEmbeddingsTarget(req.Model)
+	if !ok {
 		writeError(w, http.StatusUnprocessableEntity, "no configured provider account found for model")
 		return
 	}
@@ -111,16 +59,27 @@ func (s *LLMProxyServer) handleEmbeddings(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// The upstream knows the model by its own name, never by the proxy's
+	// "<account>." or "<type>." prefixed id.
+	body, err := rewriteEmbeddingsModel(rawBody, upstreamModel)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %s", err))
+		return
+	}
+
 	// Build the upstream URL.
 	embURL := baseURL + "/embeddings"
 
 	// Forward the request.
-	upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, embURL, bytes.NewReader(rawBody))
+	upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, embURL, bytes.NewReader(body))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to build upstream request: %s", err))
 		return
 	}
 	upstreamReq.Header.Set("Content-Type", "application/json")
+	for k, v := range account.ExtraHeaders {
+		upstreamReq.Header.Set(k, v)
+	}
 	if apiKey != "" {
 		upstreamReq.Header.Set("Authorization", "Bearer "+apiKey)
 	}
@@ -185,4 +144,55 @@ func resolveEmbeddingsEndpoint(account *config.ProviderAccount, providerType mod
 	}
 
 	return baseURL, apiKey, nil
+}
+
+// resolveEmbeddingsTarget picks the provider account that serves the requested
+// embeddings model and the model name the upstream expects (without any
+// "<account>." or "<type>." prefix). It prefers the same resolution as chat,
+// then falls back to the first active account that supports embeddings.
+func resolveEmbeddingsTarget(requested string) (account *config.ProviderAccount, providerType models.ModelProvider, upstreamModel string, ok bool) {
+	if rm, found := resolveModel(requested); found {
+		acc := rm.account
+		upstream := rm.model.APIModel
+		if upstream == "" {
+			upstream = requested
+		}
+		return &acc, acc.Type, upstream, true
+	}
+	for _, acc := range activeAccounts() {
+		if !providerSupportsEmbeddings(acc.Type) {
+			continue
+		}
+		a := acc
+		bare, _ := stripAccountPrefix(strings.TrimSpace(requested), a)
+		return &a, a.Type, bare, true
+	}
+	return nil, "", "", false
+}
+
+// providerSupportsEmbeddings reports whether the proxy can forward
+// /v1/embeddings to the given provider type.
+func providerSupportsEmbeddings(t models.ModelProvider) bool {
+	switch t {
+	case models.ProviderOpenAI, models.ProviderOllama, models.ProviderLlamaCpp,
+		models.ProviderOpenRouter, models.ProviderAzure, models.ProviderOpenAICompatible,
+		models.ProviderCopilot:
+		return true
+	}
+	return false
+}
+
+// rewriteEmbeddingsModel returns the request body with its "model" field set to
+// model, preserving every other field untouched.
+func rewriteEmbeddingsModel(raw []byte, model string) ([]byte, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	m, err := json.Marshal(model)
+	if err != nil {
+		return nil, err
+	}
+	fields["model"] = m
+	return json.Marshal(fields)
 }
