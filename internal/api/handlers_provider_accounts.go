@@ -52,7 +52,8 @@ func maskProviderAccountAPIKey(key string) string {
 
 func providerAccountToResponse(a config.ProviderAccount, mask bool) config.ProviderAccount {
 	out := a
-	if mask && out.APIKey != "" {
+	// An "env:NAME" reference is not a secret: show it as written.
+	if mask && out.APIKey != "" && !config.IsSecretRef(out.APIKey) {
 		out.APIKey = maskProviderAccountAPIKey(out.APIKey)
 	}
 	return out

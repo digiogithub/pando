@@ -125,7 +125,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
-	accounts := config.GetProviderAccounts()
+	accounts := config.GetResolvedProviderAccounts()
 
 	// Count non-disabled accounts per provider type (for display label disambiguation)
 	typeCount := make(map[models.ModelProvider]int)

@@ -56,6 +56,19 @@ func ProviderSupportsModelListing(provider ModelProvider) bool {
 	}
 }
 
+// ProviderListsModelsWithoutAPIKey reports whether an account of this type can
+// list its models without an API key: local servers (Ollama, llama.cpp) and
+// OpenAI-compatible endpoints, which are very often unauthenticated gateways
+// on a private network. A key, when configured, is still sent.
+func ProviderListsModelsWithoutAPIKey(provider ModelProvider) bool {
+	switch provider {
+	case ProviderOllama, ProviderLlamaCpp, ProviderOpenAICompatible:
+		return true
+	default:
+		return false
+	}
+}
+
 // FetchModelsFromProvider queries a provider's API for available models
 func FetchModelsFromProvider(ctx context.Context, provider ModelProvider, apiKey string, bearerToken string, baseURL string) ([]FetchedModel, error) {
 	switch provider {

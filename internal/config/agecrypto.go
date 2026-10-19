@@ -128,6 +128,10 @@ func encryptSecretString(value string) (string, error) {
 	if strings.TrimSpace(value) == "" || strings.HasPrefix(value, encryptedValuePrefix) {
 		return value, nil
 	}
+	if IsSecretRef(value) {
+		// An "env:NAME" reference holds no secret; keep it readable in the file.
+		return value, nil
+	}
 	km, err := loadOrCreateAgeKeyManager()
 	if err != nil {
 		return "", err
