@@ -2167,8 +2167,9 @@ func RefreshDynamicModels(ctx context.Context) {
 			}
 			bearerToken = token
 			apiKey = ""
-		case models.ProviderOllama:
-			// Ollama does not require an API key
+		case models.ProviderOllama, models.ProviderLlamaCpp, models.ProviderOpenAICompatible:
+			// Local servers and OpenAI-compatible endpoints list their models
+			// without a key (a configured key is still sent).
 		default:
 			// Providers with a static catalog but no listing API (e.g. Vertex AI,
 			// which authenticates via OAuth and has no API key) still need their
@@ -2188,7 +2189,11 @@ func RefreshDynamicModels(ctx context.Context) {
 			ExtraHeaders:      acc.ExtraHeaders,
 			AllAccountsOfType: typeCount[acc.Type],
 		}
-		if err := models.RefreshProviderModelsForAccount(ctx, params); err != nil {
+		// One slow or unreachable account must not hold up the others.
+		accCtx, accCancel := context.WithTimeout(ctx, 20*time.Second)
+		err := models.RefreshProviderModelsForAccount(accCtx, params)
+		accCancel()
+		if err != nil {
 			logging.Debug("Failed to refresh models from account", "account", acc.ID, "error", err)
 		} else {
 			logging.Debug("Refreshed models from account", "account", acc.ID)

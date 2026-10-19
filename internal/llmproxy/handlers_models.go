@@ -60,14 +60,13 @@ func (s *LLMProxyServer) handleListModels(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	// If the registry has no models for the configured providers yet (e.g. the
-	// background refresh loop has not completed at startup), refresh on demand so
-	// the listing mirrors normal mode.
-	if !registryHasModelsForProviders(configuredProviders) {
-		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-		defer cancel()
-		refreshAccountModels(ctx, accounts)
-	}
+	// Fetch, on demand, the models of every account that has none in the
+	// registry yet (startup refresh still running or failed, account added
+	// later). Accounts that already have models are not touched, and a failing
+	// account is not retried on every request.
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	refreshMissingAccountModels(ctx, accounts)
 
 	allModels := collectRegistryModels(configuredProviders, configuredAccountIDs)
 
@@ -92,17 +91,6 @@ func (s *LLMProxyServer) handleListModels(w http.ResponseWriter, r *http.Request
 		Object: "list",
 		Data:   allModels,
 	})
-}
-
-// registryHasModelsForProviders reports whether the registry contains at least
-// one model for any of the configured providers.
-func registryHasModelsForProviders(providers map[models.ModelProvider]bool) bool {
-	for _, m := range models.GetAllModels() {
-		if providers[m.Provider] {
-			return true
-		}
-	}
-	return false
 }
 
 // collectRegistryModels returns the registry models that belong to a configured

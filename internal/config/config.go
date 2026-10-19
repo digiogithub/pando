@@ -3941,7 +3941,9 @@ func SetProviderAccountDisabled(id string, disabled bool) error {
 // providerAccountRequiresAPIKey returns true if the given provider type requires an API key.
 func providerAccountRequiresAPIKey(providerType models.ModelProvider) bool {
 	switch providerType {
-	case models.ProviderCopilot, models.ProviderOllama, models.ProviderLlamaCpp:
+	// An openai-compatible endpoint is identified by its base URL and is
+	// very often an unauthenticated gateway on a private network.
+	case models.ProviderCopilot, models.ProviderOllama, models.ProviderLlamaCpp, models.ProviderOpenAICompatible:
 		return false
 	default:
 		return true
@@ -5431,7 +5433,7 @@ func UpdateProvider(name models.ModelProvider, apiKey string, baseURL string, di
 }
 
 func providerRequiresAPIKey(provider models.ModelProvider) bool {
-	return provider != models.ProviderCopilot && provider != models.ProviderOllama && provider != models.ProviderLlamaCpp
+	return provider != models.ProviderCopilot && provider != models.ProviderOllama && provider != models.ProviderLlamaCpp && provider != models.ProviderOpenAICompatible
 }
 
 func refreshConfiguredDynamicModels() {
