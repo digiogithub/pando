@@ -3099,7 +3099,8 @@ func applyDefaultValues() {
 	normalizeModelAutoModeDefaults()
 	refreshConfiguredDynamicModels()
 	ensureAgentDefaults()
-	ensureEvaluatorDefaultModel()
+	// Load must never write the user's config file: seed in memory only.
+	ensureEvaluatorDefaultModel(false)
 
 	// Set CLIAssist defaults
 	if cfg.CLIAssist.Timeout == 0 {
@@ -3625,7 +3626,7 @@ func Validate() error {
 	// make Pando fail to start in that initial state. Instead, degrade gracefully:
 	// disable the evaluator in memory (the config file keeps Enabled = true). Once
 	// a provider and coder model are configured, ensureEvaluatorDefaultModel seeds
-	// and persists the evaluator model, and it becomes active again on the next
+	// the evaluator model, and it becomes active again on the next
 	// load.
 	if cfg.Evaluator.Enabled && strings.TrimSpace(string(cfg.Evaluator.Model)) == "" {
 		logging.Warn("evaluator enabled but no model available; disabling evaluator until a model is configured")
@@ -4807,7 +4808,7 @@ func setAgentModel(agentName AgentName, modelID models.ModelID, persist bool) er
 
 	if agentName == AgentCoder {
 		propagateCoderModel(modelID, true)
-		ensureEvaluatorDefaultModel()
+		ensureEvaluatorDefaultModel(true)
 	}
 
 	return nil
@@ -5546,11 +5547,15 @@ func ensureAgentDefaults() {
 }
 
 // ensureEvaluatorDefaultModel seeds evaluator.model from the coder agent's
-// model the first time no evaluator model has ever been selected, and
-// persists that choice to the config file so it survives reloads. Once a
-// model is present (this default or a later explicit user selection), it is
-// left untouched — a later user selection always wins over the coder model.
-func ensureEvaluatorDefaultModel() {
+// model the first time no evaluator model has ever been selected. With persist
+// true (the user just selected the coder model) the choice is also written to
+// the config file; with persist false (the load path) it stays in memory, so
+// merely starting a command never rewrites, re-encodes or newly encrypts a
+// config file that several processes may share. The seed is derived from the
+// file on every load, so nothing is lost by not saving it. Once a model is
+// present (this default or a later explicit user selection), it is left
+// untouched — a later user selection always wins over the coder model.
+func ensureEvaluatorDefaultModel(persist bool) {
 	if cfg == nil {
 		return
 	}
@@ -5571,6 +5576,9 @@ func ensureEvaluatorDefaultModel() {
 	cfg.Evaluator.Model = coderModel
 	cfg.Evaluator.Provider = string(model.Provider)
 
+	if !persist {
+		return
+	}
 	if err := updateCfgFile(func(config *Config) {
 		config.Evaluator.Model = coderModel
 		config.Evaluator.Provider = string(model.Provider)
