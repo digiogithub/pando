@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/digiogithub/pando/internal/config"
@@ -220,4 +221,38 @@ func TestCleanModeCatalogToolHasExpectedContract(t *testing.T) {
 	assert.Equal(t, "list_mcp_catalog", info.Name)
 	assert.Empty(t, info.Required)
 	assert.Empty(t, info.Parameters)
+}
+
+// TestBuildSystemMessageSessionSystemPromptReplacesBase: a session
+// SystemPrompt replaces the built-in prompt and project context; persona
+// content is still appended, and no override leaves the built-in prompt.
+func TestBuildSystemMessageSessionSystemPromptReplacesBase(t *testing.T) {
+	config.IsolateForTests(t)
+	tmpDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte("Use AGENTS instructions"), 0644))
+	cfg, err := config.Load(tmpDir, false)
+	require.NoError(t, err)
+	cfg.WorkingDir = tmpDir
+	cfg.ContextPaths = []string{"AGENTS.md"}
+
+	const sid = "system-prompt-override-session"
+	ctx := context.WithValue(context.Background(), prompt.SessionIDKey, sid)
+	t.Cleanup(func() { SetSessionLLMOverrides(sid, SessionLLMOverrides{}) })
+
+	build := func(persona string) string {
+		return buildSystemMessage(ctx, config.AgentCoder, models.ProviderAnthropic, nil, nil, nil, persona)
+	}
+
+	baseline := build("")
+	assert.Contains(t, baseline, "Use AGENTS instructions")
+
+	SetSessionLLMOverrides(sid, SessionLLMOverrides{SystemPrompt: "You are a backlog assistant."})
+	msg := build("PERSONA TEXT\n\nPROFILE PROMPT")
+	assert.True(t, strings.HasPrefix(msg, "You are a backlog assistant."), msg)
+	assert.NotContains(t, msg, "You are Pando, an interactive CLI tool")
+	assert.NotContains(t, msg, "Use AGENTS instructions")
+	assert.Contains(t, msg, "PERSONA TEXT\n\nPROFILE PROMPT")
+
+	SetSessionLLMOverrides(sid, SessionLLMOverrides{})
+	assert.Equal(t, baseline, build(""), "empty SystemPrompt must keep the built-in prompt byte-for-byte")
 }

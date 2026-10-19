@@ -78,6 +78,9 @@ type Config struct {
 	// a per-session persona override. Empty means no override: the
 	// process-wide active persona (or auto-selection) applies as usual.
 	Persona string
+	// SystemPrompt replaces the base agent's built-in system prompt for every
+	// run (see config.AGUIConfig.SystemPrompt). Empty keeps the built-in one.
+	SystemPrompt string
 	// Tools is the adapter-wide glob allow-list applied to every agent's tool
 	// set (see config.AGUIConfig.Tools). Empty means no restriction.
 	Tools []string
@@ -142,6 +145,10 @@ type Profile struct {
 	// Prompt is extra system-prompt text for runs served under this profile.
 	// There is no adapter-wide equivalent to fall back to.
 	Prompt string
+	// SystemPrompt replaces the base agent's built-in system prompt for runs
+	// served under this profile. Already resolved against the adapter-wide
+	// Config.SystemPrompt.
+	SystemPrompt string
 	// Tools is this profile's resolved glob allow-list: the profile's own
 	// declared list (even an explicit empty one) when it set one, otherwise
 	// the adapter-wide Config.Tools. Already resolved: pass it straight to
@@ -194,6 +201,7 @@ func ConfigFromApp(c config.AGUIConfig) Config {
 		AutoApprove:    c.AutoApprove,
 		HumanInTheLoop: c.HumanInTheLoop,
 		Persona:        c.Persona,
+		SystemPrompt:   c.SystemPrompt,
 		Tools:          c.Tools,
 		Mesnada:        true,
 	}
@@ -259,16 +267,20 @@ func ConfigFromApp(c config.AGUIConfig) Config {
 			continue
 		}
 		resolved := Profile{
-			Name:    name,
-			Base:    p.Base,
-			Model:   p.Model,
-			Persona: p.Persona,
-			Prompt:  p.Prompt,
-			Tools:   out.Tools,
-			Mesnada: out.Mesnada,
+			Name:         name,
+			Base:         p.Base,
+			Model:        p.Model,
+			Persona:      p.Persona,
+			Prompt:       p.Prompt,
+			SystemPrompt: p.SystemPrompt,
+			Tools:        out.Tools,
+			Mesnada:      out.Mesnada,
 		}
 		if resolved.Persona == "" {
 			resolved.Persona = out.Persona
+		}
+		if resolved.SystemPrompt == "" {
+			resolved.SystemPrompt = out.SystemPrompt
 		}
 		if p.Tools != nil {
 			resolved.Tools = *p.Tools

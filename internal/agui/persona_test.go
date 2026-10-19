@@ -226,3 +226,50 @@ func TestApplySessionOverrides_TwoProfilesConcurrentlyStayIsolated(t *testing.T)
 		t.Fatalf("thread-docs final override = %+v", docsGot)
 	}
 }
+
+// TestConfigFromApp_SystemPromptFallback: a profile's SystemPrompt wins; a
+// profile without one inherits the adapter-wide [AGUI] SystemPrompt.
+func TestConfigFromApp_SystemPromptFallback(t *testing.T) {
+	got := ConfigFromApp(config.AGUIConfig{
+		SystemPrompt: "wide",
+		Profiles: map[string]config.AGUIProfile{
+			"own":      {Base: config.AgentCoder, SystemPrompt: "own text"},
+			"inherits": {Base: config.AgentCoder},
+		},
+	})
+	if got.Profiles["own"].SystemPrompt != "own text" {
+		t.Fatalf("own = %q", got.Profiles["own"].SystemPrompt)
+	}
+	if got.Profiles["inherits"].SystemPrompt != "wide" {
+		t.Fatalf("inherits = %q, want adapter-wide fallback", got.Profiles["inherits"].SystemPrompt)
+	}
+}
+
+// TestApplySessionOverrides_SystemPrompt: the resolved SystemPrompt reaches
+// the session override without requiring persona/prompt/model.
+func TestApplySessionOverrides_SystemPrompt(t *testing.T) {
+	sessionID := "agui-system-prompt-session"
+	t.Cleanup(func() { agent.SetSessionLLMOverrides(sessionID, agent.SessionLLMOverrides{}) })
+	r := newTestRuntime(testConfig(), "secret")
+	r.applySessionOverrides(sessionID, &Profile{Name: "p", Base: config.AgentCoder, SystemPrompt: "You are a backlog assistant."})
+	if got := agent.SessionLLMOverridesFor(sessionID).SystemPrompt; got != "You are a backlog assistant." {
+		t.Fatalf("SystemPrompt = %q", got)
+	}
+
+	// No profile: the adapter-wide value applies.
+	cfg := testConfig()
+	cfg.SystemPrompt = "wide"
+	s2 := "agui-system-prompt-session-2"
+	t.Cleanup(func() { agent.SetSessionLLMOverrides(s2, agent.SessionLLMOverrides{}) })
+	newTestRuntime(cfg, "secret").applySessionOverrides(s2, nil)
+	if got := agent.SessionLLMOverridesFor(s2).SystemPrompt; got != "wide" {
+		t.Fatalf("adapter-wide SystemPrompt = %q", got)
+	}
+
+	// Nothing declared: no override installed.
+	s3 := "agui-system-prompt-session-3"
+	newTestRuntime(testConfig(), "secret").applySessionOverrides(s3, &Profile{Name: "b", Base: config.AgentCoder})
+	if got := agent.SessionLLMOverridesFor(s3); got.SystemPrompt != "" {
+		t.Fatalf("unexpected override %+v", got)
+	}
+}

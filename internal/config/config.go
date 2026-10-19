@@ -1458,6 +1458,12 @@ type AGUIConfig struct {
 	// (built-ins plus the configured persona path). Default: "" (no override —
 	// the process-wide active persona applies as usual).
 	Persona string `json:"persona,omitempty" toml:"Persona"`
+	// SystemPrompt replaces the Base agent's built-in system prompt (and the
+	// project context file injection) for every run this adapter serves, as a
+	// per-session override. Persona, profile Prompt and skills are still
+	// added after it. A profile's own SystemPrompt takes precedence. Max
+	// MaxAGUISystemPromptBytes bytes. Default: "" (built-in prompt).
+	SystemPrompt string `json:"systemPrompt,omitempty" toml:"SystemPrompt"`
 	// Tools is an adapter-wide glob allow-list (path.Match semantics, matched
 	// against each tool's Info().Name) applied to every AG-UI agent's tool
 	// set, after it is built. It is subtractive only: a tool is kept when its
@@ -1514,6 +1520,12 @@ type AGUIProfile struct {
 	// this profile, on top of any resolved Persona content. Empty means
 	// none.
 	Prompt string `json:"prompt,omitempty" toml:"Prompt"`
+	// SystemPrompt replaces the Base agent's built-in system prompt (and the
+	// project context file injection) for runs served under this profile;
+	// persona, Prompt and skills are still added after it. Empty falls back to
+	// the adapter-wide [AGUI] SystemPrompt, then to the built-in prompt. Max
+	// MaxAGUISystemPromptBytes bytes.
+	SystemPrompt string `json:"systemPrompt,omitempty" toml:"SystemPrompt"`
 	// Tools is this profile's glob allow-list (see AGUIConfig.Tools for the
 	// matching semantics). A pointer, like Mesnada below, so the config API
 	// can tell "key absent" (nil: inherit the adapter-wide [AGUI] Tools)
@@ -3307,6 +3319,11 @@ func normalizeMesnadaOrchestratorDefaults() {
 	// per-engine cap", so it is left alone.
 }
 
+// MaxAGUISystemPromptBytes caps [AGUI] SystemPrompt and
+// [AGUI.Profiles.<name>] SystemPrompt (32 KiB): the text is sent with every
+// model request, so an unbounded value would silently burn context.
+const MaxAGUISystemPromptBytes = 32 * 1024
+
 // aguiProfileKnownKeys is the set of AGUIProfile field keys, lowercased to
 // match viper's case-insensitive key normalization (confirmed empirically:
 // viper lowercases both map keys and their nested keys on decode). It is
@@ -3316,13 +3333,14 @@ func normalizeMesnadaOrchestratorDefaults() {
 // key (e.g. "Persnoa") would otherwise silently produce an unrestricted
 // profile instead of the one the operator wrote.
 var aguiProfileKnownKeys = map[string]bool{
-	"base":      true,
-	"model":     true,
-	"persona":   true,
-	"prompt":    true,
-	"tools":     true,
-	"denytools": true,
-	"mesnada":   true,
+	"base":         true,
+	"model":        true,
+	"persona":      true,
+	"prompt":       true,
+	"systemprompt": true,
+	"tools":        true,
+	"denytools":    true,
+	"mesnada":      true,
 }
 
 // validateAGUIProfiles enforces the PANDO-US-0012 schema rules for
@@ -3340,12 +3358,18 @@ var aguiProfileKnownKeys = map[string]bool{
 // decode) because that is the only place an unknown key is still visible:
 // viper/mapstructure decoding into AGUIProfile silently discards it.
 func validateAGUIProfiles(c *Config) error {
+	if len(c.AGUI.SystemPrompt) > MaxAGUISystemPromptBytes {
+		return fmt.Errorf("agui: SystemPrompt is %d bytes, max %d", len(c.AGUI.SystemPrompt), MaxAGUISystemPromptBytes)
+	}
 	for name, prof := range c.AGUI.Profiles {
 		if IsKnownAgent(AgentName(name)) {
 			return fmt.Errorf("agui profile %q: name collides with a built-in agent name", name)
 		}
 		if !IsKnownAgent(prof.Base) {
 			return fmt.Errorf("agui profile %q: unknown base agent %q", name, prof.Base)
+		}
+		if len(prof.SystemPrompt) > MaxAGUISystemPromptBytes {
+			return fmt.Errorf("agui profile %q: SystemPrompt is %d bytes, max %d", name, len(prof.SystemPrompt), MaxAGUISystemPromptBytes)
 		}
 	}
 

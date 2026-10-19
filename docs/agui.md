@@ -33,6 +33,35 @@ HumanInTheLoop = true             # approvals and questions are asked in the bro
 AutoApprove    = false            # adapter-local only; never touches the desktop surfaces
 ```
 
+## Profiles
+
+`[AGUI.Profiles.<name>]` declares a named assistant served at `{path}/<name>`, so one
+`agui-serve` process can host several distinct assistants. The profile name must not
+collide with a built-in agent name, and unknown keys are rejected.
+
+| Key | Meaning |
+|---|---|
+| `Base` | Required. Built-in agent the profile inherits model and token settings from. |
+| `Model` | Overrides the Base agent's model (`auto` selects the model auto mode router). |
+| `Persona` | Persona injected into the system prompt. Falls back to `[AGUI] Persona`. |
+| `SystemPrompt` | **Replaces** the Base agent's built-in system prompt and the project context file injection (`AGENTS.md`, `CLAUDE.md`, ...). Falls back to `[AGUI] SystemPrompt`; empty keeps the built-in prompt. Max 32 KiB. |
+| `Prompt` | Extra text appended after the persona. |
+| `Tools` / `DenyTools` | Glob allow- and deny-lists over tool names. |
+| `Mesnada` | Expose `mesnada_*` delegation tools. |
+
+Use `SystemPrompt` when the profile is not a coding assistant: the built-in prompt tells
+the model it is a software-engineering CLI. The persona, `Prompt` and skills sections are
+still added after it; the template sections the builder normally renders (workflow,
+conventions, environment, git and capability sections) are not.
+
+```toml
+[AGUI.Profiles.backlog-assistant]
+Base         = 'coder'
+SystemPrompt = 'You are the backlog assistant of this product. Answer from the data you are given.'
+Persona      = 'terse'
+DenyTools    = ['bash', 'write', 'edit']
+```
+
 Thread ids sent by the client are bound to Pando sessions in the adapter's own
 `agui_threads` table, so a reload — or a restart — continues the same conversation.
 

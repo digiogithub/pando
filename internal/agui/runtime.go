@@ -286,10 +286,12 @@ func (r *Runtime) sessionForThread(ctx context.Context, threadID, agentName, tit
 // so there is no second fallback to apply.
 func (r *Runtime) applySessionOverrides(sessionID string, profile *Profile) {
 	persona, prompt, model := r.cfg.Persona, "", models.ModelID("")
+	systemPrompt := r.cfg.SystemPrompt
 	if profile != nil {
 		persona, prompt, model = profile.Persona, profile.Prompt, profile.Model
+		systemPrompt = profile.SystemPrompt
 	}
-	if persona == "" && prompt == "" && model == "" {
+	if persona == "" && prompt == "" && model == "" && systemPrompt == "" {
 		return
 	}
 
@@ -302,7 +304,7 @@ func (r *Runtime) applySessionOverrides(sessionID string, profile *Profile) {
 			agent.SetSessionAutoMode(sessionID, true)
 		}
 	}
-	if persona == "" && prompt == "" && model == "" {
+	if persona == "" && prompt == "" && model == "" && systemPrompt == "" {
 		return
 	}
 
@@ -311,6 +313,9 @@ func (r *Runtime) applySessionOverrides(sessionID string, profile *Profile) {
 		ov.Persona = persona
 		ov.PersonaScoped = true
 		ov.Prompt = prompt
+	}
+	if systemPrompt != "" {
+		ov.SystemPrompt = systemPrompt
 	}
 	if model != "" {
 		ov.Model = model

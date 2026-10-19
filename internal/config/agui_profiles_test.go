@@ -219,3 +219,41 @@ Base = "task"
 		t.Fatalf("plain.Mesnada = %v, want nil (inherit default)", plain.Mesnada)
 	}
 }
+
+// TestAGUISystemPromptLoadsAndCapIsEnforced: SystemPrompt is a known profile
+// key, loads from TOML, and both the profile and adapter-wide values are
+// capped at MaxAGUISystemPromptBytes.
+func TestAGUISystemPromptLoadsAndCapIsEnforced(t *testing.T) {
+	load := func(t *testing.T, body string) (*Config, error) {
+		t.Helper()
+		isolateGlobalConfig(t)
+		tmpDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(tmpDir, ".pando.toml"), []byte(body), 0o644); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+		viper.Reset()
+		cfg = nil
+		t.Cleanup(func() { cfg = nil; viper.Reset() })
+		return Load(tmpDir, false)
+	}
+
+	c, err := load(t, "[AGUI]\nSystemPrompt = \"wide\"\n[AGUI.Profiles.a]\nBase = \"coder\"\nSystemPrompt = \"own\"\n")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.AGUI.SystemPrompt != "wide" || c.AGUI.Profiles["a"].SystemPrompt != "own" {
+		t.Fatalf("SystemPrompt not loaded: %+v", c.AGUI)
+	}
+
+	big := strings.Repeat("x", MaxAGUISystemPromptBytes+1)
+	if _, err := load(t, "[AGUI.Profiles.a]\nBase = \"coder\"\nSystemPrompt = \""+big+"\"\n"); err == nil || !strings.Contains(err.Error(), "SystemPrompt") {
+		t.Fatalf("expected profile cap error, got %v", err)
+	}
+	if _, err := load(t, "[AGUI]\nSystemPrompt = \""+big+"\"\n"); err == nil || !strings.Contains(err.Error(), "SystemPrompt") {
+		t.Fatalf("expected adapter-wide cap error, got %v", err)
+	}
+	ok := strings.Repeat("x", MaxAGUISystemPromptBytes)
+	if _, err := load(t, "[AGUI.Profiles.a]\nBase = \"coder\"\nSystemPrompt = \""+ok+"\"\n"); err != nil {
+		t.Fatalf("a prompt at the cap must load: %v", err)
+	}
+}
