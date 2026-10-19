@@ -42,6 +42,14 @@ type SessionLLMOverrides struct {
 	// per-profile Prompt override (PANDO-US-0014) reusing the existing
 	// per-session mechanism instead of adding a second one.
 	Prompt string
+	// SystemPrompt, when non-empty, REPLACES the agent's built-in system prompt
+	// (the composed identity/workflow/conventions sections and the project
+	// context file injection) for this session. Persona, Prompt, skills and the
+	// other sections buildSystemMessage appends after the base prompt still
+	// apply. It is the AG-UI per-profile SystemPrompt override and, unlike
+	// Persona/Prompt, does not depend on PersonaScoped. Empty keeps the
+	// built-in prompt.
+	SystemPrompt string
 	// AutoMode is the explicit per-session Auto model mode choice: nil means
 	// "follow the global selection" (config modelAutoMode), true/false force it
 	// on/off for this session (see SessionAutoMode in model_auto.go).
@@ -55,6 +63,7 @@ func (o SessionLLMOverrides) isEmpty() bool {
 		o.ThinkingMode == "" &&
 		o.Persona == "" &&
 		o.Prompt == "" &&
+		o.SystemPrompt == "" &&
 		!o.PersonaScoped
 }
 
@@ -162,6 +171,7 @@ func storeSessionLLMOverrides(sessionID string, overrides SessionLLMOverrides) {
 		Persona:         strings.TrimSpace(overrides.Persona),
 		PersonaScoped:   overrides.PersonaScoped,
 		Prompt:          overrides.Prompt,
+		SystemPrompt:    overrides.SystemPrompt,
 	}
 	if overrides.AutoMode != nil {
 		v := *overrides.AutoMode

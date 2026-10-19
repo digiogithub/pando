@@ -3088,17 +3088,25 @@ func buildSystemMessage(
 		buildCtx = context.Background()
 	}
 
-	systemMessage, err := prompt.BuildPrompt(buildCtx, agentName, modelProvider, globalLuaManager,
-		// Date only: the system prompt is rebuilt every turn, and a clock
-		// value in it would change the prompt prefix on every turn and defeat
-		// the provider's prompt cache for the whole history.
-		prompt.WithEnvironment(cfg.WorkingDir, isGitRepo(cfg.WorkingDir), goruntime.GOOS, time.Now().Format("2006-01-02")),
-		prompt.WithGitInfo(getGitBranch(cfg.WorkingDir), "", ""),
-		prompt.WithMCPServers(promptMCPServerNames(cfg)),
-		prompt.WithTools(promptToolNames(agentTools)),
-		prompt.WithContextFiles(prompt.LoadContextFilesFromConfig()),
-		prompt.WithSkills(skillsMetadata, activeSkillInstructions),
-	)
+	var systemMessage string
+	var err error
+	if override := strings.TrimSpace(sessionLLMOverridesForContext(ctx).SystemPrompt); override != "" {
+		// A session-level SystemPrompt (AG-UI profile) replaces the built-in
+		// base prompt and the project context files; skills still apply.
+		systemMessage = composeOverrideSystemPrompt(override, skillsMetadata, activeSkillInstructions)
+	} else {
+		systemMessage, err = prompt.BuildPrompt(buildCtx, agentName, modelProvider, globalLuaManager,
+			// Date only: the system prompt is rebuilt every turn, and a clock
+			// value in it would change the prompt prefix on every turn and defeat
+			// the provider's prompt cache for the whole history.
+			prompt.WithEnvironment(cfg.WorkingDir, isGitRepo(cfg.WorkingDir), goruntime.GOOS, time.Now().Format("2006-01-02")),
+			prompt.WithGitInfo(getGitBranch(cfg.WorkingDir), "", ""),
+			prompt.WithMCPServers(promptMCPServerNames(cfg)),
+			prompt.WithTools(promptToolNames(agentTools)),
+			prompt.WithContextFiles(prompt.LoadContextFilesFromConfig()),
+			prompt.WithSkills(skillsMetadata, activeSkillInstructions),
+		)
+	}
 	if err != nil {
 		logging.Warn("Template prompt build failed; falling back to legacy system prompt", "agent", string(agentName), "error", err)
 		systemMessage = prompt.GetAgentPrompt(agentName, modelProvider, globalLuaManager)
@@ -3142,6 +3150,22 @@ func buildSystemMessage(
 		"system_prompt", finalPrompt,
 	)
 	return finalPrompt
+}
+
+// composeOverrideSystemPrompt builds the system prompt of a session that
+// carries a SystemPrompt override: the override text first, then the skills
+// sections the template builder would otherwise have rendered.
+func composeOverrideSystemPrompt(override, skillsMetadata string, activeSkills []string) string {
+	parts := []string{override}
+	if skillsMetadata != "" {
+		parts = append(parts, "# Available Skills\n"+skillsMetadata+"\n\nWhen the user invokes a skill by name, read the skill's full instructions and follow them precisely.")
+	}
+	for _, s := range activeSkills {
+		if strings.TrimSpace(s) != "" {
+			parts = append(parts, "## Active Skill Instructions\n"+s)
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 // promptMcpCatalogListing renders the MCP catalog for the system prompt. It
