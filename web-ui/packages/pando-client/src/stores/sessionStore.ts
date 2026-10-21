@@ -72,6 +72,8 @@ interface SessionStore {
       cost?: number
     },
   ) => void
+  /** replace a session's context window, e.g. right after switching its model */
+  setSessionContextWindow: (id: string, contextWindow: number) => void
   // Permission / auto-mode handling
   addPermissionRequest: (req: PermissionRequest) => void
   respondPermission: (id: string, sessionId: string, action: PermissionAction) => Promise<void>
@@ -257,6 +259,15 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
           : sess
       ),
     })),
+
+  setSessionContextWindow: (id, contextWindow) => {
+    if (!(contextWindow > 0)) return
+    set((s) => ({
+      sessions: s.sessions.map((sess) =>
+        sess.id === id ? { ...sess, context_window: contextWindow } : sess
+      ),
+    }))
+  },
 
   addPermissionRequest: (req) =>
     set((s) =>

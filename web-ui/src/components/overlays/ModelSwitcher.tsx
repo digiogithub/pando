@@ -145,7 +145,15 @@ export default function ModelSwitcher() {
             '/api/v1/models/active',
             sessionId ? { model: modelId, sessionId } : { model: modelId },
           )
-          if (res?.scope === 'session') useSessionModelStore.getState().select(modelId)
+          if (res?.scope === 'session') {
+            useSessionModelStore.getState().select(modelId)
+            // Show the new model's window at once instead of keeping the
+            // previous model's until the next run reports token usage.
+            const picked = models.find((m) => m.id === modelId)
+            if (sessionId && picked?.contextWindow) {
+              useSessionStore.getState().setSessionContextWindow(sessionId, picked.contextWindow)
+            }
+          }
           else if (modelId === AUTO_MODEL_ID) useModelAutoModeStore.setState({ autoSelected: true })
           else {
             // No default model was configured yet, so the server persisted it.
@@ -162,7 +170,7 @@ export default function ModelSwitcher() {
         addToast(`Failed to switch model: ${serverErrorMessage(err)}`, 'error')
       }
     },
-    [close, updateField, addToast, config.default_model],
+    [close, updateField, addToast, config.default_model, models],
   )
 
   useEffect(() => {

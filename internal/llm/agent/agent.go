@@ -1895,7 +1895,7 @@ func (a *agent) streamAndHandleEvents(ctx context.Context, sessionID string, msg
 	// Capture the last confirmed token totals so we can emit live, provisional
 	// context-window estimates as each tool result is produced. The next confirmed
 	// usage (EventComplete on the following request) reconciles these estimates.
-	tokenBasePrompt, tokenBaseCompletion, tokenContextWindow := a.tokenEstimateBase(ctx, sessionID)
+	tokenBasePrompt, tokenBaseCompletion, tokenContextWindow := a.tokenEstimateBase(ctx, sessionID, requestProvider.Model())
 	var estimatedToolTokens int64
 	for i, toolCall := range toolCalls {
 		select {
@@ -2280,12 +2280,15 @@ func resolveToolCallsOnComplete(existingToolCalls, responseToolCalls []message.T
 }
 
 // tokenEstimateBase returns the last confirmed prompt/completion token totals for
-// the session plus the effective context window for the active model. These are
-// used as the base for live, provisional context-window estimates emitted while
-// tools execute. Failures are non-fatal: zeroed values simply mean the estimate
-// starts from scratch and is reconciled on the next confirmed usage.
-func (a *agent) tokenEstimateBase(ctx context.Context, sessionID string) (promptTokens, completionTokens, contextWindow int64) {
-	contextWindow = effectiveContextWindow(a.agentName, a.provider.Model())
+// the session plus the effective context window for the model serving the
+// request. That model must be the request provider's, not a.provider's: with a
+// per-session model override they differ, and mixing both made the WebUI bar
+// alternate between the two windows. These are used as the base for live,
+// provisional context-window estimates emitted while tools execute. Failures
+// are non-fatal: zeroed values simply mean the estimate starts from scratch and
+// is reconciled on the next confirmed usage.
+func (a *agent) tokenEstimateBase(ctx context.Context, sessionID string, model models.Model) (promptTokens, completionTokens, contextWindow int64) {
+	contextWindow = effectiveContextWindow(a.agentName, model)
 	sess, err := a.sessions.Get(ctx, sessionID)
 	if err != nil {
 		return 0, 0, contextWindow
