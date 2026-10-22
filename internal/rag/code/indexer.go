@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/fswatch"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/rag/embeddings"
 	"github.com/digiogithub/pando/internal/rag/treesitter"
@@ -76,6 +77,10 @@ type CodeIndexer struct {
 	// Defaults to true; the app sets it from TokenOptimization.BuildCodeGraph.
 	graphEnabled bool
 
+	// watchExclude holds the WatchExclude patterns applied, on top of the
+	// built-in defaults and .gitignore/.pandoignore, when walking a project.
+	watchExclude []string
+
 	// Active indexing jobs
 	jobsMu sync.RWMutex
 	jobs   map[string]*IndexingJob
@@ -103,6 +108,13 @@ func NewCodeIndexer(db *sql.DB, embedder embeddings.Embedder, workers int) *Code
 // impact/related tools to operate on whatever edges already exist.
 func (c *CodeIndexer) SetGraphEnabled(enabled bool) {
 	c.graphEnabled = enabled
+}
+
+// SetWatchExclude sets the extra directory patterns (the WatchExclude config)
+// skipped by a full project index, so it walks the same tree the incremental
+// watchers do.
+func (c *CodeIndexer) SetWatchExclude(patterns []string) {
+	c.watchExclude = patterns
 }
 
 // GraphEnabled reports whether property-graph edge extraction is active.
@@ -187,56 +199,9 @@ func (c *CodeIndexer) IndexProject(ctx context.Context, projectID, projectPath s
 
 // indexProjectSync does the actual indexing synchronously (called from goroutine).
 func (c *CodeIndexer) indexProjectSync(ctx context.Context, job *IndexingJob, languages []Language) error {
-	// Collect all supported files
-	var files []string
-	allowedLangs := make(map[Language]bool)
-	for _, lang := range languages {
-		allowedLangs[lang] = true
-	}
-
-	err := filepath.WalkDir(job.ProjectPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if shouldIgnoreCodePathError(err) {
-				c.appendJobWarning(job, pathWarning(path, fmt.Errorf("walk skipped: %w", err)))
-				if d != nil && d.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			return nil // Skip errors
-		}
-		if d.IsDir() {
-			// Skip hidden dirs and common non-source dirs
-			name := d.Name()
-			if strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor" ||
-				name == "dist" || name == "build" || name == "__pycache__" || name == ".git" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if treesitter.IsSupportedFile(path) {
-			if len(allowedLangs) > 0 {
-				lang, ok := treesitter.DetectLanguage(path)
-				if ok && strings.EqualFold(filepath.Ext(path), ".h") {
-					// Ambiguous header: language is decided from content at
-					// parse time, so accept it for any C-family filter.
-					ok = allowedLangs[lang] || allowedLangs[treesitter.LanguageObjectiveC] || allowedLangs[treesitter.LanguageCPP]
-					if ok {
-						files = append(files, path)
-					}
-					return nil
-				}
-				if ok && allowedLangs[lang] {
-					files = append(files, path)
-				}
-			} else {
-				files = append(files, path)
-			}
-		}
-		return nil
-	})
+	files, err := c.collectProjectFiles(job, languages)
 	if err != nil {
-		return fmt.Errorf("code: walk project: %w", err)
+		return err
 	}
 
 	c.jobsMu.Lock()
@@ -298,6 +263,62 @@ func (c *CodeIndexer) indexProjectSync(ctx context.Context, job *IndexingJob, la
 
 	// Update language stats
 	return c.updateLanguageStats(ctx, job.ProjectID)
+}
+
+// collectProjectFiles walks the project and returns the supported source files
+// for the requested languages (all supported languages when empty).
+func (c *CodeIndexer) collectProjectFiles(job *IndexingJob, languages []Language) ([]string, error) {
+	var files []string
+	allowedLangs := make(map[Language]bool)
+	for _, lang := range languages {
+		allowedLangs[lang] = true
+	}
+
+	excluder := fswatch.NewExcluder(job.ProjectPath, c.watchExclude)
+	err := filepath.WalkDir(job.ProjectPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if shouldIgnoreCodePathError(err) {
+				c.appendJobWarning(job, pathWarning(path, fmt.Errorf("walk skipped: %w", err)))
+				if d != nil && d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			return nil // Skip errors
+		}
+		if d.IsDir() {
+			// Skip hidden, generated and ignored dirs with the same rules as
+			// the file watchers (defaults, .gitignore/.pandoignore, WatchExclude).
+			if excluder.ShouldSkipDir(path) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if treesitter.IsSupportedFile(path) {
+			if len(allowedLangs) > 0 {
+				lang, ok := treesitter.DetectLanguage(path)
+				if ok && strings.EqualFold(filepath.Ext(path), ".h") {
+					// Ambiguous header: language is decided from content at
+					// parse time, so accept it for any C-family filter.
+					ok = allowedLangs[lang] || allowedLangs[treesitter.LanguageObjectiveC] || allowedLangs[treesitter.LanguageCPP]
+					if ok {
+						files = append(files, path)
+					}
+					return nil
+				}
+				if ok && allowedLangs[lang] {
+					files = append(files, path)
+				}
+			} else {
+				files = append(files, path)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("code: walk project: %w", err)
+	}
+	return files, nil
 }
 
 func (c *CodeIndexer) appendJobWarning(job *IndexingJob, warning string) {

@@ -1295,9 +1295,10 @@ type Config struct {
 	// Duration string, defaults to "120s".
 	LSPInstallTimeout string `json:"lspInstallTimeout,omitempty" toml:"LSPInstallTimeout"`
 	// WatchExclude lists extra directories the workspace file watchers (code
-	// index, LSP) must not watch: plain directory names or doublestar globs
-	// relative to the workspace root, e.g. "mobile-app/www/svg" or
-	// "**/generated". Added on top of the built-in defaults and .gitignore.
+	// index, LSP) must not watch and the full code index (code_index_project)
+	// must not walk: plain directory names or doublestar globs relative to the
+	// workspace root, e.g. "mobile-app/www/svg" or "**/generated". Added on top
+	// of the built-in defaults and .gitignore.
 	WatchExclude      []string                `json:"watchExclude,omitempty" toml:"WatchExclude"`
 	Agents            map[AgentName]Agent     `json:"agents,omitempty"`
 	Debug             bool                    `json:"debug,omitempty"`
