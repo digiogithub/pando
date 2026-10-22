@@ -32,13 +32,13 @@ GTK3 on Wayland announces **server-side** decorations for an undecorated window 
 ## Tray
 - Library: `github.com/energye/systray` v1.0.3 (getlantern fork without GTK; Linux = D-Bus SNI, pure Go; Windows = win32, pure Go). Run with `systray.Run` in a goroutine with `runtime.LockOSThread` (Windows needs the notify window and message loop on one thread; Linux loop is D-Bus only, does not touch GTK).
 - Linux: `trayHostAvailable()` checks `org.kde.StatusNotifierWatcher.IsStatusNotifierHostRegistered`; without a host (stock GNOME) the tray is skipped and minimise falls back to taskbar minimise (never hide a window with no way back).
-- macOS: stub (`tray_darwin.go`). energye's darwin code replaces the NSApplication delegate that Wails owns; needs a dedicated NSStatusItem implementation. Minimise goes to the Dock.
+- macOS: own NSStatusItem (`tray_darwin.go` + `tray_darwin.m`, cgo/ARC) on Wails' run loop — energye's darwin code would replace the NSApplication delegate Wails owns. Click opens the menu (same entries). See [[pando/fixes/macos_desktop_edit_menu_and_tray.md]].
 - Menu handlers run `go ...` to leave the tray loop (Quit -> OnShutdown -> tray.Stop must not run on the loop it stops).
 - Icons: `desktop/tray/icon.png` (64px, from build/appicon.png) and `desktop/tray/icon.ico`.
 
 ## Files
 - `desktop/main.go`: Frameless, BindingsAllowedOrigins, drag CSS props, OnStartup/OnShutdown start/stop tray, OnDomReady calls `suppressServerDecorations()`; `originOf()`.
-- `desktop/tray.go`, `tray_systray.go` (!darwin), `tray_darwin.go`, `tray_host_linux.go`, `tray_host_other.go`, `decorations_linux.go`, `decorations_other.go`, `main_test.go`.
+- `desktop/tray.go`, `tray_systray.go` (!darwin), `tray_darwin.go`, `tray_darwin.m`, `tray_host_linux.go`, `tray_host_other.go`, `decorations_linux.go`, `decorations_other.go`, `main_test.go`.
 - `internal/desktop/app.go`: `domReadyScript()`, `RegisterRuntimeBridge`, `ShowWindow`, `MinimiseToTray`, `TrayAvailable`/`SetTrayAvailable`, `OpenSettings` (+ `navigateInApp` -> `pando:desktop-navigate` event, full navigation fallback), `QuitApp`; `app_test.go`.
 - WebUI: `src/services/desktopWindow.ts` (useDesktopShell, minimise/maximise/close, useWindowMaximised, useTrayAvailable, useDesktopNavigation, onTitleBarDoubleClick, useProvidesWindowTitleBar/useHasWindowTitleBar), `src/components/layout/DesktopWindowControls.tsx` (controls + `DesktopFrameBar` standalone 32px bar for simple chat/editor/splash/login), `src/styles/desktop-window.css`, Header (controls + dblclick), MainLayout (`useProvidesWindowTitleBar`), App.tsx (`DesktopFrameBar`, `DesktopNavigationBridge`), i18n `shell.minimiseToTray|minimise|restoreWindow|maximiseWindow|closeWindow|windowControls` in 7 locales.
 - go.mod: `github.com/energye/systray v1.0.3`.
@@ -46,6 +46,6 @@ GTK3 on Wayland announces **server-side** decorations for an undecorated window 
 ## Verification
 - `go test ./internal/desktop/ ./desktop/` pass; `GOOS=windows go vet ./desktop` ok; `tsc -p tsconfig.app.json` + eslint clean.
 - Live on Linux/COSMIC Wayland: wrapper built with `-tags desktop,production,webkit2_41` against `pando serve` + vite dev. Instrumented build logged: runtime captured (412 + 15309 bytes), bridge injected on Pando origin, `TrayAvailable` binding calls from the Pando origin reached Go, focus events flowed. SNI item registered (`Title "Pando"`), dbusmenu layout Show Pando / Settings / Quit, Settings triggered via `com.canonical.dbusmenu.Event`. User confirmed custom title bar visible and native bar gone after the CSD fix.
-- Not verified: Windows and macOS runtime (no machines); macOS tray not implemented.
+- Not verified: Windows and macOS runtime (no machines); macOS tray added 2026-10-22 (compiled on macOS 27, UI not inspected).
 
 Related: [[project_desktop_wails_plan]], [[fix_reindex_macos_clipboard_model_confirm]], [[webui_redesign_p3_app_shell]]

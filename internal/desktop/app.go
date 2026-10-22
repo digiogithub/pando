@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -65,9 +66,6 @@ func NewApp(pandoURL string, startSimple bool) *App {
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
 	a.windowFocused.Store(true)
-
-	appMenu := a.buildMenu()
-	runtime.MenuSetApplicationMenu(ctx, appMenu)
 
 	// Start listening to the Pando notification SSE stream in background.
 	// Shows OS-native notifications when the window is not focused.
@@ -173,7 +171,24 @@ func (a *App) RegisterRuntimeBridge(ipcJS, runtimeJS string) {
 // Shutdown is called by Wails when the application is closing.
 func (a *App) Shutdown(ctx context.Context) {}
 
-// buildMenu constructs the application menu with window and mode controls.
+// Menu returns the application menu, passed to Wails through options.App.
+//
+// It must not be replaced at runtime with a menu lacking the Edit roles: on
+// macOS the clipboard shortcuts (Cmd+C/V/X/A/Z) are delivered by the
+// application menu, not by the webview, so WKWebView only receives them when
+// an Edit menu exists. GTK (Linux) and WebView2 (Windows) handle these keys
+// internally.
+func (a *App) Menu() *menu.Menu {
+	appMenu := a.buildMenu()
+	if goruntime.GOOS == "darwin" {
+		appMenu.Append(menu.EditMenu())   // undo/redo/cut/copy/paste/select-all
+		appMenu.Append(menu.WindowMenu()) // minimize, zoom, full screen
+	}
+	return appMenu
+}
+
+// buildMenu constructs the Pando submenu with window and mode controls. On
+// macOS it is the first submenu, so it becomes the application menu.
 func (a *App) buildMenu() *menu.Menu {
 	appMenu := menu.NewMenu()
 
@@ -186,7 +201,7 @@ func (a *App) buildMenu() *menu.Menu {
 	})
 	pandoMenu.AddSeparator()
 
-	modeItem := pandoMenu.AddCheckbox("Simple Mode", a.simpleMode.Load(), keys.CmdOrCtrl("m"), func(cd *menu.CallbackData) {
+	modeItem := pandoMenu.AddCheckbox("Simple Mode", a.simpleMode.Load(), keys.Combo("m", keys.CmdOrCtrlKey, keys.ShiftKey), func(cd *menu.CallbackData) {
 		a.toggleMode(cd.MenuItem.Checked)
 	})
 	_ = modeItem

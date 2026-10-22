@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	goruntime "runtime"
 	"strings"
 	"testing"
 )
@@ -93,5 +94,20 @@ func TestSyncShellStateFallsBackToDefaultTitle(t *testing.T) {
 
 	if got.Title != "Pando" {
 		t.Fatalf("title = %q, want Pando", got.Title)
+	}
+}
+
+func TestMenuKeepsEditRolesOnMacOS(t *testing.T) {
+	m := NewApp("http://localhost:8765", false).Menu()
+
+	want := 1 // Pando
+	if goruntime.GOOS == "darwin" {
+		want = 3 // Pando, Edit, Window: Cmd+C/V need the Edit roles in WKWebView
+	}
+	if got := len(m.Items); got != want {
+		t.Fatalf("menu has %d top-level items, want %d", got, want)
+	}
+	if m.Items[0].Label != "Pando" {
+		t.Fatalf("first submenu = %q, want Pando", m.Items[0].Label)
 	}
 }

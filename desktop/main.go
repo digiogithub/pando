@@ -53,7 +53,7 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: frontendFS,
 		},
-		Menu:              appMenu(),
+		Menu:              app.Menu(),
 		HideWindowOnClose: false,
 		// The WebUI draws its own title bar (drag region + minimise to tray,
 		// maximise, close), so the native decorations are dropped.
