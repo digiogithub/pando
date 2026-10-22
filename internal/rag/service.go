@@ -101,6 +101,11 @@ func NewRemembrancesService(db *sql.DB, cfg *config.RemembrancesConfig) (*Rememb
 	// flag lives on the top-level config, not RemembrancesConfig; config.Get()
 	// is nil-safe and defaults to graph-on.
 	codeIndexer.SetGraphEnabled(config.Get().BuildCodeGraphEnabled())
+	// Skip the same directories the file watchers do (WatchExclude on top of
+	// the built-in defaults and .gitignore/.pandoignore).
+	if appCfg := config.Get(); appCfg != nil {
+		codeIndexer.SetWatchExclude(appCfg.WatchExclude)
+	}
 
 	return &RemembrancesService{
 		KB:           kbStore,
