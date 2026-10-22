@@ -708,3 +708,38 @@ func TestSearchPatternMatchesNamePathAndRegex(t *testing.T) {
 		t.Fatalf("expected regex match on name_path, got %+v", regex)
 	}
 }
+
+func TestCollectProjectFiles_RespectsWatchExcludes(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]string{
+		"src/app.go":              "package app\n",
+		"coverage/report.js":      "var x = 1;\n", // built-in default
+		"reports/out.js":          "var y = 2;\n", // listed in .gitignore
+		"web/generated/schema.ts": "export {};\n", // WatchExclude pattern
+		".hidden/tool.go":         "package tool\n",
+	}
+	for rel, content := range files {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("reports/\n"), 0o644); err != nil {
+		t.Fatalf("write .gitignore: %v", err)
+	}
+
+	idx := NewCodeIndexer(nil, nil, 1)
+	idx.SetWatchExclude([]string{"**/generated"})
+	got, err := idx.collectProjectFiles(&IndexingJob{ProjectPath: root}, nil)
+	if err != nil {
+		t.Fatalf("collectProjectFiles: %v", err)
+	}
+
+	want := filepath.Join(root, "src", "app.go")
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("expected only %s, got %v", want, got)
+	}
+}
