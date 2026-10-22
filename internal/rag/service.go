@@ -4,6 +4,7 @@ package rag
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
@@ -113,12 +114,20 @@ func NewRemembrancesService(db *sql.DB, cfg *config.RemembrancesConfig) (*Rememb
 
 // resolveEmbedderCredentials returns the API key and base URL for an embedding provider.
 // For "openai-compatible", it uses the explicitly supplied customAPIKey and customBaseURL.
-// For all other providers it falls back to the global Providers config.
+// For all other providers it falls back to the global Providers config; for
+// "ollama" a non-empty customBaseURL takes precedence.
 func resolveEmbedderCredentials(provider, customAPIKey, customBaseURL string) (apiKey, baseURL string) {
 	if provider == "openai-compatible" {
 		return customAPIKey, customBaseURL
 	}
-	return resolveProviderCredentials(provider)
+	apiKey, baseURL = resolveProviderCredentials(provider)
+	// The remembrances base URL overrides the ollama provider default, exactly
+	// as the settings "Test connection" check resolves it; ignoring it here
+	// made the running service fall back to localhost:11434 after a restart.
+	if provider == "ollama" && strings.TrimSpace(customBaseURL) != "" {
+		baseURL = models.ResolveOllamaRawBaseURL(strings.TrimSpace(customBaseURL))
+	}
+	return apiKey, baseURL
 }
 
 // resolveProviderCredentials looks up the API key and base URL for a provider from the current app config.

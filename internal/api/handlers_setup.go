@@ -18,11 +18,16 @@ import (
 var setupOllama = ollamasetup.NewManager()
 
 // setupOllamaBaseURL is the native Ollama URL Remembrances will use: the
-// base URL of the first enabled Ollama provider account, then OLLAMA_BASE_URL,
-// then http://localhost:11434.
+// Remembrances document embedding base URL when its provider is ollama, then
+// the base URL of the first enabled Ollama provider account, then
+// OLLAMA_BASE_URL, then http://localhost:11434.
 func setupOllamaBaseURL() string {
 	configured := ""
 	if cfg := config.Get(); cfg != nil {
+		if rem := cfg.Remembrances; strings.EqualFold(strings.TrimSpace(rem.DocumentEmbeddingProvider), "ollama") &&
+			strings.TrimSpace(rem.DocumentEmbeddingBaseURL) != "" {
+			return models.ResolveOllamaRawBaseURL(rem.DocumentEmbeddingBaseURL)
+		}
 		for _, account := range cfg.ProviderAccounts {
 			if account.Type == models.ProviderOllama && !account.Disabled && strings.TrimSpace(account.BaseURL) != "" {
 				configured = account.BaseURL

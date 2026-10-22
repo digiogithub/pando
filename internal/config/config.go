@@ -498,12 +498,14 @@ type RemembrancesConfig struct {
 	AutoIndexSessions         bool   `json:"auto_index_sessions" toml:"AutoIndexSessions"`
 	DocumentEmbeddingProvider string `json:"document_embedding_provider" toml:"DocumentEmbeddingProvider"`
 	DocumentEmbeddingModel    string `json:"document_embedding_model" toml:"DocumentEmbeddingModel"`
-	// DocumentEmbeddingBaseURL and DocumentEmbeddingAPIKey are used when DocumentEmbeddingProvider is "openai-compatible".
+	// DocumentEmbeddingBaseURL and DocumentEmbeddingAPIKey are used when DocumentEmbeddingProvider is "openai-compatible";
+	// for "ollama" a non-empty DocumentEmbeddingBaseURL overrides the ollama provider URL.
 	DocumentEmbeddingBaseURL string `json:"document_embedding_base_url" toml:"DocumentEmbeddingBaseURL"`
 	DocumentEmbeddingAPIKey  string `json:"document_embedding_api_key" toml:"DocumentEmbeddingAPIKey"`
 	CodeEmbeddingProvider    string `json:"code_embedding_provider" toml:"CodeEmbeddingProvider"`
 	CodeEmbeddingModel       string `json:"code_embedding_model" toml:"CodeEmbeddingModel"`
-	// CodeEmbeddingBaseURL and CodeEmbeddingAPIKey are used when CodeEmbeddingProvider is "openai-compatible".
+	// CodeEmbeddingBaseURL and CodeEmbeddingAPIKey are used when CodeEmbeddingProvider is "openai-compatible";
+	// for "ollama" a non-empty CodeEmbeddingBaseURL overrides the ollama provider URL.
 	CodeEmbeddingBaseURL string `json:"code_embedding_base_url" toml:"CodeEmbeddingBaseURL"`
 	CodeEmbeddingAPIKey  string `json:"code_embedding_api_key" toml:"CodeEmbeddingAPIKey"`
 	UseSameModel         bool   `json:"use_same_model" toml:"UseSameModel"`
