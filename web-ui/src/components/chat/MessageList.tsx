@@ -199,6 +199,10 @@ export default function MessageList({ messages, streaming, streamingState, pendi
 
   const lastMsg = messages[messages.length - 1]
   const lastContent = lastMsg?.content[0]?.text ?? ''
+  // Parts appended to the last message (a pushed update of a message another
+  // process streams) also move the view while following.
+  const lastPartCount = lastMsg?.content.length ?? 0
+  const lastPartLen = lastMsg?.content[lastPartCount - 1]?.text?.length ?? 0
   const thinkingLen = streamingState.thinking.length
   const toolCount = streamingState.toolCalls.length
   const itemCount = streamingState.items.length
@@ -214,7 +218,7 @@ export default function MessageList({ messages, streaming, streamingState, pendi
     if (sent) setFollowing(true)
     if (followingRef.current) scrollToBottom('smooth')
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages.length, lastContent, thinkingLen, toolCount, itemCount, lastItemLen, pendingFeedback?.length])
+  }, [messages.length, lastContent, lastPartCount, lastPartLen, thinkingLen, toolCount, itemCount, lastItemLen, pendingFeedback?.length])
 
   // Opening a session lands on its latest message.
   const firstId = messages[0]?.id

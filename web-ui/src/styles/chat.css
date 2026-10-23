@@ -94,6 +94,21 @@
 }
 .chat-error svg { flex-shrink: 0; margin-top: 2px; }
 
+/* Session run by another process (subagent): input disabled until it ends. */
+.chat-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--info-soft);
+  color: var(--info);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.chat-notice svg { flex-shrink: 0; margin-top: 2px; }
+
 /* ── Messages ───────────────────────────────────────────────────────────── */
 .chat-msg { display: flex; flex-direction: column; min-width: 0; }
 

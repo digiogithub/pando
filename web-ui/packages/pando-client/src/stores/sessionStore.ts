@@ -3,7 +3,8 @@ import { usePersonaRoutingStore } from './personaRoutingStore'
 import { create } from 'zustand'
 import type { Session, Message, PermissionRequest, PermissionAction, QuestionRequest, QuestionAnswer } from '../types'
 import api from '../services/api'
-import { mapSession, mapMessages } from '../services/mappers'
+import { mapSession, mapMessages, type RawMessage, type RawSession } from '../services/mappers'
+import { applyRawMessage, reconcileMessages, removeMessage, removeSession, upsertSession } from '../services/liveUpdates'
 import { RUN_SEQ_STALE } from '../services/runSeq'
 
 /** page size used by the session list; the API caps a request at 500 */
@@ -48,6 +49,20 @@ interface SessionStore {
   /** append the next page of sessions to the list */
   loadMoreSessions: () => Promise<void>
   setActiveSession: (id: string) => Promise<{ isRunning: boolean }>
+  /**
+   * re-read the active session's history and status and merge it in place
+   * (unchanged messages keep their identity): the catch-up when following a
+   * session another process (a subagent) is running
+   */
+  resyncActiveSession: (id: string) => Promise<void>
+  /** upsert one pushed raw message (Go message.Message JSON) into the active transcript */
+  applyPushedMessage: (sessionId: string, raw: RawMessage) => void
+  /** drop a pushed deleted message from the active transcript */
+  removePushedMessage: (sessionId: string, id: string) => void
+  /** upsert a pushed session list item, keeping list order */
+  upsertPushedSession: (raw: RawSession) => void
+  /** remove a pushed deleted session from the list */
+  removePushedSession: (id: string) => void
   setMessages: (msgs: Message[]) => void
   setSeenRunSeq: (id: string, seq: number) => void
   addMessage: (msg: Message) => void
@@ -90,8 +105,15 @@ interface SessionStore {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RawSessions = { sessions: any[]; total?: number; has_more?: boolean }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type RawSessionDetail = { session: any; messages: any[]; is_running?: boolean; run_seq?: number }
+type RawSessionDetail = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  session: any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  messages: any[]
+  is_running?: boolean
+  run_seq?: number
+  busy_elsewhere?: boolean
+}
 
 export const useSessionStore = create<SessionStore>((set, get) => ({
   sessions: [],
@@ -169,6 +191,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const messages = mapMessages(data.messages ?? [])
       const isRunning = data.is_running ?? false
       const runSeq = data.run_seq ?? 0
+      const busyElsewhere = data.busy_elsewhere ?? false
       // History already contains every finished run. A run still in flight is
       // not in it (or only partly), so leave the baseline stale and let the
       // reattach effect replay it.
@@ -178,7 +201,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         seenRunSeq: { ...s.seenRunSeq, [id]: isRunning ? RUN_SEQ_STALE : runSeq },
         // Reflect running status and sequence in the sessions list too
         sessions: s.sessions.map((sess) =>
-          sess.id === id ? { ...sess, is_running: isRunning, run_seq: runSeq } : sess
+          sess.id === id ? { ...sess, is_running: isRunning, run_seq: runSeq, busy_elsewhere: busyElsewhere } : sess
         ),
       }))
 
@@ -188,6 +211,57 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       return { isRunning: false }
     }
   },
+
+  resyncActiveSession: async (id) => {
+    try {
+      const data = await api.get<RawSessionDetail>(`/api/v1/sessions/${id}`)
+      set((s) => {
+        if (s.activeSessionId !== id) return s
+        const messages = reconcileMessages(s.messages, mapMessages(data.messages ?? []))
+        // Only the run flags: the list's display title (derived server-side
+        // for placeholder titles) must not be replaced by the raw one.
+        const busyElsewhere = data.busy_elsewhere ?? false
+        const isRunning = data.is_running ?? false
+        const sessions = s.sessions.some(
+          (sess) => sess.id === id && (Boolean(sess.busy_elsewhere) !== busyElsewhere || Boolean(sess.is_running) !== isRunning),
+        )
+          ? s.sessions.map((sess) => (sess.id === id ? { ...sess, busy_elsewhere: busyElsewhere, is_running: isRunning } : sess))
+          : s.sessions
+        if (messages === s.messages && sessions === s.sessions) return s
+        return { messages, sessions }
+      })
+    } catch {
+      // Best effort: the next push or poll catches up.
+    }
+  },
+
+  applyPushedMessage: (sessionId, raw) =>
+    set((s) => {
+      if (s.activeSessionId !== sessionId) return s
+      const messages = applyRawMessage(s.messages, raw)
+      return messages === s.messages ? s : { messages }
+    }),
+
+  removePushedMessage: (sessionId, id) =>
+    set((s) => {
+      if (s.activeSessionId !== sessionId) return s
+      const messages = removeMessage(s.messages, id)
+      return messages === s.messages ? s : { messages }
+    }),
+
+  upsertPushedSession: (raw) =>
+    set((s) => {
+      const { sessions, added } = upsertSession(s.sessions, raw)
+      if (sessions === s.sessions) return s
+      return { sessions, sessionsTotal: added ? s.sessionsTotal + 1 : s.sessionsTotal }
+    }),
+
+  removePushedSession: (id) =>
+    set((s) => {
+      const { sessions, removed } = removeSession(s.sessions, id)
+      if (!removed) return s
+      return { sessions, sessionsTotal: Math.max(0, s.sessionsTotal - 1) }
+    }),
 
   setMessages: (messages) => set({ messages }),
 
@@ -333,6 +407,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         questions?: QuestionRequest[]
         running?: boolean
         run_seq?: number
+        busy_elsewhere?: boolean
       }>(`/api/v1/sessions/${sessionId}/pending`)
       set((s) => {
         if (s.activeSessionId !== sessionId) return s
@@ -346,12 +421,20 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         // blocked on a tool). This is what lets the UI reattach to the stream.
         const running = Boolean(data.running)
         const runSeq = data.run_seq
+        // Another process (a subagent) running the session keeps it read-only.
+        const busyElsewhere = Boolean(data.busy_elsewhere)
         const changed = s.sessions.some(
-          (sess) => sess.id === sessionId && (sess.is_running !== running || (runSeq !== undefined && sess.run_seq !== runSeq)),
+          (sess) => sess.id === sessionId && (
+            sess.is_running !== running
+            || Boolean(sess.busy_elsewhere) !== busyElsewhere
+            || (runSeq !== undefined && sess.run_seq !== runSeq)
+          ),
         )
         const sessions = changed
           ? s.sessions.map((sess) =>
-              sess.id === sessionId ? { ...sess, is_running: running, run_seq: runSeq ?? sess.run_seq } : sess,
+              sess.id === sessionId
+                ? { ...sess, is_running: running, run_seq: runSeq ?? sess.run_seq, busy_elsewhere: busyElsewhere }
+                : sess,
             )
           : s.sessions
         if (newPerms.length === 0 && newQuestions.length === 0 && sessions === s.sessions) return s

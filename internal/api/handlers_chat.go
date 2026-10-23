@@ -98,6 +98,9 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "prompt is required")
 		return
 	}
+	if s.rejectBusyElsewhere(w, req.SessionID) {
+		return
+	}
 
 	sess, err := s.getOrCreateSession(r.Context(), req.SessionID)
 	if err != nil {
@@ -111,6 +114,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	eventChan, err := s.app.CoderAgent.Run(r.Context(), sess.ID, req.Prompt)
+	if errors.Is(err, agent.ErrSessionBusyElsewhere) {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("agent error: %v", err))
 		return
@@ -160,6 +167,9 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 
 	if req.Prompt == "" {
 		writeError(w, http.StatusBadRequest, "prompt is required")
+		return
+	}
+	if s.rejectBusyElsewhere(w, req.SessionID) {
 		return
 	}
 
@@ -259,6 +269,10 @@ func (s *Server) handleSteer(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(req.Prompt) == "" {
 		writeError(w, http.StatusBadRequest, "prompt is required")
+		return
+	}
+
+	if s.rejectBusyElsewhere(w, sessionID) {
 		return
 	}
 

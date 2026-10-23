@@ -107,5 +107,8 @@ func (s *Server) handleSessionPending(w http.ResponseWriter, r *http.Request) {
 		// run_seq lets the client notice a run it never streamed, even one that
 		// started and finished between two polls.
 		"run_seq": s.bgRunner.RunSeq(sessionID),
+		// busy_elsewhere: another Pando process (a subagent) runs the session,
+		// so the client keeps its input disabled and follows it with /watch.
+		"busy_elsewhere": s.sessionBusyElsewhere(sessionID),
 	})
 }

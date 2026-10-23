@@ -198,6 +198,11 @@ type Config struct {
 	// spawn tool (item B1) to a registered project id/path. When nil the spawn
 	// tool's optional "project" argument is rejected as unsupported.
 	ProjectRefResolver ProjectRefResolver
+	// SkipStaleRecovery disables the startup reconciliation of tasks left in
+	// "running" state. One-shot runs (`pando -p`, mesnada pando-cli subagents)
+	// set it: they share the parent's task store, and the running tasks they
+	// find there belong to sibling subagents that are still alive.
+	SkipStaleRecovery bool
 	// ExternalDelegationRecoverer recovers interrupted external delegations after a
 	// parent restart (A2). Wired only when the caller opted into external warm
 	// targets (AllowExternalWarmTargets); nil (the default) keeps recoverStaleTasks
@@ -294,7 +299,9 @@ func New(cfg Config) (*Orchestrator, error) {
 	o.manager = agent.NewManager(cfg.AppConfig, cfg.LogDir, o.onTaskComplete, o.SetProgress, cfg.ModelResolver)
 
 	// Recover any tasks that were left in running state from a previous run.
-	o.recoverStaleTasks()
+	if !cfg.SkipStaleRecovery {
+		o.recoverStaleTasks()
+	}
 
 	// Dispatch tick: reclaims stranded claims and drains tasks deferred by a
 	// concurrency cap. Started last so it never observes a half-built instance.
@@ -412,8 +419,15 @@ func (o *Orchestrator) recoverStaleTasks() {
 		return
 	}
 
-	var failed, reattaching int
+	var failed, reattaching, alive int
 	for _, task := range tasks {
+		// The store is shared with other orchestrators of the same project (the
+		// desktop and the subagents it spawned). A task whose process is still
+		// running belongs to one of them and is not stale.
+		if task.PID > 0 && processAlive(task.PID) {
+			alive++
+			continue
+		}
 		if o.externalRecoverer != nil && isRecoverableExternalDelegation(task) {
 			reattaching++
 			o.wg.Add(1)
@@ -429,6 +443,9 @@ func (o *Orchestrator) recoverStaleTasks() {
 
 	if failed > 0 {
 		log.Printf("task_recovery: marked %d stale running task(s) as failed", failed)
+	}
+	if alive > 0 {
+		log.Printf("task_recovery: left %d running task(s) owned by live processes untouched", alive)
 	}
 	if reattaching > 0 {
 		log.Printf("task_recovery: attempting external re-attach for %d interrupted delegation(s)", reattaching)

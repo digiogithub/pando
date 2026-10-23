@@ -66,6 +66,26 @@ func (s *Server) sessionRunning(sessionID string) bool {
 	return s.bgRunner.IsBusy(sessionID) || s.agentBusy(sessionID)
 }
 
+// sessionBusyElsewhere reports whether another Pando process (an IPC follower
+// such as a mesnada subagent) is running the session. Such a session is shown
+// read-only: a prompt sent here would start a second run on top of it.
+func (s *Server) sessionBusyElsewhere(sessionID string) bool {
+	return s.app != nil && s.app.SessionBusyElsewhere(sessionID)
+}
+
+// rejectBusyElsewhere answers 409 when the session is running in another
+// process and reports whether it did.
+func (s *Server) rejectBusyElsewhere(w http.ResponseWriter, sessionID string) bool {
+	if sessionID == "" || !s.sessionBusyElsewhere(sessionID) {
+		return false
+	}
+	writeJSON(w, http.StatusConflict, map[string]string{
+		"error": agent.ErrSessionBusyElsewhere.Error(),
+		"code":  "busy_elsewhere",
+	})
+	return true
+}
+
 // brokerRunEvents adapts the agent's pubsub broker into an event channel for a
 // session whose run bgRunner does not own, so streamSessionEvents can serve it.
 // There is no replay buffer: the stream starts at the moment of attachment. The

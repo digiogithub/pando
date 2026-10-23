@@ -668,6 +668,10 @@
       "lines": "linhas",
       "exitCode": "Código de saída: {{code}}"
     },
+    "busyElsewhere": {
+      "notice": "Esta sessão está em execução noutro processo (subagente). A entrada está desativada até terminar.",
+      "label": "Em execução no subagente"
+    },
     "composer": {
       "placeholder": "Pergunte qualquer coisa ao Pando…",
       "placeholderRunning": "Oriente o agente em execução…",

@@ -47,9 +47,18 @@ type ListFilter struct {
 }
 
 // FileStore implements Store using a JSON file for persistence.
+//
+// Several processes share one file: the parent orchestrator and every `pando -p`
+// subagent it spawns run in the same project and open the same store. Each
+// process is authoritative only for the tasks it wrote itself (owned/deleted);
+// on save the file is re-read under an inter-process lock and every other task
+// is kept exactly as the other processes left it, so no process overwrites the
+// state of tasks it does not run.
 type FileStore struct {
 	path      string
 	tasks     map[string]*models.Task
+	owned     map[string]bool
+	deleted   map[string]bool
 	mu        sync.RWMutex
 	saveOnce  sync.Once
 	closeOnce sync.Once
@@ -76,6 +85,8 @@ func NewFileStore(path string) (*FileStore, error) {
 	fs := &FileStore{
 		path:    path,
 		tasks:   make(map[string]*models.Task),
+		owned:   make(map[string]bool),
+		deleted: make(map[string]bool),
 		closeCh: make(chan struct{}),
 	}
 
@@ -102,22 +113,61 @@ func (fs *FileStore) load() error {
 		return fmt.Errorf("failed to read store file: %w", err)
 	}
 
-	if len(data) == 0 {
-		return nil
+	tasks, err := decodeTasks(data)
+	if err != nil {
+		return err
 	}
-
-	var tasks map[string]*models.Task
-	if err := json.Unmarshal(data, &tasks); err != nil {
-		return fmt.Errorf("failed to parse store file: %w", err)
+	if tasks != nil {
+		fs.tasks = tasks
 	}
-
-	fs.tasks = tasks
 	return nil
 }
 
+func decodeTasks(data []byte) (map[string]*models.Task, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	var tasks map[string]*models.Task
+	if err := json.Unmarshal(data, &tasks); err != nil {
+		return nil, fmt.Errorf("failed to parse store file: %w", err)
+	}
+	return tasks, nil
+}
+
 func (fs *FileStore) save() error {
+	unlock, err := lockStoreFile(fs.path + ".lock")
+	if err != nil {
+		return fmt.Errorf("failed to lock store file: %w", err)
+	}
+	defer unlock()
+
+	// Start from what the other processes sharing this file wrote, then apply
+	// only the tasks this process owns. An unreadable file is replaced by our
+	// view rather than blocking every save.
+	merged := make(map[string]*models.Task)
+	if data, readErr := os.ReadFile(fs.path); readErr == nil {
+		if onDisk, decodeErr := decodeTasks(data); decodeErr == nil {
+			for id, task := range onDisk {
+				merged[id] = task
+			}
+		}
+	}
+
 	fs.mu.RLock()
-	data, err := json.MarshalIndent(fs.tasks, "", "  ")
+	if len(merged) == 0 {
+		for id, task := range fs.tasks {
+			merged[id] = task
+		}
+	}
+	for id := range fs.owned {
+		if task, ok := fs.tasks[id]; ok {
+			merged[id] = task
+		}
+	}
+	for id := range fs.deleted {
+		delete(merged, id)
+	}
+	data, err := json.MarshalIndent(merged, "", "  ")
 	fs.mu.RUnlock()
 
 	if err != nil {
@@ -168,7 +218,7 @@ func (fs *FileStore) Save(task *models.Task) error {
 	defer fs.mu.Unlock()
 
 	fs.tasks[task.ID] = task
-	fs.dirty = true
+	fs.markOwned(task.ID)
 
 	return nil
 }
@@ -274,6 +324,8 @@ func (fs *FileStore) Delete(id string) error {
 	}
 
 	delete(fs.tasks, id)
+	delete(fs.owned, id)
+	fs.deleted[id] = true
 	fs.dirty = true
 
 	return nil
@@ -290,7 +342,7 @@ func (fs *FileStore) UpdateStatus(id string, status models.TaskStatus) error {
 	}
 
 	task.Status = status
-	fs.dirty = true
+	fs.markOwned(id)
 
 	return nil
 }
@@ -328,7 +380,7 @@ func (fs *FileStore) ClaimForDispatch(id, owner string, expires time.Time) (bool
 	} else {
 		task.ClaimExpires = nil
 	}
-	fs.dirty = true
+	fs.markOwned(id)
 
 	return true, nil
 }
@@ -348,9 +400,17 @@ func (fs *FileStore) ReleaseClaim(id string) error {
 		return nil
 	}
 	task.ClearClaim()
-	fs.dirty = true
+	fs.markOwned(id)
 
 	return nil
+}
+
+// markOwned records that this process wrote the task, making its in-memory
+// copy authoritative on save. Callers hold fs.mu.
+func (fs *FileStore) markOwned(id string) {
+	fs.owned[id] = true
+	delete(fs.deleted, id)
+	fs.dirty = true
 }
 
 // Close stops the background saver and performs final save.

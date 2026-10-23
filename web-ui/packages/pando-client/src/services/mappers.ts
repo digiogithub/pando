@@ -2,7 +2,7 @@ import type { Session, Message, ContentPart } from '../types'
 
 // Backend returns PascalCase + Unix timestamps; frontend expects snake_case + ISO strings
 
-interface RawSession {
+export interface RawSession {
   ID: string
   ParentSessionID?: string
   Title: string
@@ -19,6 +19,8 @@ interface RawSession {
   // The session list adds these two with snake_case JSON tags.
   is_running?: boolean
   run_seq?: number
+  busy_elsewhere?: boolean
+  prompt_preview?: string
 }
 
 // RawPart matches what the Go message.Message serializes to JSON via encoding/json.
@@ -34,7 +36,7 @@ interface RawSession {
 //
 // NOTE: ToolResults are stored in a SEPARATE message with role="tool" following
 // the assistant message that contains the ToolCall parts.
-interface RawPart {
+export interface RawPart {
   // TextContent
   text?: string
   // ReasoningContent
@@ -58,7 +60,7 @@ interface RawPart {
   detail?: string
 }
 
-interface RawMessage {
+export interface RawMessage {
   ID: string
   SessionID: string
   Role: 'user' | 'assistant' | 'system' | 'tool'
@@ -88,6 +90,8 @@ export function mapSession(raw: RawSession): Session {
     updated_at: unixToISO(raw.UpdatedAt),
     is_running: raw.is_running ?? raw.IsRunning ?? false,
     run_seq: raw.run_seq ?? 0,
+    busy_elsewhere: raw.busy_elsewhere ?? false,
+    ...(raw.prompt_preview ? { prompt_preview: raw.prompt_preview } : {}),
   }
 }
 
@@ -144,7 +148,7 @@ export function mapMessage(raw: RawMessage): Message {
   return mapMessageWithResults(raw, new Map())
 }
 
-function mapMessageWithResults(
+export function mapMessageWithResults(
   raw: RawMessage,
   resultMap: Map<string, { content: string; is_error: boolean }>,
 ): Message {

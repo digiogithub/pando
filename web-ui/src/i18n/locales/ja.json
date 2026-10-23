@@ -668,6 +668,10 @@
       "lines": "行",
       "exitCode": "終了コード: {{code}}"
     },
+    "busyElsewhere": {
+      "notice": "このセッションは別のプロセス（サブエージェント）で実行中です。完了するまで入力は無効です。",
+      "label": "サブエージェントで実行中"
+    },
     "composer": {
       "placeholder": "Pando に何でも聞いてください…",
       "placeholderRunning": "実行中のエージェントに指示…",

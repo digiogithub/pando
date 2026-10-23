@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/digiogithub/pando/pkg/mesnada/models"
@@ -197,5 +198,24 @@ func TestTryStartWarmBreadcrumbSuccess(t *testing.T) {
 	}
 	if task.Status != models.TaskStatusCompleted {
 		t.Errorf("status = %q, want completed", task.Status)
+	}
+}
+
+// TestRecoverStaleTasksSkipsLiveProcesses: the task store is shared by the
+// desktop and the subagents it spawns, so a running task whose process is still
+// alive belongs to a sibling orchestrator and must not be marked failed.
+func TestRecoverStaleTasksSkipsLiveProcesses(t *testing.T) {
+	o := newWarmOrch(t, DelegationConfig{Enabled: true}, nil)
+
+	live := &models.Task{ID: "live-1", Status: models.TaskStatusRunning, Engine: models.Engine("pando-cli"), PID: os.Getpid()}
+	if err := o.store.Save(live); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	o.recoverStaleTasks()
+
+	stored, _ := o.store.Get("live-1")
+	if stored.Status != models.TaskStatusRunning {
+		t.Errorf("live task status = %q, want running", stored.Status)
 	}
 }

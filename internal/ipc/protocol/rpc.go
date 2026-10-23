@@ -38,7 +38,42 @@ const (
 	// read-only query: it never re-runs the delegation. Requires DelegationProtocol
 	// >= 2 on the target; older peers do not register it.
 	MethodDelegationStatus = "delegation.status"
+	// MethodFollowerSync is sent by a follower to the leader to report the
+	// sessions and messages it wrote to the shared database and the sessions it
+	// is running. The leader re-reads the rows and republishes them on its
+	// in-process brokers so its UIs follow work done by other processes
+	// (mesnada subagents), and marks those sessions busy elsewhere.
+	MethodFollowerSync = "follower.sync"
 )
+
+// Change kinds reported in FollowerChange.Kind.
+const (
+	ChangeCreated = "created"
+	ChangeUpdated = "updated"
+	ChangeDeleted = "deleted"
+)
+
+// FollowerChange identifies one row a follower changed. The database stays the
+// source of truth: only ids travel, the leader reads the row itself.
+type FollowerChange struct {
+	ID string `json:"id"`
+	// SessionID is set for message changes.
+	SessionID string `json:"session_id,omitempty"`
+	// Kind is one of the Change* constants.
+	Kind string `json:"kind"`
+}
+
+// FollowerSyncParams is the parameter struct for follower.sync. BusySessions is
+// the complete set of sessions the follower is running right now (not a
+// delta): the leader replaces what it knew about that instance and forgets it
+// when no sync arrives within its TTL, so a crashed follower never leaves a
+// session locked.
+type FollowerSyncParams struct {
+	InstanceID   string           `json:"instance_id"`
+	BusySessions []string         `json:"busy_sessions"`
+	Sessions     []FollowerChange `json:"sessions,omitempty"`
+	Messages     []FollowerChange `json:"messages,omitempty"`
+}
 
 // DelegationProtocolVersion is the wire version of the delegation.run contract.
 // A caller must observe a peer advertising DelegationProtocol >= this value (via

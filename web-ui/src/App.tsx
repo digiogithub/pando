@@ -35,6 +35,7 @@ import { initDesktopMode, BasicAuthRequiredError } from '@pando/client/services/
 import { useLanguageSync } from '@/hooks/useLanguageSync'
 import PWAInstallPrompt from '@/components/shared/PWAInstallPrompt'
 import { useNotificationsStore } from '@pando/client/stores/notificationsStore'
+import { useSessionEventsStore } from '@pando/client/stores/sessionEventsStore'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useExtensionPanelsStore } from '@pando/client/stores/extensionPanelsStore'
 import ExtensionPanelPage from '@/components/extensions/ExtensionPanelPage'
@@ -163,6 +164,8 @@ function App() {
   const [needsLogin, setNeedsLogin] = useState(false)
   const connectNotifications = useNotificationsStore((s) => s.connect)
   const disconnectNotifications = useNotificationsStore((s) => s.disconnect)
+  const connectSessionEvents = useSessionEventsStore((s) => s.connect)
+  const disconnectSessionEvents = useSessionEventsStore((s) => s.disconnect)
 
   const initApp = useCallback(async () => {
     setSplashStatus('connecting')
@@ -215,6 +218,15 @@ function App() {
       return () => disconnectNotifications()
     }
   }, [showSplash, splashStatus, connectNotifications, disconnectNotifications])
+
+  // Push session list changes (new/updated/deleted sessions, subagent runs)
+  // into the sidebar instead of polling for them.
+  useEffect(() => {
+    if (!showSplash && splashStatus === 'ready') {
+      connectSessionEvents()
+      return () => disconnectSessionEvents()
+    }
+  }, [showSplash, splashStatus, connectSessionEvents, disconnectSessionEvents])
 
   return (
     <>

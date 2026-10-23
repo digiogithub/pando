@@ -668,6 +668,10 @@
       "lines": "Zeilen",
       "exitCode": "Exit-Code: {{code}}"
     },
+    "busyElsewhere": {
+      "notice": "Diese Sitzung läuft in einem anderen Prozess (Subagent). Die Eingabe ist deaktiviert, bis sie abgeschlossen ist.",
+      "label": "Läuft in Subagent"
+    },
     "composer": {
       "placeholder": "Frag Pando irgendetwas…",
       "placeholderRunning": "Laufenden Agenten steuern…",

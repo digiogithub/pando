@@ -273,7 +273,7 @@ export default function Sidebar({ variant = 'full', simple = false }: { variant?
                   return (
                     <div key={s.id} className="shell-session is-editing">
                       <span
-                        className={`shell-dot${s.is_running ? ' is-running' : active ? ' is-active' : ''}`}
+                        className={`shell-dot${s.is_running || s.busy_elsewhere ? ' is-running' : active ? ' is-active' : ''}`}
                         aria-hidden="true"
                       />
                       <input
@@ -312,14 +312,16 @@ export default function Sidebar({ variant = 'full', simple = false }: { variant?
                     }}
                   >
                     <span
-                      className={`shell-dot${s.is_running ? ' is-running' : active ? ' is-active' : ''}`}
+                      className={`shell-dot${s.is_running || s.busy_elsewhere ? ' is-running' : active ? ' is-active' : ''}`}
                       aria-hidden="true"
                     />
                     <span className="shell-session-main">
                       <span className="shell-session-title">{s.title || t('nav.untitledSession')}</span>
-                      <span className={`shell-session-meta${s.is_running ? ' is-running' : ''}`}>
+                      <span className={`shell-session-meta${s.is_running || s.busy_elsewhere ? ' is-running' : ''}`}>
                         {s.is_running
                           ? t('shell.running', 'Running')
+                          : s.busy_elsewhere
+                          ? t('chat.busyElsewhere.label')
                           : <>{s.message_count} {t('common.messages')} · {format(new Date(s.updated_at), 'MMM d')}</>}
                       </span>
                     </span>

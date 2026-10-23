@@ -668,6 +668,10 @@
       "lines": "行",
       "exitCode": "退出码：{{code}}"
     },
+    "busyElsewhere": {
+      "notice": "此会话正在另一个进程（子代理）中运行。完成前输入已禁用。",
+      "label": "正在子代理中运行"
+    },
     "composer": {
       "placeholder": "向 Pando 提问任何问题…",
       "placeholderRunning": "引导正在运行的智能体…",

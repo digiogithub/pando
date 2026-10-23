@@ -165,6 +165,13 @@ type App struct {
 	// handlers on the bus created at promotion.
 	ipcBusSetupFunc func(ctx context.Context, bus *ipc.Bus) error
 
+	// externalRuns tracks the sessions IPC followers report running (leader
+	// side, see follower_sync.go). followerSyncStop stops this follower's
+	// reporting loop after its final sync.
+	externalRuns      *externalRuns
+	followerSyncStop  func()
+	externalSweepOnce sync.Once
+
 	openlitShutdown func(context.Context) error
 
 	// telemetryShutdown stops the opt-in remote logging runtime (see
@@ -291,6 +298,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 		DBQuerier:      q,
 		rwConn:         conn,
 		ipcSecondary:   opt.IPCFollower,
+		externalRuns:   newExternalRuns(externalRunTTL),
 		Projects:       projects,
 		LSPClients:     make(map[string]*lsp.Client),
 		lspSpawning:    make(map[string]struct{}),
@@ -647,6 +655,9 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 	cfg = config.Get()
 	if cfg != nil && cfg.Mesnada.Enabled {
 		mesnadaCfg := convertMesnadaConfig(cfg)
+		// One-shot runs (mesnada pando-cli subagents among them) share the
+		// parent's task store: the running tasks there are their siblings'.
+		mesnadaCfg.SkipStaleRecovery = opt.SkipStartupIndexing
 		// Wire the delegation conclusion enricher's project resolver to the live
 		// project registry so a delegated task's project id/name are resolved from
 		// its canonical path. Degrades gracefully to filepath.Base when the path is
@@ -2324,6 +2335,11 @@ func (app *App) SetupIPC(bus *ipc.Bus) {
 	// Wire the bus as the ZMQ publisher for the session service so session
 	// create/update/delete events are broadcast over PUB to other instances.
 	session.SetIPCPublisher(bus)
+	// Followers report the sessions they write and run (follower.sync); the
+	// agent refuses to start a run on a session one of them is running.
+	bus.RegisterMethod(protocol.MethodFollowerSync, app.handleFollowerSync)
+	agent.SetExternalRunCheck(app.SessionBusyElsewhere)
+	app.startExternalRunSweeper()
 
 	logging.Info("IPC bus wired to session service", "pubAddr", bus.PubAddr, "rpcAddr", bus.RPCAddr)
 }
@@ -2463,6 +2479,8 @@ func (app *App) PromoteToPrimary(ctx context.Context, lockFile *os.File) error {
 
 func (app *App) Shutdown() {
 	logging.Debug("App shutdown started")
+	// Report this follower's runs as finished before anything is torn down.
+	app.stopFollowerSync()
 	if app.acpResumeUnregister != nil {
 		app.acpResumeUnregister()
 	}

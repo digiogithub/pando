@@ -37,6 +37,46 @@ func firstTextPart(parts []message.ContentPart) (string, bool) {
 	return "", false
 }
 
+// sessionWithStatus is one entry of the session list, also pushed by
+// /api/v1/sessions/events and /api/v1/sessions/{id}/watch.
+type sessionWithStatus struct {
+	session.Session
+	IsRunning     bool   `json:"is_running"`
+	RunSeq        uint64 `json:"run_seq"`
+	PromptPreview string `json:"prompt_preview,omitempty"`
+	// BusyElsewhere: another Pando process (a subagent) runs the session.
+	BusyElsewhere bool `json:"busy_elsewhere"`
+}
+
+// sessionListItem decorates a session with its run state and display title.
+func (s *Server) sessionListItem(ctx context.Context, sess session.Session) sessionWithStatus {
+	item := sessionWithStatus{
+		Session:       sess,
+		IsRunning:     s.sessionRunning(sess.ID),
+		BusyElsewhere: s.sessionBusyElsewhere(sess.ID),
+	}
+	if s.bgRunner != nil {
+		item.RunSeq = s.bgRunner.RunSeq(sess.ID)
+	}
+	// Sessions that still carry a placeholder title (or a delegated marker
+	// without a prompt snippet) get a display title derived from their first
+	// user prompt, plus a prompt_preview the WebUI shows on hover.
+	prompt := ""
+	if session.IsDefaultTitle(sess.Title) || strings.HasPrefix(sess.Title, "delegated: ") {
+		prompt = s.firstUserPrompt(ctx, sess.ID)
+	}
+	if snippet := session.TitleFromPrompt(prompt); snippet != "" {
+		item.PromptPreview = snippet
+		switch {
+		case session.IsDefaultTitle(sess.Title):
+			item.Title = snippet
+		case strings.HasPrefix(sess.Title, "delegated: ") && !strings.Contains(sess.Title, "—"):
+			item.Title = sess.Title + " — " + snippet
+		}
+	}
+	return item
+}
+
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -56,35 +96,9 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	total := len(sessions)
 	page := paginate(sessions, limit, offset)
 
-	type sessionWithStatus struct {
-		session.Session
-		IsRunning     bool   `json:"is_running"`
-		RunSeq        uint64 `json:"run_seq"`
-		PromptPreview string `json:"prompt_preview,omitempty"`
-	}
 	result := make([]sessionWithStatus, len(page))
 	for i, sess := range page {
-		result[i] = sessionWithStatus{
-			Session:   sess,
-			IsRunning: s.sessionRunning(sess.ID),
-			RunSeq:    s.bgRunner.RunSeq(sess.ID),
-		}
-		// Sessions that still carry a placeholder title (or a delegated marker
-		// without a prompt snippet) get a display title derived from their
-		// first user prompt, plus a prompt_preview the WebUI shows on hover.
-		prompt := ""
-		if session.IsDefaultTitle(sess.Title) || strings.HasPrefix(sess.Title, "delegated: ") {
-			prompt = s.firstUserPrompt(r.Context(), sess.ID)
-		}
-		if snippet := session.TitleFromPrompt(prompt); snippet != "" {
-			result[i].PromptPreview = snippet
-			switch {
-			case session.IsDefaultTitle(sess.Title):
-				result[i].Title = snippet
-			case strings.HasPrefix(sess.Title, "delegated: ") && !strings.Contains(sess.Title, "—"):
-				result[i].Title = sess.Title + " — " + snippet
-			}
-		}
+		result[i] = s.sessionListItem(r.Context(), sess)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -133,10 +147,11 @@ func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request, id str
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"session":    sess,
-		"messages":   messages,
-		"is_running": s.sessionRunning(id),
-		"run_seq":    runSeq,
+		"session":        sess,
+		"messages":       messages,
+		"is_running":     s.sessionRunning(id),
+		"run_seq":        runSeq,
+		"busy_elsewhere": s.sessionBusyElsewhere(id),
 	})
 }
 

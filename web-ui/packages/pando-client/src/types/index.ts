@@ -16,6 +16,8 @@ export interface Session {
   is_running?: boolean
   /** number of agent runs the server accepted for this session (monotonic) */
   run_seq?: number
+  /** true while another Pando process (a subagent) runs the session: read-only here */
+  busy_elsewhere?: boolean
   /** effective context window for the active model (from live token updates) */
   context_window?: number
   /** true while prompt/completion tokens are a provisional live estimate */

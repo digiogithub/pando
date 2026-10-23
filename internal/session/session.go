@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -453,6 +454,29 @@ func ipcPayloadFromSession(sess Session) ipcSessionPayload {
 		UpdatedAt:    time.Unix(sess.UpdatedAt, 0),
 		MessageCount: sess.MessageCount,
 	}
+}
+
+// Republish mirrors a change another process made to a session: it reads the
+// row from the database and publishes it on svc's in-process broker only. It
+// deliberately skips the IPC bus, Lua hooks and snapshots, which the process
+// that made the change already ran. A deletion publishes a session carrying
+// only its id, since the row is gone. The IPC leader uses it for changes
+// reported by followers (see protocol.MethodFollowerSync).
+func Republish(ctx context.Context, svc Service, id string, eventType pubsub.EventType) error {
+	s, ok := svc.(*service)
+	if !ok {
+		return fmt.Errorf("session: republish not supported by %T", svc)
+	}
+	if eventType == pubsub.DeletedEvent {
+		s.Publish(pubsub.DeletedEvent, Session{ID: id})
+		return nil
+	}
+	dbSession, err := s.q.GetSessionByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	s.Publish(eventType, s.fromDBItem(dbSession))
+	return nil
 }
 
 func NewService(q db.Querier) Service {

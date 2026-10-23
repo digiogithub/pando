@@ -42,6 +42,28 @@ func NewService(q db.Querier) Service {
 	}
 }
 
+// Republish mirrors a change another process made to a message: it reads the
+// row from the database and publishes it on svc's in-process broker. A
+// deletion publishes a message carrying only its id and session id, since the
+// row is gone. The IPC leader uses it for changes reported by followers (see
+// protocol.MethodFollowerSync).
+func Republish(ctx context.Context, svc Service, id, sessionID string, eventType pubsub.EventType) error {
+	s, ok := svc.(*service)
+	if !ok {
+		return fmt.Errorf("message: republish not supported by %T", svc)
+	}
+	if eventType == pubsub.DeletedEvent {
+		s.Publish(pubsub.DeletedEvent, Message{ID: id, SessionID: sessionID})
+		return nil
+	}
+	msg, err := s.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	s.Publish(eventType, msg)
+	return nil
+}
+
 func (s *service) Delete(ctx context.Context, id string) error {
 	message, err := s.Get(ctx, id)
 	if err != nil {

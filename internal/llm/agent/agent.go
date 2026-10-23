@@ -71,7 +71,32 @@ var (
 	// ErrSessionNotBusy is returned by Steer when the session has no active run to
 	// steer. Callers should fall back to a normal Run in that case.
 	ErrSessionNotBusy = errors.New("session is not currently processing a request")
+	// ErrSessionBusyElsewhere is returned by Run/Resume when another Pando
+	// process (typically a mesnada subagent) is running the session: starting a
+	// second run here would interleave two agents in one conversation.
+	ErrSessionBusyElsewhere = errors.New("session is running in another Pando process (subagent); wait until it finishes")
 )
+
+// externalRunCheck reports whether another process is running a session. It
+// is installed by the IPC leader (see SetExternalRunCheck) and nil elsewhere.
+var externalRunCheck atomic.Pointer[func(sessionID string) bool]
+
+// SetExternalRunCheck installs fn as the check consulted before every run to
+// refuse sessions that another Pando process is running. nil removes it.
+func SetExternalRunCheck(fn func(sessionID string) bool) {
+	if fn == nil {
+		externalRunCheck.Store(nil)
+		return
+	}
+	externalRunCheck.Store(&fn)
+}
+
+// sessionBusyElsewhere reports whether the installed external check claims the
+// session for another process.
+func sessionBusyElsewhere(sessionID string) bool {
+	fn := externalRunCheck.Load()
+	return fn != nil && (*fn)(sessionID)
+}
 
 // ContextEnricher is the interface used by the agent to enrich the user's prompt with
 // context retrieved from the KB and code index before sending it to the LLM.
@@ -747,6 +772,9 @@ func (a *agent) ResumeRun(ctx context.Context, sessionID string, content string)
 	if a.IsSessionBusy(sessionID) {
 		return nil, ErrSessionBusy
 	}
+	if sessionBusyElsewhere(sessionID) {
+		return nil, ErrSessionBusyElsewhere
+	}
 
 	// Frame the turn for the UI before starting the run. Published on the broker
 	// so every subscribed UI sees why the session woke, and sent first on the
@@ -1096,6 +1124,9 @@ func (a *agent) runInternal(ctx context.Context, sessionID string, content strin
 	logging.Debug("Agent.Run called", "sessionID", sessionID, "contentLength", len(content), "attachmentCount", len(attachments))
 	if a.provider == nil {
 		return nil, ErrNoModel
+	}
+	if sessionBusyElsewhere(sessionID) {
+		return nil, ErrSessionBusyElsewhere
 	}
 	// In an Auto turn the routed model decides about attachments (processGeneration
 	// drops them if it cannot read them), not the coder model.

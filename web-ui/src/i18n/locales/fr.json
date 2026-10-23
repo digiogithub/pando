@@ -668,6 +668,10 @@
       "lines": "lignes",
       "exitCode": "Code de sortie : {{code}}"
     },
+    "busyElsewhere": {
+      "notice": "Cette session s'exécute dans un autre processus (sous-agent). La saisie est désactivée jusqu'à ce qu'elle se termine.",
+      "label": "En cours dans un sous-agent"
+    },
     "composer": {
       "placeholder": "Demandez n'importe quoi à Pando…",
       "placeholderRunning": "Orientez l'agent en cours…",

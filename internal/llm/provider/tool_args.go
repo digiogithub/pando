@@ -57,3 +57,44 @@ func dropTruncatedToolCalls(calls []message.ToolCall) []message.ToolCall {
 	}
 	return kept
 }
+
+// isReplayableToolCall reports whether a tool call carries the ID and function
+// name every provider requires. A stream cut by max_tokens can leave a call
+// with arguments but no ID or name (Anthropic models served through Copilot
+// interleave tool call deltas); Copilot rejects any history containing one
+// with 400 "tool call must have a tool call ID and function name".
+func isReplayableToolCall(call message.ToolCall) bool {
+	return strings.TrimSpace(call.ID) != "" && strings.TrimSpace(call.Name) != ""
+}
+
+// dropIncompleteToolCalls removes tool calls without an ID or function name
+// from a provider response, so they are never executed nor stored in history.
+func dropIncompleteToolCalls(calls []message.ToolCall) []message.ToolCall {
+	kept := calls[:0]
+	for _, call := range calls {
+		if !isReplayableToolCall(call) {
+			logging.Warn("Dropping tool call without ID or function name", "id", call.ID, "tool", call.Name, "input_len", len(call.Input))
+			continue
+		}
+		kept = append(kept, call)
+	}
+	return kept
+}
+
+// replayableToolCallIDs returns the IDs of the tool calls in history that can
+// be replayed. Tool results whose call was skipped must be skipped too: a tool
+// message that answers no assistant tool call is rejected just the same.
+func replayableToolCallIDs(messages []message.Message) map[string]bool {
+	ids := make(map[string]bool)
+	for _, msg := range messages {
+		if msg.Role != message.Assistant {
+			continue
+		}
+		for _, call := range msg.ToolCalls() {
+			if isReplayableToolCall(call) {
+				ids[call.ID] = true
+			}
+		}
+	}
+	return ids
+}

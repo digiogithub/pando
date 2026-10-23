@@ -1,10 +1,11 @@
 import { useEffect, useCallback, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui'
-import { CircleAlert, Plus } from '@/components/ui/icons'
+import { CircleAlert, Info, Plus } from '@/components/ui/icons'
 import { useChat } from '@pando/client/hooks/useChat'
 import { useGoal } from '@pando/client/hooks/useGoal'
 import { useDesktopNotifications } from '@/hooks/useDesktopNotifications'
+import { useExternalSessionWatch } from '@/hooks/useExternalSessionWatch'
 import { useSessionStore } from '@pando/client/stores/sessionStore'
 import { shouldReattach } from '@pando/client/services/runSeq'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
@@ -135,12 +136,18 @@ export default function ChatView() {
     return () => window.clearInterval(timer)
   }, [activeSessionId])
 
+  // A session another process (a mesnada subagent) is running is followed
+  // live and kept read-only: a prompt here would start a second run on it.
+  const busyElsewhere = Boolean(sessions.find((s) => s.id === activeSessionId)?.busy_elsewhere)
+  useExternalSessionWatch(activeSessionId, busyElsewhere, streaming)
+
   const isEmpty = messages.length === 0 && !streaming
   const composer = (
     <ChatInput
       onSend={sendMessage}
       streaming={streaming}
       onCancel={() => void cancelStreaming()}
+      disabled={busyElsewhere && !streaming}
       goalActive={(goal ?? streamingState.goal)?.status === 'running'}
     />
   )
@@ -177,6 +184,12 @@ export default function ChatView() {
             <div className="chat-error" role="alert">
               <CircleAlert size={14} />
               <span>{error}</span>
+            </div>
+          )}
+          {busyElsewhere && !streaming && (
+            <div className="chat-notice" role="status">
+              <Info size={14} />
+              <span>{t('chat.busyElsewhere.notice')}</span>
             </div>
           )}
           {!isEmpty && <FileChangesBar />}

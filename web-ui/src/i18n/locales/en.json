@@ -668,6 +668,10 @@
       "lines": "lines",
       "exitCode": "Exit code: {{code}}"
     },
+    "busyElsewhere": {
+      "notice": "This session is running in another process (subagent). Input is disabled until it finishes.",
+      "label": "Running in subagent"
+    },
     "composer": {
       "placeholder": "Ask Pando anything…",
       "placeholderRunning": "Steer the running agent…",

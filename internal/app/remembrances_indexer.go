@@ -77,6 +77,12 @@ func (app *App) initRemembrancesSessionIndexing(ctx context.Context, svc *rag.Re
 				if strings.TrimSpace(sessionID) == "" {
 					continue
 				}
+				// Sessions written by an IPC follower reach this broker through
+				// follower.sync; their own process indexes them (or skips them on
+				// one-shot runs), so indexing them here would embed them twice.
+				if app.externalRuns.isForeign(sessionID) {
+					continue
+				}
 				scheduler.schedule(sessionID)
 			}
 		}

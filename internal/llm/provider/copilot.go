@@ -275,6 +275,7 @@ func newCopilotClient(opts providerClientOptions) CopilotClient {
 func (c *copilotClient) convertMessages(messages []message.Message) (copilotMessages []openai.ChatCompletionMessageParamUnion) {
 	// Add system message first
 	copilotMessages = append(copilotMessages, openai.SystemMessage(c.providerOptions.systemMessage))
+	replayable := replayableToolCallIDs(messages)
 
 	for _, msg := range messages {
 		switch msg.Role {
@@ -310,18 +311,21 @@ func (c *copilotClient) convertMessages(messages []message.Message) (copilotMess
 				})
 			}
 
-			if len(msg.ToolCalls()) > 0 {
-				assistantMsg.ToolCalls = make([]openai.ChatCompletionMessageToolCallParam, len(msg.ToolCalls()))
-				for i, call := range msg.ToolCalls() {
-					assistantMsg.ToolCalls[i] = openai.ChatCompletionMessageToolCallParam{
-						ID:   call.ID,
-						Type: "function",
-						Function: openai.ChatCompletionMessageToolCallFunctionParam{
-							Name:      call.Name,
-							Arguments: sanitizeToolCallArguments(call.Name, call.Input),
-						},
-					}
+			for _, call := range msg.ToolCalls() {
+				if !isReplayableToolCall(call) {
+					continue
 				}
+				assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, openai.ChatCompletionMessageToolCallParam{
+					ID:   call.ID,
+					Type: "function",
+					Function: openai.ChatCompletionMessageToolCallFunctionParam{
+						Name:      call.Name,
+						Arguments: sanitizeToolCallArguments(call.Name, call.Input),
+					},
+				})
+			}
+			if msg.Content().String() == "" && len(assistantMsg.ToolCalls) == 0 {
+				continue
 			}
 
 			copilotMessages = append(copilotMessages, openai.ChatCompletionMessageParamUnion{
@@ -331,6 +335,9 @@ func (c *copilotClient) convertMessages(messages []message.Message) (copilotMess
 		case message.Tool:
 			var toolImages []openai.ChatCompletionContentPartUnionParam
 			for _, result := range msg.ToolResults() {
+				if !replayable[result.ToolCallID] {
+					continue
+				}
 				copilotMessages = append(copilotMessages,
 					openai.ToolMessage(result.Content, result.ToolCallID),
 				)
@@ -489,6 +496,7 @@ func (c *copilotClient) send(ctx context.Context, messages []message.Message, to
 		if finishReason == message.FinishReasonMaxTokens {
 			toolCalls = dropTruncatedToolCalls(toolCalls)
 		}
+		toolCalls = dropIncompleteToolCalls(toolCalls)
 
 		if len(toolCalls) > 0 {
 			finishReason = message.FinishReasonToolUse
@@ -658,6 +666,7 @@ func (c *copilotClient) stream(ctx context.Context, messages []message.Message, 
 				if finishReason == message.FinishReasonMaxTokens {
 					toolCalls = dropTruncatedToolCalls(toolCalls)
 				}
+				toolCalls = dropIncompleteToolCalls(toolCalls)
 				if len(toolCalls) > 0 {
 					finishReason = message.FinishReasonToolUse
 				}
@@ -724,6 +733,7 @@ func (c *copilotClient) stream(ctx context.Context, messages []message.Message, 
 // OpenAI Responses API input format (used by GPT-5+ models).
 func (c *copilotClient) convertMessagesToResponsesInput(msgs []message.Message) responses.ResponseInputParam {
 	var input responses.ResponseInputParam
+	replayable := replayableToolCallIDs(msgs)
 
 	for _, msg := range msgs {
 		switch msg.Role {
@@ -762,21 +772,19 @@ func (c *copilotClient) convertMessagesToResponsesInput(msgs []message.Message) 
 				input = append(input, item)
 			}
 			for _, tc := range msg.ToolCalls() {
-				callID := tc.ID
-				if callID == "" {
-					callID = "call_" + uuid.New().String()
+				if !isReplayableToolCall(tc) {
+					continue
 				}
-				item := responses.ResponseInputItemParamOfFunctionCall(sanitizeToolCallArguments(tc.Name, tc.Input), callID, tc.Name)
+				item := responses.ResponseInputItemParamOfFunctionCall(sanitizeToolCallArguments(tc.Name, tc.Input), tc.ID, tc.Name)
 				input = append(input, item)
 			}
 
 		case message.Tool:
 			for _, result := range msg.ToolResults() {
-				callID := result.ToolCallID
-				if callID == "" {
-					callID = "call_" + uuid.New().String()
+				if !replayable[result.ToolCallID] {
+					continue
 				}
-				item := responses.ResponseInputItemParamOfFunctionCallOutput(callID, result.Content)
+				item := responses.ResponseInputItemParamOfFunctionCallOutput(result.ToolCallID, result.Content)
 				input = append(input, item)
 
 				// Function call outputs cannot carry images; inject them as a

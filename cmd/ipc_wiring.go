@@ -41,4 +41,6 @@ func wireIPCRole(ctx context.Context, rt *ipcruntime.BootstrapResult, pandoApp *
 	}
 	pandoApp.SetIPCSecondaryContext(rt.IPCClient, cwd, instanceID, rt.PubPort, rt.RPCPort, rt.Watcher, busSetup)
 	rt.Watcher.SetPromoteCallback(pandoApp.PromoteToPrimary)
+	// Mirror this follower's sessions and runs on the leader's UIs.
+	pandoApp.StartFollowerSync(ctx)
 }
