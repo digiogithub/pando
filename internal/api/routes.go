@@ -34,6 +34,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/sessions/{id}/steer", s.handleSteer)
 	mux.HandleFunc("POST /api/v1/sessions/{id}/cancel", s.handleSessionCancel)
 	mux.HandleFunc("GET /api/v1/sessions/{id}/goal", s.handleGoalStatus)
+	mux.HandleFunc("GET /api/v1/sessions/{id}/file-original", s.handleSessionFileOriginal)
 	mux.HandleFunc("POST /api/v1/sessions/{id}/goal/cancel", s.handleCancelGoal)
 	mux.HandleFunc("GET /api/v1/sessions/{id}/model", s.handleGetSessionModel)
 	mux.HandleFunc("GET /api/v1/sessions/{id}/auto-approve", s.handleGetAutoApprove)

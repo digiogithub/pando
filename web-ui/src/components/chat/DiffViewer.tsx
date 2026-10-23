@@ -194,11 +194,23 @@ async function loadDiffContent(file: FileChange, sessionId: string | null, cwd: 
     }
   }
 
-  // 2. Current file on disk, with the recorded edits reverted for the original.
+  // 2. Current file on disk. The original comes from the session file history
+  //    (the content before the session first touched the file); reverting the
+  //    recorded edits is the last resort, and cannot undo a whole-file write.
   if (rel) {
     try {
       const res = await api.get<{ content?: string }>(`/api/v1/files/${rel}`)
       const modified = res.content ?? ''
+      if (sessionId) {
+        try {
+          const hist = await api.get<{ found?: boolean; original?: string }>(
+            `/api/v1/sessions/${sessionId}/file-original?path=${encodeURIComponent(file.filePath)}`,
+          )
+          if (hist.found) return { original: hist.original ?? '', modified }
+        } catch {
+          // History unavailable — fall back to reverting the edits.
+        }
+      }
       return { original: revertEdits(modified, file.edits), modified }
     } catch {
       // Deleted or unreadable — fall through.

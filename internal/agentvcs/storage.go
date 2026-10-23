@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/digiogithub/pando/internal/logging"
 )
@@ -77,8 +78,11 @@ func (s *storage) CommitExists(id string) bool {
 
 func (s *storage) SaveTree(t Tree) error {
 	path := filepath.Join(s.treesDir, t.ID+".json")
-	// Trees are content-addressable; skip if already stored.
+	// Trees are content-addressable; skip if already stored. Refresh the
+	// modtime instead, so a concurrent cleanup treats the reused tree as
+	// recently written (see gcGracePeriod).
 	if _, err := os.Stat(path); err == nil {
+		touch(path)
 		return nil
 	}
 	return writeJSON(path, t)
@@ -158,8 +162,10 @@ func (s *storage) BlobExists(hash string) bool {
 
 func (s *storage) StoreBlob(srcPath, hash string) error {
 	blobPath := s.blobPath(hash)
-	// Content-addressable: skip if already stored.
+	// Content-addressable: skip if already stored, refreshing its modtime so a
+	// concurrent cleanup does not collect it (see gcGracePeriod).
 	if _, err := os.Stat(blobPath); err == nil {
+		touch(blobPath)
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(blobPath), 0o755); err != nil {
@@ -225,17 +231,41 @@ func (s *storage) DeleteBlob(hash string) error {
 	return os.Remove(s.blobPath(hash))
 }
 
-// ListAllBlobHashes walks the blobs directory and returns every stored hash.
-func (s *storage) ListAllBlobHashes() (map[string]struct{}, error) {
-	hashes := make(map[string]struct{})
+// ListAllBlobHashes walks the blobs directory and returns every stored hash
+// with its modification time.
+func (s *storage) ListAllBlobHashes() (map[string]time.Time, error) {
+	hashes := make(map[string]time.Time)
 	err := filepath.Walk(s.blobsDir, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil || info.IsDir() {
 			return nil
 		}
-		hashes[info.Name()] = struct{}{}
+		hashes[info.Name()] = info.ModTime()
 		return nil
 	})
 	return hashes, err
+}
+
+// ListAllTrees returns every stored tree ID with its modification time.
+func (s *storage) ListAllTrees() (map[string]time.Time, error) {
+	trees := make(map[string]time.Time)
+	entries, err := os.ReadDir(s.treesDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return trees, nil
+		}
+		return nil, err
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		trees[strings.TrimSuffix(e.Name(), ".json")] = info.ModTime()
+	}
+	return trees, nil
 }
 
 // --- Cleanup ---
@@ -267,6 +297,12 @@ func (s *storage) safePath(dir, name string) (string, error) {
 		return "", fmt.Errorf("agentvcs: invalid path %q", name)
 	}
 	return p, nil
+}
+
+// touch sets a file's modification time to now, ignoring errors.
+func touch(path string) {
+	now := time.Now()
+	_ = os.Chtimes(path, now, now)
 }
 
 func writeJSON(path string, v any) error {

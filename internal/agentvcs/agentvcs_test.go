@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/digiogithub/pando/internal/pubsub"
 )
@@ -483,5 +484,101 @@ func TestStorageCleanup(t *testing.T) {
 	stor.DeleteSessionLog("s1")
 	if stor.SessionLogExists("s1") {
 		t.Fatal("session log should be deleted")
+	}
+}
+
+// ageObjects pushes every stored tree and blob past gcGracePeriod so cleanup
+// is allowed to collect them.
+func ageObjects(t *testing.T, stor *storage) {
+	t.Helper()
+	old := time.Now().Add(-2 * gcGracePeriod)
+	for _, dir := range []string{stor.treesDir, stor.blobsDir} {
+		filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+			if err == nil && !info.IsDir() {
+				os.Chtimes(path, old, old)
+			}
+			return nil
+		})
+	}
+}
+
+// Trees and blobs are shared between sessions: pruning one session must not
+// delete the baseline tree or the blobs another surviving session still uses.
+func TestCleanupKeepsObjectsSharedWithSurvivingSessions(t *testing.T) {
+	stor, scan, _ := setupTestStorage(t)
+	workDir := createTestWorkDir(t)
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	defer func() { _ = os.Chdir(oldwd) }()
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	svc := &service{Broker: pubsub.NewBroker[Commit](), storage: stor, scanner: scan}
+
+	// Session A: baseline plus a change only A ever saw.
+	if _, err := svc.NewChange(t.Context(), "A", "a"); err != nil {
+		t.Fatalf("NewChange(A): %v", err)
+	}
+	writeFile(t, workDir, "only-a.txt", "a\n")
+	aHead, err := svc.Record(t.Context(), "A", "a edit")
+	if err != nil {
+		t.Fatalf("Record(A): %v", err)
+	}
+	os.Remove(filepath.Join(workDir, "only-a.txt"))
+	sl, _ := stor.LoadSessionLog("A")
+	sl.UpdatedAt = 1
+	stor.SaveSessionLog(sl)
+
+	// Session B: same baseline tree as A, then edits main.go.
+	if _, err := svc.NewChange(t.Context(), "B", "b"); err != nil {
+		t.Fatalf("NewChange(B): %v", err)
+	}
+	writeFile(t, workDir, "main.go", "package main\n// changed\n")
+	if _, err := svc.Record(t.Context(), "B", "b edit"); err != nil {
+		t.Fatalf("Record(B): %v", err)
+	}
+
+	ageObjects(t, stor)
+	if err := svc.Cleanup(t.Context(), 0, 1); err != nil {
+		t.Fatalf("Cleanup: %v", err)
+	}
+
+	if stor.SessionLogExists("A") {
+		t.Fatal("session A should have been pruned")
+	}
+	if _, err := stor.LoadTree(aHead.TreeID); err == nil {
+		t.Fatal("tree only referenced by A should have been collected")
+	}
+
+	diffs, err := svc.SessionDiff(t.Context(), "B")
+	if err != nil {
+		t.Fatalf("SessionDiff(B) after cleanup: %v", err)
+	}
+	if len(diffs) != 1 || diffs[0].Path != "main.go" {
+		t.Fatalf("SessionDiff(B) = %+v, want main.go modified", diffs)
+	}
+	old, err := svc.GetFileContent(t.Context(), diffs[0].OldHash)
+	if err != nil || string(old) != "package main\n" {
+		t.Fatalf("baseline blob of B: %q, %v", old, err)
+	}
+	if _, err := svc.GetFileContent(t.Context(), diffs[0].NewHash); err != nil {
+		t.Fatalf("head blob of B: %v", err)
+	}
+}
+
+// Objects written within gcGracePeriod may belong to a commit another process
+// has not recorded yet, so cleanup leaves them alone.
+func TestCleanupKeepsRecentUnreferencedObjects(t *testing.T) {
+	stor, _, _ := setupTestStorage(t)
+	svc := &service{Broker: pubsub.NewBroker[Commit](), storage: stor}
+	stor.SaveTree(Tree{ID: "fresh", Entries: []TreeEntry{{Path: "a.go", Hash: "h"}}})
+
+	if err := svc.Cleanup(t.Context(), 0, 0); err != nil {
+		t.Fatalf("Cleanup: %v", err)
+	}
+	if _, err := stor.LoadTree("fresh"); err != nil {
+		t.Fatalf("recent tree collected: %v", err)
 	}
 }

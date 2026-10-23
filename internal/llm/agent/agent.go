@@ -1142,6 +1142,11 @@ func (a *agent) runInternal(ctx context.Context, sessionID string, content strin
 		for _, attachment := range attachments {
 			attachmentParts = append(attachmentParts, optimizeAttachment(model, attachment))
 		}
+		if a.agentName == config.AgentCoder {
+			// Capture the pre-turn state first, so this turn's edits show up as
+			// changes even for a session resumed without a baseline.
+			session.EnsureSnapshotBaseline(genCtx, sessionID)
+		}
 		result := a.processGeneration(genCtx, sessionID, content, attachmentParts, events)
 		if result.Error != nil && !errors.Is(result.Error, ErrRequestCancelled) && !errors.Is(result.Error, context.Canceled) {
 			logging.ErrorPersist(result.Error.Error())

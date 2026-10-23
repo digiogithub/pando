@@ -96,15 +96,30 @@ func RecordSnapshot(sessionID, description string) {
 	}()
 }
 
+// EnsureSnapshotBaseline synchronously records the session baseline when the
+// session has none yet. The agent loop calls it before a turn touches the
+// working directory: sessions created before this process started (or before
+// snapshots were enabled) have no baseline, and the first per-turn delta would
+// otherwise become the baseline itself, hiding that turn's changes. It is a
+// no-op when the baseline already exists or no snapshot creator is registered.
+func EnsureSnapshotBaseline(ctx context.Context, sessionID string) {
+	if globalSnapshotCreator == nil || sessionID == "" {
+		return
+	}
+	if err := globalSnapshotCreator.CreateSessionSnapshot(ctx, sessionID, "start", "Session baseline"); err != nil {
+		logging.Error("Failed to record baseline snapshot", "sessionID", sessionID, "error", err)
+	}
+}
+
 // Default title values that carry no information about the session content.
 // They are produced by the UIs on session creation ("New Chat" / "New
 // Session") or by the delegation runner ("delegated task") and are replaced
 // as soon as a real title (LLM-generated or prompt-derived) is available.
 var defaultTitles = map[string]bool{
-	"":              true,
-	"New Chat":      true,
-	"New Session":   true,
-	"delegated task": true,
+	"":                 true,
+	"New Chat":         true,
+	"New Session":      true,
+	"delegated task":   true,
 	"Generate a title": true,
 }
 

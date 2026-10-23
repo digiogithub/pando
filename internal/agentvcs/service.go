@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
@@ -66,6 +67,11 @@ type service struct {
 	*pubsub.Broker[Commit]
 	storage *storage
 	scanner *scanner
+
+	// mu serialises commit creation: the session-start baseline, the turn-start
+	// baseline and the per-turn deltas run on different goroutines and would
+	// otherwise race on the same session log.
+	mu sync.Mutex
 }
 
 // NewService creates a new agent-vcs service. It stores data alongside the
@@ -101,6 +107,12 @@ func NewService() (Service, error) {
 
 // NewChange captures the initial state of the working directory for a session.
 func (s *service) NewChange(ctx context.Context, sessionID, description string) (Commit, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.newChangeLocked(ctx, sessionID, description)
+}
+
+func (s *service) newChangeLocked(ctx context.Context, sessionID, description string) (Commit, error) {
 	// Check if session already has commits.
 	if s.storage.SessionLogExists(sessionID) {
 		sl, err := s.storage.LoadSessionLog(sessionID)
@@ -117,10 +129,13 @@ func (s *service) NewChange(ctx context.Context, sessionID, description string) 
 // last commit in the session. This is the main entry point for incremental
 // snapshots during the agent loop.
 func (s *service) Record(ctx context.Context, sessionID, description string) (Commit, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	sl, err := s.storage.LoadSessionLog(sessionID)
 	if err != nil || len(sl.Commits) == 0 {
 		// No previous commits — treat as NewChange.
-		return s.NewChange(ctx, sessionID, description)
+		return s.newChangeLocked(ctx, sessionID, description)
 	}
 
 	lastCommitID := sl.Commits[len(sl.Commits)-1]
@@ -587,54 +602,101 @@ func (s *service) Cleanup(_ context.Context, maxAgeDays, maxSessions int) error 
 		}
 	}
 
-	// Delete selected sessions and their commits/trees.
+	// Delete the selected sessions' logs and commits. Trees and blobs are
+	// content-addressed and shared between sessions (every session started on
+	// the same working tree has the same baseline tree), so they are never
+	// deleted per session: they are collected below by reachability from the
+	// sessions that survive.
 	for sid := range toDelete {
 		s.deleteSession(sid)
 	}
 
-	// Orphan blob cleanup.
-	refs, err := s.storage.referencedBlobHashes()
-	if err != nil {
-		logging.Error("agentvcs: cleanup refs", "error", err)
-		return nil
-	}
+	treesRemoved, blobsRemoved := s.collectGarbage()
 
-	allBlobs, err := s.storage.ListAllBlobHashes()
-	if err != nil {
-		logging.Error("agentvcs: cleanup list blobs", "error", err)
-		return nil
-	}
-
-	removed := 0
-	for hash := range allBlobs {
-		if _, ok := refs[hash]; !ok {
-			if err := s.storage.DeleteBlob(hash); err == nil {
-				removed++
-			}
-		}
-	}
-
-	logging.Info("agentvcs: cleanup complete", "sessionsRemoved", len(toDelete), "blobsRemoved", removed)
+	logging.Info("agentvcs: cleanup complete",
+		"sessionsRemoved", len(toDelete), "treesRemoved", treesRemoved, "blobsRemoved", blobsRemoved)
 	return nil
 }
 
-// deleteSession removes all data for a session.
+// gcGracePeriod protects trees and blobs written (or reused, which refreshes
+// their modtime) recently from garbage collection. Several Pando processes can
+// share one agent-vcs directory, and another process may have saved a tree or
+// blob whose commit and session log it has not written yet.
+const gcGracePeriod = 10 * time.Minute
+
+// collectGarbage deletes the trees no surviving commit references, then the
+// blobs no surviving tree references. Objects younger than gcGracePeriod are
+// kept regardless.
+func (s *service) collectGarbage() (treesRemoved, blobsRemoved int) {
+	sessionIDs, err := s.storage.ListSessionLogs()
+	if err != nil {
+		logging.Error("agentvcs: cleanup list sessions", "error", err)
+		return 0, 0
+	}
+	liveTrees := make(map[string]struct{})
+	for _, sid := range sessionIDs {
+		sl, err := s.storage.LoadSessionLog(sid)
+		if err != nil {
+			// An unreadable session log may still reference anything: skip
+			// collection rather than risk deleting live data.
+			logging.Error("agentvcs: cleanup load session log", "session", sid, "error", err)
+			return 0, 0
+		}
+		for _, cid := range sl.Commits {
+			c, err := s.storage.LoadCommit(cid)
+			if err != nil {
+				continue
+			}
+			liveTrees[c.TreeID] = struct{}{}
+		}
+	}
+
+	cutoff := time.Now().Add(-gcGracePeriod)
+
+	allTrees, err := s.storage.ListAllTrees()
+	if err != nil {
+		logging.Error("agentvcs: cleanup list trees", "error", err)
+		return 0, 0
+	}
+	for tid, mtime := range allTrees {
+		if _, ok := liveTrees[tid]; ok || mtime.After(cutoff) {
+			continue
+		}
+		if err := s.storage.DeleteTree(tid); err == nil {
+			treesRemoved++
+		}
+	}
+
+	refs, err := s.storage.referencedBlobHashes()
+	if err != nil {
+		logging.Error("agentvcs: cleanup refs", "error", err)
+		return treesRemoved, 0
+	}
+	allBlobs, err := s.storage.ListAllBlobHashes()
+	if err != nil {
+		logging.Error("agentvcs: cleanup list blobs", "error", err)
+		return treesRemoved, 0
+	}
+	for hash, mtime := range allBlobs {
+		if _, ok := refs[hash]; ok || mtime.After(cutoff) {
+			continue
+		}
+		if err := s.storage.DeleteBlob(hash); err == nil {
+			blobsRemoved++
+		}
+	}
+	return treesRemoved, blobsRemoved
+}
+
+// deleteSession removes a session's log and commits. Its trees and blobs are
+// left to collectGarbage, since other sessions may share them.
 func (s *service) deleteSession(sessionID string) {
 	sl, err := s.storage.LoadSessionLog(sessionID)
 	if err != nil {
 		return
 	}
-	// Collect tree IDs before deleting commits.
-	treeIDs := make(map[string]bool)
 	for _, cid := range sl.Commits {
-		c, err := s.storage.LoadCommit(cid)
-		if err == nil {
-			treeIDs[c.TreeID] = true
-		}
 		s.storage.DeleteCommit(cid)
-	}
-	for tid := range treeIDs {
-		s.storage.DeleteTree(tid)
 	}
 	s.storage.DeleteSessionLog(sessionID)
 	logging.Debug("agentvcs: deleted session", "id", sessionID, "commits", len(sl.Commits))
