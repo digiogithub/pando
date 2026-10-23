@@ -14,7 +14,11 @@ var DesktopBundlePlaceholder []byte
 // has been copied into internal/desktop/bin/Pando.app by `make desktop-embed`.
 //
 // The optional placeholder keeps the embed pattern valid before the app bundle
-// exists, while the wildcard brings in the bundle contents once generated.
+// exists. The "all:" prefix is required: without it go:embed drops every file
+// or directory starting with "_" or ".", which removes
+// Contents/_CodeSignature. The extracted bundle then fails code signature
+// validation ("invalid resource directory"), so macOS never registers it as an
+// app: no activation, no menu bar (Cmd+C/V dead), no status item.
 //
-//go:embed bin/.keep bin/Pando.app/**
+//go:embed bin/.keep all:bin/Pando.app
 var DesktopBundle embed.FS
