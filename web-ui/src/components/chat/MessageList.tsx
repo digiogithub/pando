@@ -211,14 +211,41 @@ export default function MessageList({ messages, streaming, streamingState, pendi
 
   // Follow new content while following is on; a newly sent user message
   // always brings the view down and resumes the follow.
+  //
+  // Streamed growth pins the view instantly: a smooth scroll per chunk is
+  // restarted by the next chunk before it lands, so fast models made the
+  // thread lurch up and down instead of growing in place. Only a sent message
+  // (a single discrete move) animates.
   const prevCount = useRef(messages.length)
   useEffect(() => {
     const sent = messages.length > prevCount.current && lastMsg?.role === 'user'
     prevCount.current = messages.length
     if (sent) setFollowing(true)
-    if (followingRef.current) scrollToBottom('smooth')
+    if (followingRef.current) scrollToBottom(sent ? 'smooth' : 'auto')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length, lastContent, lastPartCount, lastPartLen, thinkingLen, toolCount, itemCount, lastItemLen, pendingFeedback?.length])
+
+  // Height changes no tracked value reports (markdown or code highlighting
+  // settling, images loading, a tool row expanding) keep the bottom pinned
+  // too, at most once per frame.
+  const threadRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const thread = threadRef.current
+    if (!thread || typeof ResizeObserver === 'undefined') return
+    let frame = 0
+    const observer = new ResizeObserver(() => {
+      if (frame || !followingRef.current) return
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        if (followingRef.current) scrollToBottom('auto')
+      })
+    })
+    observer.observe(thread)
+    return () => {
+      observer.disconnect()
+      if (frame) cancelAnimationFrame(frame)
+    }
+  }, [scrollToBottom])
 
   // Opening a session lands on its latest message.
   const firstId = messages[0]?.id
@@ -239,7 +266,7 @@ export default function MessageList({ messages, streaming, streamingState, pendi
   return (
     <div className="chat-viewport">
       <div ref={scrollRef} className="chat-scroll" onScroll={onScroll}>
-        <div className="chat-column chat-thread">
+        <div ref={threadRef} className="chat-column chat-thread">
           {groupTurns(messages).map((item) =>
             item.type === 'turn' ? (
               <AssistantTurn

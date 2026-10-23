@@ -47,6 +47,8 @@ describe('MessageList auto-scroll', () => {
     const { stream } = setup()
     stream('ab')
     expect(scrollTo).toHaveBeenCalledTimes(1)
+    // Instant pin: a smooth scroll per chunk is cut short by the next chunk.
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 2000, behavior: 'auto' })
     expect(screen.queryByRole('button', { name: /bottom/i })).not.toBeInTheDocument()
   })
 
