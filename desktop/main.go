@@ -75,10 +75,18 @@ func main() {
 		Bind: []interface{}{app},
 		// The UI is served by the Pando server, not the Wails asset server, so
 		// its origin must be allowed to reach the runtime and the bindings.
-		BindingsAllowedOrigins:   originOf(*pandoURL),
-		CSSDragProperty:          "--wails-draggable",
-		CSSDragValue:             "drag",
-		EnableDefaultContextMenu: false,
+		BindingsAllowedOrigins: originOf(*pandoURL),
+		CSSDragProperty:        "--wails-draggable",
+		CSSDragValue:           "drag",
+		// When disabled, Wails on macOS injects a document-end script setting
+		// window.wails.flags.disableDefaultContextMenu, and whenever it lands
+		// after the runtime replayed by OnDomReady the runtime cancels every
+		// contextmenu event: no Cut/Copy/Paste on the prompt and inputs.
+		// Enabled, no such script exists and the runtime applies its "auto"
+		// policy: the native menu shows on inputs, textareas, contentEditable
+		// and selected text, and stays hidden elsewhere (CSS
+		// --default-contextmenu overrides it per element).
+		EnableDefaultContextMenu: true,
 		Linux: &linux.Options{
 			ProgramName: "pando",
 		},
