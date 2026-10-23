@@ -28,7 +28,10 @@ type SettingsResponse struct {
 	DataDirectory    string `json:"data_directory"`
 	ShowHiddenFiles  bool   `json:"show_hidden_files"`
 	NerdFonts        bool   `json:"nerd_fonts"`
-	LLMCacheEnabled  bool   `json:"llm_cache_enabled"`
+	// DesktopTrayOnMinimizeClose sends the desktop window to the tray on
+	// minimise/close instead of the taskbar/Dock and quitting.
+	DesktopTrayOnMinimizeClose bool `json:"desktop_tray_on_minimize_close"`
+	LLMCacheEnabled            bool `json:"llm_cache_enabled"`
 	// ModelsDevEnabled controls the models.dev catalog that completes model
 	// pricing/limits the providers do not report.
 	ModelsDevEnabled bool `json:"models_dev_enabled"`
@@ -104,22 +107,23 @@ type SettingsResponse struct {
 
 // SettingsUpdateRequest contains the fields that can be updated via PUT /api/v1/settings.
 type SettingsUpdateRequest struct {
-	DefaultModel        *string `json:"default_model,omitempty"`
-	DefaultProvider     *string `json:"default_provider,omitempty"`
-	Theme               *string `json:"theme,omitempty"`
-	Debug               *bool   `json:"debug,omitempty"`
-	AutoCompact         *bool   `json:"auto_compact,omitempty"`
-	SkillsEnabled       *bool   `json:"skills_enabled,omitempty"`
-	ShowHiddenFiles     *bool   `json:"show_hidden_files,omitempty"`
-	NerdFonts           *bool   `json:"nerd_fonts,omitempty"`
-	LLMCacheEnabled     *bool   `json:"llm_cache_enabled,omitempty"`
-	ModelsDevEnabled    *bool   `json:"models_dev_enabled,omitempty"`
-	ImageAutoResize     *bool   `json:"image_auto_resize,omitempty"`
-	ImageUseFilesAPI    *bool   `json:"image_use_files_api,omitempty"`
-	EvaluatorEnabled    *bool   `json:"evaluator_enabled,omitempty"`
-	JudgeModel          *string `json:"judge_model,omitempty"`
-	OutputFilterEnabled *bool   `json:"output_filter_enabled,omitempty"`
-	CavemanDefaultMode  *string `json:"caveman_default_mode,omitempty"`
+	DefaultModel               *string `json:"default_model,omitempty"`
+	DefaultProvider            *string `json:"default_provider,omitempty"`
+	Theme                      *string `json:"theme,omitempty"`
+	Debug                      *bool   `json:"debug,omitempty"`
+	AutoCompact                *bool   `json:"auto_compact,omitempty"`
+	SkillsEnabled              *bool   `json:"skills_enabled,omitempty"`
+	ShowHiddenFiles            *bool   `json:"show_hidden_files,omitempty"`
+	NerdFonts                  *bool   `json:"nerd_fonts,omitempty"`
+	DesktopTrayOnMinimizeClose *bool   `json:"desktop_tray_on_minimize_close,omitempty"`
+	LLMCacheEnabled            *bool   `json:"llm_cache_enabled,omitempty"`
+	ModelsDevEnabled           *bool   `json:"models_dev_enabled,omitempty"`
+	ImageAutoResize            *bool   `json:"image_auto_resize,omitempty"`
+	ImageUseFilesAPI           *bool   `json:"image_use_files_api,omitempty"`
+	EvaluatorEnabled           *bool   `json:"evaluator_enabled,omitempty"`
+	JudgeModel                 *string `json:"judge_model,omitempty"`
+	OutputFilterEnabled        *bool   `json:"output_filter_enabled,omitempty"`
+	CavemanDefaultMode         *string `json:"caveman_default_mode,omitempty"`
 
 	// TelemetryEnabled toggles opt-in remote logs/diagnostics shipping.
 	// Rejected (config untouched) when internal/telemetry.Available() is
@@ -203,26 +207,27 @@ func buildSettingsResponse() (*SettingsResponse, error) {
 	}
 
 	return &SettingsResponse{
-		HomeDirectory:       homeDir,
-		WorkingDirectory:    cfg.WorkingDir,
-		DefaultModel:        defaultModel,
-		DefaultProvider:     defaultProvider,
-		Theme:               cfg.TUI.Theme,
-		Debug:               cfg.Debug,
-		LogFile:             cfg.LogFile,
-		AutoCompact:         cfg.AutoCompact,
-		SkillsEnabled:       cfg.Skills.Enabled,
-		DataDirectory:       cfg.Data.Directory,
-		ShowHiddenFiles:     cfg.TUI.ShowHiddenFiles,
-		NerdFonts:           cfg.NerdFontsEnabled(),
-		LLMCacheEnabled:     cfg.LLMCache.Enabled,
-		ModelsDevEnabled:    cfg.ModelsDev.Enabled,
-		ImageAutoResize:     cfg.Image.AutoResize,
-		ImageUseFilesAPI:    cfg.Image.UseFilesAPI,
-		EvaluatorEnabled:    cfg.Evaluator.Enabled,
-		JudgeModel:          string(cfg.Evaluator.Model),
-		OutputFilterEnabled: !cfg.Bash.OutputFilterDisabled,
-		CavemanDefaultMode:  cfg.CavemanDefaultMode(),
+		HomeDirectory:              homeDir,
+		WorkingDirectory:           cfg.WorkingDir,
+		DefaultModel:               defaultModel,
+		DefaultProvider:            defaultProvider,
+		Theme:                      cfg.TUI.Theme,
+		Debug:                      cfg.Debug,
+		LogFile:                    cfg.LogFile,
+		AutoCompact:                cfg.AutoCompact,
+		SkillsEnabled:              cfg.Skills.Enabled,
+		DataDirectory:              cfg.Data.Directory,
+		ShowHiddenFiles:            cfg.TUI.ShowHiddenFiles,
+		NerdFonts:                  cfg.NerdFontsEnabled(),
+		DesktopTrayOnMinimizeClose: cfg.Desktop.TrayOnMinimizeClose,
+		LLMCacheEnabled:            cfg.LLMCache.Enabled,
+		ModelsDevEnabled:           cfg.ModelsDev.Enabled,
+		ImageAutoResize:            cfg.Image.AutoResize,
+		ImageUseFilesAPI:           cfg.Image.UseFilesAPI,
+		EvaluatorEnabled:           cfg.Evaluator.Enabled,
+		JudgeModel:                 string(cfg.Evaluator.Model),
+		OutputFilterEnabled:        !cfg.Bash.OutputFilterDisabled,
+		CavemanDefaultMode:         cfg.CavemanDefaultMode(),
 
 		TelemetryEnabled:   cfg.Telemetry.Enabled,
 		TelemetryDebugID:   config.TelemetryDebugIDDisplay(),
@@ -459,6 +464,13 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		// Apply immediately so the running TUI's icon set swaps live.
 		styles.SetNerdFonts(*req.NerdFonts)
+	}
+
+	if req.DesktopTrayOnMinimizeClose != nil {
+		if err := config.UpdateDesktopTrayOnMinimizeClose(*req.DesktopTrayOnMinimizeClose); err != nil {
+			writeConfigError(w, http.StatusInternalServerError, "failed to update desktop tray setting", err)
+			return
+		}
 	}
 
 	if req.LLMCacheEnabled != nil {

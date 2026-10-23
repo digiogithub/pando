@@ -27,6 +27,8 @@ vi.mock('@/services/desktopWindow', () => ({
   onTitleBarDoubleClick: vi.fn(),
   syncDesktopShellState: (...args: unknown[]) => syncDesktopShellState(...args),
   useDesktopShell: () => true,
+  useDesktopFrameless: () => true,
+  useDesktopTrayPreference: vi.fn(),
 }))
 
 function renderHeader(props?: Partial<Parameters<typeof Header>[0]>) {

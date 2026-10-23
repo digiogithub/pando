@@ -169,6 +169,14 @@ type LSPConfig struct {
 	Autostart bool `json:"autostart,omitempty" toml:"Autostart,omitempty"`
 }
 
+// DesktopConfig holds preferences of the Wails desktop window (pando desktop).
+type DesktopConfig struct {
+	// TrayOnMinimizeClose sends the window to the system tray (menu bar on
+	// macOS) when it is minimised or closed, keeping Pando running. When false
+	// (default) minimise goes to the taskbar/Dock and close quits.
+	TrayOnMinimizeClose bool `json:"trayOnMinimizeClose,omitempty" toml:"TrayOnMinimizeClose,omitempty"`
+}
+
 // TUIConfig defines the configuration for the Terminal User Interface.
 type TUIConfig struct {
 	Theme string `json:"theme,omitempty"`
@@ -1374,6 +1382,7 @@ type Config struct {
 	Skills            SkillsConfig            `json:"skills,omitempty"`
 	SkillsCatalog     SkillsCatalogConfig     `json:"skillsCatalog,omitempty"`
 	TUI               TUIConfig               `json:"tui"`
+	Desktop           DesktopConfig           `json:"desktop,omitempty" toml:"Desktop"`
 	Permissions       PermissionsConfig       `json:"permissions,omitempty"`
 	Goal              GoalConfig              `json:"goal,omitempty" toml:"Goal"`
 	Mesnada           MesnadaConfig           `json:"mesnada,omitempty"`
@@ -5025,6 +5034,27 @@ func UpdateShowHiddenFiles(enabled bool) error {
 		config.TUI.ShowHiddenFiles = enabled
 	}); err != nil {
 		cfg.TUI.ShowHiddenFiles = oldValue
+		return err
+	}
+
+	return nil
+}
+
+// UpdateDesktopTrayOnMinimizeClose updates whether the desktop window goes to
+// the tray on minimise/close and persists it to the GLOBAL config file: it is
+// a preference of the desktop app, not of any project.
+func UpdateDesktopTrayOnMinimizeClose(enabled bool) error {
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	oldValue := cfg.Desktop.TrayOnMinimizeClose
+	cfg.Desktop.TrayOnMinimizeClose = enabled
+
+	if err := updateGlobalCfgFile(func(config *Config) {
+		config.Desktop.TrayOnMinimizeClose = enabled
+	}); err != nil {
+		cfg.Desktop.TrayOnMinimizeClose = oldValue
 		return err
 	}
 

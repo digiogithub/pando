@@ -836,6 +836,8 @@ export interface SettingsConfig {
   data_directory: string
   show_hidden_files: boolean
   nerd_fonts: boolean
+  /** Desktop window: minimise/close go to the tray instead of the taskbar/Dock and quitting. Default false. */
+  desktop_tray_on_minimize_close: boolean
   llm_cache_enabled: boolean
   /** Complete model pricing/limits from the models.dev catalog. Default true. */
   models_dev_enabled: boolean

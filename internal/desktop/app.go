@@ -47,6 +47,15 @@ type App struct {
 	// trayAvailable reports whether a system tray icon is live, which decides
 	// whether "minimise" hides the window into the tray or to the taskbar.
 	trayAvailable atomic.Bool
+	// trayOnMinimizeClose mirrors the Desktop.TrayOnMinimizeClose setting,
+	// pushed by the WebUI: only then do minimise and close go to the tray.
+	trayOnMinimizeClose atomic.Bool
+	// quitting is set by an explicit quit (menu, tray, Dock, Cmd+Q) so
+	// BeforeClose lets it through instead of hiding the window to the tray.
+	quitting atomic.Bool
+	// frameless reports that the window has no native title bar and the WebUI
+	// draws its own controls. macOS keeps the native title bar.
+	frameless bool
 
 	shellStateMu       sync.RWMutex
 	shellState         ShellState
@@ -59,7 +68,14 @@ func NewApp(pandoURL string, startSimple bool) *App {
 		pandoURL: pandoURL,
 	}
 	a.simpleMode.Store(startSimple)
+	a.frameless = goruntime.GOOS != "darwin"
 	return a
+}
+
+// Frameless reports whether the window is created without native decorations,
+// in which case the WebUI draws the title bar and window controls.
+func (a *App) Frameless() bool {
+	return a.frameless
 }
 
 // Startup is called by Wails when the application starts.
@@ -95,6 +111,10 @@ func (a *App) domReadyScript() string {
 		bridge = *b
 	}
 	urlJSON, _ := json.Marshal(a.pandoURL)
+	frameless := "false"
+	if a.frameless {
+		frameless = "true"
+	}
 
 	return `
 (function() {
@@ -141,7 +161,7 @@ func (a *App) domReadyScript() string {
 	if (!window.wails || window.__PANDO_DESKTOP_SHELL__) {
 		return;
 	}
-	window.__PANDO_DESKTOP_SHELL__ = { frameless: true };
+	window.__PANDO_DESKTOP_SHELL__ = { frameless: ` + frameless + ` };
 
 	// Focus tracking decides whether OS notifications are shown.
 	window.addEventListener("focus", function() {
@@ -217,7 +237,7 @@ func (a *App) buildMenu() *menu.Menu {
 	})
 	pandoMenu.AddSeparator()
 	pandoMenu.AddText("Quit", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) {
-		runtime.Quit(a.ctx)
+		a.QuitApp()
 	})
 
 	return appMenu
@@ -263,15 +283,16 @@ func (a *App) ShowWindow() {
 	runtime.WindowUnminimise(a.ctx)
 }
 
-// MinimiseToTray hides the window into the system tray when a tray icon is
-// live, and falls back to a regular taskbar minimise otherwise: hiding a window
-// with no tray icon would leave no way to bring it back.
+// MinimiseToTray hides the window into the system tray when the "minimise and
+// close to tray" setting is on and a tray icon is live, and falls back to a
+// regular taskbar/Dock minimise otherwise: hiding a window with no tray icon
+// would leave no way to bring it back.
 // Exposed as Wails binding.
 func (a *App) MinimiseToTray() {
 	if a.ctx == nil {
 		return
 	}
-	if a.trayAvailable.Load() {
+	if a.useTray() {
 		runtime.WindowHide(a.ctx)
 		return
 	}
@@ -282,6 +303,24 @@ func (a *App) MinimiseToTray() {
 // Exposed as Wails binding.
 func (a *App) TrayAvailable() bool {
 	return a.trayAvailable.Load()
+}
+
+// useTray reports whether minimise/close must hide the window into the tray.
+func (a *App) useTray() bool {
+	return a.trayOnMinimizeClose.Load() && a.trayAvailable.Load()
+}
+
+// TrayOnMinimizeClose reports whether minimise and close go to the tray.
+// Exposed as Wails binding.
+func (a *App) TrayOnMinimizeClose() bool {
+	return a.useTray()
+}
+
+// SetTrayOnMinimizeClose applies the Desktop.TrayOnMinimizeClose setting. The
+// WebUI pushes it after loading and after every settings save.
+// Exposed as Wails binding.
+func (a *App) SetTrayOnMinimizeClose(enabled bool) {
+	a.trayOnMinimizeClose.Store(enabled)
 }
 
 // SetTrayAvailable is called by the tray integration once its icon is up (or
@@ -376,18 +415,18 @@ func (a *App) FocusProjectWorkspace(projectID string) {
 	a.navigateInApp("/projects/" + url.PathEscape(projectID) + "/workspace")
 }
 
-// CloseWindow closes the shell into the tray when a tray icon is live, and
-// falls back to quitting when the tray is unavailable.
+// CloseWindow closes the shell into the tray when the "minimise and close to
+// tray" setting is on and a tray icon is live, and quits otherwise.
 // Exposed as Wails binding.
 func (a *App) CloseWindow() {
 	if a.ctx == nil {
 		return
 	}
-	if a.trayAvailable.Load() {
+	if a.useTray() {
 		runtime.WindowHide(a.ctx)
 		return
 	}
-	runtime.Quit(a.ctx)
+	a.QuitApp()
 }
 
 // QuitApp closes the application.
@@ -396,7 +435,25 @@ func (a *App) QuitApp() {
 	if a.ctx == nil {
 		return
 	}
+	a.quitting.Store(true)
 	runtime.Quit(a.ctx)
+}
+
+// MarkQuitting flags the next close as an explicit quit (Dock "Quit", Cmd+Q
+// from the system), so BeforeClose does not turn it into hide-to-tray.
+func (a *App) MarkQuitting() {
+	a.quitting.Store(true)
+}
+
+// BeforeClose is the Wails OnBeforeClose hook. Every close request lands here,
+// including the native close button on macOS: with the tray setting on it
+// hides the window instead and vetoes the quit. Explicit quits pass through.
+func (a *App) BeforeClose(ctx context.Context) (prevent bool) {
+	if a.quitting.Load() || !a.useTray() {
+		return false
+	}
+	runtime.WindowHide(ctx)
+	return true
 }
 
 // navigateInApp asks the WebUI router to move to path, falling back to a full

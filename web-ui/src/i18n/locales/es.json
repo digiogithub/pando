@@ -342,6 +342,8 @@
       "showHiddenFilesDescription": "Muestra los archivos ocultos y dotfiles en el árbol de archivos",
       "nerdFonts": "Iconos Nerd Font",
       "nerdFontsDescription": "Usa glifos de Nerd Font para los iconos del TUI. Desactívalo si tu terminal no tiene una Nerd Font instalada y los iconos se muestran como cajas (□)",
+      "desktopTrayOnMinimizeClose": "Minimizar y cerrar a la bandeja",
+      "desktopTrayOnMinimizeCloseDescription": "Al minimizar o cerrar la ventana de escritorio se envía a la bandeja del sistema (barra de menús en macOS) y Pando sigue en ejecución. Desactivado: minimizar va a la barra de tareas/Dock y cerrar sale.",
       "debug": "Modo de depuración",
       "debugDescription": "Activa el registro detallado de depuración",
       "diagnosticsTitle": "Diagnóstico",

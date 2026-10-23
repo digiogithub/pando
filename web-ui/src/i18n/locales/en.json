@@ -342,6 +342,8 @@
       "showHiddenFilesDescription": "Show dotfiles and hidden files in the file tree",
       "nerdFonts": "Nerd Font Icons",
       "nerdFontsDescription": "Use Nerd Font glyphs for TUI icons. Disable if your terminal lacks a patched Nerd Font and icons render as boxes (□)",
+      "desktopTrayOnMinimizeClose": "Minimise and close to tray",
+      "desktopTrayOnMinimizeCloseDescription": "Minimising or closing the desktop window sends it to the system tray (menu bar on macOS) and keeps Pando running. Off: minimise goes to the taskbar/Dock and close quits.",
       "debug": "Debug Mode",
       "debugDescription": "Enable verbose debug logging",
       "diagnosticsTitle": "Diagnostics",

@@ -334,6 +334,8 @@
       "showHiddenFilesDescription": "Afficher les fichiers cachés et les dotfiles dans l’arborescence",
       "nerdFonts": "Icônes Nerd Font",
       "nerdFontsDescription": "Utiliser les glyphes Nerd Font pour les icônes du TUI. Désactivez si votre terminal n’a pas de Nerd Font et que les icônes s’affichent comme des carrés (□)",
+      "desktopTrayOnMinimizeClose": "Réduire et fermer dans la zone de notification",
+      "desktopTrayOnMinimizeCloseDescription": "Réduire ou fermer la fenêtre de bureau l’envoie dans la zone de notification (barre des menus sur macOS) et Pando continue de fonctionner. Désactivé : réduire va dans la barre des tâches/Dock et fermer quitte.",
       "debug": "Mode débogage",
       "debugDescription": "Activer la journalisation détaillée de débogage",
       "diagnosticsTitle": "Diagnostics",

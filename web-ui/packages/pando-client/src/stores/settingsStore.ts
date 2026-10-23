@@ -27,6 +27,7 @@ const DEFAULTS: SettingsConfig = {
   data_directory: '',
   show_hidden_files: false,
   nerd_fonts: true,
+  desktop_tray_on_minimize_close: false,
   llm_cache_enabled: true,
   models_dev_enabled: true,
   image_auto_resize: true,

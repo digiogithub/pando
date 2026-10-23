@@ -17,7 +17,13 @@ import {
 } from '@/components/ui/icons'
 import { isMacPlatform } from './shellHooks'
 import DesktopWindowControls from './DesktopWindowControls'
-import { onTitleBarDoubleClick, syncDesktopShellState, useDesktopShell } from '@/services/desktopWindow'
+import {
+  onTitleBarDoubleClick,
+  syncDesktopShellState,
+  useDesktopFrameless,
+  useDesktopShell,
+  useDesktopTrayPreference,
+} from '@/services/desktopWindow'
 import { resolveHeaderSection } from './headerSections'
 
 const DOCS_URL = 'https://madeindigio.github.io/pando-docs/'
@@ -56,8 +62,10 @@ export default function Header({
       : s.tabs.find((tab) => tab.projectId === s.activeTabId) ?? null,
   )
   const desktopShell = useDesktopShell()
+  const desktopFrameless = useDesktopFrameless()
   const childMode = startupMode === 'project-child' || isProjectChildMode()
   const embedded = childMode && window.parent !== window
+  useDesktopTrayPreference(desktopShell && !embedded)
   // While a project tab is shown, the persona, chat-mode and settings actions
   // would act on the main instance; the framed child carries its own.
   const hostingProject = !childMode && activeTabId !== 'main'
@@ -115,7 +123,7 @@ export default function Header({
   return (
     <header
       className={`shell-titlebar${embedded ? ' shell-titlebar--embedded' : ''}`}
-      onDoubleClick={desktopShell ? onTitleBarDoubleClick : undefined}
+      onDoubleClick={desktopFrameless ? onTitleBarDoubleClick : undefined}
     >
       <div className="shell-titlebar-group">
         {!hideSidebarToggle && (

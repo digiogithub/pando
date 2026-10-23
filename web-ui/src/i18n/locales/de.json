@@ -334,6 +334,8 @@
       "showHiddenFilesDescription": "Versteckte Dateien und Dotfiles im Dateibaum anzeigen",
       "nerdFonts": "Nerd-Font-Symbole",
       "nerdFontsDescription": "Nerd-Font-Glyphen für TUI-Symbole verwenden. Deaktivieren, wenn Ihr Terminal keine Nerd-Font hat und Symbole als Kästchen (□) erscheinen",
+      "desktopTrayOnMinimizeClose": "In den Infobereich minimieren und schließen",
+      "desktopTrayOnMinimizeCloseDescription": "Minimieren oder Schließen des Desktop-Fensters schickt es in den Infobereich (Menüleiste unter macOS), Pando läuft weiter. Aus: Minimieren geht in die Taskleiste/das Dock, Schließen beendet.",
       "debug": "Debug-Modus",
       "debugDescription": "Ausführliche Debug-Protokollierung aktivieren",
       "diagnosticsTitle": "Diagnose",

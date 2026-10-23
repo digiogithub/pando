@@ -1,14 +1,17 @@
 /**
- * Window chrome for the frameless Wails desktop shell.
+ * Window chrome for the Wails desktop shell.
  *
- * The desktop window has no native title bar: the WebUI draws its own (drag
- * region + minimise to tray, maximise, close). The UI is served by the Pando
+ * On Linux and Windows the desktop window has no native title bar: the WebUI
+ * draws its own (drag region + minimise, maximise, close). macOS keeps the
+ * native title bar, so there the shell is active but not frameless. The UI is served by the Pando
  * server, not by the Wails asset server, so the Wails runtime is not there at
  * module load: the desktop shell injects it once the document has loaded, sets
  * `window.__PANDO_DESKTOP_SHELL__` and fires `pando:desktop-shell`. Everything
  * here is therefore reactive, and a plain browser tab never sees any of it.
  */
 import { useEffect, useState, useSyncExternalStore, type MouseEvent } from 'react'
+import api from '@pando/client/services/api'
+import { useSettingsStore } from '@pando/client/stores/settingsStore'
 
 const SHELL_EVENT = 'pando:desktop-shell'
 const NAVIGATE_EVENT = 'pando:desktop-navigate'
@@ -24,6 +27,8 @@ interface WailsRuntime {
 interface DesktopAppBindings {
   MinimiseToTray?: () => Promise<void>
   TrayAvailable?: () => Promise<boolean>
+  TrayOnMinimizeClose?: () => Promise<boolean>
+  SetTrayOnMinimizeClose?: (enabled: boolean) => Promise<void>
   CloseWindow?: () => Promise<void>
   QuitApp?: () => Promise<void>
   SyncShellState?: (payload: string) => Promise<void>
@@ -50,6 +55,10 @@ type ShellWindow = Window & {
 const w = (): ShellWindow | null => (typeof window === 'undefined' ? null : (window as ShellWindow))
 
 function isShellActive(): boolean {
+  return !!w()?.__PANDO_DESKTOP_SHELL__
+}
+
+function isShellFrameless(): boolean {
   return !!w()?.__PANDO_DESKTOP_SHELL__?.frameless
 }
 
@@ -58,12 +67,23 @@ function subscribeShell(onChange: () => void): () => void {
   return () => window.removeEventListener(SHELL_EVENT, onChange)
 }
 
-/** True inside the frameless desktop window, once its runtime is injected. */
+/** True inside the desktop window, once its runtime is injected. */
 export function useDesktopShell(): boolean {
   return useSyncExternalStore(subscribeShell, isShellActive, () => false)
 }
 
-/** Hides the window into the tray (taskbar minimise when no tray is live). */
+/**
+ * True inside a frameless desktop window (Linux, Windows), where the WebUI
+ * draws the title bar and window controls. False on macOS (native title bar).
+ */
+export function useDesktopFrameless(): boolean {
+  return useSyncExternalStore(subscribeShell, isShellFrameless, () => false)
+}
+
+/**
+ * Hides the window into the tray when "minimise and close to tray" is on and a
+ * tray icon is live; a regular taskbar/Dock minimise otherwise.
+ */
 export function minimiseWindow(): void {
   const win = w()
   const app = win?.go?.desktop?.App
@@ -142,17 +162,51 @@ export function useWindowMaximised(enabled: boolean): boolean {
   return maximised
 }
 
-/** Whether the tray icon is live, which decides the minimise button's label. */
-export function useTrayAvailable(enabled: boolean): boolean {
-  const [available, setAvailable] = useState(false)
+/**
+ * Whether minimise/close go to the tray (setting on and tray icon live), which
+ * decides the window buttons' labels. Re-probed when the setting changes.
+ */
+export function useTrayOnMinimizeClose(enabled: boolean): boolean {
+  const [active, setActive] = useState(false)
+  const saved = useSettingsStore((s) => s.original.desktop_tray_on_minimize_close)
   useEffect(() => {
     if (!enabled) return
     let alive = true
-    const probe = w()?.go?.desktop?.App?.TrayAvailable
-    probe?.().then((v) => { if (alive) setAvailable(!!v) }).catch(() => {})
+    const probe = w()?.go?.desktop?.App?.TrayOnMinimizeClose
+    probe?.().then((v) => { if (alive) setActive(!!v) }).catch(() => {})
     return () => { alive = false }
+  }, [enabled, saved])
+  return active
+}
+
+function pushTrayPreference(enabled: boolean): Promise<void> {
+  return w()?.go?.desktop?.App?.SetTrayOnMinimizeClose?.(enabled) ?? Promise.resolve()
+}
+
+/**
+ * Keeps the desktop shell in sync with the "minimise and close to tray"
+ * setting (Settings > General): reads it once the shell is up, then follows
+ * every settings load or save. Off (the default) means taskbar/Dock minimise
+ * and close quits.
+ */
+export function useDesktopTrayPreference(enabled: boolean): void {
+  useEffect(() => {
+    if (!enabled) return
+    let alive = true
+    api
+      .get<{ desktop_tray_on_minimize_close?: boolean }>('/api/v1/settings')
+      .then((data) => { if (alive) void pushTrayPreference(!!data.desktop_tray_on_minimize_close) })
+      .catch(() => {})
+    const unsubscribe = useSettingsStore.subscribe((state, prev) => {
+      if (state.original !== prev.original) {
+        void pushTrayPreference(!!state.original.desktop_tray_on_minimize_close)
+      }
+    })
+    return () => {
+      alive = false
+      unsubscribe()
+    }
   }, [enabled])
-  return available
 }
 
 /**

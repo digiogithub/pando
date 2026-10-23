@@ -159,6 +159,17 @@ export default function GeneralSettings() {
         >
           <Switch id="general-nerd-fonts" checked={config.nerd_fonts} onCheckedChange={(v) => updateField('nerd_fonts', v)} />
         </SettingsRow>
+        <SettingsRow
+          label={t('settings.general.desktopTrayOnMinimizeClose')}
+          description={t('settings.general.desktopTrayOnMinimizeCloseDescription')}
+          htmlFor="general-desktop-tray"
+        >
+          <Switch
+            id="general-desktop-tray"
+            checked={config.desktop_tray_on_minimize_close}
+            onCheckedChange={(v) => updateField('desktop_tray_on_minimize_close', v)}
+          />
+        </SettingsRow>
       </SettingsSection>
 
       {/* Diagnostics: local debug logging plus opt-in remote telemetry

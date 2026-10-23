@@ -13,6 +13,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/linux"
+	"github.com/wailsapp/wails/v2/pkg/options/mac"
 )
 
 //go:embed all:frontend
@@ -55,13 +56,23 @@ func main() {
 		},
 		Menu:              app.Menu(),
 		HideWindowOnClose: false,
-		// The WebUI draws its own title bar (drag region + minimise to tray,
-		// maximise, close), so the native decorations are dropped.
-		Frameless: true,
+		// On Linux and Windows the WebUI draws its own title bar (drag region
+		// + minimise, maximise, close), so the native decorations are dropped.
+		// macOS keeps the native title bar and traffic lights: a frameless
+		// NSWindow renders differently across macOS releases.
+		Frameless: app.Frameless(),
+		Mac: &mac.Options{
+			TitleBar: mac.TitleBarDefault(),
+		},
 		OnStartup: func(ctx context.Context) {
 			app.Startup(ctx)
+			installPlatformHooks(app)
 			tray.Start()
 		},
+		// Every close request (title bar button, Alt+F4, Cmd+Q, Dock "Quit")
+		// passes here; with "minimise and close to tray" on, a window close
+		// hides into the tray instead of quitting.
+		OnBeforeClose: app.BeforeClose,
 		OnDomReady: func(ctx context.Context) {
 			// The window is mapped by now, so the Wayland decoration object
 			// exists and the CSD announcement takes effect.

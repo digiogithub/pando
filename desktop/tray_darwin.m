@@ -33,6 +33,7 @@ void pandoTrayStart(const void *icon, int iconLen) {
         [image setSize:NSMakeSize(18, 18)];
         pandoStatusItem.button.image = image;
         pandoStatusItem.button.toolTip = @"Pando";
+        pandoStatusItem.visible = YES;
         pandoTrayReady();
     });
 }

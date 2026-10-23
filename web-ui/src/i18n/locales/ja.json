@@ -334,6 +334,8 @@
       "showHiddenFilesDescription": "ファイルツリーに隠しファイルとドットファイルを表示します",
       "nerdFonts": "Nerd Font アイコン",
       "nerdFontsDescription": "TUI アイコンに Nerd Font グリフを使用します。ターミナルに Nerd Font がなくアイコンが四角 (□) で表示される場合は無効にしてください",
+      "desktopTrayOnMinimizeClose": "最小化と閉じるでトレイへ",
+      "desktopTrayOnMinimizeCloseDescription": "デスクトップウィンドウを最小化または閉じるとシステムトレイ（macOS ではメニューバー）に格納され、Pando は動作を続けます。オフ: 最小化はタスクバー/Dock へ、閉じると終了します。",
       "debug": "デバッグモード",
       "debugDescription": "詳細なデバッグログを有効にします",
       "diagnosticsTitle": "診断",

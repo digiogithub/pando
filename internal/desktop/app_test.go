@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"context"
 	goruntime "runtime"
 	"strings"
 	"testing"
@@ -109,5 +110,48 @@ func TestMenuKeepsEditRolesOnMacOS(t *testing.T) {
 	}
 	if m.Items[0].Label != "Pando" {
 		t.Fatalf("first submenu = %q, want Pando", m.Items[0].Label)
+	}
+}
+
+func TestTrayOnMinimizeCloseNeedsSettingAndTray(t *testing.T) {
+	a := NewApp("http://localhost:8765", false)
+	if a.TrayOnMinimizeClose() {
+		t.Fatal("tray behaviour must be off by default")
+	}
+	a.SetTrayAvailable(true)
+	if a.TrayOnMinimizeClose() {
+		t.Fatal("a live tray alone must not enable hide-to-tray")
+	}
+	a.SetTrayOnMinimizeClose(true)
+	if !a.TrayOnMinimizeClose() {
+		t.Fatal("setting on + live tray should enable hide-to-tray")
+	}
+	a.SetTrayAvailable(false)
+	if a.TrayOnMinimizeClose() {
+		t.Fatal("without a tray icon the window must never be hidden")
+	}
+}
+
+func TestBeforeCloseQuitsUnlessTrayBehaviourIsOn(t *testing.T) {
+	a := NewApp("http://localhost:8765", false)
+	a.SetTrayAvailable(true)
+	if a.BeforeClose(context.Background()) {
+		t.Fatal("default close must quit")
+	}
+	a.SetTrayOnMinimizeClose(true)
+	a.MarkQuitting()
+	if a.BeforeClose(context.Background()) {
+		t.Fatal("an explicit quit must pass through even with the tray setting on")
+	}
+}
+
+func TestDomReadyScriptFramelessFlagFollowsPlatform(t *testing.T) {
+	a := NewApp("http://127.0.0.1:8765", false)
+	want := "frameless: true"
+	if goruntime.GOOS == "darwin" {
+		want = "frameless: false"
+	}
+	if !strings.Contains(a.domReadyScript(), want) {
+		t.Fatalf("DOM-ready script should declare %q", want)
 	}
 }

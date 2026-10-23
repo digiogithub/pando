@@ -7,22 +7,22 @@ import {
   minimiseWindow,
   onTitleBarDoubleClick,
   toggleMaximiseWindow,
-  useDesktopShell,
+  useDesktopFrameless,
   useHasWindowTitleBar,
-  useTrayAvailable,
+  useTrayOnMinimizeClose,
   useWindowMaximised,
 } from '@/services/desktopWindow'
 import '@/styles/desktop-window.css'
 
 /**
- * Minimise (to tray) / maximise / close for the frameless desktop window.
- * Renders nothing in a browser tab.
+ * Minimise / maximise / close for the frameless desktop window. Renders
+ * nothing in a browser tab or under the native macOS title bar.
  */
 export default function DesktopWindowControls() {
   const { t } = useTranslation()
-  const shell = useDesktopShell()
+  const shell = useDesktopFrameless()
   const maximised = useWindowMaximised(shell)
-  const tray = useTrayAvailable(shell)
+  const tray = useTrayOnMinimizeClose(shell)
   if (!shell) return null
 
   const minimiseLabel = tray
@@ -56,7 +56,7 @@ export default function DesktopWindowControls() {
  * frameless window could not be moved or closed there.
  */
 export function DesktopFrameBar() {
-  const shell = useDesktopShell()
+  const shell = useDesktopFrameless()
   const covered = useHasWindowTitleBar()
   const visible = shell && !covered
 
