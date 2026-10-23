@@ -154,17 +154,10 @@ func (s *Server) getToolDefinitions() []Tool {
 		tools := make([]Tool, 0, len(nativeTools))
 		for _, tool := range nativeTools {
 			info := tool.Info()
-			schema := map[string]interface{}{
-				"type":       "object",
-				"properties": info.Parameters,
-			}
-			if len(info.Required) > 0 {
-				schema["required"] = info.Required
-			}
 			tools = append(tools, Tool{
 				Name:        info.Name,
 				Description: info.Description,
-				InputSchema: schema,
+				InputSchema: toolInputSchema(info),
 			})
 		}
 		return tools
@@ -579,21 +572,33 @@ func (s *Server) getToolDefinitions() []Tool {
 	if s.remembrances != nil {
 		for _, tool := range buildRemembrancesLLMTools(s.remembrances) {
 			info := tool.Info()
-			schema := map[string]interface{}{
-				"type":       "object",
-				"properties": info.Parameters,
-			}
-			if len(info.Required) > 0 {
-				schema["required"] = info.Required
-			}
 			tools = append(tools, Tool{
 				Name:        info.Name,
 				Description: info.Description,
-				InputSchema: schema,
+				InputSchema: toolInputSchema(info),
 			})
 		}
 	}
 	return tools
+}
+
+// toolInputSchema builds the MCP inputSchema of a Pando tool. Parameterless
+// tools re-exported from an upstream MCP server may carry nil Parameters, which
+// would marshal as "properties": null; strict MCP clients (Claude Code) then
+// reject the whole tools/list result, so nil is normalized to an empty object.
+func toolInputSchema(info llmtools.ToolInfo) map[string]interface{} {
+	properties := info.Parameters
+	if properties == nil {
+		properties = map[string]any{}
+	}
+	schema := map[string]interface{}{
+		"type":       "object",
+		"properties": properties,
+	}
+	if len(info.Required) > 0 {
+		schema["required"] = info.Required
+	}
+	return schema
 }
 
 func (s *Server) validPandoTools() []llmtools.BaseTool {

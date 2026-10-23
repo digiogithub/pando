@@ -49,6 +49,29 @@ func TestGetToolDefinitionsFromPandoTools(t *testing.T) {
 	require.Equal(t, []string{"value"}, definitions[0].InputSchema["required"])
 }
 
+// A parameterless tool re-exported from an upstream MCP server (e.g. Firebase
+// "firebase_get_project", schema {"type":"object"}) has nil Parameters. It
+// must be emitted as "properties": {} — strict clients such as Claude Code
+// reject the whole tools/list result on "properties": null.
+func TestGetToolDefinitionsNilParametersEmitEmptyProperties(t *testing.T) {
+	srv := New(Config{
+		PandoTools: []llmtools.BaseTool{
+			stubTool{
+				info: llmtools.ToolInfo{
+					Name:        "firebase_firebase_get_project",
+					Description: "Parameterless upstream tool",
+				},
+			},
+		},
+	})
+
+	definitions := srv.getToolDefinitions()
+	require.Len(t, definitions, 1)
+	raw, err := json.Marshal(definitions[0].InputSchema)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"type":"object","properties":{}}`, string(raw))
+}
+
 func TestHandleToolsCallSupportsCacheReadAcrossSession(t *testing.T) {
 	largeTool := stubTool{
 		info: llmtools.ToolInfo{

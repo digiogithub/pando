@@ -394,10 +394,16 @@ func (t *sessionMCPTool) Info() tools.ToolInfo {
 	if required == nil {
 		required = make([]string, 0)
 	}
+	parameters := t.tool.InputSchema.Properties
+	if parameters == nil {
+		// Parameterless upstream tools may omit "properties"; keep it an
+		// object so re-exported schemas never carry "properties": null.
+		parameters = map[string]any{}
+	}
 	return tools.ToolInfo{
 		Name:        t.name,
 		Description: t.tool.Description,
-		Parameters:  t.tool.InputSchema.Properties,
+		Parameters:  parameters,
 		Required:    required,
 	}
 }

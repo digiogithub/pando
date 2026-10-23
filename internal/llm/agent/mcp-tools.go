@@ -72,10 +72,16 @@ func (b *mcpTool) Info() tools.ToolInfo {
 	if required == nil {
 		required = make([]string, 0)
 	}
+	parameters := b.tool.InputSchema.Properties
+	if parameters == nil {
+		// Parameterless upstream tools may omit "properties"; keep it an
+		// object so re-exported schemas never carry "properties": null.
+		parameters = map[string]any{}
+	}
 	return tools.ToolInfo{
 		Name:        fmt.Sprintf("%s_%s", b.mcpName, b.tool.Name),
 		Description: b.tool.Description,
-		Parameters:  b.tool.InputSchema.Properties,
+		Parameters:  parameters,
 		Required:    required,
 	}
 }
