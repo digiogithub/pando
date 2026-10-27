@@ -87,3 +87,34 @@ func TestUIPrefsLanguageRoundTrip(t *testing.T) {
 		t.Fatalf("prefs = %+v, want language es and chatMode simple", got)
 	}
 }
+
+// The native desktop persists its theme and sidebar state with the same
+// endpoint; patches merge and the sidebar can be set back to expanded.
+func TestUIPrefsThemeAndSidebarRoundTrip(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	server := &Server{}
+	do := func(method, body string) (UIPrefs, int) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		server.handleUIPrefs(rec, httptest.NewRequest(method, "/api/v1/ui/preferences", strings.NewReader(body)))
+		var p UIPrefs
+		_ = json.Unmarshal(rec.Body.Bytes(), &p)
+		return p, rec.Code
+	}
+	if _, code := do(http.MethodPut, `{"themeMode":"purple"}`); code != http.StatusBadRequest {
+		t.Fatalf("invalid themeMode status = %d, want 400", code)
+	}
+	do(http.MethodPut, `{"theme":"slate","themeMode":"dark","themeAccent":"violet","sidebarCollapsed":true}`)
+	do(http.MethodPut, `{"language":"es"}`)
+	got, _ := do(http.MethodGet, "")
+	if got.Theme != "slate" || got.ThemeMode != "dark" || got.ThemeAccent != "violet" || got.Language != "es" {
+		t.Fatalf("prefs = %+v", got)
+	}
+	if got.SidebarCollapsed == nil || !*got.SidebarCollapsed {
+		t.Fatalf("sidebarCollapsed = %v, want true", got.SidebarCollapsed)
+	}
+	got, _ = do(http.MethodPut, `{"sidebarCollapsed":false}`)
+	if got.SidebarCollapsed == nil || *got.SidebarCollapsed {
+		t.Fatalf("sidebarCollapsed = %v, want false", got.SidebarCollapsed)
+	}
+}

@@ -24,6 +24,11 @@ func init() {
 		TitleKey: "nav.chat", Icon: kit.IconChat, Section: app.SectionMain, Order: 0,
 		New: func(a *app.Context) app.View { return New(a) },
 	})
+	app.Register(app.Area{
+		ID: "simple-chat", Path: "/chat/simple", Patterns: []string{"/chat/simple", "/chat/simple/s/{id}"},
+		TitleKey: "nav.simpleChat", Icon: kit.IconSimpleChat, Section: app.SectionMain, Order: 1,
+		New: func(a *app.Context) app.View { return NewSimple(a) },
+	})
 }
 
 // streamMsg carries a stream event (or the end of a stream) to the UI.
@@ -42,12 +47,21 @@ type streamEnd struct {
 // Chat is the chat area's state. All fields are owned by the UI thread.
 type Chat struct {
 	app *app.Context
+	// simple selects the simple chat layout (conversation alone, trimmed
+	// chrome), registered as the simple-chat area.
+	simple bool
 
 	sessions    []client.SessionSummary
 	sessLoading bool
 	sessErr     string
 	sessList    ui.ListState
 	selected    int
+	sessTotal   int
+	sessMore    bool
+	sessSearch  string
+	sessHidden  bool
+	sessOffset  int
+	rows        []sessRow
 
 	// current is the open session id; "" is the new-chat draft (draftConv).
 	current   string
@@ -62,6 +76,27 @@ type Chat struct {
 	renameID   string
 	renameText string
 
+	comp  composerState
+	model modelState
+	// modelFetching marks sessions whose model is being fetched.
+	modelFetching map[string]bool
+	persona       personaState
+
+	qstate         map[string]*qState
+	inline         map[string]*inlineDiff
+	bitmaps        map[string]*ui.Bitmap
+	copied         map[string]time.Time
+	planOpen       bool
+	filesCollapsed bool
+	goalCancelling bool
+	diff           *diffViewer
+	infoOpen       bool
+	tasks          []client.Task
+	cwd            string
+	connected      bool
+	// pickedAuto remembers sessions whose auto-approve was fetched.
+	autoFetched map[string]bool
+
 	started bool
 	stop    context.CancelFunc
 	tagSeq  int
@@ -69,18 +104,29 @@ type Chat struct {
 
 // New returns the chat view.
 func New(a *app.Context) *Chat {
-	ch := &Chat{app: a, convs: map[string]*Conversation{}, selected: -1}
-	ch.events = app.NewBatch(a.Update, ch.applyEvents)
-	ch.sessList.Key = func(i int) any {
-		if i < len(ch.sessions) {
-			return ch.sessions[i].ID
-		}
-		return i
+	ch := &Chat{
+		app: a, convs: map[string]*Conversation{}, selected: -1,
+		qstate: map[string]*qState{}, inline: map[string]*inlineDiff{}, bitmaps: map[string]*ui.Bitmap{},
+		copied: map[string]time.Time{}, modelFetching: map[string]bool{}, autoFetched: map[string]bool{},
+		infoOpen: true,
 	}
+	ch.model.session = map[string]client.SessionModel{}
+	ch.comp.histIdx = -1
+	ch.events = app.NewBatch(a.Update, ch.applyEvents)
+	ch.sessList.Key = func(i int) any { return ch.sessRowKey(i) }
 	// Rows handle their own clicks: ListState.Selected would paint the
 	// choice in the accent colour, which the row styles itself.
 	// ch.md.OnLink stays nil: MyGo opens http(s)/mailto links in the
 	// browser and ignores other schemes.
+	return ch
+}
+
+// NewSimple returns the simple chat view: the conversation alone, with the
+// sessions panel collapsible and no goal/plan banners.
+func NewSimple(a *app.Context) *Chat {
+	ch := New(a)
+	ch.simple = true
+	ch.infoOpen = false
 	return ch
 }
 
@@ -109,20 +155,12 @@ func (ch *Chat) start() {
 	if ch.app.Client == nil {
 		return
 	}
-	ch.sessLoading = true
-	ch.app.Go(func(context.Context) {
-		list, err := ch.app.Client.ListSessions(ctx, 100, 0)
-		ch.app.Update(func() {
-			ch.sessLoading = false
-			if err != nil {
-				ch.sessErr = err.Error()
-				return
-			}
-			ch.sessErr = ""
-			for _, s := range list.Sessions {
-				ch.upsertSession(s)
-			}
-		})
+	ch.connected = true
+	ch.loadSessions(0)
+	ch.app.Go(func(ctx context.Context) {
+		if w, err := ch.app.Client.Workspace(ctx); err == nil {
+			ch.app.Update(func() { ch.cwd = w.CWD })
+		}
 	})
 	ch.app.Go(func(context.Context) { ch.poll(ctx) })
 	ch.app.Go(func(context.Context) {
@@ -135,15 +173,43 @@ func (ch *Chat) start() {
 	})
 }
 
+// sessionPage is the number of sessions fetched per page.
+const sessionPage = 100
+
+// loadSessions fetches a page of the sessions list (offset 0 is the first
+// page; later ones come from "Load more").
+func (ch *Chat) loadSessions(offset int) {
+	ch.sessLoading = true
+	ch.app.Go(func(ctx context.Context) {
+		list, err := ch.app.Client.ListSessions(ctx, sessionPage, offset)
+		ch.app.Update(func() {
+			ch.sessLoading = false
+			if err != nil {
+				ch.sessErr = err.Error()
+				return
+			}
+			ch.sessErr = ""
+			ch.sessTotal, ch.sessMore = list.Total, list.HasMore
+			ch.sessOffset = offset + len(list.Sessions)
+			for _, s := range list.Sessions {
+				ch.upsertSession(s)
+			}
+		})
+	})
+}
+
 func (ch *Chat) sessionEvent(ev client.SessionEvent) {
 	switch ev.Type {
 	case "session_upsert":
 		ch.upsertSession(ev.Session)
-		// Follow runs this client did not start (another surface, a
-		// resurrected parent after a delegated task): the run_seq protocol,
-		// driven by the global session stream instead of polling.
-		if cv, ok := ch.convs[ev.ID]; ok && cv.Loaded && !cv.Streaming && (ev.Session.IsRunning || ev.Session.RunSeq > cv.RunSeq) {
-			ch.checkRun(cv)
+		if cv, ok := ch.convs[ev.ID]; ok {
+			cv.BusyElsewhere = ev.Session.BusyElsewhere
+			// Follow runs this client did not start (another surface, a
+			// resurrected parent after a delegated task): the run_seq
+			// protocol, driven by the global session stream.
+			if cv.Loaded && !cv.Streaming && (ev.Session.IsRunning || ev.Session.RunSeq > cv.RunSeq) {
+				ch.checkRun(cv)
+			}
 		}
 	case "session_deleted":
 		ch.removeSession(ev.ID)
@@ -175,6 +241,7 @@ func (ch *Chat) checkRun(cv *Conversation) {
 			if err != nil || cv.Streaming {
 				return
 			}
+			cv.MergePending(p)
 			switch {
 			case p.Running:
 				cv.SetHistory(detail.Messages)
@@ -189,22 +256,57 @@ func (ch *Chat) checkRun(cv *Conversation) {
 }
 
 // poll checks the open session every few seconds for runs started
-// elsewhere (the session events stream reports them only once they end).
+// elsewhere (the session events stream reports them only once they end),
+// for prompts blocking the agent that a dropped stream never delivered
+// (permissions, questions) and for the delegated tasks of the info panel.
 func (ch *Chat) poll(ctx context.Context) {
 	tick := time.NewTicker(4 * time.Second)
 	defer tick.Stop()
+	n := 0
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
+			n++
 			ch.app.Update(func() {
-				if cv, ok := ch.convs[ch.current]; ok && cv.Loaded && !cv.Streaming {
+				cv, ok := ch.convs[ch.current]
+				if ok && cv.Loaded && !cv.Streaming {
 					ch.checkRun(cv)
+				} else if ok && cv.Streaming {
+					ch.fetchPending(cv)
+				}
+				if ch.infoOpen {
+					ch.fetchTasks()
 				}
 			})
 		}
 	}
+}
+
+// fetchPending adopts the permission and question requests the server
+// lists for a streaming conversation.
+func (ch *Chat) fetchPending(cv *Conversation) {
+	if cv.ID == "" || ch.app.Client == nil {
+		return
+	}
+	id := cv.ID
+	ch.app.Go(func(ctx context.Context) {
+		p, err := ch.app.Client.Pending(ctx, id)
+		if err != nil {
+			return
+		}
+		ch.app.Update(func() { cv.MergePending(p) })
+	})
+}
+
+func (ch *Chat) fetchTasks() {
+	ch.app.Go(func(ctx context.Context) {
+		tasks, err := ch.app.Client.Tasks(ctx)
+		if err == nil {
+			ch.app.Update(func() { ch.tasks = tasks })
+		}
+	})
 }
 
 func (ch *Chat) upsertSession(s client.SessionSummary) {
@@ -309,10 +411,49 @@ func (ch *Chat) Open(id string) {
 			cv.LoadErr = ""
 			cv.SetHistory(d.Messages)
 			cv.RunSeq = d.RunSeq
+			cv.BusyElsewhere = d.BusyElsewhere
+			ch.seedHistory(cv)
 			if d.IsRunning && !d.BusyElsewhere {
 				cv.TrimToLastPrompt()
 				ch.attach(cv)
 			}
+			ch.hydrate(cv)
+		})
+	})
+}
+
+// seedHistory adds the prompts of a loaded transcript to the Up/Down
+// recall, oldest first, without duplicating the tail.
+func (ch *Chat) seedHistory(cv *Conversation) {
+	if len(ch.comp.history) > 0 {
+		return
+	}
+	for _, it := range cv.Items {
+		if it.Kind == ItemUser && strings.TrimSpace(it.Text) != "" {
+			ch.pushHistory(it.Text)
+		}
+	}
+}
+
+// hydrate loads what a session shows besides its messages: the goal, the
+// auto-approve state, the pending prompts and the files agent-vcs saw it
+// touch.
+func (ch *Chat) hydrate(cv *Conversation) {
+	id := cv.ID
+	ch.app.Go(func(ctx context.Context) {
+		goal, _ := ch.app.Client.Goal(ctx, id)
+		auto, _ := ch.app.Client.AutoApprove(ctx, id)
+		pend, perr := ch.app.Client.Pending(ctx, id)
+		vcs, _ := ch.app.Client.AgentVCSDiff(ctx, id)
+		ch.app.Update(func() {
+			if !cv.Streaming || cv.Goal == nil {
+				cv.Goal = goal
+			}
+			cv.AutoApprove = auto
+			if perr == nil {
+				cv.MergePending(pend)
+			}
+			cv.MergeVCS(vcs)
 		})
 	})
 }
@@ -332,6 +473,8 @@ func (ch *Chat) reload(cv *Conversation) {
 			}
 			cv.SetHistory(d.Messages)
 			cv.RunSeq = max(cv.RunSeq, d.RunSeq)
+			cv.BusyElsewhere = d.BusyElsewhere
+			ch.hydrate(cv)
 		})
 	})
 }
@@ -371,6 +514,10 @@ func (ch *Chat) Send(prompt string) {
 		return
 	}
 	cv := ch.conv()
+	if cv.BusyElsewhere && !cv.Streaming {
+		return // a subagent process runs it: a prompt would start a second run
+	}
+	ch.pushHistory(prompt)
 	if cv.Running && cv.ID != "" {
 		id := cv.ID
 		streaming := cv.Streaming
@@ -398,6 +545,9 @@ func (ch *Chat) startRun(cv *Conversation, prompt string) {
 	cv.BeginRun(prompt)
 	tag, ctx := ch.newTag(cv)
 	req := client.ChatRequest{SessionID: cv.ID, Prompt: prompt}
+	if cv.ID == "" && ch.model.pending != "" {
+		req.Model, ch.model.pending = ch.model.pending, ""
+	}
 	ch.app.Go(func(context.Context) {
 		out, err := ch.app.Client.ChatStream(ctx, req, func(ev client.StreamEvent) {
 			ch.events.Push(streamMsg{conv: cv, tag: tag, ev: ev})
@@ -445,8 +595,16 @@ func (ch *Chat) applyEvents(msgs []streamMsg) {
 				ch.sortSessions()
 			}
 		}
+		if m.ev.Type == client.EventSystemMessage {
+			if r := m.ev.RoutingInfo(); r != nil && r.Model != "" {
+				ch.model.lastRouted = r.Model
+			}
+		}
 		if cv.Apply(m.ev) && m.ev.Type == client.EventDone {
 			ch.reload(cv)
+		}
+		if m.ev.Type == client.EventDone && cv.ID != "" {
+			ch.refreshPersona(cv.ID)
 		}
 	}
 }
@@ -476,19 +634,30 @@ func (ch *Chat) Title() string {
 	return ch.app.T("nav.untitledSession")
 }
 
-// HeaderActions adds the new-session button.
+// HeaderActions adds the context badge, panel toggles and new-session
+// button.
 func (ch *Chat) HeaderActions(c *ui.Context) {
 	cv := ch.conv()
-	if cv.Usage != nil && cv.Usage.ContextWindow > 0 {
-		pct := 100 * float64(cv.Usage.PromptTokens+cv.Usage.CompletionTokens) / float64(cv.Usage.ContextWindow)
-		kit.Badge(c, ch.app.T("chat.composer.context", "pct", fmt.Sprintf("%.0f", pct)), kit.ToneNeutral)
+	if total, window := ch.sessionTokens(cv); window > 0 && total > 0 {
+		kit.Badge(c, ch.app.T("chat.composer.context", "pct", fmt.Sprintf("%.0f", contextPct(total, window))), kit.ToneNeutral)
+	}
+	if ch.simple {
+		if kit.IconButton(c, kit.IconPanelLeft, ch.app.T("chat.simple.toggleSessions")).Clicked() {
+			ch.sessHidden = !ch.sessHidden
+		}
+	}
+	if !ch.infoOpen {
+		if kit.IconButton(c, kit.IconPanelRight, ch.app.T("chat.info.show")).Clicked() {
+			ch.infoOpen = true
+			ch.fetchTasks()
+		}
 	}
 	if kit.Button(c, kit.ButtonOpts{Variant: kit.Secondary, Size: kit.SizeSM, Icon: kit.IconPlus, Label: ch.app.T("nav.newSession")}).Clicked() {
 		ch.newChat()
 	}
 }
 
-// Build shows the sessions pane and the conversation.
+// Build shows the sessions pane, the conversation and the info panel.
 func (ch *Chat) Build(c *ui.Context, r *ui.Route) {
 	ch.start()
 	if r == nil {
@@ -498,126 +667,52 @@ func (ch *Chat) Build(c *ui.Context, r *ui.Route) {
 	}
 	t := kit.Current()
 	ch.md.Theme = t.Markdown()
-	ui.Row(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
-		ch.sessionsPane(c, t)
-		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).AlignItems(ui.Stretch).Children(func() {
-			ch.transcript(c, t)
-			ch.composer(c, t)
+	cv := ch.conv()
+	ui.Column(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
+		ui.Row(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
+			if !(ch.simple && ch.sessHidden) {
+				ch.sessionsPane(c, t)
+			}
+			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).AlignItems(ui.Stretch).Children(func() {
+				if !ch.simple {
+					ch.banners(c, t, cv)
+				}
+				ch.transcript(c, t, cv)
+				ch.filesBar(c, t, cv)
+				ch.composer(c, t, cv)
+			})
+			ch.infoSidebar(c, t, cv)
 		})
+		if ch.simple {
+			ch.simpleFooter(c, t, cv)
+		}
 	})
 	ch.renameDialog(c)
+	ch.modelDialog(c, t, cv)
+	ch.personaDialog(c, t)
+	ch.diffOverlay(c, t)
+	ch.dialogs(c, t, cv)
 }
 
-func (ch *Chat) sessionsPane(c *ui.Context, t *kit.Tokens) {
-	ui.Column(c).Width(260).Shrink(0).BorderWidth(0, 1, 0, 0).BorderColor(t.Border).Background(t.BgShell).
-		AlignItems(ui.Stretch).Children(func() {
-		ui.Row(c).Padding(10, 12, 6, 12).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, ch.app.T("nav.sections.sessions")).FontSize(t.TextXS).FontWeight(600).TextColor(t.FgFaint).Grow(1)
-			if ch.sessLoading {
-				kit.Spinner(c).FontSize(14).TextColor(t.FgFaint)
-			}
-		})
-		if ch.sessErr != "" {
-			ui.Text(c, ch.sessErr).FontSize(t.TextXS).TextColor(t.Danger).Padding(4, 12)
+// simpleFooter is the status bar of the simple chat: connection and the
+// session's message and token counts.
+func (ch *Chat) simpleFooter(c *ui.Context, t *kit.Tokens, cv *Conversation) {
+	ui.Row(c).Padding(4, 14).Gap(14).AlignItems(ui.Center).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Background(t.BgShell).Children(func() {
+		dot, txt := t.Danger, ch.app.T("common.disconnected")
+		if ch.connected {
+			dot, txt = t.Success, ch.app.T("common.connected")
 		}
-		list := ui.List(c, &ch.sessList, len(ch.sessions), func(i int) {
-			ch.sessionRow(c, t, ch.sessions[i], i == ch.selected)
-		}).Grow(1).Padding(0, 6, 8, 6).Gap(1)
-		list.Children(func() {
-			if len(ch.sessions) == 0 && !ch.sessLoading {
-				ui.Text(c, ch.app.T("nav.noSessionsYet")).FontSize(t.TextSM).TextColor(t.FgMuted).Padding(12)
-			}
-		})
-	})
-}
-
-func (ch *Chat) sessionRow(c *ui.Context, t *kit.Tokens, s client.SessionSummary, active bool) {
-	title := strings.TrimSpace(s.Title)
-	if title == "" {
-		title = ch.app.T("nav.untitledSession")
-	}
-	row := ui.Row(c).Gap(8).Padding(7, 10).Radius(t.RadiusSM).AlignItems(ui.Center).Cursor(ui.CursorPointer).
-		Focusable().Label(title)
-	if row.Clicked() && s.ID != ch.current {
-		ch.Open(s.ID)
-	}
-	if active {
-		row.Background(t.AccentSoft)
-	} else if row.Hovered() {
-		row.Background(t.BgHover)
-	}
-	if s.PromptPreview != "" {
-		row.Tooltip(s.PromptPreview)
-	}
-	row.ContextMenu(func(m *ui.Menu) {
-		if m.Item("Rename…").Chosen() {
-			ch.renaming, ch.renameID, ch.renameText = true, s.ID, s.Title
-		}
-		if m.Item("Delete").Chosen() {
-			ch.deleteSession(s.ID)
-		}
-	})
-	row.Children(func() {
-		if s.IsRunning {
-			kit.Spinner(c).FontSize(12).TextColor(t.Accent)
-		}
-		txt := ui.Text(c, title).FontSize(t.TextSM).SingleLine().Ellipsis("…").Grow(1).Shrink(1)
-		if active {
-			txt.TextColor(t.Accent).FontWeight(600)
-		}
-		ui.Text(c, relTime(s.Updated())).FontSize(t.TextXS).TextColor(t.FgFaint).SingleLine()
-	})
-}
-
-func (ch *Chat) deleteSession(id string) {
-	ch.app.Go(func(ctx context.Context) {
-		if err := ch.app.Client.DeleteSession(ctx, id); err != nil {
-			ch.app.Toasts.Error("Could not delete the session", err.Error())
-			return
-		}
-		ch.app.Update(func() { ch.removeSession(id) })
-	})
-}
-
-func (ch *Chat) renameDialog(c *ui.Context) {
-	kit.Dialog(c, &ch.renaming, kit.DialogOpts{
-		Title: "Rename session",
-		Body: func() {
-			if kit.Input(c, &ch.renameText, "Title").AutoFocus().Submitted() {
-				ch.commitRename()
-			}
-		},
-		Footer: func() {
-			if kit.SecondaryButton(c, ch.app.T("common.cancel")).Clicked() {
-				ch.renaming = false
-			}
-			if kit.PrimaryButton(c, "Rename").Clicked() {
-				ch.commitRename()
-			}
-		},
-	})
-}
-
-func (ch *Chat) commitRename() {
-	id, title := ch.renameID, strings.TrimSpace(ch.renameText)
-	ch.renaming = false
-	if title == "" {
-		return
-	}
-	for i := range ch.sessions {
-		if ch.sessions[i].ID == id {
-			ch.sessions[i].Title = title
-		}
-	}
-	ch.app.Go(func(ctx context.Context) {
-		if err := ch.app.Client.RenameSession(ctx, id, title); err != nil {
-			ch.app.Toasts.Error("Could not rename the session", err.Error())
+		ui.Box(c).Width(7).Height(7).Radius(4).Background(dot)
+		ui.Text(c, txt).FontSize(t.TextXS).TextColor(t.FgMuted)
+		ui.Spacer(c)
+		if s, ok := ch.session(cv.ID); ok && s.PromptTokens+s.CompletionTokens > 0 {
+			ui.Text(c, fmt.Sprintf("%d %s · %d %s", s.MessageCount, ch.app.T("common.messages"),
+				s.PromptTokens+s.CompletionTokens, ch.app.T("common.tokens"))).FontSize(t.TextXS).TextColor(t.FgMuted)
 		}
 	})
 }
 
-func (ch *Chat) transcript(c *ui.Context, t *kit.Tokens) {
-	cv := ch.conv()
+func (ch *Chat) transcript(c *ui.Context, t *kit.Tokens, cv *Conversation) {
 	list := ui.List(c.Key("transcript:"+cv.keyID()), &cv.List, len(cv.Items), func(i int) {
 		ch.item(c, t, cv, cv.Items[i])
 	}).Grow(1).Padding(20, 24).Gap(14).Justify(ui.End)
@@ -628,7 +723,7 @@ func (ch *Chat) transcript(c *ui.Context, t *kit.Tokens) {
 		case cv.LoadErr != "":
 			kit.EmptyState(c, kit.IconError, "Could not load the session", cv.LoadErr)
 		case len(cv.Items) == 0:
-			kit.EmptyState(c, kit.IconBot, ch.app.T("chat.empty.title"), ch.app.T("chat.composer.hintIdle"))
+			ch.emptyHead(c, t)
 		}
 	})
 	if !cv.List.AtEnd() && len(cv.Items) > 0 {
@@ -641,6 +736,19 @@ func (ch *Chat) transcript(c *ui.Context, t *kit.Tokens) {
 	}
 }
 
+// emptyHead is the empty conversation: the title and prompt suggestions.
+func (ch *Chat) emptyHead(c *ui.Context, t *kit.Tokens) {
+	kit.EmptyState(c, kit.IconBot, ch.app.T("chat.empty.title"), ch.app.T("chat.composer.hintIdle"))
+	ui.Row(c).Gap(8).Justify(ui.Center).Wrap().Padding(0, 24, 24, 24).Children(func() {
+		for _, k := range []string{"explain", "bug", "tests", "review"} {
+			if kit.Button(c.Key("sg"+k), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSM,
+				Label: ch.app.T("chat.empty.suggestions." + k)}).Clicked() {
+				ch.draft = ch.app.T("chat.empty.prompts." + k)
+			}
+		}
+	})
+}
+
 func (cv *Conversation) keyID() string {
 	if cv.ID == "" {
 		return fmt.Sprintf("draft-%p", cv)
@@ -648,221 +756,9 @@ func (cv *Conversation) keyID() string {
 	return cv.ID
 }
 
-func (ch *Chat) item(c *ui.Context, t *kit.Tokens, cv *Conversation, it *Item) {
-	switch it.Kind {
-	case ItemUser:
-		ui.Row(c).Children(func() {
-			ui.Spacer(c)
-			ui.Text(c, it.Text).Selectable().Padding(10, 14).Radius(t.RadiusLG).Background(t.BgRaised).
-				MaxWidth(640).FontSize(t.TextBase)
-		})
-	case ItemAssistant:
-		ui.Column(c).MaxWidth(820).Gap(8).AlignItems(ui.Stretch).Children(func() {
-			if it.Thinking != "" {
-				ch.thinking(c, t, it)
-			}
-			for _, tl := range it.Tools {
-				ch.tool(c.Key("tool:"+tl.ID), t, tl)
-			}
-			if it.Text != "" {
-				if it.Done {
-					markdown.View(c, it.Text, &ch.md)
-				} else {
-					markdown.Stream(c, it.Text, &ch.md)
-				}
-			} else if !it.Done && len(it.Tools) == 0 && it.Thinking == "" {
-				kit.Spinner(c).TextColor(t.FgFaint)
-			}
-		})
-	case ItemNotice:
-		ui.Row(c).Gap(6).AlignItems(ui.Start).Children(func() {
-			kit.Icon(c, kit.IconInfo).FontSize(13).TextColor(t.FgFaint).Margin(2, 0, 0, 0)
-			ui.Text(c, it.Text).FontSize(t.TextXS).TextColor(t.FgMuted).Selectable().Grow(1).Shrink(1)
-		})
-	case ItemError:
-		ui.Row(c).Gap(8).Padding(10, 12).Radius(t.RadiusMD).Background(t.DangerSoft).AlignItems(ui.Start).Children(func() {
-			kit.Icon(c, kit.IconError).FontSize(16).TextColor(t.Danger)
-			ui.Text(c, it.Text).FontSize(t.TextSM).TextColor(t.Danger).Selectable().Grow(1).Shrink(1)
-		})
-	case ItemPermission:
-		ch.permission(c, t, cv, it)
-	}
-}
-
-func (ch *Chat) thinking(c *ui.Context, t *kit.Tokens, it *Item) {
-	ui.Column(c).Gap(4).Children(func() {
-		head := ui.Row(c).Gap(6).AlignItems(ui.Center).Cursor(ui.CursorPointer).Focusable()
-		head.Children(func() {
-			kit.Icon(c, kit.IconThinking).FontSize(14).TextColor(t.FgFaint)
-			label := ch.app.T("chat.thought")
-			if !it.Done {
-				label = ch.app.T("chat.thinking") + "…"
-			}
-			ui.Text(c, label).FontSize(t.TextXS).TextColor(t.FgMuted)
-			chev := kit.IconChevronR
-			if it.ThinkingOpen {
-				chev = kit.IconChevronDown
-			}
-			kit.Icon(c, chev).FontSize(12).TextColor(t.FgFaint)
-		})
-		if head.Clicked() {
-			it.ThinkingOpen = !it.ThinkingOpen
-		}
-		if it.ThinkingOpen {
-			ui.Text(c, it.Thinking).FontSize(t.TextXS).TextColor(t.FgMuted).Selectable().
-				Padding(0, 0, 0, 20)
-		}
-	})
-}
-
-func (ch *Chat) tool(c *ui.Context, t *kit.Tokens, tl *Tool) {
-	ui.Column(c).Radius(t.RadiusSM).Border(1, t.Border).Background(t.BgCard).Children(func() {
-		head := ui.Row(c).Gap(8).Padding(6, 10).AlignItems(ui.Center).Cursor(ui.CursorPointer).Focusable()
-		head.Children(func() {
-			switch tl.Status {
-			case "completed":
-				kit.Icon(c, kit.IconCheck).FontSize(14).TextColor(t.Success)
-			case "failed":
-				kit.Icon(c, kit.IconError).FontSize(14).TextColor(t.Danger)
-			default:
-				kit.Spinner(c).FontSize(14).TextColor(t.FgFaint)
-			}
-			kit.Icon(c, kit.IconTool).FontSize(13).TextColor(t.FgFaint)
-			ui.Text(c, tl.Label()).FontSize(t.TextXS).Font(t.MonoFont).SingleLine().Ellipsis("…").Grow(1).Shrink(1)
-		})
-		if head.Clicked() {
-			tl.Open = !tl.Open
-		}
-		if tl.Open {
-			ui.Column(c).Padding(6, 10, 10, 10).Gap(6).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
-				if tl.Input != "" {
-					ui.Text(c, clip(tl.Input, 4000)).FontSize(t.TextXS).Font(t.MonoFont).TextColor(t.FgMuted).Selectable()
-				}
-				if tl.Output != "" {
-					out := ui.Text(c, clip(tl.Output, 8000)).FontSize(t.TextXS).Font(t.MonoFont).Selectable()
-					if tl.IsError {
-						out.TextColor(t.Danger)
-					}
-				}
-			})
-		}
-	})
-}
-
-func (ch *Chat) permission(c *ui.Context, t *kit.Tokens, cv *Conversation, it *Item) {
-	p := it.Permission
-	kit.Card(c, func() {
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			kit.Icon(c, kit.IconWarning).TextColor(t.Warning)
-			ui.Text(c, ch.app.T("chat.permission.title")).FontWeight(600).FontSize(t.TextSM)
-			kit.Badge(c, p.ToolName, kit.ToneWarning)
-		})
-		if p.Description != "" {
-			ui.Text(c, p.Description).FontSize(t.TextSM).Selectable()
-		}
-		if p.Path != "" {
-			ui.Text(c, p.Path).FontSize(t.TextXS).Font(t.MonoFont).TextColor(t.FgMuted)
-		}
-		if it.Answer != "" {
-			ui.Text(c, it.Answer).FontSize(t.TextXS).TextColor(t.FgMuted)
-			return
-		}
-		ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-			answer := func(action, label string) {
-				it.Answer = label
-				id, sid := p.ID, p.SessionID
-				if sid == "" {
-					sid = cv.ID
-				}
-				ch.app.Go(func(ctx context.Context) {
-					if err := ch.app.Client.RespondPermission(ctx, sid, id, action); err != nil {
-						ch.app.Toasts.Error("Could not answer the permission request", err.Error())
-					}
-				})
-			}
-			if kit.Button(c, kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSM, Label: ch.app.T("chat.permission.deny")}).Clicked() {
-				answer("deny", ch.app.T("chat.permission.deny"))
-			}
-			if !p.NeverAutoApprove {
-				if kit.Button(c, kit.ButtonOpts{Variant: kit.Secondary, Size: kit.SizeSM, Label: ch.app.T("chat.permission.allowSession")}).Clicked() {
-					answer("allow_session", ch.app.T("chat.permission.allowSession"))
-				}
-			}
-			if kit.Button(c, kit.ButtonOpts{Variant: kit.Primary, Size: kit.SizeSM, Label: ch.app.T("chat.permission.allow")}).Clicked() {
-				answer("allow", ch.app.T("chat.permission.allow"))
-			}
-		})
-	}).MaxWidth(640)
-}
-
-func (ch *Chat) composer(c *ui.Context, t *kit.Tokens) {
-	cv := ch.conv()
-	ui.Column(c).Padding(8, 24, 16, 24).Gap(6).Children(func() {
-		ui.Column(c).Radius(t.RadiusLG).Border(1, t.BorderStrong).Background(t.BgInput).Padding(10, 12).Gap(8).
-			Children(func() {
-				placeholder := ch.app.T("chat.composer.placeholder")
-				if cv.Running {
-					placeholder = ch.app.T("chat.composer.placeholderRunning")
-				}
-				ui.TextAreaBase(c.Key("composer"), &ch.draft).Lines(1, 10).Placeholder(placeholder).
-					FontSize(t.TextBase).AutoFocus().
-					OnTextKey(func(k ui.TextKey) bool {
-						if k.Key == ui.KeyEnter && k.Mods == 0 {
-							text := k.Text()
-							if strings.TrimSpace(text) == "" {
-								return true
-							}
-							k.SetText("")
-							ch.Send(text)
-							return true
-						}
-						return false // Shift+Enter breaks the line
-					})
-				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-					hint := ch.app.T("chat.composer.hintIdle")
-					if cv.Running {
-						hint = ch.app.T("chat.composer.hintRunning")
-					}
-					ui.Text(c, hint).FontSize(t.TextXS).TextColor(t.FgFaint).Grow(1).Shrink(1).SingleLine().Ellipsis("…")
-					if cv.Running {
-						if kit.Button(c, kit.ButtonOpts{Variant: kit.Secondary, Size: kit.SizeSM, Icon: kit.IconStop,
-							Tooltip: ch.app.T("chat.composer.stop")}).Clicked() {
-							ch.Stop()
-						}
-					}
-					send := kit.Button(c, kit.ButtonOpts{Variant: kit.Primary, Size: kit.SizeSM, Icon: kit.IconSend,
-						Tooltip: ch.app.T("chat.composer.send"), Disabled: strings.TrimSpace(ch.draft) == ""})
-					if send.Clicked() {
-						text := ch.draft
-						ch.draft = ""
-						ch.Send(text)
-					}
-				})
-			})
-	})
-}
-
 func clip(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
 	return s[:n] + "\n… (truncated)"
-}
-
-// relTime formats a time as a short age: "now", "5m", "3h", "2d", or a date.
-func relTime(tm time.Time) string {
-	d := time.Since(tm)
-	switch {
-	case tm.IsZero():
-		return ""
-	case d < time.Minute:
-		return "now"
-	case d < time.Hour:
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh", int(d.Hours()))
-	case d < 7*24*time.Hour:
-		return fmt.Sprintf("%dd", int(d.Hours()/24))
-	}
-	return tm.Format("Jan 2")
 }

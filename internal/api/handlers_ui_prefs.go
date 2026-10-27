@@ -26,6 +26,14 @@ type UIPrefs struct {
 	// Language is the UI (i18n) language code, e.g. "en" or "es"; empty means
 	// "never chosen".
 	Language string `json:"language"`
+	// Theme (family), ThemeMode ("system", "light" or "dark") and
+	// ThemeAccent are the appearance chosen in the native desktop; empty
+	// means "never chosen". SidebarCollapsed is its sidebar state (nil =
+	// never chosen).
+	Theme            string `json:"theme,omitempty"`
+	ThemeMode        string `json:"themeMode,omitempty"`
+	ThemeAccent      string `json:"themeAccent,omitempty"`
+	SidebarCollapsed *bool  `json:"sidebarCollapsed,omitempty"`
 }
 
 var uiPrefsMu sync.Mutex
@@ -99,6 +107,14 @@ func (s *Server) handleUIPrefs(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "chatMode must be \"simple\" or \"advanced\"")
 			return
 		}
+		if m := patch.ThemeMode; m != "" && m != "system" && m != "light" && m != "dark" {
+			writeError(w, http.StatusBadRequest, "themeMode must be \"system\", \"light\" or \"dark\"")
+			return
+		}
+		if len(patch.Theme) > 32 || len(patch.ThemeAccent) > 32 {
+			writeError(w, http.StatusBadRequest, "theme value is too long")
+			return
+		}
 		patch.Language = strings.TrimSpace(patch.Language)
 		if len(patch.Language) > 16 {
 			writeError(w, http.StatusBadRequest, "language is too long")
@@ -116,6 +132,18 @@ func (s *Server) handleUIPrefs(w http.ResponseWriter, r *http.Request) {
 		}
 		if patch.Language != "" {
 			prefs.Language = patch.Language
+		}
+		if patch.Theme != "" {
+			prefs.Theme = patch.Theme
+		}
+		if patch.ThemeMode != "" {
+			prefs.ThemeMode = patch.ThemeMode
+		}
+		if patch.ThemeAccent != "" {
+			prefs.ThemeAccent = patch.ThemeAccent
+		}
+		if patch.SidebarCollapsed != nil {
+			prefs.SidebarCollapsed = patch.SidebarCollapsed
 		}
 		if err := saveUIPrefs(prefs); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())

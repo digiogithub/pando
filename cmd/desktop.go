@@ -31,7 +31,9 @@ var desktopCmd = &cobra.Command{
 	Long: `Start Pando in desktop mode: starts the API server on a local port and
 opens the native desktop window (GPU-rendered Go UI, no web view) on it.
 
-Linux requirements: GTK 3 runtime libraries (no WebKitGTK).
+Linux requirements: GTK 3 runtime libraries. WebKitGTK (libwebkit2gtk-4.1) is only
+needed for the design preview canvas and extension panels, which show in an
+embedded web view (without it they offer "Open in browser").
   Ubuntu 22.04:         sudo apt install libgtk-3-0
   Ubuntu 24.04, 26.04:  sudo apt install libgtk-3-0t64
 
@@ -84,6 +86,27 @@ func runDesktopMode(cmd *cobra.Command) error {
 	useWebView, _ := cmd.Flags().GetBool("webview")
 	ageKeys, _ := cmd.Flags().GetString("age-keys")
 	config.SetAgeKeysOverride(ageKeys)
+
+	// Native desktop, one per working directory: a second `pando desktop`
+	// for the same directory focuses the running window and exits before it
+	// starts a server or opens the database. Other directories (a project's
+	// own window, spawned with --cwd) are separate instances. Resolved
+	// early: the directory below also depends on the app-icon launch.
+	if !useWebView {
+		key := cwdFlag
+		if key == "" {
+			if dir, derr := desktop.DefaultWorkingDir(); derr == nil {
+				key = dir
+			}
+		}
+		if abs, aerr := filepath.Abs(key); aerr == nil {
+			key = abs
+		}
+		if !nativeui.AcquireSingleInstance(key) {
+			fmt.Println("Pando desktop is already running for this directory; focused its window.")
+			return nil
+		}
+	}
 
 	selectedPort, err := chooseAvailablePort(host, port)
 	if err != nil {
@@ -226,6 +249,7 @@ func runDesktopMode(cmd *cobra.Command) error {
 				BaseURL: baseURL,
 				Token:   server.GetToken(),
 				CWD:     cwd,
+				Simple:  simpleMode,
 			})
 			if errors.Is(err, nativeui.ErrNoDisplay) {
 				err = fmt.Errorf("%w\nUse the browser UI instead: pando app", err)

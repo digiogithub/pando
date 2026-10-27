@@ -116,6 +116,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Distinct from the line above: this one is the UI manifest of compiled-in
 	// extension modules, not the skills/Lua settings section.
 	mux.HandleFunc("/api/v1/extensions/ui", s.handleExtensionsUI)
+	// Host document of one panel for shells without the React WebUI (native desktop).
+	mux.HandleFunc("/api/v1/extensions/host", s.handleExtensionsHost)
 	mux.HandleFunc("/api/v1/extensions/memory", s.handleExtensionsMemory)
 	mux.HandleFunc("/api/v1/extensions/license", s.handleExtensionsLicense)
 	mux.HandleFunc("/api/v1/config/services", s.handleConfigServices)

@@ -45,8 +45,8 @@ func TestApplyToolRun(t *testing.T) {
 	var tools, text int
 	for _, it := range cv.Items {
 		if it.Kind == ItemAssistant {
-			tools += len(it.Tools)
-			text += len(it.Text)
+			tools += len(it.Tools())
+			text += len(it.PlainText())
 			if !it.Done {
 				t.Error("assistant row still streaming after done")
 			}
@@ -56,7 +56,7 @@ func TestApplyToolRun(t *testing.T) {
 		t.Errorf("tools %d text %d; items %d", tools, text, len(cv.Items))
 	}
 	for _, it := range cv.Items {
-		for _, tl := range it.Tools {
+		for _, tl := range it.Tools() {
 			if tl.Status != "completed" || tl.Output == "" {
 				t.Errorf("tool %s status %q output %d bytes", tl.Name, tl.Status, len(tl.Output))
 			}
@@ -77,7 +77,7 @@ func TestApplyReattachDiscardsPartialTurn(t *testing.T) {
 	if reload := cv.Apply(client.StreamEvent{Type: client.EventDone}); reload {
 		t.Error("run with content should not ask for a reload")
 	}
-	if cv.Items[1].Text != "partial" || !cv.Items[1].Done {
+	if cv.Items[1].PlainText() != "partial" || !cv.Items[1].Done {
 		t.Errorf("assistant = %+v", cv.Items[1])
 	}
 	// A replay of a run already over brings no content: reload history.
@@ -115,7 +115,7 @@ func TestFoldHistory(t *testing.T) {
 	}
 	foundTool := false
 	for _, it := range items {
-		for _, tl := range it.Tools {
+		for _, tl := range it.Tools() {
 			foundTool = true
 			if tl.Output == "" {
 				t.Errorf("tool %s has no folded result", tl.Name)

@@ -103,6 +103,8 @@ type Client struct {
 	refreshMu sync.Mutex
 	mu        sync.Mutex
 	token     string
+	// parent, when set, owns the token (see Derive).
+	parent *Client
 	// tokenGen counts token refreshes, so concurrent 401s refresh once.
 	tokenGen int
 }
@@ -192,6 +194,9 @@ func (c *Client) URL(path string) string {
 
 // Token returns the API token, fetching it on first use.
 func (c *Client) Token(ctx context.Context) (string, error) {
+	if c.parent != nil {
+		return c.parent.Token(ctx)
+	}
 	c.mu.Lock()
 	tok, gen := c.token, c.tokenGen
 	c.mu.Unlock()
@@ -204,6 +209,9 @@ func (c *Client) Token(ctx context.Context) (string, error) {
 // refreshToken fetches a new token unless another goroutine already did
 // since generation gen was observed.
 func (c *Client) refreshToken(ctx context.Context, gen int) (string, error) {
+	if c.parent != nil {
+		return c.parent.refreshToken(ctx, gen)
+	}
 	c.refreshMu.Lock()
 	defer c.refreshMu.Unlock()
 	c.mu.Lock()
@@ -282,9 +290,13 @@ func (c *Client) send(ctx context.Context, method, path string, body any, stream
 		payload = b
 	}
 	for attempt := 0; ; attempt++ {
-		c.mu.Lock()
-		gen := c.tokenGen
-		c.mu.Unlock()
+		tokOwner := c
+		if c.parent != nil {
+			tokOwner = c.parent
+		}
+		tokOwner.mu.Lock()
+		gen := tokOwner.tokenGen
+		tokOwner.mu.Unlock()
 		tok, err := c.Token(ctx)
 		if err != nil {
 			return nil, err

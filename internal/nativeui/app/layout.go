@@ -10,23 +10,86 @@ type Root struct {
 	App       *Context
 	views     map[string]View
 	collapsed bool
+	started   bool // start hooks ran (startup.go)
+
+	embedded bool       // hosted in a project tab: no theme, toasts or tab bar (shellext.go)
+	brand    string     // sidebar title (default "Pando")
+	exts     []ShellExt // shell extensions (project tabs)
+
+	overlays []Overlay // dialogs above the window (quick menu, model switcher)
+	banners  []Banner  // strips above the main tab's header
+	title    string    // title of the frame's page, for the window title
 }
 
 // NewRoot returns the root view of a window.
 func NewRoot(a *Context) *Root {
-	return &Root{App: a, views: map[string]View{}}
+	r := &Root{App: a, views: map[string]View{}}
+	r.exts = newShellExts(a)
+	r.overlays = newOverlays(a)
+	r.banners = newBanners(a)
+	if sh := a.Shell(); sh.FocusProject == nil {
+		sh.FocusProject = r.focusProject
+	}
+	return r
 }
 
 // View builds the window. Pass it to ui.View.
 func (r *Root) View(c *ui.Context) {
 	a := r.App
-	t := kit.Apply(c, a.Theme)
-	a.Toasts.Flush(c)
+	if !r.embedded {
+		r.runStartHooks()
+	}
+	r.title = ""
+	var t *kit.Tokens
+	if r.embedded {
+		t = kit.Current()
+	} else {
+		t = kit.Apply(c, a.Theme)
+		a.Toasts.Flush(c)
+		r.shortcuts(c)
+	}
 	all := Areas()
+	ext := r.activeExt()
+	if len(r.exts) > 0 {
+		ui.Column(c).Fill().AlignItems(ui.Stretch).Background(t.Bg).Children(func() {
+			r.tabBar(c, t)
+			ui.Column(c).Grow(1).Shrink(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
+				if ext != nil {
+					ext.Build(c, ext.Active())
+				} else {
+					r.main(c, t, all)
+				}
+			})
+		})
+	} else {
+		r.main(c, t, all)
+	}
+	for _, e := range r.exts {
+		e.Dialogs(c)
+	}
+	if !r.embedded {
+		for _, o := range r.overlays {
+			o.Build(c)
+		}
+		kit.ToastViewport(c)
+		if ext != nil {
+			r.title = extTitle(ext)
+		}
+		r.syncChrome(r.title)
+	}
+}
 
+// main builds the sidebar and the routed area.
+func (r *Root) main(c *ui.Context, t *kit.Tokens, all []Area) {
+	a := r.App
 	ui.Row(c).Fill().AlignItems(ui.Stretch).Background(t.Bg).Children(func() {
 		r.sidebar(c, t, all)
 		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).AlignItems(ui.Stretch).Children(func() {
+			if !r.embedded {
+				for _, b := range r.banners {
+					b.Build(c)
+				}
+			}
 			a.Router.View(c, func(route *ui.Route) {
 				ar, ok := r.match(route, all)
 				if !ok {
@@ -41,7 +104,10 @@ func (r *Root) View(c *ui.Context) {
 						title = s
 					}
 				}
-				route.Title(title)
+				if !r.embedded {
+					route.Title(title)
+					r.title = title
+				}
 				r.header(c, t, title, v)
 				ui.Column(c).Grow(1).Shrink(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
 					v.Build(c, route)
@@ -49,7 +115,6 @@ func (r *Root) View(c *ui.Context) {
 			})
 		})
 	})
-	kit.ToastViewport(c)
 }
 
 func (r *Root) match(route *ui.Route, all []Area) (Area, bool) {
@@ -102,7 +167,7 @@ func (r *Root) active(all []Area) string {
 
 func (r *Root) sidebar(c *ui.Context, t *kit.Tokens, all []Area) {
 	width := float32(216)
-	if r.collapsed {
+	if r.isCollapsed() {
 		width = 56
 	}
 	active := r.active(all)
@@ -110,18 +175,21 @@ func (r *Root) sidebar(c *ui.Context, t *kit.Tokens, all []Area) {
 		BorderColor(t.Border).Padding(10, 8).Gap(2).Children(func() {
 		// Brand row.
 		ui.Row(c).Height(36).Gap(8).Padding(0, 6).AlignItems(ui.Center).Margin(0, 0, 8, 0).Children(func() {
-			if !r.collapsed {
-				ui.Text(c, "Pando").FontSize(t.TextLG).FontWeight(700).TextColor(t.Fg).Grow(1)
+			if !r.isCollapsed() {
+				ui.Text(c, r.brandName()).FontSize(t.TextLG).FontWeight(700).TextColor(t.Fg).Grow(1)
 			}
 			icon := kit.IconPanelLeft
-			if kit.IconButton(c, icon, "Toggle sidebar").Clicked() {
-				r.collapsed = !r.collapsed
+			if kit.IconButton(c, icon, r.App.T("header.toggleSidebar")).Clicked() {
+				r.setCollapsed(!r.isCollapsed())
 			}
 		})
 		ui.Column(c).Grow(1).Gap(2).Children(func() {
 			prev := Section("")
 			for _, ar := range all {
-				if ar.Section == SectionHidden || ar.Section == SectionBottom {
+				if ar.Section == SectionHidden || ar.Section == SectionBottom || (r.embedded && ar.ID == "projects") {
+					continue
+				}
+				if ar.Visible != nil && !ar.Visible(r.App) {
 					continue
 				}
 				if prev != "" && ar.Section != prev {
@@ -136,37 +204,18 @@ func (r *Root) sidebar(c *ui.Context, t *kit.Tokens, all []Area) {
 				r.navItem(c, ar, active)
 			}
 		}
-		r.themeToggle(c)
 	})
 }
 
 func (r *Root) navItem(c *ui.Context, ar Area, active string) {
 	label := r.App.T(ar.TitleKey)
-	if kit.NavItem(c.Key("nav:"+ar.ID), ar.Icon, label, ar.ID == active, r.collapsed).Clicked() {
+	if kit.NavItem(c.Key("nav:"+ar.ID), ar.Icon, label, ar.ID == active, r.isCollapsed()).Clicked() {
 		if r.App.Router.Path() != ar.Path {
-			r.App.Router.Push(ar.Path)
-		}
-	}
-}
-
-// themeToggle cycles system -> light -> dark.
-func (r *Root) themeToggle(c *ui.Context) {
-	a := r.App
-	icon, label := kit.IconMonitor, "Theme: system"
-	switch a.Theme.Mode {
-	case kit.ModeLight:
-		icon, label = kit.IconSun, "Theme: light"
-	case kit.ModeDark:
-		icon, label = kit.IconMoon, "Theme: dark"
-	}
-	if kit.NavItem(c.Key("nav:theme"), icon, label, false, r.collapsed).Clicked() {
-		switch a.Theme.Mode {
-		case kit.ModeLight:
-			a.Theme.Mode = kit.ModeDark
-		case kit.ModeDark:
-			a.Theme.Mode = kit.ModeSystem
-		default:
-			a.Theme.Mode = kit.ModeLight
+			go_ := func() { r.App.Router.Push(ar.Path) }
+			if g, ok := r.views[active].(LeaveGuard); ok && active != ar.ID && !g.ConfirmLeave(go_) {
+				return
+			}
+			go_()
 		}
 	}
 }
@@ -177,6 +226,9 @@ func (r *Root) header(c *ui.Context, t *kit.Tokens, title string, v View) {
 		ui.Text(c, title).FontSize(t.TextMD).FontWeight(600).SingleLine().Ellipsis("…").Grow(1).Shrink(1)
 		if ha, ok := v.(HeaderActions); ok {
 			ha.HeaderActions(c)
+		}
+		if !r.embedded {
+			r.headerSlots(c)
 		}
 	})
 }

@@ -116,3 +116,34 @@ extensions, settings `/settings/{section...}`, setup (hidden).
 - `PANDO_NATIVE_IT_URL=https://localhost:8765 go test -run TestRealServerOwnRun
   ./internal/nativeui/app/chat -v` drives the chat headlessly against a real
   server (`PANDO_NATIVE_IT_CANCEL=1` stops mid-run).
+
+## Window shell (P1-shell)
+
+- `shell.Controller` (given to `shell.Options.OnReady`; `app.Host` is the
+  interface the app sees): tray icon (Show, Settings, open project
+  workspaces, Quit), hide-to-tray on close/minimise when
+  `desktop_tray_on_minimize_close` is on **and** a tray icon is live (no
+  libayatana on Linux -> normal behaviour), explicit quit always quits,
+  macOS Dock click restores, OS notifications, window focus state.
+- Single instance: `nativeui.AcquireSingleInstance(cwd)` (called first in
+  `cmd/desktop.go`) is keyed by working directory so a project window
+  (`pando desktop --cwd X`) is a separate instance. `PANDO_DESKTOP_MULTI=1`
+  disables the lock (use it when several agents/tests run `pando desktop`
+  from the same directory). A second launch with `--simple` shows the
+  simple chat.
+- `app.Context.StartServices(host)` (after the window exists): UI prefs
+  (`/api/v1/ui/preferences`: theme family/mode/accent, language, sidebar,
+  chatMode), the tray setting followed live via `/config/events`,
+  notification relay (`/notifications/stream`, only when unfocused).
+  Persist with `a.SetTheme`, `a.SetLanguage`, `a.SetSidebarCollapsed`,
+  `a.ToggleSimpleChat`.
+- Extension slots (all in `app/shellstate.go`): `RegisterHeaderSlot`
+  (persona selector: ID `persona`, order 10), `RegisterOverlay`,
+  `RegisterBanner`, `RegisterCommand` (quick menu), `Shell().NextModel` /
+  `Shell().ModelChanged` (model switcher <-> chat), `Shell().FocusProject`.
+  Overlays live in `app/overlays` (quick menu, model switcher, config-init
+  banner, update notice).
+- Global keys (`app/chrome.go`): Cmd/Ctrl+K or +P quick menu, +O model
+  switcher, +B sidebar, +Shift+L theme, Ctrl+Alt+1..9 / Left / Right / W
+  project tabs. Errors from background calls: `a.ReportError(title, err)`
+  (401 gets a clear, de-duplicated toast).

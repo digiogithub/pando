@@ -68,6 +68,10 @@ type Area struct {
 	New func(a *Context) View
 	// Placeholder marks areas not built yet.
 	Placeholder bool
+	// Visible, when set, decides on each frame whether the sidebar shows
+	// the entry (the extensions area hides itself on builds without panels).
+	// The area stays routable either way.
+	Visible func(a *Context) bool
 }
 
 var (

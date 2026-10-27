@@ -17,6 +17,8 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"slices"
+	"sync"
 
 	"github.com/digiogithub/pando/internal/nativeui/app"
 	"github.com/digiogithub/pando/internal/nativeui/client"
@@ -26,11 +28,32 @@ import (
 	"github.com/egoist/mygo"
 
 	// Areas register themselves; add each new area package here.
+	_ "github.com/digiogithub/pando/internal/nativeui/app/agentvcs"
 	_ "github.com/digiogithub/pando/internal/nativeui/app/chat"
+	_ "github.com/digiogithub/pando/internal/nativeui/app/design"
+	_ "github.com/digiogithub/pando/internal/nativeui/app/editor"
+	_ "github.com/digiogithub/pando/internal/nativeui/app/evaluator"
+	_ "github.com/digiogithub/pando/internal/nativeui/app/extensions"
+	_ "github.com/digiogithub/pando/internal/nativeui/app/instances"
+	_ "github.com/digiogithub/pando/internal/nativeui/app/logs"
+	_ "github.com/digiogithub/pando/internal/nativeui/app/orchestrator"
+	_ "github.com/digiogithub/pando/internal/nativeui/app/overlays"
+	_ "github.com/digiogithub/pando/internal/nativeui/app/projects"
+	_ "github.com/digiogithub/pando/internal/nativeui/app/settings"
+	_ "github.com/digiogithub/pando/internal/nativeui/app/setup"
+	_ "github.com/digiogithub/pando/internal/nativeui/app/terminal"
 )
 
 // ErrNoDisplay is returned by Run when no display server is reachable.
 var ErrNoDisplay = shell.ErrNoDisplay
+
+// AcquireSingleInstance makes `pando desktop` focus the window of a running
+// native desktop instead of starting a second one. key is the working
+// directory: different directories (a project's own window, spawned with
+// `pando desktop --cwd`) are different instances. It returns false after
+// handing the command line to the running instance; call it before any
+// server or database starts. PANDO_DESKTOP_MULTI=1 disables the lock.
+func AcquireSingleInstance(key string) bool { return shell.AcquireSingleInstance(key) }
 
 // Options configures Run.
 type Options struct {
@@ -49,6 +72,8 @@ type Options struct {
 	Theme kit.Settings
 	// Path is the route opened first (default /chat).
 	Path string
+	// Simple opens the simple chat (`pando desktop --simple`).
+	Simple bool
 	// Logger receives UI logs (default slog.Default()).
 	Logger *slog.Logger
 }
@@ -86,8 +111,12 @@ func Run(o Options) error {
 		// Development aid: open a route at start (PANDO_NATIVE_PATH=/chat/s/<id>).
 		o.Path = os.Getenv("PANDO_NATIVE_PATH")
 	}
+	if o.Path == "" && o.Simple {
+		o.Path = "/chat/simple"
+	}
 	if o.Path != "" {
 		a.Router.Replace(o.Path)
+		a.Shell().StartExplicit = true
 	}
 	root := app.NewRoot(a)
 	defer root.Close()
@@ -105,13 +134,33 @@ func Run(o Options) error {
 	if o.CWD != "" {
 		title = "Pando — " + o.CWD
 	}
+	var servicesOnce sync.Once
 	err = shell.Run(shell.Options{
 		Title: title,
 		Ctx:   ctx,
 		View:  root.View,
+		OnReady: func(h *shell.Controller) {
+			// The window does not exist yet; services start with it.
+			a.Shell().Host = h
+		},
 		OnWindow: func(w *mygo.Window) {
 			a.SetDispatcher(w)
 			startCapture(w)
+			servicesOnce.Do(func() { a.StartServices(a.Shell().Host) })
+		},
+		Tray: shell.TrayOptions{
+			OnSettings: func() {
+				a.Update(func() { a.Navigate("/settings") })
+			},
+			OnProject: func(id string) {
+				a.Update(func() { a.FocusProjectWorkspace(id) })
+			},
+		},
+		OnSecondInstance: func(args []string) {
+			// `pando desktop --simple` while running: show the simple chat.
+			if slices.Contains(args, "--simple") {
+				a.Update(func() { a.Router.Push("/chat/simple") })
+			}
 		},
 		Menu: []*mygo.MenuItem{
 			{Label: "Open in Browser", Click: func(*mygo.MenuItem, *mygo.Window) {

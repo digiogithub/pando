@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 
@@ -33,11 +34,20 @@ type Options struct {
 	Width, Height int
 	// View builds the window's content every frame.
 	View func(c *ui.Context)
+	// OnReady runs on the main thread once the app is ready, before the
+	// first window: wire the controller to services here.
+	OnReady func(c *Controller)
 	// OnWindow runs on the main thread once the main window exists: connect
-	// dispatchers (the window implements Update/Invalidate) here.
+	// dispatchers (the window implements Update/Invalidate) here. It runs
+	// again if the window is recreated.
 	OnWindow func(w *mygo.Window)
 	// Menu adds items to the default application menu (see DefaultMenu).
 	Menu []*mygo.MenuItem
+	// Tray configures the tray icon; the zero value gives Show, Quit.
+	Tray TrayOptions
+	// OnSecondInstance runs when another `pando desktop` for the same
+	// working directory started and handed over its arguments.
+	OnSecondInstance func(args []string)
 	// Ctx, when canceled (SIGINT, server shutdown), quits the app.
 	Ctx context.Context
 }
@@ -64,37 +74,28 @@ func Run(o Options) error {
 	app.SetName(o.Name)
 	app.SetMenu(DefaultMenu(o.Menu))
 
-	var win *mygo.Window
-	openMain := func() {
-		if win != nil && !win.IsDestroyed() {
-			win.Show()
-			win.Focus()
-			return
+	c := newController(o)
+	app.WhenReady(func() {
+		c.setupTray()
+		if o.OnReady != nil {
+			o.OnReady(c)
 		}
-		win = mygo.NewWindow(mygo.WindowOptions{
-			Title:     o.Title,
-			Width:     o.Width,
-			Height:    o.Height,
-			MinWidth:  720,
-			MinHeight: 480,
-			StateKey:  "main",
-			Content:   ui.View(o.View),
-		})
-		if o.OnWindow != nil {
-			o.OnWindow(win)
-		}
-	}
-	app.WhenReady(openMain)
-	// macOS keeps the app alive with its Dock icon and reopens the window
-	// on click; elsewhere the last window closing quits.
-	app.OnWindowAllClosed(func() {
-		if runtime.GOOS != "darwin" {
-			app.Quit()
-		}
+		c.openMain()
 	})
+	app.OnBeforeQuit(func(*mygo.QuitEvent) { c.quitting.Store(true) })
+	// The last window closing quits the app, except when it is hidden into
+	// the tray (hidden windows are not closed, so this does not fire).
+	app.OnWindowAllClosed(func() { app.Quit() })
+	// A Dock click (macOS) brings the window back from the tray.
 	app.OnActivate(func(hasVisibleWindows bool) {
 		if !hasVisibleWindows {
-			openMain()
+			c.Show()
+		}
+	})
+	app.OnSecondInstance(func(args []string, _ string) {
+		c.Show()
+		if o.OnSecondInstance != nil {
+			o.OnSecondInstance(args)
 		}
 	})
 	if o.Ctx != nil {
@@ -108,6 +109,25 @@ func Run(o Options) error {
 		return err
 	}
 	return nil
+}
+
+// AcquireSingleInstance makes sure one native desktop runs per key (the
+// working directory): it returns false, after handing the command line to
+// the running instance (which focuses its window), when another one owns
+// the key. Different keys do not collide, so `pando desktop --cwd other`
+// (how a project opens its own window) still starts. Call it before any
+// server starts. PANDO_DESKTOP_MULTI=1 disables the lock (tests, several
+// agents on one machine).
+func AcquireSingleInstance(key string) bool {
+	if os.Getenv("PANDO_DESKTOP_MULTI") != "" {
+		return true
+	}
+	// MyGo derives the lock from the application name; Run sets the real
+	// name afterwards.
+	mygo.App.SetName("Pando desktop " + key)
+	ok := mygo.App.RequestSingleInstanceLock()
+	mygo.App.SetName("Pando")
+	return ok
 }
 
 func isNoDisplay(err error) bool {

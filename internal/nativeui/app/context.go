@@ -48,6 +48,12 @@ type Context struct {
 	// Log is the UI logger.
 	Log *slog.Logger
 
+	// parent is set on contexts made by ForClient; they borrow its dispatcher.
+	parent *Context
+
+	// shell is the window state (see Shell()); only root contexts own one.
+	shell *Shell
+
 	dispMu sync.RWMutex
 	disp   Dispatcher
 }
@@ -64,6 +70,7 @@ func NewContext(ctx context.Context, c *client.Client) *Context {
 		Toasts: &kit.Toaster{},
 		Theme:  kit.DefaultSettings,
 		Log:    slog.Default().With("component", "nativeui"),
+		shell:  &Shell{},
 	}
 	a.Toasts.Invalidate = a.Invalidate
 	return a
@@ -79,8 +86,33 @@ func (a *Context) SetDispatcher(d Dispatcher) {
 
 func (a *Context) dispatcher() Dispatcher {
 	a.dispMu.RLock()
-	defer a.dispMu.RUnlock()
-	return a.disp
+	d := a.disp
+	a.dispMu.RUnlock()
+	if d == nil && a.parent != nil {
+		return a.parent.dispatcher()
+	}
+	return d
+}
+
+// ForClient returns a context that talks to another server (a project's
+// child instance through the parent proxy, see client.Client.Derive) while
+// sharing everything else: the window dispatcher, toasts, ctx and logger.
+// Areas are instantiated against it with Area.New(child), which is how a
+// project workspace hosts chat, files, ... for another project. The child has
+// its own Router (the routes of the embedded areas must not move the main
+// window) and its own Server info and CWD. Its Theme is not used: the root
+// view applies the theme once per frame and kit.Current() is global.
+func (a *Context) ForClient(c *client.Client, cwd string) *Context {
+	return &Context{
+		Ctx:    a.Ctx,
+		Client: c,
+		CWD:    cwd,
+		Router: ui.NewRouter(DefaultPath),
+		Toasts: a.Toasts,
+		Theme:  a.Theme,
+		Log:    a.Log,
+		parent: a,
+	}
 }
 
 // Update runs fn on the UI thread and redraws. Background goroutines must
