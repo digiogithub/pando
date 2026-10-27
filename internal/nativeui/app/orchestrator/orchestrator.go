@@ -51,6 +51,7 @@ type View struct {
 	tbl       ui.ListState
 	selIdx    int
 	selID     string
+	detailW   float32 // detail panel width (0 = default)
 	expanded  map[string]bool
 	create    createForm
 	models    []string

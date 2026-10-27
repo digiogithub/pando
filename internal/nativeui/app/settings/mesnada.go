@@ -74,7 +74,9 @@ func newMesnada(s *Settings) section {
 			txt("orchestrator.logDir", "Log directory", ""),
 			{Path: "orchestrator.maxParallel", Label: "Max parallel", Desc: "1–20", Kind: KInt, Width: 120},
 			{Path: "orchestrator.defaultEngine", Label: "Default engine", Kind: KSelect, Opts: engineOpts},
-			{Path: "orchestrator.defaultModel", Label: "Default model", Kind: KText, Placeholder: "(empty = engine default)"},
+			{Path: "orchestrator.defaultModel", Label: "Default model", Kind: KModel, Placeholder: "(empty = engine default)", Width: 320,
+				Desc:  "With the Pando engine, pick one of the configured models; other engines take their own model name.",
+				Plain: func(d *Doc) bool { return !isPandoEngine(d.Get("orchestrator.defaultEngine")) }},
 			txt("orchestrator.personaPath", "Persona path", ""),
 			{Path: mnDisabled, Label: "Disabled engines", Kind: KList, Visible: hidden},
 		}},
@@ -119,6 +121,10 @@ func newMesnada(s *Settings) section {
 	return m
 }
 
+// isPandoEngine reports whether the default engine runs Pando itself (the
+// default when unset), whose models are the configured providers' ones.
+func isPandoEngine(e string) bool { return nativeEngines[normalizeEngine(e)] }
+
 func (m *mesnadaSection) Load() {
 	m.Doc.Load()
 	a := m.s.app
@@ -129,7 +135,30 @@ func (m *mesnadaSection) Load() {
 			if err != nil {
 				m.engines, m.enginesErr = nil, err.Error()
 			}
+			m.engineOptions()
 		})
+	})
+}
+
+// engineOptions adds the detected engines (custom ones included) to the
+// default engine choices, after the Web UI's fixed list.
+func (m *mesnadaSection) engineOptions() {
+	m.fields(func(f *Field) {
+		if f.Path != "orchestrator.defaultEngine" {
+			return
+		}
+		have := map[string]bool{}
+		for _, o := range f.Opts {
+			have[o.V] = true
+		}
+		for _, e := range m.engines {
+			n := normalizeEngine(e.Name)
+			if n == "" || have[n] || nativeEngines[n] && n != "pando" {
+				continue
+			}
+			have[n] = true
+			f.Opts = append(f.Opts, Opt{n, n})
+		}
 	})
 }
 
@@ -169,13 +198,17 @@ func (m *mesnadaSection) tail(c *ui.Context, d *Doc) {
 			if e.Kind == "custom" {
 				label += " · " + a.T(mnEngines+"custom")
 			}
-			on := e.Locked || !disabled[normalizeEngine(e.Name)]
+			locked := e.Locked || nativeEngines[normalizeEngine(e.Name)]
 			kit.SettingsRow(cc, label, status, func() {
-				if e.Locked {
+				if locked {
+					// Pando's own engines are always on.
 					kit.Badge(cc, a.T(mnEngines+"builtIn"), kit.ToneAccent)
+					return
 				}
-				v := on
-				if kit.Switch(cc, &v, "").Disabled(e.Locked).Changed() {
+				v := !disabled[normalizeEngine(e.Name)]
+				before := v
+				kit.Switch(cc, &v, "")
+				if v != before {
 					off.l = setEngineDisabled(off.l, e.Name, !v)
 				}
 			})

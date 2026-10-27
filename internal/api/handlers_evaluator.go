@@ -204,6 +204,12 @@ func (s *Server) handleGetEvaluatorDoctor(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// handleGetJudgePromptDefault handles GET /api/v1/evaluator/judge-prompt/default:
+// the built-in judge prompt template, shown by the settings UIs.
+func (s *Server) handleGetJudgePromptDefault(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"template": evaluator.DefaultJudgePrompt()})
+}
+
 // handleGetEvaluatorTemplates handles GET /api/v1/evaluator/templates. It lists,
 // per prompt section that has variant files or statistics, the default
 // (embedded) variant and the variant files with times used, average reward and

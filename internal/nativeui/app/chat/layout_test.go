@@ -81,28 +81,41 @@ func TestComposerCenteredOnWideWindow(t *testing.T) {
 	}
 }
 
+// The sessions toggle lives in the sidebar (app.SidebarPanel): on the icon
+// rail it shows or hides the sessions column beside the chat; the expanded
+// sidebar lists the sessions itself and the chat drops its column.
 func TestSessionsPaneToggle(t *testing.T) {
-	ch, tt := newWideChat(t, 1200, 700)
+	ch, _ := newWideChat(t, 1200, 700)
 	ch.sessHidden = false
+	collapsed := true
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Row(c).Fill().Children(func() {
+			ui.Column(c).Width(216).Children(func() { ch.SidebarPanel(c, collapsed) })
+			ui.Column(c).Grow(1).Children(func() { ch.Build(c, nil) })
+		})
+	}, 1400, 700)
 	tt.Frame()
-	if !tt.HasText("Sessions") && !tt.HasText("SESSIONS") {
-		t.Fatalf("sessions pane not shown: %q", tt.Texts())
+	if !tt.HasText("Sessions") || ch.sessHosted {
+		t.Fatalf("icon rail: the chat must show its sessions column: %q", tt.Texts())
 	}
 	if err := tt.Click(ch.app.T("chat.simple.toggleSessions")); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
-	if !ch.sessHidden {
-		t.Fatal("collapse button did not hide the pane")
+	if !ch.sessHidden || tt.HasText("Sessions") {
+		t.Fatal("the rail toggle did not hide the sessions column")
 	}
-	// The pane is gone; reopening is a header action (HeaderActions runs in
-	// the app header, so call the same state change through its button).
-	tt2 := ui.NewTester(func(c *ui.Context) { ch.HeaderActions(c) }, 600, 60)
-	tt2.Frame()
-	if err := tt2.Click(ch.app.T("chat.simple.toggleSessions")); err != nil {
+	// Expanded sidebar: the sessions move into it.
+	collapsed = false
+	tt.Frame()
+	if err := tt.Click(ch.app.T("chat.simple.toggleSessions")); err != nil {
 		t.Fatal(err)
 	}
-	if ch.sessHidden {
-		t.Error("header button did not reopen the pane")
+	tt.Frame()
+	if ch.sessHidden || !ch.sessHosted {
+		t.Fatalf("expanded sidebar: hidden=%v hosted=%v", ch.sessHidden, ch.sessHosted)
+	}
+	if !tt.HasText("SESSIONS") || tt.HasText("Sessions") {
+		t.Errorf("sessions must be listed by the sidebar only: %q", tt.Texts())
 	}
 }

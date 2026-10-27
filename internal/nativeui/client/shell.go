@@ -44,6 +44,8 @@ type DesktopSettings struct {
 	DefaultModel string `json:"default_model"`
 	// Theme is the backend theme id ("family-mode"), shared with the TUI.
 	Theme string `json:"theme"`
+	// WorkingDirectory is the project directory relative paths resolve to.
+	WorkingDirectory string `json:"working_directory"`
 }
 
 // GetDesktopSettings reads the shell-relevant settings.

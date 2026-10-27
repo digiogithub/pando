@@ -216,7 +216,7 @@ func (r *Root) sidebar(c *ui.Context, t *kit.Tokens, all []Area) {
 				r.setCollapsed(!r.isCollapsed())
 			}
 		})
-		ui.Column(c).Grow(1).Gap(2).Children(func() {
+		ui.Column(c).Gap(2).Children(func() {
 			prev := Section("")
 			for _, ar := range all {
 				if ar.Section == SectionHidden || ar.Section == SectionBottom || (r.embedded && ar.ID == "projects") {
@@ -230,6 +230,15 @@ func (r *Root) sidebar(c *ui.Context, t *kit.Tokens, all []Area) {
 				}
 				prev = ar.Section
 				r.navItem(c, ar, active)
+			}
+		})
+		// The active area's own sidebar content (the chat's sessions)
+		// fills the room above the bottom entries.
+		panel, _ := r.views[active].(SidebarPanel)
+		ui.Column(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
+			if panel != nil {
+				ui.Box(c).Height(1).Margin(6, 4).Background(t.Border)
+				panel.SidebarPanel(c.Key("panel:"+active), r.isCollapsed())
 			}
 		})
 		for _, ar := range all {

@@ -171,7 +171,7 @@ func TestSubDocumentsPutShape(t *testing.T) {
 	h.s.open("sandbox")
 	sb := h.s.section("sandbox").(*docPage)
 	h.wait(func() bool { return sb.loaded })
-	sb.vals["mode"].sel = h.s.app.T("settings.sandbox.modeReadOnly")
+	sb.vals["mode"].s = "read-only"
 	done := false
 	sb.Save(func(bool) { done = true })
 	h.wait(func() bool { return done })

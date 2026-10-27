@@ -32,8 +32,26 @@ func metaRow(c *ui.Context, t *kit.Tokens, icon, label, value string, mono bool)
 	})
 }
 
+// Detail panel width bounds in DIPs: the pointer drags its left edge.
+const (
+	detailMinW     = 320
+	detailDefaultW = 400
+)
+
+// detailWidth clamps the panel width to the room the window leaves the
+// task table.
+func (v *View) detailWidth(avail float32) float32 {
+	if v.detailW == 0 {
+		v.detailW = detailDefaultW
+	}
+	maxW := max(avail-360, detailMinW)
+	return min(max(v.detailW, detailMinW), maxW)
+}
+
 func (v *View) detail(c *ui.Context, t *kit.Tokens, task client.OrchestratorTask) {
-	ui.Column(c).Width(400).Shrink(0).AlignItems(ui.Stretch).BorderWidth(0, 0, 0, 1).BorderColor(t.Border).
+	winW, _ := c.Size()
+	w := v.detailWidth(winW)
+	ui.Column(c).Width(w).Shrink(0).AlignItems(ui.Stretch).BorderWidth(0, 0, 0, 1).BorderColor(t.Border).
 		Background(t.BgShell).Children(func() {
 		ui.Row(c).Height(44).Padding(0, 16).AlignItems(ui.Center).Shrink(0).BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
 			ui.Text(c, "Task Detail").FontWeight(600).Grow(1)
@@ -94,6 +112,14 @@ func (v *View) detail(c *ui.Context, t *kit.Tokens, task client.OrchestratorTask
 				})
 			}
 		})
+		// The left edge, built last to sit on top, resizes the panel.
+		edge := ui.Box(c.Key("resize")).Absolute().Left(-3).Top(0).Bottom(0).Width(6).Cursor(ui.CursorResizeEW).Label("Resize detail panel")
+		if dx, _, ok := edge.Dragged(); ok && dx != 0 {
+			v.detailW = v.detailWidth(winW) - dx
+		}
+		if edge.Hovered() || edge.Dragging() {
+			edge.Background(t.Accent.Alpha(0.35))
+		}
 	})
 }
 

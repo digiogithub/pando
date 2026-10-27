@@ -47,7 +47,7 @@ func generalDoc(s *Settings) *Doc {
 		Group{Fields: []Field{
 			{Path: "home_directory", Label: g + "homeDirectory", Kind: KStatic, Width: 320},
 			{Path: "working_directory", Label: g + "workingDirectory", Kind: KText, Placeholder: g + "workingDirectoryPlaceholder", Width: 320},
-			{Path: "default_model", Label: g + "defaultModel", Kind: KText, Width: 320},
+			{Path: "default_model", Label: g + "defaultModel", Kind: KModel, Width: 320},
 		}},
 		Group{Fields: []Field{
 			sw("llm_cache_enabled", g+"llmCache", g+"llmCacheDescription"),
@@ -277,8 +277,9 @@ func evaluatorDoc(s *Settings) *Doc {
 	d := newDoc(s, client.PathConfigEvaluator,
 		Group{Fields: []Field{
 			sw("enabled", "Enabled", "Activate the self-improvement evaluation loop (LLM-as-Judge)"),
-			txt("model", "Judge model", "Select the model that will act as the judge for performance metrics."),
-			txt("provider", "Judge provider", ""),
+			{Path: "model", Label: "Judge model", Desc: "Select the model that will act as the judge for performance metrics.", Kind: KModel, Width: 320,
+				Picked: func(d *Doc, m client.Model) { d.Set("provider", m.Provider) }},
+			txt("provider", "Judge provider", "Filled in when a model is picked from the list."),
 		}},
 		Group{Title: "Reward weights", Fields: []Field{
 			{Path: "weights.success", Label: "Success (corrections)", Kind: KSlider}, {Path: "weights.tokens", Label: "Token efficiency", Kind: KSlider},
@@ -311,7 +312,7 @@ func evaluatorDoc(s *Settings) *Doc {
 			flt("contextTrimmer.minConfidence", "Trimmer minimum confidence", ""),
 		}},
 		Group{Title: "Correction patterns", Fields: []Field{list("correctionsPatterns", "Correction patterns", "Phrases that mark a user correction.", "")}},
-		Group{Title: "Judge prompt template", Fields: []Field{{Path: "judgePromptTemplate", Label: "Judge prompt template file", Desc: "Path of a template file; empty uses the built-in default.", Kind: KText, Width: 360}}},
+		Group{Title: "Judge prompt template", Fields: []Field{judgeTemplateField(s)}},
 	)
 	d.SavedMsg = "Evaluator settings saved"
 	return d

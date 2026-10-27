@@ -194,7 +194,9 @@ func Input(c *ui.Context, value *string, placeholder string) ui.Element {
 		Background(t.BgInput).Border(1, t.BorderStrong).Radius(t.RadiusSM).FontSize(t.TextSM)
 }
 
-// Switch is a labelled on/off switch; the label toggles it too.
+// Switch is a labelled on/off switch; the label toggles it too. The
+// returned element is the row around the switch: its Changed never reports,
+// so compare *on before and after the call instead.
 func Switch(c *ui.Context, on *bool, label string) ui.Element {
 	t := Current()
 	row := ui.Row(c).Gap(8).AlignItems(ui.Center)

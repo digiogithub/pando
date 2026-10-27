@@ -141,6 +141,15 @@ func (c *Client) EvaluatorTemplates(ctx context.Context) ([]TemplateSection, err
 	return out.Sections, err
 }
 
+// DefaultJudgePrompt fetches the built-in judge prompt template.
+func (c *Client) DefaultJudgePrompt(ctx context.Context) (string, error) {
+	var out struct {
+		Template string `json:"template"`
+	}
+	err := c.Get(ctx, "/api/v1/evaluator/judge-prompt/default", &out)
+	return out.Template, err
+}
+
 // EvaluatorSkills fetches the learned skills.
 func (c *Client) EvaluatorSkills(ctx context.Context) ([]Skill, error) {
 	var out struct {

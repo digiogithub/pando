@@ -17,7 +17,7 @@ const (
 	amMaxRoutes      = 25
 	amMaxDescription = 500
 	amMaxFallbacks   = 2
-	amNoModel        = "—"
+	amNoModel        = "" // a model field left empty
 )
 
 var amStarterRoutes = []struct{ id, desc string }{
@@ -31,7 +31,7 @@ var amStarterRoutes = []struct{ id, desc string }{
 type amRoute struct {
 	uid      int
 	id, desc string
-	model    string // selected label (amNoModel = none)
+	model    string // model id ("" = none)
 	fb       [amMaxFallbacks]string
 	nfb      int // fallback fields shown
 	disabled bool
@@ -70,7 +70,6 @@ type modelAutoMode struct {
 	warnings   []string
 	fieldErrs  []client.FieldError
 
-	models  []string
 	inUse   dmInUse
 	delIdx  int
 	delOpen bool
@@ -92,16 +91,8 @@ func (m *modelAutoMode) Load() {
 	m.inUse.load(m.s)
 	a.Go(func(ctx context.Context) {
 		cfg, err := a.Client.GetModelAutoMode(ctx)
-		ml, _ := a.Client.ListModels(ctx)
 		a.Update(func() {
 			m.loading = false
-			m.models = m.models[:0]
-			for _, mo := range ml.Models {
-				if mo.ID != client.AutoModelID {
-					m.models = append(m.models, mo.ID)
-				}
-			}
-			sort.Strings(m.models)
 			if err != nil {
 				m.err, _ = client.ParseAPIError(err)
 				return
@@ -253,22 +244,6 @@ func (m *modelAutoMode) showErrs(c *ui.Context, field string) {
 	}
 }
 
-func (m *modelAutoMode) modelLabels(current ...string) []string {
-	labels := []string{amNoModel}
-	have := map[string]bool{amNoModel: true}
-	for _, id := range m.models {
-		labels = append(labels, id)
-		have[id] = true
-	}
-	for _, id := range current {
-		if !have[id] && id != "" {
-			labels = append(labels, id)
-			have[id] = true
-		}
-	}
-	return labels
-}
-
 func (m *modelAutoMode) Build(c *ui.Context) {
 	s, a, t := m.s, m.s.app, kit.Current()
 	s.pageHeader(c, "Auto mode", "Let a small decision model pick the best configured model for each prompt. When routing is not possible, the turn falls back to the coder model.")
@@ -376,17 +351,16 @@ func (m *modelAutoMode) routeCard(c *ui.Context, i int) {
 		ui.Text(c, fmt.Sprintf("%d/%d", len([]rune(r.desc)), amMaxDescription)).FontSize(t.TextXS).TextColor(col)
 		m.showErrs(c, fmt.Sprintf("routes[%d].description", i))
 
-		labels := m.modelLabels(r.model, r.fb[0], r.fb[1])
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "Primary model").FontSize(t.TextSM).Width(110)
-			kit.Select(c.Key("model"), &r.model, labels).Width(300)
+			m.s.modelCombo(c.Key("model"), &r.model, 300, "", nil)
 		})
 		m.showErrs(c, fmt.Sprintf("routes[%d].model", i))
 		for slot := 0; slot < r.nfb; slot++ {
 			cc := c.Key(fmt.Sprintf("fb%d", slot))
 			ui.Row(cc).Gap(8).AlignItems(ui.Center).Children(func() {
 				ui.Text(cc, fmt.Sprintf("Fallback %d", slot+1)).FontSize(t.TextSM).Width(110)
-				kit.Select(cc.Key("s"), &r.fb[slot], labels).Width(300)
+				m.s.modelCombo(cc.Key("s"), &r.fb[slot], 300, "", nil)
 				if kit.IconButton(cc.Key("x"), kit.IconClose, "Remove fallback").Clicked() {
 					// Shift the later fallback down.
 					for k := slot; k < amMaxFallbacks-1; k++ {

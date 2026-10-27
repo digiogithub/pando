@@ -70,6 +70,9 @@ type Settings struct {
 	pending func()
 	saveErr bool
 
+	// catalog is GET /api/v1/models for the model fields (modelpicker.go).
+	catalog modelCatalog
+
 	hidden []string // extension UI policy
 	banner client.UIPolicyBanner
 	exts   []client.ExtensionPanel
@@ -227,6 +230,24 @@ func (s *Settings) Build(c *ui.Context, r *ui.Route) {
 		})
 	})
 	s.unsavedDialog(c)
+	// Escape goes back to the chat, asking first about unsaved edits. Open
+	// popups and dialogs take the key before this.
+	if !s.dialog && c.Shortcut(0, ui.KeyEscape) {
+		s.backToChat()
+	}
+}
+
+// backToChat leaves settings for the chat (which reopens its session).
+func (s *Settings) backToChat() {
+	leave := func() {
+		if cur := s.current(); cur != nil {
+			cur.Discard()
+		}
+		s.app.Router.Push("/chat")
+	}
+	if s.ConfirmLeave(leave) {
+		leave()
+	}
 }
 
 func (s *Settings) nav(c *ui.Context, t *kit.Tokens) {

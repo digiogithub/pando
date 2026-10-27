@@ -15,7 +15,7 @@ func embProviders() []Opt {
 	return []Opt{{"", "— select provider —"}, {"openai", "openai"}, {"openai-compatible", "openai-compatible"}, {"anthropic", "anthropic"}, {"ollama", "ollama"}}
 }
 
-func remembrancesDoc(s *Settings) *Doc {
+func remembrancesDoc(s *Settings, rt *remTools) *Doc {
 	filterOn := func(d *Doc) bool {
 		return d.Bool("context_enrichment_decision_filter_enabled") || d.Bool("memory_context_decision_filter_enabled")
 	}
@@ -34,24 +34,28 @@ func remembrancesDoc(s *Settings) *Doc {
 	d := newDoc(s, client.PathConfigServices,
 		Group{Fields: []Field{sw("enabled", "Enabled", "Enable the Remembrances memory system")}},
 		Group{Title: "KB filesystem sync", Fields: []Field{
-			{Path: "kb_path", Label: "KB path", Kind: KText, Placeholder: "./.kb", Width: 320},
+			{Path: "kb_path", Label: "KB path", Desc: "Folder of the markdown knowledge base, relative to the working directory. Type it or browse for a folder, inside or outside the project.",
+				Kind: KText, Placeholder: "./.kb", Width: 360,
+				Control: func(c *ui.Context, d *Doc, v *string, w float32) ui.Element { return s.folderControl(c, v, w, "./.kb") }},
 			sw("kb_watch", "Watch KB path", "Monitor markdown changes in real time and re-index automatically"),
 			sw("kb_auto_import", "Auto import on startup", "Import markdown files from KB path when Pando starts"),
 			sw("kb_convert_documents", "Convert documents", "Convert docx/pdf/xlsx and other rich documents to Markdown on the fly and index them, referencing the original file"),
 			sw("kb_wiki_links", "Wiki links", "Index [[wiki links]] written in KB documents as a navigable graph: backlinks, related documents and concepts still undocumented"),
 		}},
 		Group{Title: "Document embeddings", Fields: []Field{
-			{Path: "document_embedding_provider", Label: "Embedding provider", Kind: KSelect, Opts: embProviders()},
-			{Path: "document_embedding_model", Label: "Embedding model", Kind: KText, Placeholder: "text-embedding-3-small", Width: 320},
+			rt.providerField("document", "Embedding provider", nil),
 			vis(Field{Path: "document_embedding_base_url", Label: "Base URL", Kind: KText, Placeholder: "https://api.example.com/v1", Width: 320}, baseURL("document")),
 			{Path: "document_embedding_api_key", Label: "Embedding API key", Kind: KSecret, Placeholder: "sk-…", Width: 320},
+			rt.modelField("document", "Embedding model", nil),
+			rt.testField("document", nil),
 		}},
 		Group{Title: "Code embeddings", Fields: []Field{
 			sw("use_same_model", "Use same model as document", ""),
-			vis(Field{Path: "code_embedding_provider", Label: "Code embedding provider", Kind: KSelect, Opts: embProviders()}, notSame),
-			vis(Field{Path: "code_embedding_model", Label: "Code embedding model", Kind: KText, Placeholder: "text-embedding-3-small", Width: 320}, notSame),
+			rt.providerField("code", "Code embedding provider", notSame),
 			vis(Field{Path: "code_embedding_base_url", Label: "Base URL", Kind: KText, Width: 320}, func(d *Doc) bool { return notSame(d) && baseURL("code")(d) }),
 			vis(Field{Path: "code_embedding_api_key", Label: "Code embedding API key", Kind: KSecret, Placeholder: "sk-…", Width: 320}, notSame),
+			rt.modelField("code", "Code embedding model", notSame),
+			rt.testField("code", notSame),
 		}},
 		Group{Title: "Chunking", Fields: []Field{
 			num("chunk_size", "Chunk size", ""), num("chunk_overlap", "Chunk overlap", ""), num("index_workers", "Index workers", ""),
@@ -96,7 +100,6 @@ type remTools struct {
 	s        *Settings
 	models   map[string][]client.EmbeddingModelInfo // "document" / "code"
 	modelErr map[string]string
-	picked   map[string]string
 	loadingM map[string]bool
 	tests    map[string]*client.EmbeddingTestResult
 	testing  map[string]bool
@@ -106,9 +109,9 @@ type remTools struct {
 }
 
 func newRemembrances(s *Settings) section {
-	d := remembrancesDoc(s)
-	rt := &remTools{s: s, models: map[string][]client.EmbeddingModelInfo{}, modelErr: map[string]string{}, picked: map[string]string{},
+	rt := &remTools{s: s, models: map[string][]client.EmbeddingModelInfo{}, modelErr: map[string]string{},
 		loadingM: map[string]bool{}, tests: map[string]*client.EmbeddingTestResult{}, testing: map[string]bool{}}
+	d := remembrancesDoc(s, rt)
 	d.Loaded = func(d *Doc, _ client.Obj) {
 		rt.loadProjects(d)
 		if d.Get("document_embedding_provider") != "" {
@@ -156,58 +159,7 @@ func (rt *remTools) loadModels(d *Doc, kind string) {
 }
 
 func (rt *remTools) tail(c *ui.Context, d *Doc) {
-	a, t := rt.s.app, kit.Current()
-	kinds := []string{"document"}
-	if !d.Bool("use_same_model") {
-		kinds = append(kinds, "code")
-	}
-	kit.SettingsSection(c, "Embedding models & connection", "List the models the provider offers and test the saved configuration (save first to test changes).", func() {
-		for _, kind := range kinds {
-			kind := kind
-			cc := c.Key("emb:" + kind)
-			prov := d.Get(kind + "_embedding_provider")
-			kit.SettingsRow(cc, kind+" model", rt.hint(kind), func() {
-				labels := make([]string, 0, len(rt.models[kind]))
-				for _, m := range rt.models[kind] {
-					labels = append(labels, orStr(m.Name, m.ID))
-				}
-				if len(labels) > 0 {
-					p := rt.picked[kind]
-					if kit.Select(cc, &p, labels).Width(220).Changed() {
-						rt.picked[kind] = p
-						for _, m := range rt.models[kind] {
-							if orStr(m.Name, m.ID) == p {
-								d.vals[kind+"_embedding_model"].s = m.ID
-							}
-						}
-					}
-				}
-				lab := "Refresh"
-				if rt.loadingM[kind] {
-					lab = "…"
-				}
-				if kit.Button(c.Key("refresh:"+kind), kit.ButtonOpts{Label: lab, Size: kit.SizeSM, Disabled: prov == "" || rt.loadingM[kind]}).Clicked() {
-					rt.loadModels(d, kind)
-				}
-			})
-			kit.SettingsRow(c.Key("test:"+kind), "Test connection", "", func() {
-				lab := "Test connection"
-				if rt.testing[kind] {
-					lab = "Testing…"
-				}
-				if kit.Button(c.Key("t:"+kind), kit.ButtonOpts{Label: lab, Size: kit.SizeSM, Disabled: rt.testing[kind]}).Clicked() {
-					rt.test(kind)
-				}
-				if r := rt.tests[kind]; r != nil {
-					tone, txt := kit.ToneDanger, r.Error
-					if r.OK {
-						tone, txt = kit.ToneSuccess, fmt.Sprintf("OK — %dd, %dms", r.Dimension, r.LatencyMS)
-					}
-					kit.Badge(cc, txt, tone)
-				}
-			})
-		}
-	})
+	t := kit.Current()
 	kit.SettingsSection(c, "Code indexing", "", func() {
 		kit.SettingsRow(c, "Re-index all", "Trigger a full re-index of all registered code projects.", func() {
 			if kit.SecondaryButton(c.Key("reindex"), "Re-index now").Clicked() {
@@ -237,7 +189,73 @@ func (rt *remTools) tail(c *ui.Context, d *Doc) {
 			})
 		}
 	})
-	_ = a
+}
+
+// providerField is the embedding provider of kind ("document" / "code");
+// choosing one lists its models.
+func (rt *remTools) providerField(kind, label string, visible func(*Doc) bool) Field {
+	return Field{Path: kind + "_embedding_provider", Label: label, Kind: KSelect, Opts: embProviders(), Visible: visible,
+		After: func(d *Doc) {
+			rt.models[kind], rt.modelErr[kind] = nil, ""
+			rt.loadModels(d, kind)
+		}}
+}
+
+// modelField is the embedding model of kind: free text with suggestions
+// from the models the provider offers, and a button to list them again.
+func (rt *remTools) modelField(kind, label string, visible func(*Doc) bool) Field {
+	return Field{Path: kind + "_embedding_model", Label: label, Kind: KText, Placeholder: "text-embedding-3-small", Width: 320, Visible: visible,
+		Control: func(c *ui.Context, d *Doc, v *string, w float32) ui.Element {
+			row := ui.Row(c).Gap(8).AlignItems(ui.Center)
+			row.Children(func() {
+				items := make([]suggestion, 0, len(rt.models[kind]))
+				for _, m := range rt.models[kind] {
+					items = append(items, suggestion{ID: m.ID, Title: orStr(m.Name, m.ID), Meta: m.Size})
+				}
+				status := ""
+				if rt.loadingM[kind] {
+					status = "Loading models..."
+				}
+				suggestField(c.Key("model"), v, w-40, "text-embedding-3-small", items, status)
+				prov := d.Get(kind + "_embedding_provider")
+				if kit.Button(c.Key("refresh"), kit.ButtonOpts{Icon: kit.IconRefresh, Tooltip: "List the provider's models", Variant: kit.Ghost, Size: kit.SizeSM,
+					Disabled: prov == "" || rt.loadingM[kind]}).Clicked() {
+					rt.loadModels(d, kind)
+				}
+			})
+			return row
+		},
+		Extra: func(c *ui.Context, d *Doc) {
+			t := kit.Current()
+			ui.Text(c, rt.hint(kind)).FontSize(t.TextXS).TextColor(t.FgMuted).Padding(0, 16, 10, 16)
+		},
+	}
+}
+
+// testField tests the saved embedding configuration of kind.
+func (rt *remTools) testField(kind string, visible func(*Doc) bool) Field {
+	return Field{Path: "ui:test_" + kind, Label: "Test connection", Desc: "Tests the saved configuration: save first to test changes.", Kind: KStatic, Visible: visible,
+		Control: func(c *ui.Context, d *Doc, _ *string, _ float32) ui.Element {
+			row := ui.Row(c).Gap(8).AlignItems(ui.Center)
+			row.Children(func() {
+				if r := rt.tests[kind]; r != nil {
+					tone, txt := kit.ToneDanger, r.Error
+					if r.OK {
+						tone, txt = kit.ToneSuccess, fmt.Sprintf("OK — %dd, %dms", r.Dimension, r.LatencyMS)
+					}
+					kit.Badge(c, txt, tone)
+				}
+				lab := "Test connection"
+				if rt.testing[kind] {
+					lab = "Testing…"
+				}
+				if kit.Button(c.Key("t"), kit.ButtonOpts{Label: lab, Size: kit.SizeSM, Variant: kit.Secondary, Disabled: rt.testing[kind]}).Clicked() {
+					rt.test(kind)
+				}
+			})
+			return row
+		},
+	}
 }
 
 func (rt *remTools) hint(kind string) string {
@@ -245,7 +263,7 @@ func (rt *remTools) hint(kind string) string {
 	case rt.modelErr[kind] != "":
 		return "Could not list models: " + rt.modelErr[kind] + ". Type the model name manually."
 	case len(rt.models[kind]) > 0:
-		return fmt.Sprintf("%d model(s) available. You can also type any name above.", len(rt.models[kind]))
+		return fmt.Sprintf("%d model(s) available. You can also type any model name.", len(rt.models[kind]))
 	}
 	return "Select an embedding provider to list its models."
 }

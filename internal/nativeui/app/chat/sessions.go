@@ -81,8 +81,9 @@ func (ch *Chat) sessRowKey(i int) any {
 	return i
 }
 
+// sessionsPane is the sessions column beside the chat, shown while the
+// sidebar is the icon rail (the expanded sidebar lists them itself).
 func (ch *Chat) sessionsPane(c *ui.Context, t *kit.Tokens) {
-	ch.buildRows(time.Now())
 	ui.Column(c).Width(260).Shrink(0).BorderWidth(0, 1, 0, 0).BorderColor(t.Border).Background(t.BgShell).
 		AlignItems(ui.Stretch).Children(func() {
 		ui.Row(c).Padding(10, 12, 4, 12).AlignItems(ui.Center).Children(func() {
@@ -90,33 +91,70 @@ func (ch *Chat) sessionsPane(c *ui.Context, t *kit.Tokens) {
 			if ch.sessLoading {
 				kit.Spinner(c).FontSize(14).TextColor(t.FgFaint)
 			}
-			if kit.IconButton(c.Key("sesshide"), kit.IconPanelLeft, ch.app.T("chat.simple.toggleSessions")).Clicked() {
-				ch.sessHidden = true
-			}
 		})
-		ui.Row(c).Padding(0, 10, 6, 10).Children(func() {
-			kit.Input(c.Key("sesssearch"), &ch.sessSearch, ch.app.T("shell.searchSessions")).Grow(1)
-		})
-		if ch.sessErr != "" {
-			ui.Text(c, ch.sessErr).FontSize(t.TextXS).TextColor(t.Danger).Padding(4, 12)
+		ch.sessionsList(c, t, 10)
+	})
+}
+
+// SidebarPanel implements app.SidebarPanel: the sessions toggle under the
+// navigation and, in the expanded sidebar, the sessions themselves (below
+// the services entries). On the icon rail the toggle shows or hides the
+// sessions column beside the chat.
+func (ch *Chat) SidebarPanel(c *ui.Context, collapsed bool) {
+	t := kit.Current()
+	ch.sessHosted = !collapsed
+	label := ch.app.T("nav.sections.sessions")
+	tip := ch.app.T("chat.simple.toggleSessions")
+	if collapsed {
+		if kit.NavItem(c.Key("sesstoggle"), kit.IconPanelLeft, tip, !ch.sessHidden, true).Clicked() {
+			ch.sessHidden = !ch.sessHidden
 		}
-		list := ui.List(c, &ch.sessList, len(ch.rows), func(i int) {
-			r := ch.rows[i]
-			switch {
-			case r.more:
-				ch.moreRow(c, t)
-			case r.idx < 0:
-				ui.Text(c, strings.ToUpper(r.header)).FontSize(10).FontWeight(600).LetterSpacing(0.5).
-					TextColor(t.FgFaint).Padding(8, 8, 2, 8)
-			default:
-				ch.sessionRow(c, t, ch.sessions[r.idx], r.idx == ch.selected)
-			}
-		}).Grow(1).Padding(0, 6, 8, 6).Gap(1)
-		list.Children(func() {
-			if len(ch.rows) == 0 && !ch.sessLoading {
-				ui.Text(c, ch.app.T("nav.noSessionsYet")).FontSize(t.TextSM).TextColor(t.FgMuted).Padding(12)
-			}
-		})
+		return
+	}
+	ui.Row(c).Padding(4, 6, 2, 10).Gap(4).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, strings.ToUpper(label)).FontSize(10).FontWeight(600).LetterSpacing(0.5).TextColor(t.FgFaint).Grow(1)
+		if ch.sessLoading {
+			kit.Spinner(c).FontSize(12).TextColor(t.FgFaint)
+		}
+		icon := kit.IconChevronUp
+		if ch.sessHidden {
+			icon = kit.IconChevronDown
+		}
+		if kit.IconButton(c.Key("sesstoggle"), icon, tip).Clicked() {
+			ch.sessHidden = !ch.sessHidden
+		}
+	})
+	if !ch.sessHidden {
+		ch.sessionsList(c, t, 2)
+	}
+}
+
+// sessionsList is the search field and the grouped session list, padded
+// by pad on the sides.
+func (ch *Chat) sessionsList(c *ui.Context, t *kit.Tokens, pad float32) {
+	ch.buildRows(time.Now())
+	ui.Row(c).Padding(0, pad, 6, pad).Children(func() {
+		kit.Input(c.Key("sesssearch"), &ch.sessSearch, ch.app.T("shell.searchSessions")).Grow(1)
+	})
+	if ch.sessErr != "" {
+		ui.Text(c, ch.sessErr).FontSize(t.TextXS).TextColor(t.Danger).Padding(4, 12)
+	}
+	list := ui.List(c, &ch.sessList, len(ch.rows), func(i int) {
+		r := ch.rows[i]
+		switch {
+		case r.more:
+			ch.moreRow(c, t)
+		case r.idx < 0:
+			ui.Text(c, strings.ToUpper(r.header)).FontSize(10).FontWeight(600).LetterSpacing(0.5).
+				TextColor(t.FgFaint).Padding(8, 8, 2, 8)
+		default:
+			ch.sessionRow(c, t, ch.sessions[r.idx], r.idx == ch.selected)
+		}
+	}).Grow(1).MinHeight(0).Padding(0, pad-4, 8, pad-4).Gap(1)
+	list.Children(func() {
+		if len(ch.rows) == 0 && !ch.sessLoading {
+			ui.Text(c, ch.app.T("nav.noSessionsYet")).FontSize(t.TextSM).TextColor(t.FgMuted).Padding(12)
+		}
 	})
 }
 

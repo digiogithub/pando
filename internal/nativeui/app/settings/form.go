@@ -26,6 +26,7 @@ const (
 	KSecret             // password input
 	KStatic             // read-only text
 	KSlider             // 0..1 slider
+	KModel              // model id with autosuggest over GET /api/v1/models
 )
 
 // Opt is an option of a KSelect: the stored value and its label (an i18n
@@ -53,6 +54,15 @@ type Field struct {
 	After func(d *Doc)
 	// Width of the control in DIPs (default 240).
 	Width float32
+	// Plain shows a KModel as a plain text input while it returns true.
+	Plain func(d *Doc) bool
+	// Picked runs when a KModel suggestion is chosen.
+	Picked func(d *Doc, m client.Model)
+	// Control replaces the editor of a field: it edits *value (text kinds),
+	// or draws an action (KStatic rows, which are never saved).
+	Control func(c *ui.Context, d *Doc, value *string, w float32) ui.Element
+	// Extra draws content below the row, across the whole width.
+	Extra func(c *ui.Context, d *Doc)
 }
 
 // Group is a titled card of fields.
@@ -66,7 +76,6 @@ type val struct {
 	b    bool
 	l    []string
 	add  string // pending entry of a KList
-	sel  string // KSelect: the label shown (maps back to a value)
 	seen bool   // the key existed in the document
 }
 
@@ -113,14 +122,19 @@ func (d *Doc) fields(fn func(f *Field)) {
 func (d *Doc) Raw() client.Obj { return d.raw }
 
 // Get returns the current text value of a field path (for Enabled hooks).
+// A KSelect holds its stored value, never its label.
 func (d *Doc) Get(path string) string {
 	if v, ok := d.vals[path]; ok {
-		if v.sel != "" {
-			return d.selValue(path, v.sel)
-		}
 		return v.s
 	}
 	return ""
+}
+
+// Set changes the text value of a field path (coupled fields).
+func (d *Doc) Set(path, value string) {
+	if v, ok := d.vals[path]; ok {
+		v.s = value
+	}
 }
 
 // Bool returns the current switch state of a field path.
@@ -129,21 +143,6 @@ func (d *Doc) Bool(path string) bool {
 		return v.b
 	}
 	return false
-}
-
-func (d *Doc) selValue(path, label string) string {
-	var out string
-	d.fields(func(f *Field) {
-		if f.Path != path {
-			return
-		}
-		for _, o := range f.Opts {
-			if d.s.app.T(o.L) == label {
-				out = o.V
-			}
-		}
-	})
-	return out
 }
 
 // Load fetches the document.
@@ -253,7 +252,6 @@ func (d *Doc) seed(root client.Obj) {
 				sv = f.Opts[0].V
 			}
 			v.s = sv
-			v.sel = d.optLabel(f, sv)
 		default:
 			v.s = scalarString(raw)
 		}
@@ -287,8 +285,6 @@ func (d *Doc) canon(f *Field) string {
 		return strconv.FormatBool(v.b)
 	case KList:
 		return strings.Join(v.l, "\x00")
-	case KSelect:
-		return d.selValue(f.Path, v.sel)
 	}
 	return strings.TrimSpace(v.s)
 }
@@ -354,7 +350,7 @@ func (d *Doc) build() (body any, root client.Obj, err error) {
 		case KList:
 			setPath(target, f.Path, append([]string{}, v.l...))
 		case KSelect:
-			sv := d.selValue(f.Path, v.sel)
+			sv := v.s
 			if sv == f.Empty {
 				sv = ""
 			}
@@ -516,6 +512,9 @@ func (d *Doc) row(c *ui.Context, f *Field) {
 			ctl.Disabled(!enabled)
 		})
 	}
+	if f.Extra != nil {
+		f.Extra(c.Key("extra"), d)
+	}
 	if d.canon(f) != before && f.After != nil {
 		f.After(d)
 	}
@@ -523,21 +522,40 @@ func (d *Doc) row(c *ui.Context, f *Field) {
 
 func (d *Doc) control(c *ui.Context, f *Field, v *val, w float32) ui.Element {
 	a := d.s.app
+	if f.Control != nil {
+		return f.Control(c, d, &v.s, w)
+	}
 	switch f.Kind {
 	case KBool:
 		return kit.Switch(c, &v.b, "")
 	case KSelect:
+		// The select shows labels but the value is kept: labels change
+		// with the UI language, the stored value must not.
 		labels := make([]string, len(f.Opts))
 		for i, o := range f.Opts {
 			labels[i] = a.T(o.L)
 		}
-		return kit.Select(c, &v.sel, labels).Width(w)
+		label := d.optLabel(f, v.s)
+		el := kit.Select(c, &label, labels).Width(w)
+		for _, o := range f.Opts {
+			if a.T(o.L) == label {
+				v.s = o.V
+			}
+		}
+		return el
 	case KSecret:
 		return kit.Input(c, &v.s, a.T(f.Placeholder)).Password().Width(w)
 	case KStatic:
 		return kit.Input(c, &v.s, "").ReadOnly(true).Width(w)
 	case KSlider:
 		return d.slider(c, v, w)
+	}
+	if f.Kind == KModel && (f.Plain == nil || !f.Plain(d)) {
+		var picked func(client.Model)
+		if f.Picked != nil {
+			picked = func(m client.Model) { f.Picked(d, m) }
+		}
+		return d.s.modelCombo(c, &v.s, w, a.T(f.Placeholder), picked)
 	}
 	return kit.Input(c, &v.s, a.T(f.Placeholder)).Width(w)
 }

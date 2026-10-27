@@ -3,7 +3,6 @@ package settings
 import (
 	"context"
 	"encoding/json"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -44,7 +43,6 @@ type agentsSection struct {
 	s      *Settings
 	agents []*agentEdit
 	orig   string
-	models []string
 	dmInfo string
 }
 
@@ -110,7 +108,6 @@ func (a *agentsSection) Load() {
 	app := a.s.app
 	app.Go(func(ctx context.Context) {
 		list, err := app.Client.Agents(ctx)
-		ml, _ := app.Client.ListModels(ctx)
 		prov, model, _ := app.Client.DecisionModelRouter(ctx)
 		app.Update(func() {
 			a.loading = false
@@ -120,10 +117,6 @@ func (a *agentsSection) Load() {
 			}
 			a.err, a.loaded = "", true
 			a.seed(list)
-			a.models = []string{""}
-			for _, m := range ml.Models {
-				a.models = append(a.models, m.ID)
-			}
 			if model != "" {
 				a.dmInfo = prov + "/" + model
 			} else {
@@ -262,11 +255,10 @@ func (a *agentsSection) card(c *ui.Context, e *agentEdit, t *kit.Tokens) {
 				ml = "Fallback model"
 			}
 			label(ml, func() {
-				opts := a.models
-				if e.model != "" && !slices.Contains(opts, e.model) {
-					opts = append(append([]string{}, opts...), e.model)
+				s.modelCombo(c.Key("model"), &e.model, 360, "", nil)
+				if info := s.modelInfo(e.model); info != "" {
+					ui.Text(c, info).FontSize(t.TextXS).TextColor(t.FgMuted)
 				}
-				kit.Select(c.Key("model"), &e.model, opts).Width(360)
 			})
 			ui.Row(c).Gap(16).Wrap().Children(func() {
 				if showCtx {

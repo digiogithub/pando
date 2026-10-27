@@ -482,7 +482,9 @@ func (d *decisionModel) modelRow(c *ui.Context) {
 			case "unfiltered":
 				ui.Text(c, a.T(dmk+"unfilteredHint")).FontSize(t.TextXS).TextColor(t.FgMuted)
 			case "filtered":
-				if kit.Switch(c.Key("showall"), &d.showAll, a.T(dmk+"showAll")).Changed() {
+				before := d.showAll
+				kit.Switch(c.Key("showall"), &d.showAll, a.T(dmk+"showAll"))
+				if d.showAll != before {
 					d.loadModels()
 				}
 			}

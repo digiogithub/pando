@@ -15,6 +15,10 @@ import (
 	"github.com/digiogithub/pando/internal/skills"
 )
 
+// DefaultJudgePrompt returns the built-in judge prompt template, used when
+// no judgePromptTemplate file is configured.
+func DefaultJudgePrompt() string { return defaultJudgePrompt }
+
 const defaultJudgePrompt = `You are an expert AI assistant evaluator. Analyze this conversation transcript between an AI coding assistant and a user.
 
 Template used: {{.TemplateName}} (version {{.TemplateVersion}})

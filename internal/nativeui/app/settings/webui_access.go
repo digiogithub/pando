@@ -95,7 +95,9 @@ func (w *webuiAccess) Build(c *ui.Context) {
 	})
 	kit.SettingsSection(c, "", "", func() {
 		kit.SettingsRow(c, a.T("settings.webuiAccess.enabled"), a.T("settings.webuiAccess.enabledDescription"), func() {
-			if kit.Switch(c, &w.enabled, "").Changed() {
+			before := w.enabled
+			kit.Switch(c, &w.enabled, "")
+			if w.enabled != before {
 				on := w.enabled
 				w.act("settings.webuiAccess.saveFailed", "", func(ctx context.Context) (client.BasicAuthStatus, error) {
 					return a.Client.SetBasicAuthEnabled(ctx, on)

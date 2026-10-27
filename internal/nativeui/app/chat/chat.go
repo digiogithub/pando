@@ -60,6 +60,7 @@ type Chat struct {
 	sessMore    bool
 	sessSearch  string
 	sessHidden  bool // sessions pane collapsed; in memory (the UI prefs API has no field for it)
+	sessHosted  bool // the expanded sidebar lists the sessions (SidebarPanel), not the chat
 	sessOffset  int
 	rows        []sessRow
 
@@ -651,12 +652,6 @@ func (ch *Chat) HeaderActions(c *ui.Context) {
 	if total, window := ch.sessionTokens(cv); window > 0 && total > 0 {
 		kit.Badge(c, ch.app.T("chat.composer.context", "pct", fmt.Sprintf("%.0f", contextPct(total, window))), kit.ToneNeutral)
 	}
-	if ch.sessHidden {
-		// Reopens the sessions pane (its own collapse button is gone with it).
-		if kit.IconButton(c.Key("sessshow"), kit.IconPanelLeft, ch.app.T("chat.simple.toggleSessions")).Clicked() {
-			ch.sessHidden = false
-		}
-	}
 	if !ch.infoOpen {
 		if kit.IconButton(c, kit.IconPanelRight, ch.app.T("chat.info.show")).Clicked() {
 			ch.infoOpen = true
@@ -681,7 +676,7 @@ func (ch *Chat) Build(c *ui.Context, r *ui.Route) {
 	ch.shortcuts(c, cv)
 	ui.Column(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
 		ui.Row(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
-			if !ch.sessHidden {
+			if !ch.sessHidden && !ch.sessHosted {
 				ch.sessionsPane(c, t)
 			}
 			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).AlignItems(ui.Stretch).Children(func() {
