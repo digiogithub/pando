@@ -308,3 +308,32 @@ func TestReportErrorNamesUnauthorized(t *testing.T) {
 		t.Errorf("401 not described clearly: %q", got)
 	}
 }
+
+// TestStartThemeFallsBackToBackendTheme: without desktop/web preferences the
+// window starts with the backend theme (Settings > Appearance, shared with
+// the TUI), not only once that page is opened.
+func TestStartThemeFallsBackToBackendTheme(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/ui/preferences", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`{}`)) })
+	mux.HandleFunc("/api/v1/settings", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"theme":"claude-dark"}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	c, _ := client.New(client.Options{BaseURL: srv.URL, Token: "t"})
+	a := NewContext(context.Background(), c)
+	q := &QueueDispatcher{}
+	a.SetDispatcher(q)
+	a.StartServices(nil)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && a.Theme.Family != kit.FamilyPaper {
+		q.Drain()
+		time.Sleep(10 * time.Millisecond)
+	}
+	if a.Theme.Family != kit.FamilyPaper || a.Theme.Mode != kit.ModeDark {
+		t.Errorf("theme %+v, want paper/dark (legacy claude-dark)", a.Theme)
+	}
+	if _, _, ok := ParseThemeID("pando-nobg"); ok {
+		t.Error("TUI-only theme accepted")
+	}
+}

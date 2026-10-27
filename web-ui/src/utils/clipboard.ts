@@ -3,12 +3,9 @@
  *
  * Prefers the async Clipboard API, but falls back to a hidden textarea +
  * `document.execCommand('copy')` when that API is unavailable or rejects.
- * This matters for two real Pando surfaces:
- *  - the Wails desktop webview, where `navigator.clipboard` is sometimes
- *    absent or throws depending on platform/webview version;
- *  - a plain `http://` LAN address (the WebUI "External Access" toggle),
- *    which is a non-secure context, and browsers only expose
- *    `navigator.clipboard` on secure contexts (https or localhost).
+ * This matters for a real Pando surface: a plain `http://` LAN address (the WebUI "External Access" toggle),
+ * which is a non-secure context, and browsers only expose
+ * `navigator.clipboard` on secure contexts (https or localhost).
  *
  * Returns whether the copy succeeded, so callers can decide whether to show
  * a "copied" confirmation.

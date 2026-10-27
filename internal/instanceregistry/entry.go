@@ -10,7 +10,7 @@ const (
 	ModeTUI Mode = "tui"
 	// ModeWebUI identifies a web UI instance.
 	ModeWebUI Mode = "webui"
-	// ModeDesktop identifies a desktop (Wails) instance.
+	// ModeDesktop identifies a native desktop (`pando desktop`) instance.
 	ModeDesktop Mode = "desktop"
 	// ModeACP identifies an ACP server instance.
 	ModeACP Mode = "acp"

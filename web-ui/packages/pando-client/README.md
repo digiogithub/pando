@@ -26,7 +26,7 @@ this package, this package imports nothing from any frontend.
 
 | Path | What |
 |---|---|
-| `src/services/` | REST client (`api`), SSE streams, auth, mappers, PTY, desktop/Wails bridges |
+| `src/services/` | REST client (`api`), SSE streams, auth, mappers, PTY |
 | `src/stores/` | Zustand stores, one per domain |
 | `src/hooks/` | React hooks that are pure API/state (`useChat`, `useGoal`) |
 | `src/types/` | The shared TypeScript types |

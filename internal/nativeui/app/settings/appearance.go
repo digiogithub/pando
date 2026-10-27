@@ -21,31 +21,23 @@ func newAppearance(s *Settings) section {
 	d.Skip = []string{"language"}
 	ap := &appearance{Doc: d, saved: s.app.Theme}
 	d.Loaded = func(d *Doc, root client.Obj) {
-		if id, _ := root["theme"].(string); id != "" {
-			if fam, mode, ok := splitTheme(id); ok {
-				s.app.Theme.Family, s.app.Theme.Mode = fam, mode
-			}
-		}
+		// The live theme was applied at start (desktop preferences, else
+		// this backend field): opening the page must not switch it.
 		ap.saved = s.app.Theme
 	}
 	return ap
 }
 
-func splitTheme(id string) (kit.Family, kit.Mode, bool) {
-	i := strings.LastIndex(id, "-")
-	if i <= 0 {
-		return "", "", false
-	}
-	fam, mode := kit.Family(id[:i]), kit.Mode(id[i+1:])
-	if mode != kit.ModeLight && mode != kit.ModeDark && mode != kit.ModeSystem {
-		return "", "", false
-	}
-	for _, f := range kit.Families() {
-		if f == fam {
-			return fam, mode, true
+// Save stores the backend theme and the desktop preferences (theme, mode
+// and accent, applied at the next start).
+func (a *appearance) Save(done func(bool)) {
+	a.Doc.Save(func(ok bool) {
+		if ok {
+			a.saved = a.s.app.Theme
+			a.s.app.SetTheme(a.s.app.Theme)
 		}
-	}
-	return "", "", false
+		done(ok)
+	})
 }
 
 func (a *appearance) Discard() {
@@ -93,12 +85,15 @@ func (a *appearance) Build(c *ui.Context) {
 					b.Border(2, t.Accent)
 				}
 				b.Children(func() {
-					ui.Column(cc).Grow(1).Width(100).Radius(t.RadiusSM).Background(tk.BgShell).Padding(6).Gap(4).Children(func() {
-						ui.Box(cc).Height(5).Width(60).Radius(2).Background(tk.Fg)
-						ui.Box(cc).Height(5).Width(40).Radius(2).Background(tk.FgMuted)
-						ui.Box(cc).Height(8).Width(8).Radius(4).Background(tk.Accent)
+					// ButtonBase lays children in a row: stack preview and name.
+					ui.Column(cc).Grow(1).Gap(6).AlignItems(ui.Stretch).Children(func() {
+						ui.Column(cc).Grow(1).Radius(t.RadiusSM).Background(tk.BgShell).Padding(6).Gap(4).Children(func() {
+							ui.Box(cc).Height(5).Width(60).Radius(2).Background(tk.Fg)
+							ui.Box(cc).Height(5).Width(40).Radius(2).Background(tk.FgMuted)
+							ui.Box(cc).Height(8).Width(8).Radius(4).Background(tk.Accent)
+						})
+						ui.Text(cc, strings.ToUpper(string(f)[:1])+string(f)[1:]).FontSize(t.TextXS).TextColor(tk.Fg)
 					})
-					ui.Text(cc, strings.ToUpper(string(f)[:1])+string(f)[1:]).FontSize(t.TextXS).TextColor(tk.Fg)
 				})
 				if b.Clicked() {
 					th.Family = f
@@ -122,6 +117,9 @@ func (a *appearance) Build(c *ui.Context) {
 				}
 				if b.Clicked() {
 					th.Accent = ac
+					// Not part of the backend document: persisted at once
+					// in the desktop preferences.
+					s.app.SavePrefs(client.UIPrefs{ThemeAccent: string(ac)})
 				}
 			}
 		})

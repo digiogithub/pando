@@ -16,7 +16,6 @@
   --shell-statusbar-h: 26px;
   --shell-sidebar-w: 260px;
   --shell-rail-w: 52px;
-  --shell-inset-left: 0px;
 
   position: relative;
   display: flex;
@@ -28,10 +27,6 @@
   color: var(--fg);
 }
 
-/* Desktop app on macOS with a hidden native title bar: leave room for the
-   traffic lights. */
-.shell[data-mac-inset] { --shell-inset-left: 76px; }
-
 /* ── Title bar ─────────────────────────────────────────────────────────── */
 
 .shell-titlebar {
@@ -42,27 +37,15 @@
   gap: 4px;
   height: var(--shell-titlebar-h);
   flex-shrink: 0;
-  padding: 0 8px 0 calc(8px + var(--shell-inset-left));
+  padding: 0 8px;
   background: var(--bg-shell);
   user-select: none;
   -webkit-user-select: none;
-  /* Wails: the bar drags the desktop window; controls opt out. */
-  --wails-draggable: drag;
 }
 
 .shell-titlebar--embedded .shell-title {
   justify-content: flex-start;
   padding-left: 0;
-}
-
-.shell-titlebar button,
-.shell-titlebar a,
-.shell-titlebar input,
-.shell-titlebar select,
-.shell-titlebar [role="button"],
-.shell-titlebar [role="menu"],
-.shell-titlebar [role="listbox"] {
-  --wails-draggable: no-drag;
 }
 
 .shell-titlebar-group {

@@ -5,16 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/digiogithub/pando/internal/api"
 	"github.com/digiogithub/pando/internal/config"
-	"github.com/digiogithub/pando/internal/design"
 	"github.com/digiogithub/pando/internal/desktop"
 	"github.com/digiogithub/pando/internal/instanceregistry"
 	ipcruntime "github.com/digiogithub/pando/internal/ipc/runtime"
@@ -31,16 +28,23 @@ var desktopCmd = &cobra.Command{
 	Long: `Start Pando in desktop mode: starts the API server on a local port and
 opens the native desktop window (GPU-rendered Go UI, no web view) on it.
 
-Linux requirements: GTK 3 runtime libraries. WebKitGTK (libwebkit2gtk-4.1) is only
-needed for the design preview canvas and extension panels, which show in an
-embedded web view (without it they offer "Open in browser").
-  Ubuntu 22.04:         sudo apt install libgtk-3-0
-  Ubuntu 24.04, 26.04:  sudo apt install libgtk-3-0t64
+Linux runtime requirements:
+  GTK 3 (always: windows, menus, dialogs, clipboard):
+    Ubuntu 22.04:         sudo apt install libgtk-3-0
+    Ubuntu 24.04, 26.04:  sudo apt install libgtk-3-0t64
+  WebKitGTK 4.1 (optional): only the design preview canvas and extension
+  panels show in an embedded web view; without it they offer "Open in browser".
+    sudo apt install libwebkit2gtk-4.1-0
+They are loaded at runtime: building pando needs no GTK or WebKitGTK headers.
 
-Without a display (SSH, WSL without WSLg) use the browser UI instead: pando app
+Terminal panel: the embedded terminal loads libghostty-vt. Pando.app (macOS
+.pkg) ships it signed inside the bundle. Other installs download it on first
+use into the user cache (~/.cache/mygo/natives on Linux), checked against a
+pinned SHA-256; $MYGO_GHOSTTY_VT names a copy to use instead (offline
+machines). Without it the terminal panel shows why and the rest of the app
+keeps working.
 
-The previous WebView window (Wails) is still available behind the hidden
---webview flag until the native desktop reaches parity.`,
+Without a display (SSH, WSL without WSLg) use the browser UI instead: pando app`,
 	Example: `
   # Launch desktop app on default port
   pando desktop
@@ -67,10 +71,6 @@ func init() {
 	desktopCmd.Flags().Bool("simple", false, "Start the desktop app in simple mode")
 	desktopCmd.Flags().Bool("debug", false, "Enable debug logging")
 	desktopCmd.Flags().StringP("cwd", "c", "", "Working directory (root path) for Pando to use")
-	// Transitional: the Wails WebView window, removed in P5 of the native
-	// desktop plan (.kb/pando/plans/native_desktop_mygo.md).
-	desktopCmd.Flags().Bool("webview", false, "Use the legacy WebView (Wails) window instead of the native UI")
-	_ = desktopCmd.Flags().MarkHidden("webview")
 }
 
 func runDesktopMode(cmd *cobra.Command) error {
@@ -83,7 +83,6 @@ func runDesktopMode(cmd *cobra.Command) error {
 	debug, _ := cmd.Flags().GetBool("debug")
 	simpleMode, _ := cmd.Flags().GetBool("simple")
 	cwdFlag, _ := cmd.Flags().GetString("cwd")
-	useWebView, _ := cmd.Flags().GetBool("webview")
 	ageKeys, _ := cmd.Flags().GetString("age-keys")
 	config.SetAgeKeysOverride(ageKeys)
 
@@ -92,20 +91,18 @@ func runDesktopMode(cmd *cobra.Command) error {
 	// starts a server or opens the database. Other directories (a project's
 	// own window, spawned with --cwd) are separate instances. Resolved
 	// early: the directory below also depends on the app-icon launch.
-	if !useWebView {
-		key := cwdFlag
-		if key == "" {
-			if dir, derr := desktop.DefaultWorkingDir(); derr == nil {
-				key = dir
-			}
+	key := cwdFlag
+	if key == "" {
+		if dir, derr := desktop.DefaultWorkingDir(); derr == nil {
+			key = dir
 		}
-		if abs, aerr := filepath.Abs(key); aerr == nil {
-			key = abs
-		}
-		if !nativeui.AcquireSingleInstance(key) {
-			fmt.Println("Pando desktop is already running for this directory; focused its window.")
-			return nil
-		}
+	}
+	if abs, aerr := filepath.Abs(key); aerr == nil {
+		key = abs
+	}
+	if !nativeui.AcquireSingleInstance(key) {
+		fmt.Println("Pando desktop is already running for this directory; focused its window.")
+		return nil
 	}
 
 	selectedPort, err := chooseAvailablePort(host, port)
@@ -240,80 +237,28 @@ func runDesktopMode(cmd *cobra.Command) error {
 
 	<-serverReady
 
-	if !useWebView {
-		// The native UI runs on this (main) goroutine: MyGo's event loop must
-		// own the thread that started the process.
-		if ctx.Err() == nil {
-			err := nativeui.Run(nativeui.Options{
-				Ctx:     ctx,
-				BaseURL: baseURL,
-				Token:   server.GetToken(),
-				CWD:     cwd,
-				Simple:  simpleMode,
-			})
-			if errors.Is(err, nativeui.ErrNoDisplay) {
-				err = fmt.Errorf("%w\nUse the browser UI instead: pando app", err)
-			}
-			if err != nil {
-				cancel()
-				shutdownServer(server)
-				return err
-			}
-		}
-		cancel()
-		shutdownServer(server)
-		return nil
-	}
-
-	createdEvents := design.Events().Subscribe(ctx)
-	openedDesignWindows := map[string]struct{}{}
-	var openedDesignWindowsMu sync.Mutex
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logging.Warn("Design desktop auto-open stopped", "error", r)
-			}
-		}()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case event, ok := <-createdEvents:
-				if !ok {
-					return
-				}
-				if event.Payload.Kind != design.EventCreated || event.Payload.ArtifactID == "" {
-					continue
-				}
-				artifactID := event.Payload.ArtifactID
-				openedDesignWindowsMu.Lock()
-				if _, seen := openedDesignWindows[artifactID]; seen {
-					openedDesignWindowsMu.Unlock()
-					continue
-				}
-				openedDesignWindows[artifactID] = struct{}{}
-				openedDesignWindowsMu.Unlock()
-
-				targetURL := fmt.Sprintf("%s/design/%s", baseURL, url.PathEscape(artifactID))
-				if err := desktop.LaunchWindow(desktop.EmbeddedDesktopBinary(), targetURL); err != nil {
-					openedDesignWindowsMu.Lock()
-					delete(openedDesignWindows, artifactID)
-					openedDesignWindowsMu.Unlock()
-					logging.Warn("Design desktop auto-open failed", "artifactID", artifactID, "error", err)
-				}
-			}
-		}
-	}()
-
-	// A stop that arrived during startup has already shut the API server
-	// down: do not open a window onto it.
+	// The native UI runs on this (main) goroutine: MyGo's event loop must own
+	// the thread that started the process. A stop that arrived during startup
+	// has already shut the API server down: do not open a window onto it.
 	if ctx.Err() == nil {
-		if err := desktop.Launch(desktop.EmbeddedDesktopBinary(), baseURL, simpleMode); err != nil {
-			return fmt.Errorf("desktop window exited with error: %w", err)
+		err := nativeui.Run(nativeui.Options{
+			Ctx:     ctx,
+			BaseURL: baseURL,
+			Token:   server.GetToken(),
+			CWD:     cwd,
+			Simple:  simpleMode,
+		})
+		if errors.Is(err, nativeui.ErrNoDisplay) {
+			err = fmt.Errorf("%w\nUse the browser UI instead: pando app", err)
+		}
+		if err != nil {
+			cancel()
+			shutdownServer(server)
+			return err
 		}
 	}
 
-	// Desktop window closed — shut down the API server gracefully.
+	// Desktop window closed: shut down the API server gracefully.
 	cancel()
 	shutdownServer(server)
 	return nil

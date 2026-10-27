@@ -91,8 +91,7 @@ func storeFor(a *app.Context) *store {
 
 // start runs at the first frame: it reads the status and follows the design
 // events for the whole life of the app, so a design created by the agent
-// opens in the native UI whichever area is showing (the Wails build opened a
-// window per artifact).
+// opens in the native UI whichever area is showing.
 func (s *store) start() {
 	s.fetchStatus()
 	s.a.Go(func(ctx context.Context) {

@@ -3,8 +3,7 @@
  *
  * tokens.css is the runtime source of truth; these values are a copy of a
  * few of its hex literals, used where CSS variables cannot reach (a preview
- * of a family that is not active, the Wails window background, the
- * `meta theme-color`). `bun run check:contrast` verifies they match
+ * of a family that is not active, the `meta theme-color`). `bun run check:contrast` verifies they match
  * tokens.css, so edit both together.
  */
 

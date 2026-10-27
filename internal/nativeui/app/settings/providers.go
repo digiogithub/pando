@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -19,7 +20,7 @@ var providerTypes = []Opt{
 	{"copilot", "GitHub Copilot"},
 }
 
-func inStrs(l []string, s string) bool { return contains(l, s) }
+func inStrs(l []string, s string) bool { return slices.Contains(l, s) }
 
 var (
 	typesWithBaseURL = []string{"openai-compatible", "azure", "ollama", "openai"}

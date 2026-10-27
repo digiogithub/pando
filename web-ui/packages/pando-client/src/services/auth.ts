@@ -1,5 +1,4 @@
 import api, { resolveAPIURL } from './api'
-import { isDesktop } from './host'
 
 interface TokenResponse {
   token: string
@@ -9,10 +8,6 @@ export async function authenticate(): Promise<string> {
   const existing = api.getToken()
   if (existing) return existing
 
-  // No early return for desktop mode: the Wails window loads the UI from the
-  // Pando server origin, where the Go side re-injects window.go, so isDesktop
-  // is true, yet no binding hands over a token. Skipping the exchange there
-  // left every API call unauthorized (empty sessions, no config).
   const data = await api.post<TokenResponse>('/api/v1/token', {})
   api.setToken(data.token)
   return data.token
@@ -39,9 +34,6 @@ export async function authenticateWithCredentials(username: string, password: st
 }
 
 export async function checkHealth(): Promise<boolean> {
-  // In desktop mode the Go process owns the server lifecycle — always healthy.
-  if (isDesktop) return true
-
   try {
     // Use configured base URL when set (e.g. after backend HTML injection or dev mode env var).
     // Falls back to relative path when served from the same origin.

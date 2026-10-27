@@ -45,7 +45,6 @@ function renderHost(initialEntry = '/projects/proj-1/workspace') {
           closeActiveProjectTab: vi.fn(),
           restartProjectTab: vi.fn().mockResolvedValue(undefined),
           revealProject: vi.fn(),
-          openProjectInNewWindow: vi.fn().mockResolvedValue(undefined),
         }}
         shortcutActions={{
           openQuickMenu: vi.fn(),

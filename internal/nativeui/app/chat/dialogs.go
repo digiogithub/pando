@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -156,7 +157,7 @@ func (ch *Chat) permissionDialog(c *ui.Context, t *kit.Tokens, cv *Conversation,
 
 func (ch *Chat) answerPermission(cv *Conversation, req client.PermissionRequest, action string) {
 	cv.Resolve(req.ID)
-	sid := firstNonEmpty(req.SessionID, cv.ID)
+	sid := cmp.Or(req.SessionID, cv.ID)
 	ch.app.Go(func(ctx context.Context) {
 		if err := ch.app.Client.RespondPermission(ctx, sid, req.ID, action); err != nil {
 			ch.app.Toasts.Error("Could not answer the permission request", err.Error())
@@ -337,7 +338,7 @@ func (ch *Chat) questionDialog(c *ui.Context, t *kit.Tokens, cv *Conversation, r
 func (ch *Chat) answerQuestion(cv *Conversation, req client.QuestionRequest, answers []client.QuestionAnswer) {
 	cv.Resolve(req.ID)
 	delete(ch.qstate, req.ID)
-	sid := firstNonEmpty(req.SessionID, cv.ID)
+	sid := cmp.Or(req.SessionID, cv.ID)
 	ch.app.Go(func(ctx context.Context) {
 		if err := ch.app.Client.RespondQuestion(ctx, sid, req.ID, answers); err != nil {
 			ch.app.Toasts.Error("Could not answer the question", err.Error())
@@ -348,7 +349,7 @@ func (ch *Chat) answerQuestion(cv *Conversation, req client.QuestionRequest, ans
 func (ch *Chat) cancelQuestion(cv *Conversation, req client.QuestionRequest) {
 	cv.Resolve(req.ID)
 	delete(ch.qstate, req.ID)
-	sid := firstNonEmpty(req.SessionID, cv.ID)
+	sid := cmp.Or(req.SessionID, cv.ID)
 	ch.app.Go(func(ctx context.Context) {
 		if err := ch.app.Client.CancelQuestion(ctx, sid, req.ID); err != nil {
 			ch.app.Toasts.Error("Could not cancel the question", err.Error())

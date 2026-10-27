@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/digiogithub/pando/internal/nativeui/app"
+	"github.com/digiogithub/pando/internal/nativeui/app/extensions"
 	"github.com/digiogithub/pando/internal/nativeui/client"
 	"github.com/digiogithub/pando/internal/nativeui/kit"
 	"github.com/egoist/mygo/ui"
@@ -188,15 +189,8 @@ func (s *Settings) loadPolicy() {
 	a := s.app
 	a.Go(func(ctx context.Context) {
 		pol, _ := a.Client.UIPolicy(ctx)
-		panels, _ := a.Client.ExtensionPanels(ctx)
 		a.Update(func() {
 			s.hidden, s.banner = pol.HiddenSections, pol.Banner
-			s.exts = s.exts[:0]
-			for _, p := range panels {
-				if p.Slot == "settings" {
-					s.exts = append(s.exts, p)
-				}
-			}
 		})
 	})
 }
@@ -204,6 +198,9 @@ func (s *Settings) loadPolicy() {
 // Build draws the nav and the open category.
 func (s *Settings) Build(c *ui.Context, r *ui.Route) {
 	t := kit.Current()
+	// Extension sections come from the manifest the extensions area loads
+	// at start (empty on standard builds).
+	s.exts = extensions.Panels(s.app, client.SlotSettings)
 	if !s.policy {
 		s.loadPolicy()
 		s.open(s.active)
@@ -250,7 +247,7 @@ func (s *Settings) nav(c *ui.Context, t *kit.Tokens) {
 				}
 			}
 			if len(s.exts) > 0 {
-				kit.SectionLabel(c, s.app.T("settings.categories.extensions"))
+				kit.SectionLabel(c, "Extensions") // no Web UI key
 				for _, p := range s.exts {
 					title := p.Title
 					if title == "" {
@@ -308,19 +305,16 @@ func (s *Settings) content(c *ui.Context) {
 	}
 }
 
-// extensionPanel: extension sections are ES-module panels of the Web UI; the
-// native UI cannot run them, so it points to the browser UI.
+// extensionPanel draws an extension section: its ES-module panel in an
+// embedded web view (extensions.Slot), which falls back to "Open in browser"
+// where no web view is available.
 func (s *Settings) extensionPanel(c *ui.Context) {
 	for _, p := range s.exts {
 		if "ext:"+p.ID != s.active {
 			continue
 		}
 		s.pageHeader(c, p.Title, p.Extension)
-		kit.EmptyState(c, kit.IconExtensions, p.Title,
-			"This section is contributed by an extension as a web panel and is only available in the browser UI (pando app).")
-		if kit.PrimaryButton(c, "Open in browser").Clicked() {
-			c.OpenURL(s.app.Client.URL(p.Entry))
-		}
+		extensions.Slot(s.app, c, client.SlotSettings, p.ID, 640)
 	}
 }
 

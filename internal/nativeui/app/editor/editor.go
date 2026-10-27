@@ -692,7 +692,7 @@ func (e *Editor) modalDialog(c *ui.Context) {
 			}
 		},
 		Footer: func() {
-			if kit.SecondaryButton(c, e.app.T("common.cancel")).Clicked() {
+			if kit.SecondaryButton(c, e.app.T("projects.view.common.cancel")).Clicked() {
 				m.open = false
 			}
 			v := kit.Primary

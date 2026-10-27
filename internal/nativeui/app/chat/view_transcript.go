@@ -1,24 +1,22 @@
 package chat
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/digiogithub/pando/internal/nativeui/client"
 	"github.com/digiogithub/pando/internal/nativeui/kit"
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 	"github.com/egoist/mygo/ui/markdown"
 )
-
-func copyText(s string) bool { return mygo.Clipboard.Write(transfer.TextData(s)) == nil }
 
 // inlineDiff caches the diff state of one edit/write tool card.
 type inlineDiff struct {
@@ -93,7 +91,7 @@ func (ch *Chat) copyButton(c *ui.Context, id, text, label string) {
 	if time.Since(ch.copied[id]) < 2*time.Second {
 		icon, tip = kit.IconCheck, ch.app.T("chat.copied")
 	}
-	if kit.IconButton(c, icon, tip).Clicked() && copyText(text) {
+	if kit.IconButton(c, icon, tip).Clicked() && kit.CopyText(text) {
 		ch.copied[id] = time.Now()
 		ch.app.Go(func(ctx context.Context) {
 			select {
@@ -300,7 +298,7 @@ func (ch *Chat) toolDetail(c *ui.Context, t *kit.Tokens, tl *Tool, meta ToolMeta
 		oldS, newS := str(in, "old_string", "old_str"), str(in, "new_string", "new_str")
 		p := str(in, "file_path", "path")
 		if tl.Diff != nil {
-			oldS, newS, p = tl.Diff.OldString, tl.Diff.NewString, firstNonEmpty(tl.Diff.FilePath, p)
+			oldS, newS, p = tl.Diff.OldString, tl.Diff.NewString, cmp.Or(tl.Diff.FilePath, p)
 		}
 		ch.diffBlock(c, t, tl.ID, p, oldS, newS)
 		ch.resultLine(c, t, tl)
@@ -308,7 +306,7 @@ func (ch *Chat) toolDetail(c *ui.Context, t *kit.Tokens, tl *Tool, meta ToolMeta
 		content := str(in, "content", "file_text", "new_str")
 		p := str(in, "file_path", "path")
 		if tl.Diff != nil {
-			content, p = firstNonEmpty(tl.Diff.NewString, content), firstNonEmpty(tl.Diff.FilePath, p)
+			content, p = cmp.Or(tl.Diff.NewString, content), cmp.Or(tl.Diff.FilePath, p)
 		}
 		ch.diffBlock(c, t, tl.ID, p, "", content)
 		ch.resultLine(c, t, tl)
@@ -415,7 +413,7 @@ func (ch *Chat) routingRow(c *ui.Context, t *kit.Tokens, it *Item) {
 func routingLabel(r *client.RoutingInfo, fallback string) string {
 	switch r.Kind {
 	case "routed":
-		parts := []string{"Auto → " + firstNonEmpty(r.Model, "?")}
+		parts := []string{"Auto → " + cmp.Or(r.Model, "?")}
 		if r.RouteID != "" {
 			parts = append(parts, r.RouteID)
 		}
@@ -424,9 +422,9 @@ func routingLabel(r *client.RoutingInfo, fallback string) string {
 		}
 		return strings.Join(parts, " · ")
 	case "failover":
-		return firstNonEmpty(fallback, "Auto → "+firstNonEmpty(r.Model, "?")+" (failover)")
+		return cmp.Or(fallback, "Auto → "+cmp.Or(r.Model, "?")+" (failover)")
 	}
-	return firstNonEmpty(fallback, "Auto → "+firstNonEmpty(r.Model, "?"))
+	return cmp.Or(fallback, "Auto → "+cmp.Or(r.Model, "?"))
 }
 
 var filterSourceOrder = []string{"code", "kb", "events", "memory"}
@@ -444,7 +442,7 @@ func (ch *Chat) contextFilterRow(c *ui.Context, t *kit.Tokens, it *Item) {
 	}
 	var extra []string
 	for s := range f.BySource {
-		if !contains(filterSourceOrder, s) {
+		if !slices.Contains(filterSourceOrder, s) {
 			extra = append(extra, s)
 		}
 	}
@@ -501,15 +499,6 @@ func (ch *Chat) contextFilterRow(c *ui.Context, t *kit.Tokens, it *Item) {
 			})
 		}
 	})
-}
-
-func contains(s []string, v string) bool {
-	for _, x := range s {
-		if x == v {
-			return true
-		}
-	}
-	return false
 }
 
 func (ch *Chat) personaRow(c *ui.Context, t *kit.Tokens, it *Item) {

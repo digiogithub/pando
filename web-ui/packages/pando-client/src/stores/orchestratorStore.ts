@@ -12,8 +12,29 @@ interface OrchestratorStore {
   fetchDelegationMetrics: () => Promise<void>
   setSelectedTask: (t: OrchestratorTask | null) => void
   setCreateDialogOpen: (v: boolean) => void
+  createTask: (input: CreateTaskInput) => Promise<OrchestratorTask>
   cancelTask: (id: string) => Promise<void>
   deleteTask: (id: string) => Promise<void>
+}
+
+/** What the create dialog collects: a title, optional details and a model. */
+export interface CreateTaskInput {
+  name: string
+  description?: string
+  model?: string
+}
+
+/**
+ * buildTaskPrompt turns the dialog fields into the task prompt: POST
+ * /api/v1/orchestrator/tasks takes a required `prompt` (the task name is
+ * derived from it server-side), not name/description.
+ */
+export function buildTaskPrompt(input: CreateTaskInput): string {
+  const name = input.name.trim()
+  const description = (input.description ?? '').trim()
+  if (!description) return name
+  if (!name) return description
+  return `${name}\n\n${description}`
 }
 
 export const useOrchestratorStore = create<OrchestratorStore>((set, get) => ({
@@ -46,6 +67,16 @@ export const useOrchestratorStore = create<OrchestratorStore>((set, get) => ({
 
   setSelectedTask: (selectedTask) => set({ selectedTask }),
   setCreateDialogOpen: (createDialogOpen) => set({ createDialogOpen }),
+
+  createTask: async (input) => {
+    const prompt = buildTaskPrompt(input)
+    if (!prompt) throw new Error('A task needs a name or a prompt')
+    const body: { prompt: string; background: boolean; model?: string } = { prompt, background: true }
+    if (input.model) body.model = input.model
+    const task = await api.post<OrchestratorTask>('/api/v1/orchestrator/tasks', body)
+    await get().fetchTasks()
+    return task
+  },
 
   cancelTask: async (id) => {
     try {

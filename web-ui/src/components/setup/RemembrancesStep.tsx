@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import api from '@pando/client/services/api'
 import { Badge, Button, Input, Spinner } from '@/components/ui'
 import { CircleCheck, Download, ExternalLink, Play, RefreshCw, SquareTerminal } from '@/components/ui/icons'
-import { openExternal } from '@/services/desktopRuntime'
+import { openExternal } from '@/utils/openExternal'
 import { CommandLine, Notice } from './setupShared'
 import { apiErrorMessage } from './setupUtils'
 

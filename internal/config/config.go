@@ -169,7 +169,7 @@ type LSPConfig struct {
 	Autostart bool `json:"autostart,omitempty" toml:"Autostart,omitempty"`
 }
 
-// DesktopConfig holds preferences of the Wails desktop window (pando desktop).
+// DesktopConfig holds preferences of the native desktop window (pando desktop).
 type DesktopConfig struct {
 	// TrayOnMinimizeClose sends the window to the system tray (menu bar on
 	// macOS) when it is minimised or closed, keeping Pando running. When false

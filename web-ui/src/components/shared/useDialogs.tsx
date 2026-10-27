@@ -24,8 +24,8 @@ type Pending =
 
 /**
  * Promise-based confirm/prompt backed by in-app dialogs. Native window.confirm()
- * and window.prompt() silently return false/null inside the Wails desktop
- * webview on macOS, so UI code must not rely on them. Render `dialogs` once in
+ * and window.prompt() are blocked or inconsistent in embedded webviews
+ * and iframes, so UI code must not rely on them. Render `dialogs` once in
  * the component tree.
  */
 export function useDialogs(): {

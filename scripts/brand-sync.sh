@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # brand-sync.sh — regenerate brand-derived assets from the Pando v1 brand
 # source of truth (assets/pando-brand-v1/, read-only) into the surfaces that
-# consume them: the WebUI PWA icons, the desktop (Wails) app icons, the
-# Linux install icon reference, and the Mesnada standalone UI favicons/logo.
+# consume them: the WebUI PWA icons, the Linux install icon reference, and the Mesnada standalone UI favicons/logo.
 #
 # Idempotent: every output listed below is fully regenerated on each run, so
 # running this script twice in a row produces the same result (safe to wire
@@ -95,38 +94,7 @@ render_square "${BRAND_DIR}/pando-icon.svg" "${WEBUI_PUBLIC}/apple-touch-icon.pn
 flatten_opaque "${WEBUI_PUBLIC}/apple-touch-icon.png" "${BOSQUE}"
 
 # ─────────────────────────────────────────────────────────────────────────
-# 2. desktop/build/ — Wails (v2.16.0) app icons
-#
-# Verified against pkg/commands/build/packager.go in the vendored wails/v2
-# module (go env GOMODCACHE):
-#   - macOS: `wails build` ALWAYS regenerates <app>/Contents/Resources/
-#     iconfile.icns from build/appicon.png (processDarwinIcon), ignoring any
-#     pre-existing build/darwin/iconfile.icns. appicon.png is the only real
-#     source of truth for the Wails-built .app icon.
-#   - Windows: generateIcoFile() only synthesizes build/windows/icon.ico
-#     from appicon.png if that file does NOT already exist; compileResources()
-#     then embeds build/windows/icon.ico as-is into the .exe resources. So
-#     shipping our own icon.ico here (from the brand .ico) is what actually
-#     controls the desktop wrapper's Windows icon.
-#   - build/darwin/iconfile.icns is NOT read by `wails build` NOR by
-#     scripts/build-macos-app (which has its own independent PNG->iconutil
-#     pipeline off assets/pando-brand-v1/png/pando-icon-1024.png, see that
-#     script's SRC_ICON). It is also fully gitignored (desktop/build/darwin/
-#     except Info.plist). We still (re)generate it here for anyone building
-#     the darwin bundle by hand outside those two pipelines, but it has no
-#     effect on either CI path.
-# Desktop OS icons keep native transparency (macOS/Windows apply their own
-# icon shape), so no flatten here.
-# ─────────────────────────────────────────────────────────────────────────
-log "desktop/build/ ..."
-mkdir -p "${REPO_ROOT}/desktop/build/windows" "${REPO_ROOT}/desktop/build/darwin"
-
-cp -f "${BRAND_DIR}/png/pando-icon-1024.png" "${REPO_ROOT}/desktop/build/appicon.png"
-cp -f "${BRAND_DIR}/pando.ico" "${REPO_ROOT}/desktop/build/windows/icon.ico"
-cp -f "${BRAND_DIR}/pando.icns" "${REPO_ROOT}/desktop/build/darwin/iconfile.icns"
-
-# ─────────────────────────────────────────────────────────────────────────
-# 3. internal/mesnada/ui/assets/ — Mesnada standalone UI favicons + logo
+# 2. internal/mesnada/ui/assets/ — Mesnada standalone UI favicons + logo
 #
 # The Mesnada UI's own background is near-black (--bg: #0b0f17), so it uses
 # the *-light artwork (Marfil ink, meant for dark backgrounds), matching the

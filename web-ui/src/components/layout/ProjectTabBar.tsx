@@ -4,10 +4,9 @@ import { isProjectChildMode } from '@pando/client/services/api'
 import { useProjectStore } from '@pando/client/stores/projectStore'
 import { useProjectTabsStore } from '@pando/client/stores/projectTabsStore'
 import type { ProjectTab } from '@pando/client/types'
-import { isDesktop } from '@/services/desktop'
 import { BrandMark } from '@/components/brand'
 import { Badge, IconButton, Menu, MenuItem, Spinner, Tooltip } from '@/components/ui'
-import { CircleStop, ExternalLink, Folder, RefreshCw, X } from '@/components/ui/icons'
+import { CircleStop, Folder, RefreshCw, X } from '@/components/ui/icons'
 import { SHELL_MAIN_PANEL_ID, type ProjectTabBarController } from './ProjectTabBarControls'
 const LONG_PRESS_MS = 500
 
@@ -302,17 +301,6 @@ export default function ProjectTabBar({
         >
           {t('projects.tabs.restart')}
         </MenuItem>
-        {isDesktop && menuTab && (
-          <MenuItem
-            icon={<ExternalLink size={14} />}
-            onSelect={() => {
-              void controller.openProjectInNewWindow(menuTab.projectId)
-              closeMenu()
-            }}
-          >
-            {t('projects.tabs.openInNewWindow')}
-          </MenuItem>
-        )}
         <MenuItem
           icon={<Folder size={14} />}
           onSelect={() => {

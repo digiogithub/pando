@@ -368,9 +368,9 @@ func TestFrameAncestorsIsConfigurable(t *testing.T) {
 
 	// A shell running the UI on its own origin — the desktop app — has to be
 	// able to widen it, or the canvas would be blocked from framing the preview.
-	widened, wgrant, _ := newPublishedServer(t, Options{FrameAncestors: "'self' http://wails.localhost"})
+	widened, wgrant, _ := newPublishedServer(t, Options{FrameAncestors: "'self' http://shell.localhost"})
 	wrec := get(t, widened, Prefix+wgrant.Token+"/index.html")
-	if !strings.Contains(wrec.Header().Get("Content-Security-Policy"), "frame-ancestors 'self' http://wails.localhost") {
+	if !strings.Contains(wrec.Header().Get("Content-Security-Policy"), "frame-ancestors 'self' http://shell.localhost") {
 		t.Fatalf("override ignored: %s", wrec.Header().Get("Content-Security-Policy"))
 	}
 }

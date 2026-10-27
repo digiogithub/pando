@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # build-macos-app — Build per-architecture macOS .app bundles and .pkg installers for Pando.
 #
-# For each architecture (arm64, x64) this assembles a Pando.app that ships the
-# desktop wrapper (pando-desktop) as a REAL signed file inside the bundle,
-# alongside the CLI binary (pando-bin). The wrapper is no longer extracted from
-# a go:embed at runtime, so macOS does not kill it: it runs in place from its
-# signed & notarized location.
+# For each architecture (arm64, x64) this assembles a Pando.app around the CLI
+# binary (pando-bin), which renders the native desktop UI in-process
+# (`pando desktop`, internal/nativeui). The bundle also ships libghostty-vt,
+# the library the desktop's terminal panel loads, signed with the app: a
+# packaged app never downloads it at runtime (see scripts/fetch-ghostty-vt).
 #
 # Usage:
 #   scripts/build-macos-app [VERSION]
@@ -18,7 +18,7 @@
 # Prerequisites (macOS only):
 #   - Xcode Command Line Tools: lipo, iconutil, sips, pkgbuild, productbuild, productsign,
 #     pkgutil, codesign, spctl
-#   - wails CLI (to build the per-arch desktop wrapper)
+#   - go, curl and python3 (scripts/fetch-ghostty-vt reads MyGo's manifest)
 #   - PKG_SIGN_IDENTITY (recommended) Installer certificate common name for productsign,
 #     e.g. "Developer ID Installer: Example Corp (TEAMID)"
 #
@@ -50,7 +50,6 @@ ENTITLEMENTS="${MACOS_ENTITLEMENTS:-$SCRIPT_DIR/pando.entitlements}"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DIST_DIR="$REPO_ROOT/dist"
 ASSETS_DIR="$REPO_ROOT/assets"
-DESKTOP_DIR="$REPO_ROOT/desktop"
 
 # ── Guards ──────────────────────────────────────────────────────────────────
 
@@ -66,22 +65,8 @@ for tool in lipo iconutil sips pkgbuild productbuild productsign pkgutil codesig
     }
 done
 
-# ── Locate wails ──────────────────────────────────────────────────────────────
-
-WAILS="${WAILS:-}"
-if [[ -z "$WAILS" ]]; then
-    if command -v wails >/dev/null 2>&1; then
-        WAILS="$(command -v wails)"
-    elif [[ -x "$(go env GOPATH)/bin/wails" ]]; then
-        WAILS="$(go env GOPATH)/bin/wails"
-    fi
-fi
-if [[ -z "$WAILS" || ! -x "$WAILS" ]]; then
-    echo "Error: wails CLI not found. Install it with 'make desktop-deps'." >&2
-    exit 1
-fi
-
 # ── Identities ─────────────────────────────────────────────────────────────────
+
 PKG_SIGN_IDENTITY="${PKG_SIGN_IDENTITY:-961FF87CC1EF61866640E471FB84B73E001281AF}"
 SIGNING_IDENTITY="${SIGNING_IDENTITY:-4749EC5719E91D7ADFE5FDB4CB546057A8CFB9AD}"
 
@@ -323,31 +308,11 @@ done
 SHARED_ICNS="$WORK_DIR/AppIcon.icns"
 iconutil -c icns "$ICONSET" -o "$SHARED_ICNS"
 
-# ── Build the desktop wrapper, per architecture, with wails ───────────────────
-# wails build -platform darwin/<goarch> produces a thin Pando.app whose
-# Contents/MacOS/pando-desktop is the arch-specific wrapper executable.
-build_wrapper() {
-    local goarch="$1"          # amd64 | arm64
-    local out_bin="$2"         # destination path for the thin pando-desktop
-
-    echo "Building desktop wrapper (darwin/${goarch}) with wails..."
-    ( cd "$DESKTOP_DIR" && "$WAILS" build -platform "darwin/${goarch}" -clean -o pando-desktop )
-
-    local built="$DESKTOP_DIR/build/bin/Pando.app/Contents/MacOS/pando-desktop"
-    if [[ ! -f "$built" ]]; then
-        # Fallback: some wails versions emit a bare binary instead of a bundle.
-        built="$DESKTOP_DIR/build/bin/pando-desktop"
-    fi
-    [[ -f "$built" ]] || { echo "Error: wails did not produce a pando-desktop for darwin/${goarch}." >&2; exit 1; }
-    cp "$built" "$out_bin"
-    chmod +x "$out_bin"
-}
-
 # ── Per-arch bundle + pkg assembly ────────────────────────────────────────────
 # args: <arch-label> <goarch> <cli-zip>
 build_arch_package() {
     local arch_label="$1"      # arm64 | x64   (matches dist artifact naming)
-    local goarch="$2"          # arm64 | amd64 (GOARCH for the wrapper)
+    local goarch="$2"          # arm64 | amd64 (GOARCH of the bundled libraries)
     local cli_zip="$3"
 
     echo ""
@@ -366,10 +331,6 @@ build_arch_package() {
     [[ -n "$cli_bin" ]] || { echo "Error: CLI binary not found in $cli_zip" >&2; exit 1; }
     chmod +x "$cli_bin"
 
-    # 2. Build the thin desktop wrapper for this arch.
-    local wrapper_bin="$arch_work/pando-desktop"
-    build_wrapper "$goarch" "$wrapper_bin"
-
     # 3. Assemble Pando.app.
     local app_dir="$arch_work/Pando.app"
     local macos_dir="$app_dir/Contents/MacOS"
@@ -381,11 +342,12 @@ build_arch_package() {
     cp "$cli_bin" "$macos_dir/pando-bin"
     chmod +x "$macos_dir/pando-bin"
 
-    # Desktop wrapper — shipped as a real file. At runtime `pando-bin desktop`
-    # finds and launches this sibling directly (see internal/desktop/launcher.go),
-    # so it runs from its signed/notarized location instead of a temp dir.
-    cp "$wrapper_bin" "$macos_dir/pando-desktop"
-    chmod +x "$macos_dir/pando-desktop"
+    # libghostty-vt for the desktop terminal panel, next to pando-bin: MyGo
+    # looks for it in Contents/Resources and in the executable's directory, and
+    # a packaged app never downloads it. Signed below with the same identity,
+    # so the hardened runtime's library validation accepts it.
+    echo "Fetching libghostty-vt (darwin-${goarch})..."
+    "$SCRIPT_DIR/fetch-ghostty-vt" "darwin-${goarch}" "$macos_dir" >/dev/null
 
     # CFBundleExecutable wrapper — invoked when the user opens the .app.
     # Finder/Dock start app executables with cwd "/" (read-only, not a
@@ -409,21 +371,20 @@ WRAPPER
     # 4. Sign inside-out: nested executables first, then the bundle.
     echo "Signing bundle executables (inside-out)..."
     run_codesign -o runtime --entitlements "$ENTITLEMENTS" "$macos_dir/pando-bin"
-    run_codesign -o runtime --entitlements "$ENTITLEMENTS" "$macos_dir/pando-desktop"
+    run_codesign -o runtime "$macos_dir/libghostty-vt.dylib"
 
     local final_app="$DIST_DIR/Pando-${arch_label}.app"
     rm -rf "$final_app"
     cp -R "$app_dir" "$final_app"
 
-    # --deep re-signs the nested pando-bin / pando-desktop too, so the
+    # --deep re-signs the nested pando-bin / libghostty-vt.dylib too, so the
     # entitlements must be repeated here or the JIT grant is stripped from them.
     echo "Signing Pando.app bundle..."
     run_codesign --deep -o runtime --entitlements "$ENTITLEMENTS" "$final_app"
 
     # Notarize & staple the .app BEFORE it goes into the .pkg. Stapling works on a
     # bundle (unlike a bare Mach-O), so the installed app is offline-safe and the
-    # nested pando-desktop wrapper — launched in place from Contents/MacOS by
-    # internal/desktop/launcher.go — is covered by the same notarization.
+    # nested libghostty-vt.dylib is covered by the same notarization.
     # pkgbuild then copies the already-stapled .app into the installer.
     notarize_and_staple_app "$final_app"
     verify_app_signature "$final_app"

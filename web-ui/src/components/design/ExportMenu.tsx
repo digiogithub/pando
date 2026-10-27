@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next'
 import { useDesignStore, type ExportFormat } from '@pando/client/stores/designStore'
 import { getBaseURL } from '@pando/client/services/api'
 import api from '@pando/client/services/api'
-import { saveUrlToDisk } from '../../services/desktopRuntime'
 import { Button, Menu, MenuItem } from '@/components/ui'
 import { Upload } from '@/components/ui/icons'
 
@@ -38,9 +37,7 @@ export default function ExportMenu({ artifactId, slide }: ExportMenuProps) {
     // string the same way the SSE streams do.
     const token = api.getToken()
     const url = `${getBaseURL()}${downloadPath}${token ? `&token=${encodeURIComponent(token)}` : ''}`
-    // saveUrlToDisk is window.open in a browser and a native save dialog in the
-    // desktop shell, where a webview download would otherwise go nowhere.
-    await saveUrlToDisk(url, `${artifactId}.${format}`)
+    window.open(url, '_blank', 'noopener')
   }
 
   return (

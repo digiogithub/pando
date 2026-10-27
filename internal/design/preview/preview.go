@@ -91,7 +91,7 @@ type Options struct {
 	// FrameAncestors overrides the CSP frame-ancestors list. It defaults to
 	// 'self', which is right whenever the preview and the UI framing it share
 	// an origin — the mounted deployment. A shell that runs the UI on its own
-	// origin (the Wails desktop app) has to widen it, and doing that here keeps
+	// origin (a separate desktop or extension shell) has to widen it, and doing that here keeps
 	// the decision in the caller that knows its own origin.
 	FrameAncestors string
 	// Inject is JavaScript spliced into a ?bridge=1 document ahead of the

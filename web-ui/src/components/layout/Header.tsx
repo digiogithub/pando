@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
@@ -16,14 +15,6 @@ import {
   CircleQuestionMark, LayoutDashboard, MessageSquare, Moon, PanelLeft, PanelLeftClose, Settings, Sun,
 } from '@/components/ui/icons'
 import { isMacPlatform } from './shellHooks'
-import DesktopWindowControls from './DesktopWindowControls'
-import {
-  onTitleBarDoubleClick,
-  syncDesktopShellState,
-  useDesktopFrameless,
-  useDesktopShell,
-  useDesktopTrayPreference,
-} from '@/services/desktopWindow'
 import { resolveHeaderSection } from './headerSections'
 
 const DOCS_URL = 'https://madeindigio.github.io/pando-docs/'
@@ -55,17 +46,13 @@ export default function Header({
   const activeSession = useSessionStore((s) => s.sessions.find((x) => x.id === s.activeSessionId))
   const extensionPanels = useExtensionPanelsStore((s) => s.panels)
   const activeTabId = useProjectTabsStore((s) => s.activeTabId)
-  const tabs = useProjectTabsStore((s) => s.tabs)
   const activeProjectTab = useProjectTabsStore((s) =>
     s.activeTabId === 'main'
       ? null
       : s.tabs.find((tab) => tab.projectId === s.activeTabId) ?? null,
   )
-  const desktopShell = useDesktopShell()
-  const desktopFrameless = useDesktopFrameless()
   const childMode = startupMode === 'project-child' || isProjectChildMode()
   const embedded = childMode && window.parent !== window
-  useDesktopTrayPreference(desktopShell && !embedded)
   // While a project tab is shown, the persona, chat-mode and settings actions
   // would act on the main instance; the framed child carries its own.
   const hostingProject = !childMode && activeTabId !== 'main'
@@ -105,25 +92,10 @@ export default function Header({
     : activeTabId !== 'main'
       ? projectTabDetail
       : sessionTitle
-  const desktopTitle = titleDetail
-    ? `Pando — ${titleSection} / ${titleDetail}`
-    : titleSection
-      ? `Pando — ${titleSection}`
-      : 'Pando'
-
-  useEffect(() => {
-    if (!desktopShell || window.parent !== window) return
-    syncDesktopShellState({
-      title: desktopTitle,
-      activeTabId,
-      projectTabs: tabs.map((tab) => ({ projectId: tab.projectId, name: tab.name })),
-    })
-  }, [activeTabId, desktopShell, desktopTitle, tabs])
 
   return (
     <header
       className={`shell-titlebar${embedded ? ' shell-titlebar--embedded' : ''}`}
-      onDoubleClick={desktopFrameless ? onTitleBarDoubleClick : undefined}
     >
       <div className="shell-titlebar-group">
         {!hideSidebarToggle && (
@@ -206,7 +178,6 @@ export default function Header({
             </NavLink>
           </Tooltip>
         )}
-        {!embedded && <DesktopWindowControls />}
       </div>
     </header>
   )

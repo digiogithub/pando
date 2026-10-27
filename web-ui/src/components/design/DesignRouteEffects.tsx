@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useDesignStore } from '@pando/client/stores/designStore'
-import { hasDesktopAppBindings } from '@/services/desktopRuntime'
 
 let lastHandledCreatedEvent: string | null = null
 
@@ -19,7 +18,7 @@ export default function DesignRouteEffects() {
   }, [connect, disconnect])
 
   useEffect(() => {
-    if (!lastCreated || hasDesktopAppBindings()) return
+    if (!lastCreated) return
     const eventKey = `${lastCreated.artifactId}:${lastCreated.nonce}`
     if (lastHandledRef.current === eventKey || lastHandledCreatedEvent === eventKey) return
     lastHandledRef.current = eventKey

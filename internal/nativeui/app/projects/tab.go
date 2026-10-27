@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"github.com/digiogithub/pando/internal/nativeui/app"
 	"github.com/digiogithub/pando/internal/nativeui/kit"
 	"github.com/egoist/mygo/ui"
 )
@@ -61,7 +62,7 @@ func (m *manager) Dialogs(c *ui.Context) {
 		kit.Dialog(c.Key("dlg-init"), &m.initOpen, kit.DialogOpts{
 			Title: m.a.T("projects.initWizard.title"), Width: 460,
 			Body: func() {
-				ui.Text(c, shortenPath(p.Path)).FontSize(tk.TextSM).Padding(8, 12).Radius(tk.RadiusSM).Background(tk.BgShell)
+				ui.Text(c, app.ShortenPath(p.Path)).FontSize(tk.TextSM).Padding(8, 12).Radius(tk.RadiusSM).Background(tk.BgShell)
 				ui.Text(c, m.a.T("projects.initWizard.description")).FontSize(tk.TextSM).TextColor(tk.FgMuted)
 				for _, it := range [][2]string{
 					{".pando.toml", "config"}, {".pando/data/", "database"}, {".pando/mesnada/", "agents"}, {"agents/skills/", "skills"},

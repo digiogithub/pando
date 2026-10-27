@@ -1,3 +1,7 @@
+// Package desktop holds the process-level helpers of `pando desktop` that do
+// not depend on the UI toolkit: the working directory of a GUI launch, the
+// login-shell PATH import for apps opened from Finder, and spawning a separate
+// desktop instance for another project folder.
 package desktop
 
 import (
@@ -14,12 +18,12 @@ import (
 	"github.com/digiogithub/pando/internal/procgroup"
 )
 
-// LaunchedFromAppEnv is set by the macOS Pando.app bundle wrapper so the CLI
+// LaunchedFromAppEnv is set by the macOS Pando.app bundle launcher so the CLI
 // knows it was opened from Finder/Dock/Launchpad rather than a terminal.
 const LaunchedFromAppEnv = "PANDO_LAUNCHED_FROM_APP"
 
 // LaunchedFromApp reports whether this process was started by a GUI launcher
-// (the Pando.app wrapper) instead of a terminal. Older bundles do not set
+// (the Pando.app bundle) instead of a terminal. Older bundles do not set
 // LaunchedFromAppEnv, so on macOS a process re-parented to launchd (PPID 1) is
 // treated the same way: that is how LaunchServices starts app executables.
 func LaunchedFromApp() bool {

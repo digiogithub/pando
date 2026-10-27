@@ -7,7 +7,8 @@
 #   curl -fsSL .../install.sh | bash -s -- --version v1.2.7 --no-desktop
 #
 # Linux : pando-linux-<arch>.zip -> ~/.local/bin/pando, plus a .desktop entry
-#         and the GTK/WebKitGTK runtime the desktop window needs.
+#         and the GTK runtime the native desktop window needs (plus WebKitGTK
+#         for its design preview and extension panels).
 # macOS : pando-<version>-darwin-<arch>.pkg (signed and notarized), which
 #         installs /Applications/Pando.app and /usr/local/bin/pando.
 #         With --cli-only: pando-darwin-<arch>.zip -> ~/.local/bin/pando.
@@ -135,7 +136,9 @@ pkg_manager() {
     fi
 }
 
-# ── Dependency checks (Wails desktop runtime/libs) ──────────────────────────
+# ── Dependency checks (native desktop runtime libs) ─────────────────────────
+# `pando desktop` loads these at runtime (dlopen): GTK 3 always, WebKitGTK only
+# for the design preview canvas and extension panels. No -dev packages needed.
 # Dynamically detect available packages using pattern matching.
 # Exact versions of GTK/WebKit vary across distro releases, so we search
 # for the best available package instead of hardcoding version suffixes.
@@ -143,7 +146,7 @@ pkg_manager() {
 # Patterns per package manager — matched against available/installed packages.
 # Order matters: preferred/newer packages come first.
 # apt (Debian/Ubuntu): version suffixes vary per release (4.0-37, 4.1-0, etc.)
-dep_patterns_apt=("libgtk-3-0" "libgtk-3-dev" "libwebkit2gtk-4.1-*" "libwebkit2gtk-4.0-*" "libwebkit2gtk-4.1-dev" "libwebkit2gtk-4.0-dev")
+dep_patterns_apt=("libgtk-3-0" "libwebkit2gtk-4.1-*" "libwebkit2gtk-4.0-*")
 # dnf (Fedora): uses webkit2gtk4.0 / webkit2gtk4.1 naming
 dep_patterns_dnf=("gtk3" "webkit2gtk4.1" "webkit2gtk4.0")
 # pacman (Arch Linux): webkit2gtk-4.1 is the current official package
@@ -351,17 +354,17 @@ run_sudo_install_cmd() {
 }
 
 warn_ubuntu_runtime_hint() {
-    warn "  Ubuntu 22.04:        sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0"
-    warn "  Ubuntu 24.04, 26.04: sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0t64"
+    warn "  Ubuntu 22.04:        sudo apt install libgtk-3-0 libwebkit2gtk-4.1-0"
+    warn "  Ubuntu 24.04, 26.04: sudo apt install libgtk-3-0t64 libwebkit2gtk-4.1-0"
 }
 
-ensure_wails_runtime_dependencies() {
+ensure_desktop_runtime_dependencies() {
     local pm
     pm="$(pkg_manager)"
 
     if [[ -z "${pm}" ]]; then
         warn "Could not detect a supported package manager (apt/dnf/pacman/zypper)."
-        warn "Skipping automatic dependency installation for Wails desktop runtime."
+        warn "Skipping automatic dependency installation for the desktop runtime."
         warn "Please ensure your system has GTK and WebKitGTK runtime libraries installed."
         warn_ubuntu_runtime_hint
         return 0
@@ -382,7 +385,7 @@ ensure_wails_runtime_dependencies() {
         return 0
     fi
 
-    info "Checking Linux desktop runtime dependencies (Wails) for ${pm}..."
+    info "Checking Linux desktop runtime dependencies for ${pm}..."
 
     for dep in "${deps[@]}"; do
         if package_installed "${pm}" "${dep}"; then
@@ -673,7 +676,7 @@ main() {
             if [[ -n "${distro_id}" ]]; then
                 info "Detected distro: ${distro_id}${distro_like:+ (like: ${distro_like})}"
             fi
-            ensure_wails_runtime_dependencies
+            ensure_desktop_runtime_dependencies
         else
             info "Skipping desktop runtime libraries and menu entry (--no-desktop)."
         fi

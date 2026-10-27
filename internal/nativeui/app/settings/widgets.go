@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/digiogithub/pando/internal/nativeui/kit"
@@ -32,7 +33,7 @@ func tagList(c *ui.Context, items *[]string, add *string, placeholder string) ui
 			submit := in.Submitted()
 			if kit.Button(c.Key("add"), kit.ButtonOpts{Label: "Add", Size: kit.SizeSM, Disabled: strings.TrimSpace(*add) == ""}).Clicked() || submit {
 				v := strings.TrimSpace(*add)
-				if v != "" && !contains(*items, v) {
+				if v != "" && !slices.Contains(*items, v) {
 					*items = append(append([]string{}, *items...), v)
 				}
 				*add = ""
@@ -40,15 +41,6 @@ func tagList(c *ui.Context, items *[]string, add *string, placeholder string) ui
 		})
 	})
 	return col
-}
-
-func contains(l []string, s string) bool {
-	for _, x := range l {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }
 
 // pageHeader draws the title and description of a section.

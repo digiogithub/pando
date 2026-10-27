@@ -213,6 +213,10 @@ func (ch *Chat) onKey(k ui.TextKey) bool {
 		}
 	}
 	switch {
+	case k.Key == ui.KeyTab && k.Mods == ui.Shift:
+		// Shift+Tab toggles auto-approve, as in the Web UI.
+		ch.toggleAutoApprove(ch.conv())
+		return true
 	case k.Key == ui.KeyEnter && k.Mods == 0:
 		if strings.TrimSpace(text) == "" || len([]rune(text)) > maxChars {
 			return true
@@ -315,7 +319,9 @@ func (ch *Chat) composerActions(c *ui.Context, t *kit.Tokens, cv *Conversation) 
 			hint = ch.app.T("chat.composer.hintGoal")
 		}
 		ui.Text(c, hint).FontSize(t.TextXS).TextColor(t.FgFaint).Grow(1).Shrink(1).SingleLine().Ellipsis("…")
-		ch.personaChip(c, t)
+		if !ch.headerPersona() {
+			ch.personaChip(c, t)
+		}
 		ch.modelChip(c, t, cv)
 		if cv.ID != "" {
 			on := cv.AutoApprove

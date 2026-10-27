@@ -10,10 +10,7 @@ import { useServerStore } from '@pando/client/stores/serverStore'
 import { useSessionStore } from '@pando/client/stores/sessionStore'
 import Header from './Header'
 
-const syncDesktopShellState = vi.fn()
-
 vi.mock('@/components/shared/PersonaSelector', () => ({ default: () => <div data-testid="persona-selector" /> }))
-vi.mock('./DesktopWindowControls', () => ({ default: () => <div data-testid="window-controls" /> }))
 vi.mock('@/hooks/useTheme', () => ({
   useTheme: () => ({ resolvedMode: 'dark', toggleMode: vi.fn() }),
 }))
@@ -22,13 +19,6 @@ vi.mock('@/hooks/useAgentBusy', () => ({
 }))
 vi.mock('./headerSections', () => ({
   resolveHeaderSection: () => 'Chat',
-}))
-vi.mock('@/services/desktopWindow', () => ({
-  onTitleBarDoubleClick: vi.fn(),
-  syncDesktopShellState: (...args: unknown[]) => syncDesktopShellState(...args),
-  useDesktopShell: () => true,
-  useDesktopFrameless: () => true,
-  useDesktopTrayPreference: vi.fn(),
 }))
 
 function renderHeader(props?: Partial<Parameters<typeof Header>[0]>) {
@@ -82,11 +72,10 @@ describe('Header', () => {
     renderHeader()
 
     expect(screen.queryByLabelText('Pando')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('window-controls')).not.toBeInTheDocument()
     expect(screen.getByTestId('persona-selector')).toBeInTheDocument()
   })
 
-  it('syncs the desktop shell state and can hide the sidebar toggle', () => {
+  it('can hide the sidebar toggle', () => {
     useProjectTabsStore.setState({
       tabs: [{ projectId: 'proj-1', name: 'Project One', path: '', state: 'running', openedAt: '2026-10-02T08:00:00Z' }],
       activeTabId: 'proj-1',
@@ -98,10 +87,5 @@ describe('Header', () => {
     renderHeader({ hideSidebarToggle: true })
 
     expect(screen.queryByLabelText(/expand sidebar|collapse sidebar|open menu/i)).not.toBeInTheDocument()
-    expect(syncDesktopShellState).toHaveBeenCalledWith({
-      title: 'Pando — Project One / Chat',
-      activeTabId: 'proj-1',
-      projectTabs: [{ projectId: 'proj-1', name: 'Project One' }],
-    })
   })
 })

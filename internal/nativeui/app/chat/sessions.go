@@ -132,7 +132,7 @@ func (ch *Chat) sessionRow(c *ui.Context, t *kit.Tokens, s client.SessionSummary
 	row := ui.Row(c).Gap(8).Padding(7, 10).Radius(t.RadiusSM).AlignItems(ui.Center).Cursor(ui.CursorPointer).
 		Focusable().Label(title)
 	if row.Clicked() && s.ID != ch.current {
-		ch.Open(s.ID)
+		ch.openFromUI(s.ID)
 	}
 	if active {
 		row.Background(t.AccentSoft)
@@ -181,7 +181,7 @@ func (ch *Chat) renameDialog(c *ui.Context) {
 			}
 		},
 		Footer: func() {
-			if kit.SecondaryButton(c, ch.app.T("common.cancel")).Clicked() {
+			if kit.SecondaryButton(c, ch.app.T("projects.view.common.cancel")).Clicked() {
 				ch.renaming = false
 			}
 			if kit.PrimaryButton(c, ch.app.T("projects.view.actions.rename")).Clicked() {

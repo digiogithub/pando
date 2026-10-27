@@ -145,10 +145,11 @@ func Run(o Options) error {
 		},
 		OnWindow: func(w *mygo.Window) {
 			a.SetDispatcher(w)
-			startCapture(w)
+			startCapture(w, func(p string) { a.Router.Push(p) })
 			servicesOnce.Do(func() { a.StartServices(a.Shell().Host) })
 		},
 		Tray: shell.TrayOptions{
+			Labels: a.TrayLabels(),
 			OnSettings: func() {
 				a.Update(func() { a.Navigate("/settings") })
 			},

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, X, FolderOpen, Folder, Lock, Bot, LoaderCircle, CircleStop, ExternalLink, Pencil } from '@/components/ui/icons'
+import { Plus, X, FolderOpen, Folder, Lock, Bot, LoaderCircle, CircleStop, Pencil } from '@/components/ui/icons'
 import { Badge, Button, IconButton, Input, Spinner, Tooltip, type BadgeTone } from '@/components/ui'
 import { useProjectStore } from '@pando/client/stores/projectStore'
 import { useProjectTabsStore, type ProjectTabActionResult } from '@pando/client/stores/projectTabsStore'
@@ -10,7 +10,6 @@ import ProjectInitWizard from './ProjectInitWizard'
 import DirBrowserDialog from '@/components/shared/DirBrowserDialog'
 import EmptyState from '@/components/shared/EmptyState'
 import { useDialogs } from '@/components/shared/useDialogs'
-import { isDesktop } from '@/services/desktop'
 
 /** Replace leading /home/<user> or /Users/<user> with ~. */
 function shortenPath(path: string): string {
@@ -69,7 +68,6 @@ export default function ProjectsView() {
     fetchActive,
     addProject,
     stopProject,
-    openProjectDesktop,
     deactivateProject,
     initProject,
     renameProject,
@@ -268,7 +266,7 @@ export default function ProjectsView() {
                   <th>{t('projects.view.columns.name')}</th>
                   <th>{t('projects.view.columns.path')}</th>
                   <th>{t('projects.view.columns.workspace')}</th>
-                  <th className={`is-numeric ${isDesktop ? 'w-[11rem]' : 'w-[8.5rem]'}`}>{t('projects.view.columns.actions')}</th>
+                  <th className={'is-numeric w-[8.5rem]'}>{t('projects.view.columns.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -351,15 +349,6 @@ export default function ProjectsView() {
                             disabled={!showStopAsEnabled}
                             onClick={() => void handleStop(proj)}
                           />
-                          {isDesktop && (
-                            <IconButton
-                              aria-label={t('projects.view.actions.openInNewWindow')}
-                              tooltip
-                              icon={<ExternalLink size={13} />}
-                              size="sm"
-                              onClick={() => void openProjectDesktop(proj.id)}
-                            />
-                          )}
                           <IconButton
                             aria-label={t('projects.view.actions.rename')}
                             tooltip

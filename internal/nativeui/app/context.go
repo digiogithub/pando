@@ -58,6 +58,18 @@ type Context struct {
 	disp   Dispatcher
 }
 
+// newRouter returns the router of a window or workspace. Pages show at
+// once, as in the Web UI: an area is a sidebar destination and its
+// sub-routes (a chat session, a settings section) replace each other in
+// place. A slide would build the area's view twice per frame (see
+// Root.leavingSameArea), and a fade leaves the page transparent while the
+// window gets no frames (hidden, occluded or locked screen on macOS).
+func newRouter() *ui.Router {
+	r := ui.NewRouter(DefaultPath)
+	r.Transition = ui.TransitionNone
+	return r
+}
+
 // NewContext returns a context with defaults for what opts leaves empty.
 func NewContext(ctx context.Context, c *client.Client) *Context {
 	if ctx == nil {
@@ -66,7 +78,7 @@ func NewContext(ctx context.Context, c *client.Client) *Context {
 	a := &Context{
 		Ctx:    ctx,
 		Client: c,
-		Router: ui.NewRouter(DefaultPath),
+		Router: newRouter(),
 		Toasts: &kit.Toaster{},
 		Theme:  kit.DefaultSettings,
 		Log:    slog.Default().With("component", "nativeui"),
@@ -107,13 +119,17 @@ func (a *Context) ForClient(c *client.Client, cwd string) *Context {
 		Ctx:    a.Ctx,
 		Client: c,
 		CWD:    cwd,
-		Router: ui.NewRouter(DefaultPath),
+		Router: newRouter(),
 		Toasts: a.Toasts,
 		Theme:  a.Theme,
 		Log:    a.Log,
 		parent: a,
 	}
 }
+
+// IsChild reports whether the context is a project workspace's (made by
+// ForClient): its areas are embedded in a tab, without the window header.
+func (a *Context) IsChild() bool { return a.parent != nil }
 
 // Update runs fn on the UI thread and redraws. Background goroutines must
 // change view state only through it.

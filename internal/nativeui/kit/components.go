@@ -100,7 +100,12 @@ func Button(c *ui.Context, o ButtonOpts) ui.Element {
 		b.Background(bg).Border(1, t.Border).TextColor(t.Fg)
 	}
 	if o.Disabled {
-		b.Opacity(0.5).Cursor(ui.CursorNotAllowed)
+		// A dimmed accent fill made the label unreadable (dark text on a
+		// darkened accent): disabled buttons are a muted neutral instead.
+		b.Background(t.BgRaised).Border(1, t.Border).TextColor(t.FgFaint).Cursor(ui.CursorNotAllowed)
+		if o.Variant == Ghost {
+			b.Background(ui.Color{}).Border(0, ui.Color{})
+		}
 	}
 	b.Children(func() {
 		if o.Icon != "" {

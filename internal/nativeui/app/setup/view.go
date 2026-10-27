@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"cmp"
 	"context"
 	"strings"
 
@@ -128,7 +129,7 @@ func (w *wizard) scopeStep(c *ui.Context, t *kit.Tokens) {
 	ui.Text(c, w.t("scope.intro")).FontSize(t.TextSM).TextColor(t.FgMuted)
 	ui.Text(c, shorten(st.WorkingDir)).FontSize(t.TextXS).Font("monospace").Padding(6, 10).
 		Radius(t.RadiusSM).Background(t.BgShell)
-	gp := firstNonEmpty(st.GlobalConfigPath, st.DefaultGlobalConfigPath, "~/.config/pando/.pando.toml")
+	gp := cmp.Or(st.GlobalConfigPath, st.DefaultGlobalConfigPath, "~/.config/pando/.pando.toml")
 	if choiceCard(c, "scope:global", w.scope == "global", false, kit.IconHome, w.t("scope.global"), w.t("scope.default"),
 		w.t("scope.globalHint"), shorten(gp)) {
 		w.scope = "global"
@@ -165,7 +166,7 @@ func (w *wizard) providerStep(c *ui.Context, t *kit.Tokens) {
 			for _, a := range w.accounts {
 				ui.Row(c.Key("acc:"+a.ID)).Gap(8).Padding(8, 12).Radius(t.RadiusSM).Background(t.BgCard).
 					Border(1, t.Border).AlignItems(ui.Center).Children(func() {
-					name := firstNonEmpty(a.DisplayName, a.ID)
+					name := cmp.Or(a.DisplayName, a.ID)
 					ui.Text(c, name).FontSize(t.TextSM).FontWeight(500)
 					ui.Text(c, a.Type).FontSize(t.TextXS).TextColor(t.FgMuted).Font("monospace")
 					if a.Disabled {
@@ -247,7 +248,7 @@ func (w *wizard) copilotView(c *ui.Context, t *kit.Tokens) {
 				lbl = w.t("common.copied")
 			}
 			if kit.Button(c.Key("cpcode"), kit.ButtonOpts{Icon: kit.IconCopy, Label: lbl}).Clicked() {
-				w.copied = copyText(w.copilot.UserCode)
+				w.copied = kit.CopyText(w.copilot.UserCode)
 			}
 			if kit.Button(c.Key("opengh"), kit.ButtonOpts{Variant: kit.Primary, Icon: kit.IconExternal, Label: w.t("provider.openGithub")}).Clicked() {
 				openExternal(w.copilot.VerificationURI)
@@ -481,9 +482,9 @@ func (w *wizard) doneStep(c *ui.Context, t *kit.Tokens) {
 	}
 	rows := [][2]string{
 		{w.t("done.scope"), scope},
-		{w.t("done.provider"), firstNonEmpty(w.sum.provider, unchanged)},
-		{w.t("done.mainModel"), firstNonEmpty(w.sum.mainModel, unchanged)},
-		{w.t("done.fastModel"), firstNonEmpty(w.sum.fastModel, unchanged)},
+		{w.t("done.provider"), cmp.Or(w.sum.provider, unchanged)},
+		{w.t("done.mainModel"), cmp.Or(w.sum.mainModel, unchanged)},
+		{w.t("done.fastModel"), cmp.Or(w.sum.fastModel, unchanged)},
 		{w.t("done.remembrances"), rem},
 	}
 	ui.Column(c).Gap(6).Children(func() {

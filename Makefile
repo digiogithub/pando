@@ -70,64 +70,20 @@ CC_DARWIN_ARM64 ?= $(ZIG) cc -target aarch64-macos.$(MACOS_MIN_VERSION)
 CXX_DARWIN_ARM64 ?= $(ZIG) c++ -target aarch64-macos.$(MACOS_MIN_VERSION)
 endif
 MACOS_SYSROOT_FLAGS :=
-# Developer ID Application identity used to sign the embedded desktop wrapper
-# before it is baked into the CLI binary. Signing (with hardened runtime) is
-# required so the wrapper is not killed by macOS when `pando desktop` extracts
-# and runs it from a temp dir. It is ALSO notarized here (when NOTARY_PROFILE +
-# MACOS_SIGN_KEYCHAIN_PATH are set) so the extracted copy passes Gatekeeper's
-# online check; otherwise notarization is skipped (non-fatal) for dev builds.
-MACOS_SIGN_IDENTITY ?= 4749EC5719E91D7ADFE5FDB4CB546057A8CFB9AD
-MACOS_SIGN_KEYCHAIN_PATH ?=
+# Hardened-runtime signing wrapper applied to the darwin release binaries
+# (reads SIGNING_IDENTITY or MACOS_SIGN_IDENTITY, MACOS_SIGN_KEYCHAIN_PATH and
+# optionally MACOS_ENTITLEMENTS from the environment; see scripts/codesign-macos).
 MACOS_CODESIGN_WRAPPER ?= $(CURDIR)/scripts/codesign-macos
-# Hardened-runtime entitlements (JIT / executable memory) needed by the embedded
-# wazero WASM runtime; without them macOS SIGKILLs pando when WASM is used.
-MACOS_ENTITLEMENTS ?= $(CURDIR)/scripts/pando.entitlements
-# notarytool keychain profile for notarizing the embedded desktop wrapper.
-# Leave empty to skip wrapper notarization (dev builds).
-NOTARY_PROFILE ?=
-MACOS_NOTARIZE_WRAPPER ?= $(CURDIR)/scripts/notarize-desktop-wrapper
 
-# ============================================================
-# Desktop App (Wails) targets
-# ============================================================
+.PHONY: build-enterprise release-enterprise xpando embed-stubs build build-fast web-ui-embedded dist-clean release release-linux-amd64 release-linux-arm64 release-windows-amd64 release-darwin-amd64 release-darwin-arm64 test-integration help
 
-WAILS_CMD := $(shell which wails 2>/dev/null || echo "$(GOPATH)/bin/wails")
-# webkit2_41 is a Linux-only tag for systems with WebKit2GTK 4.1 instead of 4.0.
-# On macOS, WKWebView is used natively — no webkit2gtk tags needed.
-ifeq ($(shell uname),Darwin)
-WAILS_TAGS :=
-else
-WAILS_TAGS := $(shell pkg-config --exists webkit2gtk-4.0 2>/dev/null && echo "" || echo "webkit2_41")
-endif
-# UPX-compressed binaries have an invalid Mach-O header on macOS (Big Sur+): the
-# process gets killed on launch and codesign/notarization break. Only pass -upx
-# on non-Darwin platforms.
-ifeq ($(shell uname),Darwin)
-WAILS_UPX_FLAG :=
-else
-WAILS_UPX_FLAG := -upx
-endif
-
-.PHONY: build-enterprise release-enterprise xpando embed-stubs desktop-deps desktop-ui desktop-build desktop-dev desktop-package desktop-embed desktop-clean build build-fast web-ui-embedded dist-clean release release-linux-amd64 release-linux-arm64 release-windows-amd64 release-darwin-amd64 release-darwin-arm64 test-integration help
-
-## Create the generated go:embed placeholders (fresh checkout / CI).
-## internal/api/webui/dist and internal/desktop/bin/pando-desktop are build
-## artifacts and are gitignored, but their embed patterns must still resolve
-## for `go vet`/`go build` to work before the real assets are generated.
-## Existing files are never overwritten, so a real build stays untouched.
+## Create the generated go:embed placeholder for the web UI (fresh checkout / CI).
+## internal/api/webui/dist is a gitignored build artifact, but its embed
+## pattern must still resolve for `go vet`/`go build` before the real assets
+## are generated. Existing files are never overwritten.
 embed-stubs:
-	@mkdir -p internal/desktop/bin
-	@[ -f internal/desktop/bin/pando-desktop ] || : > internal/desktop/bin/pando-desktop
 	@mkdir -p internal/api/webui/dist
 	@[ -f internal/api/webui/dist/index.html ] || printf '<!doctype html><title>pando</title>\n' > internal/api/webui/dist/index.html
-
-## Install the Wails CLI (run once)
-desktop-deps:
-	go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
-
-## Build only the web-ui frontend in desktop mode (plain HTML shell for the WebView wrapper)
-desktop-ui:
-	@echo "Desktop uses plain HTML shell — no frontend build needed."
 
 ## Build embedded web-ui assets used by the API binary
 web-ui-embedded:
@@ -152,51 +108,6 @@ xpando:
 ## Run multi-process single-writer integration tests (requires compiled binary)
 test-integration: build-fast
 	PANDO_BINARY=$(CURDIR)/pando$(DIST_SUFFIX) go test -tags=integration ./test/integration/single_writer/... -v -timeout 180s
-
-## Full desktop build: compile pando-desktop Wails binary (requires wails CLI)
-desktop-build:
-	@mkdir -p internal/desktop/bin
-	@[ -f internal/desktop/bin/pando-desktop ] || echo -n "" > internal/desktop/bin/pando-desktop
-	cd desktop && $(WAILS_CMD) build $(if $(WAILS_TAGS),-tags $(WAILS_TAGS),) $(WAILS_UPX_FLAG) -o pando-desktop
-
-## Development mode: run Wails dev server with hot-reload
-desktop-dev:
-	cd desktop && $(WAILS_CMD) dev $(if $(WAILS_TAGS),-tags $(WAILS_TAGS),)
-
-## Build the pando-desktop binary and embed it into the main pando binary
-## This copies the compiled binary into internal/desktop/bin/ for go:embed
-desktop-embed: desktop-build
-	@mkdir -p internal/desktop/bin
-	@rm -rf internal/desktop/bin/Pando.app
-	@if [ "$(shell uname)" = "Darwin" ]; then \
-		if [ -d desktop/build/bin/Pando.app ]; then \
-			echo "Signing embedded desktop wrapper (Pando.app) — hardened runtime..."; \
-			codesign --deep --force -o runtime --entitlements "$(MACOS_ENTITLEMENTS)" --timestamp --sign "$(MACOS_SIGN_IDENTITY)" desktop/build/bin/Pando.app \
-				|| echo "Warning: codesign of embedded desktop wrapper failed; 'pando desktop' from a standalone binary may be blocked by macOS."; \
-			NOTARY_PROFILE="$(NOTARY_PROFILE)" MACOS_SIGN_KEYCHAIN_PATH="$(MACOS_SIGN_KEYCHAIN_PATH)" "$(MACOS_NOTARIZE_WRAPPER)" desktop/build/bin/Pando.app \
-				|| echo "Warning: notarization of embedded desktop wrapper failed; 'pando desktop' from a standalone binary may be killed by Gatekeeper."; \
-		elif [ -f desktop/build/bin/pando-desktop ]; then \
-			echo "Signing embedded desktop wrapper (pando-desktop) — hardened runtime..."; \
-			codesign --force -o runtime --entitlements "$(MACOS_ENTITLEMENTS)" --timestamp --sign "$(MACOS_SIGN_IDENTITY)" desktop/build/bin/pando-desktop \
-				|| echo "Warning: codesign of embedded desktop wrapper failed."; \
-			NOTARY_PROFILE="$(NOTARY_PROFILE)" MACOS_SIGN_KEYCHAIN_PATH="$(MACOS_SIGN_KEYCHAIN_PATH)" "$(MACOS_NOTARIZE_WRAPPER)" desktop/build/bin/pando-desktop \
-				|| echo "Warning: notarization of embedded desktop wrapper failed; 'pando desktop' from a standalone binary may be killed by Gatekeeper."; \
-		fi; \
-	fi
-	@python3 scripts/embed_desktop_artifact.py desktop/build/bin internal/desktop/bin
-	@echo "Embedded desktop build artifacts into internal/desktop/bin"
-
-## Build production packages for current platform
-desktop-package:
-	cd desktop && $(WAILS_CMD) build $(if $(WAILS_TAGS),-tags $(WAILS_TAGS),) $(WAILS_UPX_FLAG) -clean -o pando-desktop
-
-## Remove desktop build artifacts
-desktop-clean:
-	rm -rf desktop/build/bin
-	rm -rf internal/desktop/bin/Pando.app
-	@mkdir -p internal/desktop/bin/Pando.app
-	@touch internal/desktop/bin/Pando.app/.keep internal/desktop/bin/Pando.app/desktop-placeholder
-	echo -n "" > internal/desktop/bin/pando-desktop
 
 ## Remove distribution artifacts
 dist-clean:

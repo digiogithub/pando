@@ -4,10 +4,11 @@ name: Release
 #
 #   Linux/Windows  : cross-compiled on ubuntu (zig as the cross C toolchain).
 #   macOS          : built, signed (Developer ID + hardened runtime) and
-#                    notarized on a macOS runner — the embedded wails desktop
-#                    wrapper, the CLI zips, the .app bundles and the .pkg
-#                    installers, exactly like the `release-osx` xc task does
-#                    manually on mac-mini-de-digio.
+#                    notarized on a macOS runner — the CLI zips, the .app
+#                    bundles (which also ship libghostty-vt for the native
+#                    desktop's terminal) and the .pkg installers, exactly like
+#                    the `release-osx` xc task does manually on
+#                    mac-mini-de-digio.
 #   Windows        : the cross-compiled .exe is Authenticode-signed on a
 #                    windows runner with Azure Trusted Signing (OIDC, no
 #                    long-lived secret) and repackaged into its zip.
@@ -50,7 +51,6 @@ permissions:
 env:
   # The shared composite actions live in digiogithub/ci-actions and are pinned
   # to @v1 in each `uses:` below (a `uses:` cannot read an env var).
-  WAILS_VERSION: v2.16.0
   ZIG_VERSION: '0.14.1'
 
 jobs:
@@ -81,20 +81,14 @@ jobs:
           version: ${{ env.ZIG_VERSION }}
 
       - name: Install system dependencies
-        # webkit2gtk/gtk are needed by the wails wrapper; upx compresses the
-        # non-darwin release binaries.
+        # upx compresses the non-darwin release binaries. The native desktop
+        # (MyGo) loads GTK/WebKitGTK at runtime, so no -dev packages here.
         run: |
           sudo apt-get update
-          sudo apt-get install -y upx-ucl libgtk-3-dev libwebkit2gtk-4.1-dev zip
-
-      - name: Install wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+          sudo apt-get install -y upx-ucl zip
 
       - name: Build the embedded web-ui
         run: make web-ui-embedded
-
-      - name: Build and embed the desktop wrapper
-        run: make desktop-embed
 
       - name: Build release archives
         env:
@@ -230,9 +224,6 @@ jobs:
         with:
           version: ${{ env.ZIG_VERSION }}
 
-      - name: Install wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
-
       - name: Set up the signing keychain
         # Exports SIGNING_IDENTITY, PKG_SIGN_IDENTITY, NOTARY_PROFILE and
         # MACOS_SIGN_KEYCHAIN_PATH/PASSWORD for every step below; the Makefile
@@ -246,12 +237,6 @@ jobs:
 
       - name: Build the embedded web-ui
         run: make web-ui-embedded
-
-      - name: Build, sign and notarize the embedded desktop wrapper
-        # make desktop-embed signs the wails wrapper with the hardened runtime
-        # and notarizes it before go:embed bakes it into the CLI binary —
-        # without that, `pando desktop` from a standalone binary is SIGKILLed.
-        run: make desktop-embed
 
       - name: Build and sign the CLI release archives
         env:

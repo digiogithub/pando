@@ -30,8 +30,7 @@ import DesignRouteEffects from '@/components/design/DesignRouteEffects'
 import InstancesPanel from '@/components/instances/InstancesPanel'
 import LoginDialog from '@/components/auth/LoginDialog'
 import { authenticate, checkHealth } from '@pando/client/services/auth'
-import { isDesktop, getDesktopConfig } from '@/services/desktop'
-import { initDesktopMode, BasicAuthRequiredError } from '@pando/client/services/api'
+import { BasicAuthRequiredError } from '@pando/client/services/api'
 import { useLanguageSync } from '@/hooks/useLanguageSync'
 import PWAInstallPrompt from '@/components/shared/PWAInstallPrompt'
 import { useNotificationsStore } from '@pando/client/stores/notificationsStore'
@@ -42,8 +41,6 @@ import ExtensionPanelPage from '@/components/extensions/ExtensionPanelPage'
 import { installPandoUI } from '@/lib/pandoUI'
 import { getRouterBasename, isRootRouterBasename } from '@/lib/runtimeConfig'
 import { useThemeStore } from '@/hooks/useTheme'
-import { DesktopFrameBar } from '@/components/layout/DesktopWindowControls'
-import { useDesktopNavigation } from '@/services/desktopWindow'
 import { useProjectChildBridge } from '@/hooks/useProjectChildBridge'
 
 /**
@@ -87,13 +84,6 @@ function InitialModeRedirect() {
  * <BrowserRouter>. It renders inside the router, so hooks such as useNavigate
  * and useLocation keep working for every descendant.
  */
-/** Lets the desktop shell (tray menu) drive the router without a reload. */
-function DesktopNavigationBridge() {
-  const navigate = useNavigate()
-  useDesktopNavigation(navigate)
-  return null
-}
-
 function RootLayout() {
   useProjectChildBridge()
   return (
@@ -105,7 +95,6 @@ function RootLayout() {
       }
     >
       <ErrorBoundary>
-        <DesktopNavigationBridge />
         <DesignRouteEffects />
         <Outlet />
       </ErrorBoundary>
@@ -170,10 +159,6 @@ function App() {
   const initApp = useCallback(async () => {
     setSplashStatus('connecting')
     try {
-      if (isDesktop) {
-        const cfg = await getDesktopConfig()
-        if (cfg) initDesktopMode(cfg)
-      }
       const healthy = await checkHealth()
       if (!healthy) {
         setSplashStatus('error')
@@ -230,7 +215,6 @@ function App() {
 
   return (
     <>
-      <DesktopFrameBar />
       {showSplash && (
         <SplashScreen status={splashStatus} onDone={() => setShowSplash(false)} />
       )}

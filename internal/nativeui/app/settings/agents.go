@@ -3,6 +3,7 @@ package settings
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -262,7 +263,7 @@ func (a *agentsSection) card(c *ui.Context, e *agentEdit, t *kit.Tokens) {
 			}
 			label(ml, func() {
 				opts := a.models
-				if e.model != "" && !contains(opts, e.model) {
+				if e.model != "" && !slices.Contains(opts, e.model) {
 					opts = append(append([]string{}, opts...), e.model)
 				}
 				kit.Select(c.Key("model"), &e.model, opts).Width(360)

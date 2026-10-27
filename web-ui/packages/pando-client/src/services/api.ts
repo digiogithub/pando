@@ -105,13 +105,6 @@ export function resolveAPIURL(path: string): string {
   return path.startsWith('/') ? `${baseURL}${path}` : `${baseURL}/${path}`
 }
 
-export function initDesktopMode(config: { apiBase: string; token: string }): void {
-  setBaseURL(config.apiBase)
-  if (config.token) {
-    setToken(config.token)
-  }
-}
-
 function getToken(): string | null {
   return localBrowserStorage.getItem(TOKEN_KEY)
 }

@@ -19,7 +19,7 @@ The rule is one-way and simple: **the package contains no presentation** — no
 JSX, no CSS, no i18n, no icons — and it imports nothing from any frontend. A
 hook belongs there when it is state over the API (`useChat`, `useGoal`); it
 stays in the frontend when it is about looks or the host platform (`useTheme`,
-`usePWAInstall`, the Wails bridge).
+`usePWAInstall`).
 
 ```ts
 import api from '@pando/client/services/api'

@@ -117,26 +117,13 @@ function writeStorage(key: string, value: string | null) {
   else localBrowserStorage.setItem(key, value)
 }
 
-/** Keeps the native window chrome (Wails) and mobile browser UI in sync. */
+/** Keeps the mobile browser UI in sync. */
 function syncChrome(family: ThemeFamily, resolved: ResolvedMode) {
   const bg = FAMILY_PALETTES[family][resolved].bg
   // index.html paints <html> inline before CSS loads; keep it current.
   document.documentElement.style.backgroundColor = bg
   const meta = document.querySelector('meta[name="theme-color"]')
   if (meta) meta.setAttribute('content', bg)
-
-  // Wails injects `window.runtime` in the desktop shell. Absent in browsers.
-  const runtime = (window as unknown as {
-    runtime?: { WindowSetBackgroundColour?: (r: number, g: number, b: number, a: number) => void }
-  }).runtime
-  if (runtime?.WindowSetBackgroundColour) {
-    const n = parseInt(bg.slice(1), 16)
-    try {
-      runtime.WindowSetBackgroundColour((n >> 16) & 255, (n >> 8) & 255, n & 255, 255)
-    } catch {
-      /* ignore — purely cosmetic */
-    }
-  }
 }
 
 function applyToDocument(family: ThemeFamily, resolved: ResolvedMode, accent: AccentPreset | null) {

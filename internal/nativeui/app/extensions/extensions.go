@@ -38,6 +38,10 @@ func init() {
 		New:     func(a *app.Context) app.View { return newView(a) },
 	})
 	app.OnStart(func(a *app.Context) { stateFor(a).load() })
+	app.RegisterStatusItem(app.StatusItem{
+		Visible: func(a *app.Context) bool { return len(stateFor(a).bySlot(client.SlotStatusBar)) > 0 },
+		Build:   func(c *ui.Context, a *app.Context) { Slot(a, c, client.SlotStatusBar, "", 28) },
+	})
 }
 
 // state is the panel manifest of one app context (fetched once: which panels

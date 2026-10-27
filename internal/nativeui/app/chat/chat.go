@@ -100,6 +100,11 @@ type Chat struct {
 	started bool
 	stop    context.CancelFunc
 	tagSeq  int
+
+	// routeID is the session id of the route last seen; navPush makes the
+	// next route update a Push (shellwire.go).
+	routeID string
+	navPush bool
 }
 
 // New returns the chat view.
@@ -132,6 +137,7 @@ func NewSimple(a *app.Context) *Chat {
 
 // Close stops background work.
 func (ch *Chat) Close() {
+	ch.forgetShown()
 	if ch.stop != nil {
 		ch.stop()
 	}
@@ -147,6 +153,7 @@ func (ch *Chat) start() {
 		return
 	}
 	ch.started = true
+	ch.hookShell()
 	ctx, cancel := context.WithCancel(ch.app.Ctx)
 	ch.stop = cancel
 	if n := spikeMessages(); n > 0 {
@@ -545,8 +552,11 @@ func (ch *Chat) startRun(cv *Conversation, prompt string) {
 	cv.BeginRun(prompt)
 	tag, ctx := ch.newTag(cv)
 	req := client.ChatRequest{SessionID: cv.ID, Prompt: prompt}
-	if cv.ID == "" && ch.model.pending != "" {
-		req.Model, ch.model.pending = ch.model.pending, ""
+	if cv.ID == "" {
+		if m := ch.nextModel(); m != "" {
+			req.Model = m
+			ch.setNextModel("")
+		}
 	}
 	ch.app.Go(func(context.Context) {
 		out, err := ch.app.Client.ChatStream(ctx, req, func(ev client.StreamEvent) {
@@ -653,6 +663,7 @@ func (ch *Chat) HeaderActions(c *ui.Context) {
 		}
 	}
 	if kit.Button(c, kit.ButtonOpts{Variant: kit.Secondary, Size: kit.SizeSM, Icon: kit.IconPlus, Label: ch.app.T("nav.newSession")}).Clicked() {
+		ch.navPush = true
 		ch.newChat()
 	}
 }
@@ -660,14 +671,13 @@ func (ch *Chat) HeaderActions(c *ui.Context) {
 // Build shows the sessions pane, the conversation and the info panel.
 func (ch *Chat) Build(c *ui.Context, r *ui.Route) {
 	ch.start()
-	if r == nil {
-		// Built outside a router (tests, embedding).
-	} else if id := r.Param("id"); id != "" && id != ch.current {
-		ch.Open(id)
-	}
+	ch.markShown()
+	ch.syncRoute(r) // r is nil outside a router (tests, embedding)
+	ch.takeDraft()
 	t := kit.Current()
 	ch.md.Theme = t.Markdown()
 	cv := ch.conv()
+	ch.shortcuts(c, cv)
 	ui.Column(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
 		ui.Row(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
 			if !(ch.simple && ch.sessHidden) {
@@ -689,7 +699,9 @@ func (ch *Chat) Build(c *ui.Context, r *ui.Route) {
 	})
 	ch.renameDialog(c)
 	ch.modelDialog(c, t, cv)
-	ch.personaDialog(c, t)
+	if !ch.headerPersona() {
+		ch.personaDialog(c, t)
+	}
 	ch.diffOverlay(c, t)
 	ch.dialogs(c, t, cv)
 }

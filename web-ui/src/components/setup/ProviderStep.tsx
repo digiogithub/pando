@@ -18,7 +18,7 @@ import {
   Zap,
   type LucideIcon,
 } from '@/components/ui/icons'
-import { openExternal } from '@/services/desktopRuntime'
+import { openExternal } from '@/utils/openExternal'
 import { ChoiceCard, Notice } from './setupShared'
 import { apiErrorMessage, copyText } from './setupUtils'
 

@@ -16,13 +16,8 @@ vi.mock('@pando/client/services/auth', () => ({
   authenticate: vi.fn().mockResolvedValue('token'),
 }))
 
-vi.mock('@/services/desktopWindow', () => ({
-  useProvidesWindowTitleBar: vi.fn(),
-}))
-
 vi.mock('./shellHooks', () => ({
   MOBILE_QUERY: '(max-width: 768px)',
-  needsMacTrafficLightInset: false,
   readSidebarPref: vi.fn().mockReturnValue(true),
   useMediaQuery: vi.fn().mockReturnValue(false),
   writeSidebarPref: vi.fn(),
@@ -52,7 +47,6 @@ vi.mock('./ProjectTabBarControls', () => ({
     closeActiveProjectTab: vi.fn(),
     restartProjectTab: vi.fn().mockResolvedValue(undefined),
     revealProject: vi.fn(),
-    openProjectInNewWindow: vi.fn().mockResolvedValue(undefined),
   }),
 }))
 

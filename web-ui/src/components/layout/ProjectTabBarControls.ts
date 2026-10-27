@@ -2,7 +2,6 @@ import { useCallback, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { sessionBrowserStorage } from '@pando/client/services/storage'
-import { useProjectStore } from '@pando/client/stores/projectStore'
 import { useProjectTabsStore, type ProjectTabActionResult } from '@pando/client/stores/projectTabsStore'
 import { useToastStore } from '@pando/client/stores/toastStore'
 import { useDialogs } from '@/components/shared/useDialogs'
@@ -30,7 +29,6 @@ export interface ProjectTabBarController extends ProjectTabShortcutController {
   closeProjectTab: (projectId: string, mode?: CloseMode) => Promise<void>
   restartProjectTab: (projectId: string) => Promise<void>
   revealProject: () => void
-  openProjectInNewWindow: (projectId: string) => Promise<void>
 }
 
 export interface ShellShortcutEvent {
@@ -150,7 +148,6 @@ export function handleShellKeyboardShortcut(
 export function useProjectTabBarController(): ProjectTabBarController {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const openProjectDesktop = useProjectStore((state) => state.openProjectDesktop)
   const { confirm, dialogs } = useDialogs()
 
   const focusTab = useCallback((id: 'main' | string) => {
@@ -247,13 +244,6 @@ export function useProjectTabBarController(): ProjectTabBarController {
     navigate('/projects')
   }, [navigate])
 
-  const openProjectInNewWindow = useCallback(
-    async (projectId: string) => {
-      await openProjectDesktop(projectId)
-    },
-    [openProjectDesktop],
-  )
-
   return {
     dialogs,
     focusTab,
@@ -263,6 +253,5 @@ export function useProjectTabBarController(): ProjectTabBarController {
     closeActiveProjectTab,
     restartProjectTab,
     revealProject,
-    openProjectInNewWindow,
   }
 }

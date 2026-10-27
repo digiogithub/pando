@@ -11,7 +11,6 @@ repositories.
 tag v1.2.3
    ├── job linux-windows (ubuntu-latest)
    │     bun → web-ui embedded assets
-   │     wails → desktop wrapper → go:embed
    │     make release-linux-amd64 / release-linux-arm64 / release-windows-amd64
    │        (zig cc as the cross C toolchain, UPX on non-darwin)
    │
@@ -23,10 +22,11 @@ tag v1.2.3
    │
    ├── job macos (macos-latest, arm64)
    │     macos-signing-keychain  ← secret MACOS_SIGNING_BUNDLE
-   │     make desktop-embed      → signs + notarizes the embedded wails wrapper
    │     make release-darwin-*   → signs the CLI binaries (hardened runtime)
    │     scripts/build-macos-app → notarizes the CLI zips, builds the .app
-   │                               bundles and the .pkg installers, signs them,
+   │                               bundles (with libghostty-vt fetched by
+   │                               scripts/fetch-ghostty-vt) and the .pkg
+   │                               installers, signs them,
    │                               notarizes and staples them
    │     stapler validate        → the job fails if anything is unstapled
    │
@@ -212,5 +212,5 @@ jobs:
 ```
 
 Pando does not use that reusable workflow because its build is bespoke (bun,
-wails, `.pkg` installers); it calls the individual composite actions instead.
+`.app` bundles, `.pkg` installers); it calls the individual composite actions instead.
 The `ci-actions` README documents the Rust equivalent.

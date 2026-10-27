@@ -52,7 +52,9 @@ type modelState struct {
 	defLoad bool
 	// session holds the per-session selection (id -> model).
 	session map[string]client.SessionModel
-	// pending is the model picked before the first prompt of a new chat.
+	// pending is the model picked before the first prompt of a new chat in
+	// a project workspace; the main window keeps it in Shell().NextModel,
+	// shared with the model switcher overlay (see nextModel).
 	pending string
 	// lastRouted is the model the last prompt was routed to in auto mode.
 	lastRouted string
@@ -64,8 +66,8 @@ func (ch *Chat) modelLabel(cv *Conversation) string {
 	model, auto := ms.def, ms.auto
 	if sm, ok := ms.session[cv.ID]; ok && cv.ID != "" {
 		model, auto = sm.Model, sm.AutoSelected
-	} else if cv.ID == "" && ms.pending != "" {
-		model, auto = ms.pending, ms.pending == autoModelID
+	} else if p := ch.nextModel(); cv.ID == "" && p != "" {
+		model, auto = p, p == autoModelID
 	}
 	if auto || model == autoModelID {
 		if ms.lastRouted != "" {
@@ -239,7 +241,7 @@ func (ch *Chat) modelDialog(c *ui.Context, t *kit.Tokens, cv *Conversation) {
 						if m.ID == autoModelID {
 							icon, col = icoSparkles, t.Accent
 						} else if active {
-							icon, col = icoDone, t.Accent
+							icon, col = kit.IconSuccess, t.Accent
 						}
 						kit.Icon(c, icon).FontSize(14).TextColor(col).Margin(2, 0, 0, 0)
 						ui.Column(c).Grow(1).Shrink(1).Children(func() {
@@ -275,7 +277,7 @@ func (ch *Chat) modelDialog(c *ui.Context, t *kit.Tokens, cv *Conversation) {
 			})
 		},
 		Footer: func() {
-			if kit.SecondaryButton(c, ch.app.T("common.cancel")).Clicked() {
+			if kit.SecondaryButton(c, ch.app.T("projects.view.common.cancel")).Clicked() {
 				ms.open = false
 			}
 		},
@@ -287,8 +289,8 @@ func (ch *Chat) modelActive(cv *Conversation, id string) bool {
 	model, auto := ms.def, ms.auto
 	if sm, ok := ms.session[cv.ID]; ok && cv.ID != "" {
 		model, auto = sm.Model, sm.AutoSelected
-	} else if cv.ID == "" && ms.pending != "" {
-		model, auto = ms.pending, ms.pending == autoModelID
+	} else if p := ch.nextModel(); cv.ID == "" && p != "" {
+		model, auto = p, p == autoModelID
 	}
 	if id == autoModelID {
 		return auto
@@ -301,7 +303,7 @@ func (ch *Chat) modelActive(cv *Conversation, id string) bool {
 func (ch *Chat) selectModel(cv *Conversation, id string) {
 	ms := &ch.model
 	if cv.ID == "" {
-		ms.pending = id
+		ch.setNextModel(id)
 		ms.open = false
 		return
 	}
@@ -429,7 +431,7 @@ func (ch *Chat) personaDialog(c *ui.Context, t *kit.Tokens) {
 					row.Children(func() {
 						icon, col := icoCircle, t.FgFaint
 						if active {
-							icon, col = icoDone, t.Accent
+							icon, col = kit.IconSuccess, t.Accent
 						}
 						kit.Icon(c, icon).FontSize(14).TextColor(col)
 						ui.Text(c, ch.personaLabel(name)).FontSize(t.TextSM)
@@ -438,7 +440,7 @@ func (ch *Chat) personaDialog(c *ui.Context, t *kit.Tokens) {
 			})
 		},
 		Footer: func() {
-			if kit.SecondaryButton(c, ch.app.T("common.cancel")).Clicked() {
+			if kit.SecondaryButton(c, ch.app.T("projects.view.common.cancel")).Clicked() {
 				ps.open = false
 			}
 		},

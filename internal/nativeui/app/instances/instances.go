@@ -9,8 +9,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -291,16 +289,6 @@ func (in *Instances) cancel() {
 	})
 }
 
-var homeRe = regexp.MustCompile(`^(/home/[^/]+|/Users/[^/]+)`)
-
-// shortenPath replaces the home directory with ~.
-func shortenPath(p string) string {
-	if h, err := os.UserHomeDir(); err == nil && h != "" && strings.HasPrefix(p, h) {
-		return "~" + strings.TrimPrefix(p, h)
-	}
-	return homeRe.ReplaceAllString(p, "~")
-}
-
 func (in *Instances) convLen() int {
 	n := len(in.history) + len(in.events)
 	if len(in.history) > 0 {
@@ -382,7 +370,7 @@ func (in *Instances) instanceColumn(c *ui.Context, t *kit.Tokens) {
 		sort.Strings(paths)
 		ui.Scroll(c).Grow(1).Padding(0, 6, 8, 6).Gap(2).Children(func() {
 			for _, p := range paths {
-				ui.Text(c, shortenPath(p)).FontSize(t.TextXS).FontWeight(600).TextColor(t.FgFaint).
+				ui.Text(c, app.ShortenPath(p)).FontSize(t.TextXS).FontWeight(600).TextColor(t.FgFaint).
 					SingleLine().Ellipsis("…").Padding(8, 8, 2, 8).Tooltip(p)
 				for _, i := range groups[p] {
 					in.instanceCard(c, t, i)
@@ -397,7 +385,7 @@ var modeTone = map[string]kit.Tone{"tui": kit.ToneAccent, "webui": kit.ToneInfo,
 func (in *Instances) instanceCard(c *ui.Context, t *kit.Tokens, i client.InstanceInfo) {
 	active := i.InstanceID == in.selected
 	row := ui.Column(c.Key("inst:"+i.InstanceID)).Gap(4).Padding(8, 10).Radius(t.RadiusSM).Cursor(ui.CursorPointer).
-		Focusable().Label(shortenPath(i.Path))
+		Focusable().Label(app.ShortenPath(i.Path))
 	if row.Clicked() {
 		in.Select(i.InstanceID)
 	}
@@ -414,7 +402,7 @@ func (in *Instances) instanceCard(c *ui.Context, t *kit.Tokens, i client.Instanc
 			} else {
 				ic.TextColor(t.FgMuted)
 			}
-			ui.Text(c, shortenPath(i.Path)).FontSize(t.TextXS).Font(t.MonoFont).SingleLine().Ellipsis("…").Grow(1).Shrink(1)
+			ui.Text(c, app.ShortenPath(i.Path)).FontSize(t.TextXS).Font(t.MonoFont).SingleLine().Ellipsis("…").Grow(1).Shrink(1)
 			if i.IsPrimary {
 				kit.Badge(c, "PRIMARY", kit.ToneWarning)
 			}

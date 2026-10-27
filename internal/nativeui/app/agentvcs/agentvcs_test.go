@@ -13,7 +13,7 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-func TestAgentVCSBrowseAndDiff(t *testing.T) {
+func vcsServer() *httptest.Server {
 	mux := http.NewServeMux()
 	js := func(w http.ResponseWriter, v any) { _ = json.NewEncoder(w).Encode(v) }
 	mux.HandleFunc("/api/v1/agentvcs/sessions", func(w http.ResponseWriter, r *http.Request) {
@@ -34,7 +34,11 @@ func TestAgentVCSBrowseAndDiff(t *testing.T) {
 	mux.HandleFunc("/api/v1/snapshots", func(w http.ResponseWriter, r *http.Request) {
 		js(w, map[string]any{"snapshots": []client.Snapshot{{ID: "s1", Name: "before-refactor", SessionID: "abcdef12345", Status: "active", CreatedAt: time.Now().Format(time.RFC3339)}}})
 	})
-	srv := httptest.NewServer(mux)
+	return httptest.NewServer(mux)
+}
+
+func TestAgentVCSBrowseAndDiff(t *testing.T) {
+	srv := vcsServer()
 	defer srv.Close()
 	c, _ := client.New(client.Options{BaseURL: srv.URL, Token: "t"})
 	a := app.NewContext(context.Background(), c)
@@ -73,4 +77,46 @@ func TestAgentVCSBrowseAndDiff(t *testing.T) {
 	v.diff = nil
 	v.tab = 1
 	wait(func() bool { return tt.HasText("before-refactor") })
+}
+
+// TestAgentVCSDeepLinksInPlace follows /snapshots/{id...} links while the
+// area is shown (the route changes inside the same area), with sliding
+// transitions so the page going away is built too.
+func TestAgentVCSDeepLinksInPlace(t *testing.T) {
+	srv := vcsServer()
+	defer srv.Close()
+	c, _ := client.New(client.Options{BaseURL: srv.URL, Token: "t"})
+	a := app.NewContext(context.Background(), c)
+	a.Router.Transition = ui.TransitionAuto
+	q := &app.QueueDispatcher{}
+	a.SetDispatcher(q)
+	a.Router.Replace("/snapshots")
+	root := app.NewRoot(a)
+	defer root.Close()
+	tt := ui.NewTester(root.View, 1300, 800)
+	wait := func(cond func() bool) {
+		t.Helper()
+		for i := 0; i < 200; i++ {
+			q.Drain()
+			tt.Frame()
+			if cond() {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatalf("timeout; texts %q", tt.Texts())
+	}
+	wait(func() bool { return tt.HasText("2 commits") })
+	a.Navigate("/snapshots/abcdef12345")
+	wait(func() bool { return tt.HasText("Edit main") })
+	a.Navigate("/snapshots/abcdef12345/c1")
+	wait(func() bool { return tt.HasText("main.go") })
+	a.Router.Back()
+	a.Router.Back()
+	for range 5 {
+		tt.Frame()
+	}
+	if a.Router.Path() != "/snapshots" {
+		t.Errorf("path %q", a.Router.Path())
+	}
 }

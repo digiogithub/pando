@@ -7,14 +7,6 @@ import { useProjectStore } from '@pando/client/stores/projectStore'
 import { useProjectTabsStore } from '@pando/client/stores/projectTabsStore'
 import ProjectsView from './ProjectsView'
 
-let desktopMode = false
-
-vi.mock('@/services/desktop', () => ({
-  get isDesktop() {
-    return desktopMode
-  },
-}))
-
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
     id: overrides.id ?? 'proj-1',
@@ -50,7 +42,6 @@ function makeTab(overrides: Partial<ProjectTab> = {}): ProjectTab {
 
 describe('ProjectsView', () => {
   beforeEach(() => {
-    desktopMode = false
     vi.restoreAllMocks()
 
     useProjectStore.setState({
@@ -66,7 +57,6 @@ describe('ProjectsView', () => {
       addProject: vi.fn().mockResolvedValue(undefined),
       activateProject: vi.fn().mockResolvedValue('ok'),
       stopProject: vi.fn().mockResolvedValue(true),
-      openProjectDesktop: vi.fn().mockResolvedValue(undefined),
       deactivateProject: vi.fn().mockResolvedValue(undefined),
       initProject: vi.fn().mockResolvedValue(true),
       renameProject: vi.fn().mockResolvedValue(true),
@@ -182,21 +172,5 @@ describe('ProjectsView', () => {
 
     await waitFor(() => expect(initProject).toHaveBeenCalledWith('proj-1'))
     expect(initProject).not.toHaveBeenCalledWith('proj-1', { activateAfter: true })
-  })
-
-  it('shows the desktop window action only in desktop mode', async () => {
-    const project = makeProject()
-    const openProjectDesktop = vi.fn().mockResolvedValue(undefined)
-    useProjectStore.setState({ projects: [project], openProjectDesktop })
-
-    const { rerender } = render(<ProjectsView />)
-    expect(screen.queryByLabelText('Open in new window')).not.toBeInTheDocument()
-
-    desktopMode = true
-    rerender(<ProjectsView />)
-
-    fireEvent.click(await screen.findByLabelText('Open in new window'))
-
-    await waitFor(() => expect(openProjectDesktop).toHaveBeenCalledWith('proj-1'))
   })
 })

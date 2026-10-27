@@ -1,5 +1,5 @@
 import type { AnchorHTMLAttributes, MouseEvent } from 'react'
-import { openExternal } from '@/services/desktopRuntime'
+import { openExternal } from '@/utils/openExternal'
 
 function isAbsoluteHttpUrl(href: string): boolean {
   return /^https?:\/\//i.test(href)

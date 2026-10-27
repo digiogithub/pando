@@ -85,12 +85,12 @@ func TestQuickMenuFiltersAndNavigates(t *testing.T) {
 		t.Fatal("Cmd+K did not open the quick menu")
 	}
 	e.until(t, "account commands", func() bool { return e.tt.HasText("Copilot Login") })
-	if !e.tt.HasText("Toggle Dark Mode") || !e.tt.HasText("VIEWS") {
+	if !e.tt.HasText("Quit Pando") || !e.tt.HasText("VIEWS") {
 		t.Fatalf("palette incomplete: %q", e.tt.Texts())
 	}
 	e.tt.Type("logs")
 	e.tt.Frame()
-	if e.tt.HasText("Toggle Dark Mode") {
+	if e.tt.HasText("Quit Pando") {
 		t.Errorf("filter kept unrelated commands: %q", e.tt.Texts())
 	}
 	e.tt.Key(0, ui.KeyEnter)
@@ -106,9 +106,9 @@ func TestQuickMenuCommandRunsOnClick(t *testing.T) {
 	e.tt.Type("dark")
 	e.tt.Frame()
 	before := e.a.Theme.Mode
-	if err := e.tt.Click("Toggle Dark Mode"); err != nil {
-		t.Fatal(err)
-	}
+	// The header's theme button has the same label: pick the palette row.
+	e.tt.Key(0, ui.KeyEnter)
+	e.q.Drain()
 	if e.a.Theme.Mode == before || e.a.Shell().QuickMenuOpen {
 		t.Errorf("command did not run: mode %v open %v", e.a.Theme.Mode, e.a.Shell().QuickMenuOpen)
 	}

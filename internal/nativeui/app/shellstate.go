@@ -2,6 +2,7 @@ package app
 
 import (
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/digiogithub/pando/internal/nativeui/shell"
@@ -89,10 +90,13 @@ func (a *Context) OpenModelSwitcher() {
 }
 
 // ActiveSessionID returns the chat session the route shows ("" outside a
-// session), from /chat/s/{id}.
+// session), from /chat/s/{id} or /chat/simple/s/{id}.
 func (a *Context) ActiveSessionID() string {
-	const prefix = "/chat/s/"
 	p := a.Router.Path()
+	prefix := "/chat/s/"
+	if strings.HasPrefix(p, "/chat/simple/s/") {
+		prefix = "/chat/simple/s/"
+	}
 	if len(p) > len(prefix) && p[:len(prefix)] == prefix {
 		id := p[len(prefix):]
 		for i := 0; i < len(id); i++ {
@@ -140,8 +144,11 @@ type HeaderSlot struct {
 
 // Command is an entry of the quick menu (command palette).
 type Command struct {
-	ID          string
-	Title       string
+	ID    string
+	Title string
+	// TitleKey, when set, is the i18n key of the title (Title is then the
+	// fallback when the key is missing).
+	TitleKey    string
 	Description string
 	// Group is "command" (default) or "account".
 	Group    string

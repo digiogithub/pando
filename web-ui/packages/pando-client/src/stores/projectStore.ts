@@ -93,7 +93,6 @@ interface ProjectStore {
   addProject: (path: string, name?: string) => Promise<void>
   activateProject: (id: string) => Promise<'ok' | 'needs_init'>
   stopProject: (id: string) => Promise<boolean>
-  openProjectDesktop: (id: string) => Promise<void>
   deactivateProject: () => Promise<void>
   initProject: (id: string, options?: { activateAfter?: boolean }) => Promise<boolean>
   renameProject: (id: string, name: string) => Promise<boolean>
@@ -212,36 +211,6 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         addProjectToast(e.message || 'Failed to stop project', 'error')
       }
       return false
-    }
-  },
-
-  // Desktop app only: open the project in its own Pando desktop window (a
-  // separate `pando desktop --cwd <path>` process).
-  openProjectDesktop: async (id: string) => {
-    try {
-      const resp = await api.post<{ status?: string; warning?: string }>(`/api/v1/projects/${id}/open-desktop`, {})
-      const toasts = useToastStore.getState()
-      switch (resp?.status) {
-        case 'current':
-          toasts.addToastKey('projects.toasts.desktopCurrent', 'info')
-          break
-        case 'already_open':
-          toasts.addToastKey('projects.toasts.desktopAlreadyOpen', 'info')
-          break
-        default:
-          toasts.addToastKey('projects.toasts.desktopOpening', 'success')
-      }
-      if (resp?.warning === 'web_child_running') {
-        toasts.addToastKey('projects.toasts.desktopWebChildRunning', 'warning')
-      }
-    } catch (e) {
-      let message = e instanceof Error ? e.message : ''
-      try {
-        message = (JSON.parse(message) as { error?: string }).error ?? message
-      } catch {
-        // Not JSON — keep the raw message.
-      }
-      addProjectToast(message || 'Failed to open project window', 'error')
     }
   },
 

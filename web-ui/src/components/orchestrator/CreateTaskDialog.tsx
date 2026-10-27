@@ -2,10 +2,9 @@ import { useState } from 'react'
 import { useOrchestratorStore } from '@pando/client/stores/orchestratorStore'
 import ModelCombobox from '@/components/shared/ModelCombobox'
 import { Button, Dialog, Input, Textarea } from '@/components/ui'
-import api from '@pando/client/services/api'
 
 export default function CreateTaskDialog() {
-  const { setCreateDialogOpen, fetchTasks } = useOrchestratorStore()
+  const { setCreateDialogOpen, createTask } = useOrchestratorStore()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [model, setModel] = useState('')
@@ -18,12 +17,7 @@ export default function CreateTaskDialog() {
     setSubmitting(true)
     setError(null)
     try {
-      await api.post('/api/v1/orchestrator/tasks', {
-        name: name.trim(),
-        description: description.trim(),
-        model,
-      })
-      await fetchTasks()
+      await createTask({ name, description, model })
       setCreateDialogOpen(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create task')

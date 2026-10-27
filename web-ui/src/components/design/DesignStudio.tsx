@@ -8,7 +8,7 @@ import PreviewFrame from './PreviewFrame'
 import InspectorPanel from './InspectorPanel'
 import VersionTimeline from './VersionTimeline'
 import SlideStrip from './SlideStrip'
-import { openExternal } from '../../services/desktopRuntime'
+import { openExternal } from '@/utils/openExternal'
 import ExportMenu from './ExportMenu'
 import '@/styles/design.css'
 

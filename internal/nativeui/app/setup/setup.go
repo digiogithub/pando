@@ -5,6 +5,7 @@
 package setup
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"regexp"
@@ -15,7 +16,6 @@ import (
 	"github.com/digiogithub/pando/internal/nativeui/client"
 	"github.com/digiogithub/pando/internal/nativeui/kit"
 	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/transfer"
 )
 
 func init() {
@@ -567,7 +567,7 @@ func (w *wizard) trackJob(slot string, j client.SetupJob) {
 				}
 				if done {
 					if nj.State == "error" {
-						w.err = firstNonEmpty(nj.Error, w.t("remembrances.pullFailed"))
+						w.err = cmp.Or(nj.Error, w.t("remembrances.pullFailed"))
 					}
 					w.refreshOllama()
 				}
@@ -577,15 +577,6 @@ func (w *wizard) trackJob(slot string, j client.SetupJob) {
 			}
 		}
 	})
-}
-
-func firstNonEmpty(s ...string) string {
-	for _, v := range s {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 func (w *wizard) pull(model string) {
@@ -667,5 +658,3 @@ func (w *wizard) finish() {
 }
 
 func openExternal(u string) { _ = mygo.Shell.OpenExternal(u) }
-
-func copyText(s string) bool { return mygo.Clipboard.Write(transfer.TextData(s)) == nil }

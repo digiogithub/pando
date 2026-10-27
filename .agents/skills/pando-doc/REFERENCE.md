@@ -109,7 +109,7 @@ hugo --minify           # Build with minification
 | Pando June 2026: Delegation, Memory, TUI Revolution | 2026-06-28 | Release, Features, Roundup, Delegation, Memory |
 | Introducing Pando SDKs | (date) | SDK, Announcement |
 | Pando LLM Proxy | (date) | Features |
-| Pando Desktop (Wails) | (date) | Features |
+| Pando Desktop (native) | (date) | Features |
 | Pando AGE Security | (date) | Security |
 | Pando v1 Soon | (date) | Announcement |
 | Pando is Beta | (date) | Announcement |

@@ -42,6 +42,8 @@ type DesktopSettings struct {
 	TrayOnMinimizeClose bool `json:"desktop_tray_on_minimize_close"`
 	// DefaultModel is the configured coder model, empty when none.
 	DefaultModel string `json:"default_model"`
+	// Theme is the backend theme id ("family-mode"), shared with the TUI.
+	Theme string `json:"theme"`
 }
 
 // GetDesktopSettings reads the shell-relevant settings.

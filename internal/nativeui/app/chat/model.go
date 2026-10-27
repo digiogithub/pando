@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"cmp"
 	"encoding/json"
 	"path"
 	"sort"
@@ -573,21 +574,12 @@ func (cv *Conversation) system(ev client.StreamEvent) {
 	routing, filter := ev.RoutingInfo(), ev.ContextFilterInfo()
 	switch {
 	case routing != nil:
-		cv.insertBeforeAssistant(&Item{Kind: ItemRouting, Routing: routing, Text: firstNonEmpty(text, routing.Notice)})
+		cv.insertBeforeAssistant(&Item{Kind: ItemRouting, Routing: routing, Text: cmp.Or(text, routing.Notice)})
 	case filter != nil:
-		cv.insertBeforeAssistant(&Item{Kind: ItemContextFilter, ContextFilter: filter, Text: firstNonEmpty(text, filter.Notice)})
+		cv.insertBeforeAssistant(&Item{Kind: ItemContextFilter, ContextFilter: filter, Text: cmp.Or(text, filter.Notice)})
 	case text != "":
 		cv.insertBeforeAssistant(&Item{Kind: ItemNotice, Text: text})
 	}
-}
-
-func firstNonEmpty(s ...string) string {
-	for _, v := range s {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // Finish ends the run: every row is done. It reports whether the run

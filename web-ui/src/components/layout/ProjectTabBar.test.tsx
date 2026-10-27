@@ -13,10 +13,6 @@ import {
   useProjectTabBarController,
 } from './ProjectTabBarControls'
 
-vi.mock('@/services/desktop', () => ({
-  isDesktop: false,
-}))
-
 function renderProjectTabBar() {
   function Harness() {
     const controller = useProjectTabBarController()

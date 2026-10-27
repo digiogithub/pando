@@ -7,7 +7,7 @@
 // shown in MyGo's embedded web view (kit.WebPane); the selection bridge talks
 // to it through Page.Eval (canvas.go). Design events (/design/events) keep the
 // store fresh for the whole life of the app, and a design the agent creates
-// opens in this area (replacing the Wails per-artifact windows).
+// opens in this area.
 package design
 
 import (

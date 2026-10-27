@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# fetch-ghostty-vt — download the libghostty-vt build that the native desktop's
+# terminal panel (MyGo plugins/terminal) binds, for one platform, verified
+# against the SHA-256 pinned in the MyGo module's manifest.
+#
+# Usage:
+#   scripts/fetch-ghostty-vt <goos>-<goarch> <dest-dir>
+#   e.g. scripts/fetch-ghostty-vt darwin-arm64 dist/Pando.app/Contents/MacOS
+#
+# Prints the path of the written library. The URL, file name and checksum come
+# from plugins/terminal/mygo-plugin.json of the github.com/egoist/mygo version
+# in go.mod, so the library always matches the bindings compiled into pando.
+#
+# Why: a terminal run from a packaged app (a macOS .app bundle) never
+# downloads the library at runtime, it looks next to the executable and in
+# Contents/Resources. Unpackaged binaries (the Linux/Windows/macOS CLI zips)
+# download it on first use into ~/.cache/mygo/natives instead, or load the
+# file named by $MYGO_GHOSTTY_VT.
+
+set -euo pipefail
+
+target="${1:?usage: fetch-ghostty-vt <goos>-<goarch> <dest-dir>}"
+dest="${2:?usage: fetch-ghostty-vt <goos>-<goarch> <dest-dir>}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+mygo_dir="$(cd "$REPO_ROOT" && go list -m -f '{{.Dir}}' github.com/egoist/mygo)"
+manifest="$mygo_dir/plugins/terminal/mygo-plugin.json"
+[[ -f "$manifest" ]] || { echo "Error: $manifest not found (run 'go mod download')." >&2; exit 1; }
+
+# name, url and sha256, one per line.
+read_manifest() {
+    python3 -I - "$manifest" "$target" <<'PY'
+import json, sys
+manifest, target = sys.argv[1], sys.argv[2]
+with open(manifest) as f:
+    data = json.load(f)
+for lib in data.get("libraries", []):
+    if lib.get("name") == "libghostty-vt" and target in lib.get("files", {}):
+        f = lib["files"][target]
+        print(f["name"]); print(f["url"]); print(f["sha256"])
+        sys.exit(0)
+sys.exit("no libghostty-vt build for " + target)
+PY
+}
+
+info="$(read_manifest)"
+name="$(sed -n 1p <<<"$info")"
+url="$(sed -n 2p <<<"$info")"
+sha="$(sed -n 3p <<<"$info")"
+
+mkdir -p "$dest"
+out="$dest/$name"
+tmp="$out.download"
+curl -fsSL --retry 3 -o "$tmp" "$url"
+
+if command -v sha256sum >/dev/null 2>&1; then
+    got="$(sha256sum "$tmp" | awk '{print $1}')"
+else
+    got="$(shasum -a 256 "$tmp" | awk '{print $1}')"
+fi
+if [[ "$got" != "$sha" ]]; then
+    rm -f "$tmp"
+    echo "Error: SHA-256 mismatch for $url: got $got, want $sha" >&2
+    exit 1
+fi
+mv "$tmp" "$out"
+echo "$out"

@@ -1,5 +1,5 @@
 import { Outlet, useLocation } from 'react-router-dom'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useLayoutStore } from '@pando/client/stores/layoutStore'
 import { useProjectStore } from '@pando/client/stores/projectStore'
 import { useProjectTabsStore } from '@pando/client/stores/projectTabsStore'
@@ -18,7 +18,7 @@ import {
   useProjectTabBarController,
 } from './ProjectTabBarControls'
 import StatusBar from './StatusBar'
-import { MOBILE_QUERY, needsMacTrafficLightInset, readSidebarPref, useMediaQuery, writeSidebarPref } from './shellHooks'
+import { MOBILE_QUERY, readSidebarPref, useMediaQuery, writeSidebarPref } from './shellHooks'
 import QuickMenu from '@/components/overlays/QuickMenu'
 import ModelSwitcher from '@/components/overlays/ModelSwitcher'
 import ConfigInitBanner from '@/components/overlays/ConfigInitBanner'
@@ -26,7 +26,6 @@ import SetupWizard from '@/components/setup/SetupWizard'
 import NetworkErrorBanner from '@/components/shared/NetworkErrorBanner'
 import PermissionDialog from '@/components/chat/PermissionDialog'
 import QuestionDialog from '@/components/chat/QuestionDialog'
-import { useProvidesWindowTitleBar } from '@/services/desktopWindow'
 import { readWorkspaceProjectId, useProjectTabRouteSync } from '@/hooks/useProjectTabRouteSync'
 import ProjectFrameHost from './ProjectFrameHost'
 import '@/styles/shell.css'
@@ -50,9 +49,6 @@ export default function MainLayout() {
   const isMobile = useMediaQuery(MOBILE_QUERY)
   const projectChildMode = isProjectChildMode()
   const projectTabBar = useProjectTabBarController()
-  const [macInset] = useState(needsMacTrafficLightInset)
-  // The header carries the desktop window controls; no standalone bar needed.
-  useProvidesWindowTitleBar()
   useProjectTabRouteSync()
   const workspaceProjectId = readWorkspaceProjectId(location.pathname)
   const workspaceRoute = Boolean(workspaceProjectId)
@@ -155,7 +151,7 @@ export default function MainLayout() {
   const sidebarVariant = isMobile ? 'drawer' : sidebarOpen ? 'full' : 'rail'
 
   return (
-    <div className="shell" data-mac-inset={macInset || undefined}>
+    <div className="shell">
       <Header isMobile={isMobile} simple={simple} hideSidebarToggle={workspaceRoute} />
       <NetworkErrorBanner />
       {!workspaceRoute && <ConfigInitBanner />}

@@ -34,7 +34,7 @@ Pando is a Go-based CLI application that brings AI assistance to your terminal. 
 ## Features
 
 - **Terminal UI** — interactive TUI built with [Bubble Tea](https://github.com/charmbracelet/bubbletea), with a vim-like editor, file tree and terminal.
-- **Web UI and desktop app** — PWA Web UI embedded in the binary, also packaged as a native Wails desktop app. [More](docs/webui.md)
+- **Web UI and desktop app** — PWA Web UI embedded in the binary, plus a native desktop app (`pando desktop`, a GPU-rendered Go UI with no web view). [More](docs/webui.md)
 - **Many AI providers** — GitHub Copilot, OpenAI, Anthropic, Gemini, AWS Bedrock, Groq, Azure OpenAI, Ollama, llama.cpp, OpenRouter and any OpenAI-compatible endpoint.
 - **Editor integration (ACP)** — use Pando inside Zed, VS Code or JetBrains IDEs. [More](docs/acp.md)
 - **Host command sandbox** — agent commands confined with OS-native mechanisms, on by default. [More](docs/sandbox.md)
@@ -146,20 +146,11 @@ Compiles the webui
 cd web-ui && bun install && bun run build:embedded && cd ..
 ```
 
-### build-desktop
-
-Compiles the desktop wails wrapper
-
-```bash
-make desktop-build
-make desktop-embed
-```
-
 ### build
 
 Compiles the binary
 
-requires: build-webui, build-desktop
+requires: build-webui
 
 ```bash
 export PANDO_BETTERSTACK_TOKEN=$(kvage get pando_betterstack_token)
@@ -236,8 +227,7 @@ echo "Release builds completed in dist/"
 
 ### release-osx
 
-Builds and **notarizes** the macOS artifacts: the embedded desktop wrapper (so
-`pando desktop` from a standalone binary is not killed by Gatekeeper), the loose
+Builds and **notarizes** the macOS artifacts: the loose
 CLI zips (`pando-darwin-<arch>.zip`, submit-only), the `Pando-<arch>.app` bundles
 (notarized + stapled) and the `.pkg` installers (notarized + stapled).
 
@@ -260,13 +250,11 @@ mkdir -p dist
 eval "$(cat ~/DIGIO_Software_Signing_Keys/kvagerc)"
 NOTARYTOOL_STORE_CREDENTIALS=1 bash scripts/setup-macos-signing-keychain
 
-# Ensure notarization env is exported BEFORE `xc build` so `make desktop-embed`
-# notarizes the embedded wails wrapper. Defaults match the signing scripts.
+# Notarization env used by scripts/build-macos-app. Defaults match the
+# signing scripts.
 export NOTARY_PROFILE="${NOTARY_PROFILE:-pando-notary}"
 export MACOS_SIGN_KEYCHAIN_PATH="${MACOS_SIGN_KEYCHAIN_PATH:-$HOME/Library/Keychains/pando-build-db}"
 
-# xc build -> build-desktop -> make desktop-embed: signs AND notarizes the
-# embedded desktop wrapper (skipped non-fatally if the notary env is missing).
 xc build
 
 # Signs the loose CLI binaries with the hardened runtime (codesign-macos).

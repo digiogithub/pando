@@ -10,8 +10,8 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// PNG for the tray on every platform (MyGo converts it where needed); the
-// same artwork as desktop/tray/icon.png of the Wails wrapper.
+// PNG for the tray on every platform (MyGo converts it where needed): the
+// Pando tray artwork.
 //
 //go:embed assets/tray.png
 var trayIconPNG []byte
@@ -115,6 +115,18 @@ func (c *Controller) Show() {
 func (c *Controller) SetTitle(title string) {
 	if w := c.Window(); w != nil && !w.IsDestroyed() {
 		w.SetTitle(title)
+	}
+}
+
+// SetTrayLabels replaces the tray menu labels (the UI language changed);
+// empty ones keep the English default.
+func (c *Controller) SetTrayLabels(l TrayLabels) {
+	c.mu.Lock()
+	c.labels = l.orDefault()
+	t := c.tray
+	c.mu.Unlock()
+	if t != nil {
+		t.SetMenu(c.trayMenu())
 	}
 }
 

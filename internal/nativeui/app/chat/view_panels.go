@@ -1,11 +1,13 @@
 package chat
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/digiogithub/pando/internal/nativeui/app/extensions"
 	"github.com/digiogithub/pando/internal/nativeui/client"
 	"github.com/digiogithub/pando/internal/nativeui/kit"
 	"github.com/egoist/mygo/ui"
@@ -92,7 +94,7 @@ func (ch *Chat) cancelGoal(cv *Conversation) {
 func planIcon(c *ui.Context, t *kit.Tokens, status string, size float32) {
 	switch status {
 	case "completed":
-		kit.Icon(c, icoDone).FontSize(size).TextColor(t.Success)
+		kit.Icon(c, kit.IconSuccess).FontSize(size).TextColor(t.Success)
 	case "in_progress":
 		kit.Spinner(c).FontSize(size).TextColor(t.Accent)
 	default:
@@ -421,7 +423,7 @@ func (ch *Chat) infoSidebar(c *ui.Context, t *kit.Tokens, cv *Conversation) {
 									} else {
 										kit.Icon(c, icoCircle).FontSize(11).TextColor(t.FgFaint)
 									}
-									ui.Text(c, firstNonEmpty(tk.Name, tk.ID)).FontSize(t.TextXS).SingleLine().Ellipsis("…").Grow(1).Shrink(1)
+									ui.Text(c, cmp.Or(tk.Name, tk.ID)).FontSize(t.TextXS).SingleLine().Ellipsis("…").Grow(1).Shrink(1)
 									if tk.CurrentTool != "" {
 										ui.Text(c, tk.CurrentTool).FontSize(t.TextXS).TextColor(t.FgFaint).Font(t.MonoFont).SingleLine()
 									}
@@ -472,6 +474,9 @@ func (ch *Chat) infoSidebar(c *ui.Context, t *kit.Tokens, cv *Conversation) {
 						})
 					}
 				})
+				// Panels extensions contribute to the chat side (none on
+				// standard builds).
+				extensions.Slot(ch.app, c, client.SlotChatSide, "", 220)
 			})
 		})
 	})

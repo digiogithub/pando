@@ -35,6 +35,16 @@ func (a *Context) followPrefs(ctx context.Context) {
 		}
 		return
 	}
+	if p.Theme == "" && p.ThemeMode == "" {
+		// No desktop/web choice yet: start from the backend theme (the
+		// config field the TUI and the Settings > Appearance page share),
+		// as the Web UI does without a local choice.
+		if s, err := a.Client.GetDesktopSettings(cctx); err == nil {
+			if fam, mode, ok := ParseThemeID(s.Theme); ok {
+				p.Theme, p.ThemeMode = string(fam), string(mode)
+			}
+		}
+	}
 	a.Update(func() {
 		a.ApplyPrefs(p)
 		// Reopen in the simple chat when that was the last choice, unless
@@ -82,7 +92,7 @@ func (a *Context) followNotifications(ctx context.Context) {
 }
 
 // handleNotification shows an OS notification for agent completions and
-// tool (MCP) failures while the window is unfocused, as the Wails shell did.
+// tool (MCP) failures while the window is unfocused.
 func (a *Context) handleNotification(n client.Notification) {
 	h := a.Shell().Host
 	if h == nil || h.Focused() {

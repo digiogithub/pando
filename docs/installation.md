@@ -19,12 +19,13 @@ Every release publishes signed binaries on the
 curl -fsSL https://raw.githubusercontent.com/digiogithub/pando/main/scripts/install.sh | bash
 ```
 
-- **Linux**: installs `~/.local/bin/pando`, a menu entry, and the GTK/WebKitGTK
-  libraries the desktop window needs (asks for `sudo` only if some are missing;
+- **Linux**: installs `~/.local/bin/pando`, a menu entry, and the GTK 3
+  libraries the native desktop window needs (plus WebKitGTK, used only by the
+  design preview and extension panels) (asks for `sudo` only if some are missing;
   a failure there does not stop the install).
 - **macOS**: downloads the `.pkg` for your architecture and runs the system
-  installer, which places `Pando.app` (with the embedded desktop wrapper, icons
-  and the `/usr/local/bin/pando` launcher) under `/Applications`.
+  installer, which places `Pando.app` (with the terminal library
+  `libghostty-vt`, icons and the `/usr/local/bin/pando` launcher) under `/Applications`.
 
 Options go after `bash -s --`, or as environment variables:
 

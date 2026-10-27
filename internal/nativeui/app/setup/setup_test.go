@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
-	"time"
 	"testing"
+	"time"
 
 	"github.com/digiogithub/pando/internal/nativeui/app"
 	"github.com/digiogithub/pando/internal/nativeui/client"
@@ -109,12 +109,16 @@ func waitUntil(t *testing.T, q *app.QueueDispatcher, tt *ui.Tester, cond func() 
 func TestWizardOpensWhenNeededAndWalksSteps(t *testing.T) {
 	f := &fakeAPI{needed: true}
 	a, q, tt := setup(t, f)
-	waitUntil(t, q, tt, func() bool { return a.Router.Path() == "/setup" && tt.HasText("This directory has no Pando configuration. Where should the settings you choose now be saved?") })
+	waitUntil(t, q, tt, func() bool {
+		return a.Router.Path() == "/setup" && tt.HasText("This directory has no Pando configuration. Where should the settings you choose now be saved?")
+	})
 
 	if err := tt.Click("Continue"); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, q, tt, func() bool { return tt.HasText("Choose the AI provider Pando will use. You can add more later in Settings > Providers.") })
+	waitUntil(t, q, tt, func() bool {
+		return tt.HasText("Choose the AI provider Pando will use. You can add more later in Settings > Providers.")
+	})
 	if f.scope != "global" {
 		t.Errorf("scope %q", f.scope)
 	}

@@ -9,7 +9,6 @@ const (
 	icoTarget   = "target"
 	icoPlan     = "list-checks"
 	icoCircle   = "circle"
-	icoDone     = "circle-check"
 	icoGauge    = "gauge"
 	icoFilePen  = "file-pen"
 	icoUserRnd  = "user-round"

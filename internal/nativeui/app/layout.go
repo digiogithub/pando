@@ -1,6 +1,8 @@
 package app
 
 import (
+	"strings"
+
 	"github.com/digiogithub/pando/internal/nativeui/kit"
 	"github.com/egoist/mygo/ui"
 )
@@ -97,6 +99,14 @@ func (r *Root) main(c *ui.Context, t *kit.Tokens, all []Area) {
 					kit.EmptyState(c, kit.IconError, "Not found", route.Path())
 					return
 				}
+				if r.leavingSameArea(route, ar, all) {
+					// MyGo builds the page going away while the next one
+					// slides in; an area view is one stateful object (its
+					// ListStates panic when shown by two Lists in a
+					// frame), so only the page shown builds it.
+					ui.Column(c).Grow(1).Background(t.Bg)
+					return
+				}
 				v := r.view(ar)
 				title := a.T(ar.TitleKey)
 				if tv, ok := v.(Titled); ok {
@@ -113,6 +123,9 @@ func (r *Root) main(c *ui.Context, t *kit.Tokens, all []Area) {
 					v.Build(c, route)
 				})
 			})
+			if !r.embedded {
+				r.statusBar(c)
+			}
 		})
 	})
 }
@@ -129,6 +142,26 @@ func (r *Root) match(route *ui.Route, all []Area) (Area, bool) {
 		}
 	}
 	return Area{}, false
+}
+
+// leavingSameArea reports whether route is the page going away during a
+// route transition between two routes of the same area (/chat to
+// /chat/s/{id}, /snapshots/x to /snapshots/y).
+func (r *Root) leavingSameArea(route *ui.Route, ar Area, all []Area) bool {
+	if samePath(route.Path(), r.App.Router.Path()) {
+		return false
+	}
+	return ar.ID == r.active(all)
+}
+
+// samePath compares two router paths ignoring empty parts (trailing or
+// doubled slashes).
+func samePath(a, b string) bool {
+	clean := func(p string) string {
+		parts := strings.FieldsFunc(p, func(r rune) bool { return r == '/' })
+		return strings.Join(parts, "/")
+	}
+	return clean(a) == clean(b)
 }
 
 // view returns the area's view, building it on first use.

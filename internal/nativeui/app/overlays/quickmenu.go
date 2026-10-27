@@ -22,15 +22,14 @@ func init() {
 	app.RegisterBanner(20, func(a *app.Context) app.Banner { return newUpdateNotice(a) })
 
 	// Commands of the palette (the web's "Commands" group).
-	app.RegisterCommand(app.Command{ID: "toggle-theme", Title: "Toggle Dark Mode", Icon: kit.IconMoon,
+	app.RegisterCommand(app.Command{ID: "toggle-theme", Title: "Toggle Dark Mode", TitleKey: "header.toggleTheme", Icon: kit.IconMoon,
 		Keywords: []string{"theme", "dark", "light", "appearance"}, Run: func(a *app.Context) { a.CycleThemeMode() }})
 	app.RegisterCommand(app.Command{ID: "switch-model", Title: "Switch Model", Icon: kit.IconBot,
 		Keywords: []string{"model", "llm"}, Description: "Ctrl+O", Run: func(a *app.Context) { a.OpenModelSwitcher() }})
-	app.RegisterCommand(app.Command{ID: "toggle-sidebar", Title: "Toggle Sidebar", Icon: kit.IconPanelLeft,
-		Description: "Ctrl+B", Run: func(a *app.Context) { a.SetSidebarCollapsed(!a.Shell().SidebarCollapsed) }})
-	app.RegisterCommand(app.Command{ID: "simple-chat", Title: "Toggle Simple Chat", Icon: kit.IconSimpleChat,
+	app.RegisterCommand(app.Command{ID: "toggle-sidebar", Title: "Toggle Sidebar", TitleKey: "header.toggleSidebar", Icon: kit.IconPanelLeft, Run: func(a *app.Context) { a.SetSidebarCollapsed(!a.Shell().SidebarCollapsed) }})
+	app.RegisterCommand(app.Command{ID: "simple-chat", Title: "Toggle Simple Chat", TitleKey: "header.simpleChat", Icon: kit.IconSimpleChat,
 		Keywords: []string{"chat", "simple"}, Run: func(a *app.Context) { a.ToggleSimpleChat() }})
-	app.RegisterCommand(app.Command{ID: "docs", Title: "Open Documentation", Icon: kit.IconBookOpen,
+	app.RegisterCommand(app.Command{ID: "docs", Title: "Open Documentation", TitleKey: "shell.documentation", Icon: kit.IconBookOpen,
 		Keywords: []string{"help", "docs"}, Run: func(*app.Context) { app.OpenExternal(app.DocsURL) }})
 	app.RegisterCommand(app.Command{ID: "quit", Title: "Quit Pando", Icon: kit.IconClose,
 		Keywords: []string{"exit", "close"}, Run: func(a *app.Context) {
@@ -104,8 +103,14 @@ func (q *quickMenu) rows() []pickRow {
 	}
 	for _, cm := range app.Commands() {
 		cm := cm
-		row := pickRow{ID: "cmd:" + cm.ID, Icon: cm.Icon, Title: cm.Title, Desc: cm.Description,
-			Search: strings.Join(cm.Keywords, " "), Run: func() { cm.Run(a) }}
+		title := cm.Title
+		if cm.TitleKey != "" {
+			if s := a.T(cm.TitleKey); s != cm.TitleKey {
+				title = s
+			}
+		}
+		row := pickRow{ID: "cmd:" + cm.ID, Icon: cm.Icon, Title: title, Desc: cm.Description,
+			Search: strings.Join(slices.Concat(cm.Keywords, []string{cm.Title}), " "), Run: func() { cm.Run(a) }}
 		row.Group = "Commands"
 		cmds = append(cmds, row)
 	}

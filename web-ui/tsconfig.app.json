@@ -25,5 +25,5 @@
       "@pando/client/*": ["./packages/pando-client/src/*"]
     }
   },
-  "include": ["src", "wailsjs", "packages/pando-client/src"]
+  "include": ["src", "packages/pando-client/src"]
 }

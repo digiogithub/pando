@@ -592,7 +592,7 @@ func (v *View) modalDialog(c *ui.Context) {
 			}
 		},
 		Footer: func() {
-			if kit.SecondaryButton(c, v.app.T("common.cancel")).Clicked() {
+			if kit.SecondaryButton(c, v.app.T("projects.view.common.cancel")).Clicked() {
 				m.open = false
 			}
 			variant := kit.Primary

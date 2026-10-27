@@ -1,8 +1,8 @@
 # Native desktop UI (MyGo)
 
 `pando desktop` runs the API server in process and shows this native UI on the
-main goroutine. It replaces the Wails WebView wrapper (still reachable with the
-hidden `--webview` flag until P5). Plan: `.kb/pando/plans/native_desktop_mygo.md`.
+main goroutine (the only desktop front end). Plan:
+`.kb/pando/plans/native_desktop_mygo.md`.
 
 Toolkit: [MyGo](https://github.com/egoist/mygo) **v0.7.1, pinned exactly**
 (pure Go, GPU rendered, immediate mode with keyed retained state). It needs Go
@@ -46,6 +46,17 @@ Area IDs and paths: chat `/chat` (+`/chat/s/{id}`), simple-chat `/chat/simple`,
 projects, editor `/editor/{path...}`, terminal, orchestrator, design
 `/design/{id...}`, logs, agentvcs `/snapshots/{id...}`, evaluator, instances,
 extensions, settings `/settings/{section...}`, setup (hidden).
+
+## Routing
+
+The app's routers show pages at once (`ui.TransitionNone`, as the Web UI).
+An area view is one stateful object: MyGo's sliding transition builds the
+page going away too, which built the view twice per frame ("a ListState
+shown by two Lists"); `Root.leavingSameArea` keeps that safe if a router ever
+slides again, and a fade left pages transparent while the window got no
+frames (locked macOS screen). Areas keep their state in sync with the route:
+the chat pushes `/chat/s/{id}` on session clicks and follows Back/deep links
+(`app/chat/shellwire.go`); agentvcs follows `/snapshots/{id...}` in place.
 
 ## Rules
 
@@ -110,6 +121,10 @@ extensions, settings `/settings/{section...}`, setup (hidden).
   `<dir>/capture-<n>s.png` with MyGo's renderer (works where compositor
   screenshots are refused).
 - `PANDO_NATIVE_PATH=/chat/s/<id>` opens a route at start.
+- `PANDO_NATIVE_CAPTURE_PATHS=/chat,/logs,/settings/appearance` (with
+  `PANDO_NATIVE_CAPTURE`) visits each route in turn and writes
+  `capture-<route slug>.png` (`PANDO_NATIVE_CAPTURE_STEP` seconds apart,
+  default 3): one launch screenshots every area.
 - `PANDO_NATIVE_SPIKE_MESSAGES=1000` opens a synthetic transcript.
 - `MYGO_FRAME_STATS=all` logs frame timings (they land in Pando's log store:
   `GET /api/v1/logs`).
@@ -142,7 +157,17 @@ extensions, settings `/settings/{section...}`, setup (hidden).
   `RegisterBanner`, `RegisterCommand` (quick menu), `Shell().NextModel` /
   `Shell().ModelChanged` (model switcher <-> chat), `Shell().FocusProject`.
   Overlays live in `app/overlays` (quick menu, model switcher, config-init
-  banner, update notice).
+  banner, update notice). `RegisterStatusItem` adds to the status strip under
+  the main tab (the extensions "status-bar" slot uses it; the strip only
+  shows when an item is visible). Quick menu commands may set `TitleKey`.
+- Chat wiring (`app/chat/shellwire.go`): persona selector in the header slot
+  `persona` (composer chip only in project workspaces), `Shell().NextModel`
+  sent with a new chat's first prompt, `Shell().ModelChanged` chained,
+  Shift+Tab toggles auto-approve, the design draft (`TakeChatDraft`) fills
+  the composer.
+- Theme at start: desktop UI preferences, else the backend `theme` field
+  (`app.ParseThemeID`, legacy families mapped); Settings > Appearance saves
+  both and persists the accent in the preferences.
 - Global keys (`app/chrome.go`): Cmd/Ctrl+K or +P quick menu, +O model
   switcher, +B sidebar, +Shift+L theme, Ctrl+Alt+1..9 / Left / Right / W
   project tabs. Errors from background calls: `a.ReportError(title, err)`

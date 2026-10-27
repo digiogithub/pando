@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { isDesktop } from '@/services/desktop'
 import { localBrowserStorage } from '@pando/client/services/storage'
 
 /** Viewport width at or below which the sidebar becomes an overlay drawer. */
@@ -44,14 +43,3 @@ export const isMacPlatform: boolean =
       navigator.platform ||
       navigator.userAgent,
   )
-
-/**
- * True when the Wails desktop window on macOS draws the web content under the
- * native traffic lights (hidden/inset title bar). With a regular native title
- * bar the outer and inner heights differ by the title bar height, so no inset
- * is reserved.
- */
-export function needsMacTrafficLightInset(): boolean {
-  if (!isDesktop || !isMacPlatform || typeof window === 'undefined') return false
-  return window.outerHeight - window.innerHeight < 4
-}

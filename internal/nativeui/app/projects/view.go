@@ -3,7 +3,6 @@ package projects
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/digiogithub/pando/internal/nativeui/app"
@@ -18,23 +17,6 @@ func init() {
 		Section: app.SectionMain, Order: 2,
 		New: func(a *app.Context) app.View { return newView(a) },
 	})
-}
-
-// shortenPath replaces the home directory with ~ (web shortenPath).
-func shortenPath(p string) string {
-	if h, err := os.UserHomeDir(); err == nil && h != "" && strings.HasPrefix(p, h) {
-		return "~" + strings.TrimPrefix(p, h)
-	}
-	for _, pre := range []string{"/home/", "/Users/"} {
-		if strings.HasPrefix(p, pre) {
-			rest := strings.TrimPrefix(p, pre)
-			if i := strings.IndexByte(rest, '/'); i >= 0 {
-				return "~" + rest[i:]
-			}
-			return "~"
-		}
-	}
-	return p
 }
 
 // view is the Projects list (web ProjectsView).
@@ -77,7 +59,7 @@ func (v *view) HeaderActions(c *ui.Context) {
 		id := v.m.target
 		v.a.Go(func(ctx context.Context) {
 			if err := v.a.Client.DeactivateProject(ctx, id); err != nil {
-				v.a.Toasts.Error(v.a.T("projects.toasts.error"), err.Error())
+				v.a.Toasts.Error("Project action failed", err.Error())
 			}
 			v.a.Update(v.m.refresh)
 		})
@@ -99,7 +81,7 @@ func (v *view) add() {
 		v.a.Update(func() {
 			v.adding = false
 			if err != nil {
-				v.a.Toasts.Error(v.a.T("projects.toasts.error"), err.Error())
+				v.a.Toasts.Error("Project action failed", err.Error())
 				return
 			}
 			v.a.Toasts.Success(v.a.T("projects.toasts.added", "path", path), "")
@@ -112,7 +94,7 @@ func (v *view) add() {
 func (v *view) stop(p client.Project) {
 	v.m.StopProject(p.ID, func(err error) {
 		if err != nil {
-			v.a.Toasts.Error(v.a.T("projects.toasts.error"), err.Error())
+			v.a.Toasts.Error("Project action failed", err.Error())
 		}
 	})
 }
@@ -122,7 +104,7 @@ func (v *view) remove(id string) {
 		err := v.a.Client.DeleteProject(ctx, id)
 		v.a.Update(func() {
 			if err != nil {
-				v.a.Toasts.Error(v.a.T("projects.toasts.error"), err.Error())
+				v.a.Toasts.Error("Project action failed", err.Error())
 				return
 			}
 			v.m.removeTab(id)
@@ -141,7 +123,7 @@ func (v *view) rename() {
 		err := v.a.Client.RenameProject(ctx, id, name)
 		v.a.Update(func() {
 			if err != nil {
-				v.a.Toasts.Error(v.a.T("projects.toasts.error"), err.Error())
+				v.a.Toasts.Error("Project action failed", err.Error())
 				return
 			}
 			v.m.refresh()
@@ -180,7 +162,7 @@ func (v *view) Build(c *ui.Context, r *ui.Route) {
 
 	switch {
 	case m.loadErr != "" && len(m.projects) == 0:
-		kit.EmptyState(c, kit.IconError, v.a.T("projects.toasts.error"), m.loadErr)
+		kit.EmptyState(c, kit.IconError, "Project action failed", m.loadErr)
 	case !m.loaded && len(m.projects) == 0:
 		ui.Row(c).Grow(1).Gap(8).Justify(ui.Center).AlignItems(ui.Center).Children(func() {
 			kit.Spinner(c)
@@ -251,7 +233,7 @@ func (v *view) table(c *ui.Context, tk *kit.Tokens) {
 				}
 			})
 		case 1:
-			ui.Text(c, shortenPath(p.Path)).FontSize(tk.TextXS).TextColor(tk.FgMuted).SingleLine().Ellipsis("…")
+			ui.Text(c, app.ShortenPath(p.Path)).FontSize(tk.TextXS).TextColor(tk.FgMuted).SingleLine().Ellipsis("…")
 		case 2:
 			v.statusBadges(c, p)
 		case 3:
@@ -320,7 +302,7 @@ func (v *view) actions(c *ui.Context, p client.Project) {
 		if kit.IconButton(c.Key("w:"+p.ID), kit.IconExternal, v.a.T("projects.view.actions.openInNewWindow")).Clicked() {
 			v.a.Go(func(ctx context.Context) {
 				if err := v.a.Client.OpenProjectDesktop(ctx, p.ID); err != nil {
-					v.a.Toasts.Error(v.a.T("projects.toasts.error"), err.Error())
+					v.a.Toasts.Error("Project action failed", err.Error())
 				}
 			})
 		}
