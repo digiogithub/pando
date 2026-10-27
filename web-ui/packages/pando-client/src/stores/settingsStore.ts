@@ -51,6 +51,7 @@ const DEFAULTS: SettingsConfig = {
   delegation_synthesize_fallback: false,
   delegation_max_resurrections: 4,
   delegation_max_depth: 3,
+  delegation_allow_nested_subagents: true,
   delegation_max_concurrent: 8,
   delegation_resurrection_timeout: '10m',
   delegation_reuse_warm_instances: false,

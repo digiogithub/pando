@@ -90,7 +90,7 @@ func (s *ClaudeSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	cmd.Dir = task.WorkDir
 
 	// Set up environment with Claude Code configuration
-	cmd.Env = append(os.Environ(), "NO_COLOR=1")
+	cmd.Env = withDelegationDepth(append(os.Environ(), "NO_COLOR=1"), task.Depth)
 
 	// Opt-in only (Sandbox.ExtendTo must include "subagents"): Claude Code
 	// writes to ~/.claude and ~/.claude.json, plus s.logDir for the

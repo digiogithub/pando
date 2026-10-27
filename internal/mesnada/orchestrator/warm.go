@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/digiogithub/pando/internal/mesnada/depth"
 	"github.com/digiogithub/pando/pkg/mesnada/models"
 )
 
@@ -186,7 +187,11 @@ func (o *Orchestrator) tryStartWarm(task *models.Task) bool {
 	task.StartedAt = &start
 	o.store.Save(task)
 
-	res, err := o.warmResolver.RunWarm(o.ctx, task.ProjectID, task.ProjectPath, task.Prompt, task.CorrelationID)
+	// The warm instance runs many sessions in one process, so the task's nesting
+	// level cannot ride on an env var: it travels in the context and the resolver
+	// forwards it over the wire (ACP _meta / IPC params) to that session.
+	runCtx := depth.WithContext(o.ctx, task.Depth)
+	res, err := o.warmResolver.RunWarm(runCtx, task.ProjectID, task.ProjectPath, task.Prompt, task.CorrelationID)
 	if errors.Is(err, ErrNoWarmTarget) {
 		// No warm target — leave the task untouched for the cold path. Revert the
 		// breadcrumb first so the cold path sees the original task state. Count the

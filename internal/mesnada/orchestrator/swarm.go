@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/digiogithub/pando/internal/mesnada/engines"
 	"github.com/digiogithub/pando/pkg/mesnada/models"
 )
 
@@ -75,6 +76,18 @@ func (o *Orchestrator) CreateSwarm(ctx context.Context, spec SwarmSpec) (*SwarmC
 	for i, w := range spec.Workers {
 		if strings.TrimSpace(w.Prompt) == "" {
 			return nil, fmt.Errorf("workers[%d].prompt is required", i)
+		}
+	}
+
+	// Refuse a disabled engine for any role BEFORE spawning anything, so a
+	// rejected swarm never leaves orphan workers behind.
+	roleEngines := []string{spec.Verifier.Engine, spec.Synthesizer.Engine}
+	for _, w := range spec.Workers {
+		roleEngines = append(roleEngines, w.Engine)
+	}
+	for _, e := range roleEngines {
+		if err := engines.CheckEnabled(e); err != nil {
+			return nil, err
 		}
 	}
 

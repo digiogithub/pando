@@ -118,6 +118,7 @@ func (s *MistralSpawner) Spawn(ctx context.Context, task *models.Task) error {
 		env = append(env, "VIBE_HOME="+vibeHome)
 	}
 	cmd.Env = env
+	cmd.Env = withDelegationDepth(cmd.Env, task.Depth)
 
 	// Opt-in only (Sandbox.ExtendTo must include "subagents"): Vibe's own
 	// config/auth normally lives in ~/.vibe; this task instead points it at

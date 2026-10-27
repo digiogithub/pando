@@ -219,6 +219,12 @@ func (a *agent) toolsForSession(sessionID string) []tools.BaseTool {
 	if sessionHasXcodeBridge(sessionID) {
 		base = withoutGlobalXcodeBridgeTools(base)
 	}
+	// A subagent already at the delegation nesting cap does not see the
+	// spawn/swarm/await tools at all (the spawn tool also refuses past the cap).
+	// Evaluated per request so a settings change applies on the next turn.
+	if !tools.SessionCanDelegate(sessionID) {
+		base = tools.WithoutDelegationSpawnTools(base)
+	}
 	return mergeSessionTools(base, SessionTools(sessionID))
 }
 

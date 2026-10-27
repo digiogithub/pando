@@ -1,9 +1,10 @@
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useServicesSettingsStore } from '@pando/client/stores/servicesSettingsStore'
+import { setEngineDisabled, useMesnadaEnginesStore, withDisabled } from '@pando/client/stores/mesnadaEnginesStore'
 import { useUnsavedChangesGuard } from './unsavedChanges'
-import type { MesnadaACPConfig, MesnadaACPServerConfig, MesnadaOrchestratorConfig, MesnadaTUIConfig, MesnadaServerConfig } from '@pando/client/types'
-import { Button, Input, Select, SettingsRow, SettingsSection, Switch } from '@/components/ui'
+import type { MesnadaACPConfig, MesnadaACPServerConfig, MesnadaDelegationConfig, MesnadaOrchestratorConfig, MesnadaTUIConfig, MesnadaServerConfig } from '@pando/client/types'
+import { Badge, Button, Input, Select, SettingsRow, SettingsSection, Switch } from '@/components/ui'
 import { SectionHero } from '@/components/brand'
 
 const ENGINE_OPTIONS = ['pando', 'claude', 'copilot', 'openai', 'google', 'ollama'].map((v) => ({ value: v, label: v }))
@@ -22,9 +23,17 @@ export default function MesnadaSettings() {
     discard: resetServices,
   })
 
+  const detectedEngines = useMesnadaEnginesStore((s) => s.engines)
+  const enginesError = useMesnadaEnginesStore((s) => s.error)
+  const fetchEngines = useMesnadaEnginesStore((s) => s.fetchEngines)
+
   useEffect(() => {
     fetchServices()
   }, [fetchServices])
+
+  useEffect(() => {
+    void fetchEngines()
+  }, [fetchEngines])
 
   if (loading) {
     return <div className="settings-loading">Loading…</div>
@@ -47,6 +56,15 @@ export default function MesnadaSettings() {
   function setACPServer<K extends keyof MesnadaACPServerConfig>(key: K, value: MesnadaACPServerConfig[K]) {
     setACP('server', { ...mesnada.acp.server, [key]: value })
   }
+
+  function setDelegation<K extends keyof MesnadaDelegationConfig>(key: K, value: MesnadaDelegationConfig[K]) {
+    updateMesnada('delegation', { ...mesnada.delegation, [key]: value })
+  }
+
+  // Unset means allowed: only an explicit false blocks nested subagents.
+  const nestedAllowed = mesnada.delegation?.allowNestedSubagents !== false
+  const maxDepth = mesnada.delegation?.maxDepth && mesnada.delegation.maxDepth > 0 ? mesnada.delegation.maxDepth : 3
+  const engineRows = withDisabled(detectedEngines, mesnada.orchestrator.disabledEngines)
 
   function setTUI<K extends keyof MesnadaTUIConfig>(key: K, value: MesnadaTUIConfig[K]) {
     updateMesnada('tui', { ...mesnada.tui, [key]: value })
@@ -133,6 +151,68 @@ export default function MesnadaSettings() {
             placeholder="/path/to/personas"
           />
         </SettingsRow>
+      </SettingsSection>
+
+      <SettingsSection title={t('settings.mesnada.nesting.title')} description={t('settings.mesnada.nesting.description')}>
+        <SettingsRow
+          label={t('settings.mesnada.nesting.allowNested')}
+          description={t('settings.mesnada.nesting.allowNestedDescription')}
+          htmlFor="mesnada-allow-nested"
+        >
+          <Switch id="mesnada-allow-nested" checked={nestedAllowed} onCheckedChange={(v) => setDelegation('allowNestedSubagents', v)} />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.mesnada.nesting.maxDepth')}
+          description={nestedAllowed ? t('settings.mesnada.nesting.maxDepthHint') : t('settings.mesnada.nesting.maxDepthOverridden')}
+          htmlFor="mesnada-max-depth"
+        >
+          <Input
+            id="mesnada-max-depth"
+            type="number"
+            min={1}
+            value={nestedAllowed ? maxDepth : 1}
+            disabled={!nestedAllowed}
+            onChange={(e) => setDelegation('maxDepth', Math.max(1, Number(e.target.value) || 1))}
+          />
+        </SettingsRow>
+      </SettingsSection>
+
+      <SettingsSection title={t('settings.mesnada.engines.title')} description={t('settings.mesnada.engines.description')}>
+        {enginesError && <div className="settings-banner settings-banner--danger" role="alert">{enginesError}</div>}
+        {engineRows.map((engine) => {
+          const id = `mesnada-engine-${engine.name}`
+          const status = engine.locked
+            ? t('settings.mesnada.engines.builtIn')
+            : engine.installed
+              ? t('settings.mesnada.engines.installedAt', { path: engine.path })
+              : engine.binary
+                ? t('settings.mesnada.engines.notInstalled', { binary: engine.binary })
+                : t('settings.mesnada.engines.notDetected')
+          return (
+            <SettingsRow
+              key={engine.name}
+              htmlFor={id}
+              className={!engine.locked && !engine.installed ? 'opacity-60' : undefined}
+              label={
+                <span className="inline-flex items-center gap-2">
+                  {engine.label} <code>{engine.name}</code>
+                  {engine.locked && <Badge tone="accent">{t('settings.mesnada.engines.builtIn')}</Badge>}
+                  {engine.kind === 'custom' && <Badge tone="info">{t('settings.mesnada.engines.custom')}</Badge>}
+                </span>
+              }
+              description={status}
+            >
+              <Switch
+                id={id}
+                checked={engine.enabled}
+                disabled={engine.locked}
+                onCheckedChange={(v) =>
+                  setOrchestrator('disabledEngines', setEngineDisabled(mesnada.orchestrator.disabledEngines, engine.name, !v))
+                }
+              />
+            </SettingsRow>
+          )
+        })}
       </SettingsSection>
 
       <SettingsSection title="ACP" description="Agent Communication Protocol">

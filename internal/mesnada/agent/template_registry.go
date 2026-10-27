@@ -18,6 +18,8 @@ type EngineTemplateInfo struct {
 	Description  string
 	DefaultModel string
 	Models       []string
+	// Command is the binary the template runs, used for installed detection.
+	Command string
 }
 
 // TemplateRegistry loads and stores custom engine templates from a directory.
@@ -54,6 +56,7 @@ func NewTemplateRegistry(enginesDir, logDir string, onComplete func(*models.Task
 			Name:         tpl.Name,
 			Description:  tpl.Description,
 			DefaultModel: tpl.DefaultModel,
+			Command:      tpl.Command,
 		}
 		for _, m := range tpl.Models {
 			info.Models = append(info.Models, m.ID)

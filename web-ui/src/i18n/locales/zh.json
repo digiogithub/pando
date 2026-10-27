@@ -285,6 +285,24 @@
       "hero": {
         "title": "Mesnada",
         "tagline": "智能体团队编排:委派、运行并监督子智能体。"
+      },
+      "nesting": {
+        "title": "子代理嵌套",
+        "description": "限制被委派的子代理可以继续启动其他子代理的深度。立即生效，无需重启。",
+        "allowNested": "允许子代理启动其他子代理",
+        "allowNestedDescription": "关闭后，只有主会话可以委派：无论最大层级如何设置，子代理都不能启动自己的子代理。",
+        "maxDepth": "最大委派层级",
+        "maxDepthHint": "1 = 子代理不能启动其他子代理（最小为 1）。",
+        "maxDepthOverridden": "已覆盖：子代理不能启动子代理，因此上限为 1。"
+      },
+      "engines": {
+        "title": "子代理引擎",
+        "description": "子代理可以运行的引擎。禁用你不希望子代理误调用的引擎；Pando 内置引擎始终可用。",
+        "builtIn": "内置",
+        "custom": "自定义",
+        "installedAt": "已安装：{{path}}",
+        "notInstalled": "未安装（PATH 中找不到 {{binary}}）",
+        "notDetected": "未检测到（代理单独配置）"
       }
     },
     "general": {
@@ -340,7 +358,7 @@
       "delegationSynthesizeFallback": "合成回退",
       "delegationSynthesizeFallbackDescription": "当子代理省略结论块时合成一个结论",
       "delegationMaxResurrections": "最大唤醒次数",
-      "delegationMaxDepth": "最大深度",
+      "delegationMaxDepth": "最大委派层级",
       "delegationMaxConcurrent": "最大并发数",
       "delegationResurrectionTimeout": "唤醒超时",
       "delegationReuseWarmInstances": "复用热实例",

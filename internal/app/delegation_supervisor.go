@@ -363,8 +363,10 @@ func (s *delegationSupervisor) enqueueResurrection(task *models.Task, key string
 	}
 	parentSession := task.ParentSessionID
 
-	// Depth cap: prevent deep delegated-of-delegated chains.
-	if s.opts.MaxDepth > 0 && task.Depth >= s.opts.MaxDepth {
+	// Depth cap: prevent deep delegated-of-delegated chains. MaxDepth is the
+	// deepest level a task may run at, so only a task beyond it is skipped: with
+	// MaxDepth=1 the top-level delegations (depth 1) still wake their parent.
+	if s.opts.MaxDepth > 0 && task.Depth > s.opts.MaxDepth {
 		logging.Debug("Delegation: depth cap reached, skipping resurrection",
 			"task", task.ID, "depth", task.Depth, "maxDepth", s.opts.MaxDepth)
 		return false

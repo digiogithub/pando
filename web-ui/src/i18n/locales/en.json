@@ -285,6 +285,24 @@
       "hero": {
         "title": "Mesnada",
         "tagline": "Agent team orchestration: delegate, run and supervise subagents."
+      },
+      "nesting": {
+        "title": "Subagent nesting",
+        "description": "Limit how deep delegated subagents may spawn other subagents. Applies immediately, without a restart.",
+        "allowNested": "Allow subagents to launch other subagents",
+        "allowNestedDescription": "When off, only the main session can delegate: subagents cannot spawn subagents of their own, whatever the max levels say.",
+        "maxDepth": "Max delegation levels",
+        "maxDepthHint": "1 = subagents cannot launch other subagents (minimum 1).",
+        "maxDepthOverridden": "Overridden: subagents cannot launch subagents, so the limit is 1."
+      },
+      "engines": {
+        "title": "Subagent engines",
+        "description": "Engines a subagent may run on. Disable the ones you do not want a subagent to call by mistake; Pando's built-in engines are always available.",
+        "builtIn": "Built-in",
+        "custom": "Custom",
+        "installedAt": "Installed: {{path}}",
+        "notInstalled": "Not installed ({{binary}} not found on PATH)",
+        "notDetected": "Not detected (agent configured separately)"
       }
     },
     "general": {
@@ -348,7 +366,7 @@
       "delegationSynthesizeFallback": "Synthesize Fallback",
       "delegationSynthesizeFallbackDescription": "Synthesize a conclusion when the subagent omits the block",
       "delegationMaxResurrections": "Max Resurrections",
-      "delegationMaxDepth": "Max Depth",
+      "delegationMaxDepth": "Max delegation levels",
       "delegationMaxConcurrent": "Max Concurrent",
       "delegationResurrectionTimeout": "Resurrection Timeout",
       "delegationReuseWarmInstances": "Reuse Warm Instances",

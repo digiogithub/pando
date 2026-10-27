@@ -97,6 +97,7 @@ func (s *TemplateSpawner) Spawn(ctx context.Context, task *models.Task) error {
 		return fmt.Errorf("template spawner %q: build env: %w", s.tpl.Name, err)
 	}
 	cmd.Env = taskEnv
+	cmd.Env = withDelegationDepth(cmd.Env, task.Depth)
 
 	// Opt-in only (Sandbox.ExtendTo must include "subagents"). A custom
 	// engine's own config directory is unknown to Pando (sandboxExtraRoots

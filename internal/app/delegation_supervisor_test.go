@@ -303,6 +303,23 @@ func TestResurrectIdleNoOutstandingFlushesOnce(t *testing.T) {
 	}
 }
 
+// TestResurrectDepthAtCapStillWakes covers the MaxDepth semantics change: a task
+// AT the cap (depth == MaxDepth) is a legal delegation and must still wake its
+// parent, so MaxDepth=1 does not disable resurrection of top-level delegations.
+func TestResurrectDepthAtCapStillWakes(t *testing.T) {
+	inj := newFakeInjector()
+	lister := &fakeLister{}
+	opts := resurrectOpts()
+	opts.MaxDepth = 1
+	s := newResurrectSup(inj, lister, opts)
+
+	task := completedTask("sess-1", "corr-1")
+	task.Depth = 1 // == MaxDepth: allowed
+	if !s.handleCompletion(task) {
+		t.Fatal("expected a depth-1 delegation to resurrect its parent with MaxDepth=1")
+	}
+}
+
 func TestResurrectDepthCapBlocks(t *testing.T) {
 	inj := newFakeInjector()
 	lister := &fakeLister{}
@@ -311,7 +328,7 @@ func TestResurrectDepthCapBlocks(t *testing.T) {
 	s := newResurrectSup(inj, lister, opts)
 
 	task := completedTask("sess-1", "corr-1")
-	task.Depth = 2 // >= MaxDepth
+	task.Depth = 3 // > MaxDepth
 	if s.handleCompletion(task) {
 		t.Fatal("expected depth cap to block resurrection")
 	}

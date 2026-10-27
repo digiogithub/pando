@@ -16,6 +16,7 @@ import (
 	"github.com/digiogithub/pando/internal/mesnada/breaker"
 	"github.com/digiogithub/pando/internal/mesnada/conclusion"
 	"github.com/digiogithub/pando/internal/mesnada/config"
+	"github.com/digiogithub/pando/internal/mesnada/engines"
 	"github.com/digiogithub/pando/internal/mesnada/events"
 	"github.com/digiogithub/pando/internal/mesnada/persona"
 	"github.com/digiogithub/pando/internal/mesnada/store"
@@ -1129,10 +1130,14 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 		}
 	}
 
-	// Apply orchestrator default engine when not explicitly provided.
+	// Apply orchestrator default engine when not explicitly provided, then
+	// refuse an engine disabled in the Mesnada settings (read live).
 	engine := req.Engine
 	if engine == "" {
-		engine = o.defaultEngine
+		engine = o.defaultEngineFor()
+	}
+	if err := engines.CheckEnabled(string(engine)); err != nil {
+		return nil, err
 	}
 
 	// Apply persona to prompt if specified
@@ -1178,7 +1183,7 @@ func (o *Orchestrator) Spawn(ctx context.Context, req models.SpawnRequest) (*mod
 	// config that always includes pando as an MCP server plus any additional
 	// MCP servers configured in pando (unless already proxied via gateway).
 	if mcpConfig == "" && !isACPEngine(engine) {
-		dynCfg := agent.BuildSubagentMCPConfig("", o.pandoMCPServers, o.gatewayExposeEnabled)
+		dynCfg := agent.BuildSubagentMCPConfig("", o.pandoMCPServers, o.gatewayExposeEnabled, req.Depth)
 		dynDir := o.dynamicMCPDir + "/mcp-dynamic/" + taskID
 		if written, err := agent.WriteCanonicalConfigToFile(dynCfg, dynDir, "mcp-config.json"); err != nil {
 			log.Printf("Warning: failed to write dynamic MCP config for task %s: %v", taskID, err)
@@ -1578,9 +1583,13 @@ func (o *Orchestrator) Relaunch(ctx context.Context, taskID string, opts Relaunc
 		task.Timeout = models.Duration(dur)
 	}
 
-	// Apply orchestrator default engine if none is set.
+	// Apply orchestrator default engine if none is set, and refuse an engine
+	// disabled in the Mesnada settings since the task was created.
 	if task.Engine == "" {
-		task.Engine = o.defaultEngine
+		task.Engine = o.defaultEngineFor()
+	}
+	if err := engines.CheckEnabled(string(task.Engine)); err != nil {
+		return nil, err
 	}
 
 	// Regenerate the dynamic MCP config for non-ACP engines, because the
@@ -1589,7 +1598,7 @@ func (o *Orchestrator) Relaunch(ctx context.Context, taskID string, opts Relaunc
 	if !isACPEngine(task.Engine) {
 		dynPrefix := o.dynamicMCPDir + "/mcp-dynamic/" + taskID
 		if task.MCPConfig == "" || strings.HasPrefix(task.MCPConfig, dynPrefix) {
-			dynCfg := agent.BuildSubagentMCPConfig("", o.pandoMCPServers, o.gatewayExposeEnabled)
+			dynCfg := agent.BuildSubagentMCPConfig("", o.pandoMCPServers, o.gatewayExposeEnabled, task.Depth)
 			if written, writeErr := agent.WriteCanonicalConfigToFile(dynCfg, dynPrefix, "mcp-config.json"); writeErr != nil {
 				log.Printf("Warning: failed to regenerate dynamic MCP config for task %s: %v", taskID, writeErr)
 			} else {
@@ -1924,11 +1933,37 @@ func generateID() string {
 
 // ListPersonas returns a list of available persona names.
 func (o *Orchestrator) ListPersonas() []string {
+	if o == nil || o.personaManager == nil {
+		return nil
+	}
 	return o.personaManager.ListPersonas()
+}
+
+// defaultEngineFor returns the orchestrator's default engine, falling back to
+// pando when the configured default has been disabled in the Mesnada settings
+// (a disabled default must not make every engine-less spawn fail).
+func (o *Orchestrator) defaultEngineFor() models.Engine {
+	if engines.IsDisabled(string(o.defaultEngine)) {
+		log.Printf("mesnada: default engine %q is disabled in Mesnada settings, falling back to %q", o.defaultEngine, models.EnginePando)
+		return models.EnginePando
+	}
+	return o.defaultEngine
+}
+
+// CustomEngineInfos returns the custom engine templates loaded at startup with
+// the command each one runs, for engine detection.
+func (o *Orchestrator) CustomEngineInfos() []agent.EngineTemplateInfo {
+	if o == nil || o.manager == nil {
+		return nil
+	}
+	return o.manager.TemplateRegistryInfo()
 }
 
 // ListCustomEngines returns the names of all custom engine templates loaded at startup.
 func (o *Orchestrator) ListCustomEngines() []string {
+	if o == nil || o.manager == nil {
+		return nil
+	}
 	return o.manager.CustomEngineNames()
 }
 

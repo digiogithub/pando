@@ -110,6 +110,7 @@ func (s *OllamaClaudeSpawner) Spawn(ctx context.Context, task *models.Task) erro
 	}
 
 	cmd.Env = env
+	cmd.Env = withDelegationDepth(cmd.Env, task.Depth)
 
 	// Opt-in only (Sandbox.ExtendTo must include "subagents"): this spawner
 	// routes the 'claude' CLI at a local Ollama endpoint, so

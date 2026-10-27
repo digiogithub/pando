@@ -13,6 +13,7 @@ import (
 	"github.com/digiogithub/pando/internal/ipc/protocol"
 	"github.com/digiogithub/pando/internal/llm/agent"
 	"github.com/digiogithub/pando/internal/llm/models"
+	"github.com/digiogithub/pando/internal/mesnada/depth"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/session"
 )
@@ -159,6 +160,13 @@ func (r *agentDelegationRunner) RunDelegation(ctx context.Context, params protoc
 		// Clear the override once the run completes so this kept session does not
 		// silently reuse it on a later turn.
 		defer agent.SetSessionLLMOverrides(sess.ID, agent.SessionLLMOverrides{})
+	}
+
+	// Record the delegation level for this session so spawns made from it are
+	// counted one level deeper (and hidden/refused at the nesting cap). Kept for
+	// the session's lifetime: it may be resumed later and still needs its level.
+	if params.Depth != nil {
+		depth.SetSession(sess.ID, *params.Depth)
 	}
 
 	done, err := r.agentSvc.Run(ctx, sess.ID, params.Prompt)

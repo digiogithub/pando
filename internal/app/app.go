@@ -873,7 +873,7 @@ func New(ctx context.Context, conn *sql.DB, opts ...AppOptions) (*App, error) {
 					InjectIntoLiveLoop:  delCfg.InjectIntoLiveLoop,
 					ResurrectIdleLoop:   delCfg.ResurrectIdleLoop,
 					MaxResurrections:    delCfg.MaxResurrections,
-					MaxDepth:            delCfg.MaxDepth,
+					MaxDepth:            delCfg.EffectiveMaxDepth(),
 					ResurrectionTimeout: resurrectionTimeout,
 				},
 			)

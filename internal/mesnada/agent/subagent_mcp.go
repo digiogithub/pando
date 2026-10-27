@@ -4,8 +4,10 @@ package agent
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
+	"github.com/digiogithub/pando/internal/mesnada/depth"
 	"github.com/digiogithub/pando/internal/mesnada/mcpconv"
 )
 
@@ -31,7 +33,13 @@ type PandoMCPServerEntry struct {
 // subagent UNLESS gatewayExposeEnabled is true, meaning those servers are
 // already proxied through pando's own MCP-gateway (so the subagent already
 // has access to them via the "pando" entry).
-func BuildSubagentMCPConfig(pandoBin string, pandoMCPServers []PandoMCPServerEntry, gatewayExposeEnabled bool) mcpconv.CanonicalConfig {
+//
+// taskDepth is the delegation level the subagent runs at. It is passed to the
+// "pando" MCP server as PANDO_DELEGATION_DEPTH so a spawn the external agent
+// makes through Pando's tools is counted as one level deeper (and refused past
+// mesnada.delegation.maxDepth). The env must be explicit: the MCP server is a
+// grandchild of the parent Pando and would otherwise inherit the parent's level.
+func BuildSubagentMCPConfig(pandoBin string, pandoMCPServers []PandoMCPServerEntry, gatewayExposeEnabled bool, taskDepth int) mcpconv.CanonicalConfig {
 	if pandoBin == "" {
 		pandoBin = resolveSelfBinary()
 	}
@@ -43,6 +51,7 @@ func BuildSubagentMCPConfig(pandoBin string, pandoMCPServers []PandoMCPServerEnt
 		Type:    "stdio",
 		Command: pandoBin,
 		Args:    []string{"mcp-server", "--no-http"},
+		Env:     map[string]string{depth.EnvVar: strconv.Itoa(taskDepth)},
 	}
 
 	// Forward pando-configured MCP servers to the subagent only when they are

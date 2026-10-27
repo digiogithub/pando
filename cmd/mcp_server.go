@@ -420,8 +420,14 @@ func buildMCPServerTools(ctx context.Context, appSvc *app.App) []llmtools.BaseTo
 	}
 
 	if appSvc.MesnadaOrchestrator != nil {
+		// A subagent's MCP server (PANDO_DELEGATION_DEPTH at the nesting cap) does
+		// not offer the spawn tool; the tool itself also refuses past the cap.
+		if llmtools.SessionCanDelegate("") {
+			tools = append(tools, llmtools.NewMesnadaSpawnTool(appSvc.MesnadaOrchestrator))
+		} else {
+			logging.Info("MCP server: delegation nesting cap reached, spawn tool hidden")
+		}
 		tools = append(tools,
-			llmtools.NewMesnadaSpawnTool(appSvc.MesnadaOrchestrator),
 			llmtools.NewMesnadaGetTaskTool(appSvc.MesnadaOrchestrator),
 			llmtools.NewMesnadaListTasksTool(appSvc.MesnadaOrchestrator),
 			llmtools.NewMesnadaWaitTaskTool(appSvc.MesnadaOrchestrator),

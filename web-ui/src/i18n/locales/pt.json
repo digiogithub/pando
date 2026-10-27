@@ -285,6 +285,24 @@
       "hero": {
         "title": "Mesnada",
         "tagline": "Orquestração de equipes de agentes: delegue, execute e supervisione subagentes."
+      },
+      "nesting": {
+        "title": "Aninhamento de subagentes",
+        "description": "Limita a profundidade com que subagentes delegados podem iniciar outros subagentes. Aplica-se imediatamente, sem reiniciar.",
+        "allowNested": "Permitir que subagentes iniciem outros subagentes",
+        "allowNestedDescription": "Quando desativado, só a sessão principal pode delegar: os subagentes não podem iniciar subagentes próprios, independentemente do máximo de níveis.",
+        "maxDepth": "Máximo de níveis de delegação",
+        "maxDepthHint": "1 = os subagentes não podem iniciar outros subagentes (mínimo 1).",
+        "maxDepthOverridden": "Substituído: os subagentes não podem iniciar subagentes, por isso o limite é 1."
+      },
+      "engines": {
+        "title": "Motores de subagentes",
+        "description": "Motores em que um subagente pode ser executado. Desative os que não quer que um subagente chame por engano; os motores próprios do Pando estão sempre disponíveis.",
+        "builtIn": "Integrado",
+        "custom": "Personalizado",
+        "installedAt": "Instalado: {{path}}",
+        "notInstalled": "Não instalado ({{binary}} não encontrado no PATH)",
+        "notDetected": "Não detetado (agente configurado à parte)"
       }
     },
     "general": {
@@ -340,7 +358,7 @@
       "delegationSynthesizeFallback": "Sintetizar fallback",
       "delegationSynthesizeFallbackDescription": "Sintetizar uma conclusão quando o subagente omite o bloco",
       "delegationMaxResurrections": "Máx. reativações",
-      "delegationMaxDepth": "Profundidade máx.",
+      "delegationMaxDepth": "Máximo de níveis de delegação",
       "delegationMaxConcurrent": "Máx. simultâneas",
       "delegationResurrectionTimeout": "Tempo limite de reativação",
       "delegationReuseWarmInstances": "Reutilizar instâncias ativas",

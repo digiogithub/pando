@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/logging"
+	delegationdepth "github.com/digiogithub/pando/internal/mesnada/depth"
+	"github.com/digiogithub/pando/internal/mesnada/engines"
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	"github.com/digiogithub/pando/pkg/mesnada/models"
 	"github.com/google/uuid"
@@ -105,14 +105,31 @@ func NewMesnadaSwarmTool(orch *orchestrator.Orchestrator) BaseTool {
 }
 
 func (t *MesnadaSpawnTool) Info() ToolInfo {
-	// Base set of built-in engines.
-	engineEnum := []string{"pando", "copilot", "claude", "gemini", "opencode", "mistral", "acp", "acp-claude", "acp-codex", "ollama-claude", "ollama-opencode"}
-	engineDesc := "CLI engine to use for the task. 'pando' (default) runs Pando itself as a CLI subprocess — NOT an ACP agent. Other CLI engines: copilot, claude, gemini, opencode, mistral. ACP engines: acp (requires acp_agent), acp-claude, acp-codex. NOTE: choosing engine=pando with model=copilot.gpt-5.4 does NOT use the copilot engine; it uses the Copilot provider inside Pando CLI."
+	// Info() is rebuilt on every model request (the providers convert the tool
+	// list per call), so the enum always reflects the live disabled-engines
+	// setting: a disabled engine is never offered to the model.
+	cliEngines := engines.FilterEnabled([]string{"copilot", "claude", "gemini", "opencode", "mistral"})
+	acpEngines := engines.FilterEnabled([]string{"acp", "acp-claude", "acp-codex"})
+	engineEnum := []string{"pando"}
+	engineEnum = append(engineEnum, cliEngines...)
+	engineEnum = append(engineEnum, acpEngines...)
+	engineEnum = append(engineEnum, engines.FilterEnabled([]string{"ollama-claude", "ollama-opencode"})...)
+	engineDesc := "CLI engine to use for the task. 'pando' (default) runs Pando itself as a CLI subprocess — NOT an ACP agent."
+	if len(cliEngines) > 0 {
+		engineDesc += " Other CLI engines: " + strings.Join(cliEngines, ", ") + "."
+	}
+	if len(acpEngines) > 0 {
+		engineDesc += " ACP engines: " + strings.Join(acpEngines, ", ") + " (acp requires acp_agent)."
+	}
+	engineDesc += " NOTE: choosing engine=pando with model=copilot.gpt-5.4 does NOT use the copilot engine; it uses the Copilot provider inside Pando CLI."
 
 	// Append custom template engines when available.
-	if customEngines := t.orchestrator.ListCustomEngines(); len(customEngines) > 0 {
+	if customEngines := engines.FilterEnabled(t.orchestrator.ListCustomEngines()); len(customEngines) > 0 {
 		engineEnum = append(engineEnum, customEngines...)
 		engineDesc += " Custom template engines: " + strings.Join(customEngines, ", ") + "."
+	}
+	if disabled := engines.Disabled(); len(disabled) > 0 {
+		engineDesc += " Disabled in Mesnada settings (do not use): " + strings.Join(disabled, ", ") + "."
 	}
 
 	// Advertise the configured personas so the model can pick a role for the
@@ -215,17 +232,14 @@ func spawnCorrelation(ctx context.Context, workDir string) (parentSessionID, cor
 		effectiveWorkDir = "."
 	}
 	projectPath = config.CanonicalProjectPath(effectiveWorkDir)
-	// Depth = parent depth + 1. The parent's depth is propagated to delegated pando
-	// subprocesses via PANDO_DELEGATION_DEPTH (see spawner_pando_cli.go). When unset
-	// or invalid (an interactive top-level pando), the parent depth is 0, so a
-	// top-level spawn is depth 1, its children depth 2, etc. This feeds the MaxDepth
-	// anti-fork-bomb cap enforced by the delegation supervisor.
-	parentDepth := 0
-	if raw := os.Getenv("PANDO_DELEGATION_DEPTH"); raw != "" {
-		if n, err := strconv.Atoi(raw); err == nil && n >= 0 {
-			parentDepth = n
-		}
-	}
+	// Depth = caller depth + 1. The caller's own level is resolved by
+	// depth.Resolve: an explicit context value (MCP header), the level recorded
+	// for this session (warm ACP / IPC delegations, which run many sessions in one
+	// process), then PANDO_DELEGATION_DEPTH (cold CLI / ACP subprocesses and the
+	// per-task MCP server). An interactive top-level pando is level 0, so a
+	// top-level spawn is depth 1, its children depth 2, etc. This feeds the
+	// MaxDepth cap enforced at spawn time (engines.CheckSpawnDepth).
+	parentDepth := delegationdepth.Resolve(ctx, parentSessionID)
 	depth = parentDepth + 1
 	return parentSessionID, correlationID, projectPath, depth
 }
@@ -346,9 +360,15 @@ func (t *MesnadaSpawnTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 	// relaunches preserve the original task's engine/model.
 	if req.Engine == "" || req.Model == "" {
 		cfg := config.Get()
-		// Apply configured default engine when none is specified.
+		// Apply configured default engine when none is specified. A default that
+		// points to a disabled engine falls back to pando rather than failing
+		// every spawn that relied on the default.
 		if req.Engine == "" && cfg != nil && cfg.Mesnada.Orchestrator.DefaultEngine != "" {
 			req.Engine = cfg.Mesnada.Orchestrator.DefaultEngine
+			if engines.IsDisabled(req.Engine) {
+				logging.Warn("mesnada: default engine is disabled in Mesnada settings, falling back to pando", "engine", req.Engine)
+				req.Engine = string(models.EnginePando)
+			}
 		}
 		// Determine the effective engine after normalization. When still empty the
 		// orchestrator will fall back to its built-in default (pando), so treat
@@ -374,6 +394,13 @@ func (t *MesnadaSpawnTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 	// canonical project path) so the created task records its origin. This never
 	// changes runtime behavior; the fields are only consumed by later phases.
 	parentSessionID, correlationID, projectPath, depth := spawnCorrelation(ctx, req.WorkDir)
+
+	// Nesting cap: refuse a task deeper than mesnada.delegation.maxDepth (or any
+	// grandchild when nested subagents are disallowed), with a message that tells
+	// the model to do the work itself instead of retrying.
+	if err := engines.CheckSpawnDepth(depth); err != nil {
+		return NewTextErrorResponse(err.Error()), nil
+	}
 
 	// MaxConcurrent soft guard (default-off): when delegation is enabled and a cap
 	// is configured, refuse to spawn a new task while the parent session already has
@@ -881,6 +908,9 @@ func (t *MesnadaSwarmTool) Run(ctx context.Context, params ToolCall) (ToolRespon
 	parentSessionID, _, projectPath, depth := spawnCorrelation(ctx, req.WorkDir)
 	if parentSessionID == "" {
 		return NewTextErrorResponse("mesnada_swarm requires a parent agent session (swarm coordination id); none was resolved from the context"), nil
+	}
+	if err := engines.CheckSpawnDepth(depth); err != nil {
+		return NewTextErrorResponse(err.Error()), nil
 	}
 
 	workers := make([]orchestrator.SwarmWorkerSpec, 0, len(req.Workers))

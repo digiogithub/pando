@@ -66,12 +66,15 @@ type SettingsResponse struct {
 	ProjectsWebStartupTimeout   string `json:"projects_web_startup_timeout"`
 
 	// Delegation (mesnada delegated-task conclusions + agent-loop resurrection).
-	DelegationEnabled                  bool   `json:"delegation_enabled"`
-	DelegationInjectIntoLiveLoop       bool   `json:"delegation_inject_into_live_loop"`
-	DelegationResurrectIdleLoop        bool   `json:"delegation_resurrect_idle_loop"`
-	DelegationSynthesizeFallback       bool   `json:"delegation_synthesize_fallback"`
-	DelegationMaxResurrections         int    `json:"delegation_max_resurrections"`
-	DelegationMaxDepth                 int    `json:"delegation_max_depth"`
+	DelegationEnabled            bool `json:"delegation_enabled"`
+	DelegationInjectIntoLiveLoop bool `json:"delegation_inject_into_live_loop"`
+	DelegationResurrectIdleLoop  bool `json:"delegation_resurrect_idle_loop"`
+	DelegationSynthesizeFallback bool `json:"delegation_synthesize_fallback"`
+	DelegationMaxResurrections   int  `json:"delegation_max_resurrections"`
+	DelegationMaxDepth           int  `json:"delegation_max_depth"`
+	// DelegationAllowNestedSubagents lets subagents launch subagents (default
+	// true); false caps nesting at one level whatever delegation_max_depth says.
+	DelegationAllowNestedSubagents     bool   `json:"delegation_allow_nested_subagents"`
 	DelegationMaxConcurrent            int    `json:"delegation_max_concurrent"`
 	DelegationResurrectionTimeout      string `json:"delegation_resurrection_timeout"`
 	DelegationReuseWarmInstances       bool   `json:"delegation_reuse_warm_instances"`
@@ -95,6 +98,8 @@ type SettingsResponse struct {
 	OrchestratorMaxPerEngine     int    `json:"orchestrator_max_per_engine"`
 	OrchestratorClaimTTL         string `json:"orchestrator_claim_ttl"`
 	OrchestratorDispatchInterval string `json:"orchestrator_dispatch_interval"`
+	// Subagent engines disabled in the Mesnada settings (never native engines).
+	OrchestratorDisabledEngines []string `json:"orchestrator_disabled_engines"`
 }
 
 // SettingsUpdateRequest contains the fields that can be updated via PUT /api/v1/settings.
@@ -139,6 +144,7 @@ type SettingsUpdateRequest struct {
 	DelegationSynthesizeFallback       *bool   `json:"delegation_synthesize_fallback,omitempty"`
 	DelegationMaxResurrections         *int    `json:"delegation_max_resurrections,omitempty"`
 	DelegationMaxDepth                 *int    `json:"delegation_max_depth,omitempty"`
+	DelegationAllowNestedSubagents     *bool   `json:"delegation_allow_nested_subagents,omitempty"`
 	DelegationMaxConcurrent            *int    `json:"delegation_max_concurrent,omitempty"`
 	DelegationResurrectionTimeout      *string `json:"delegation_resurrection_timeout,omitempty"`
 	DelegationReuseWarmInstances       *bool   `json:"delegation_reuse_warm_instances,omitempty"`
@@ -159,6 +165,9 @@ type SettingsUpdateRequest struct {
 	OrchestratorMaxPerEngine     *int    `json:"orchestrator_max_per_engine,omitempty"`
 	OrchestratorClaimTTL         *string `json:"orchestrator_claim_ttl,omitempty"`
 	OrchestratorDispatchInterval *string `json:"orchestrator_dispatch_interval,omitempty"`
+	// OrchestratorDisabledEngines replaces the whole disabled list when present
+	// (an empty array re-enables every engine).
+	OrchestratorDisabledEngines *[]string `json:"orchestrator_disabled_engines,omitempty"`
 }
 
 // ProviderStatus describes a configured provider and whether it has an API key set.
@@ -233,6 +242,7 @@ func buildSettingsResponse() (*SettingsResponse, error) {
 		DelegationSynthesizeFallback:       cfg.Mesnada.Delegation.SynthesizeFallback,
 		DelegationMaxResurrections:         intOrDefault(cfg.Mesnada.Delegation.MaxResurrections, 4),
 		DelegationMaxDepth:                 intOrDefault(cfg.Mesnada.Delegation.MaxDepth, 3),
+		DelegationAllowNestedSubagents:     cfg.Mesnada.Delegation.NestedSubagentsAllowed(),
 		DelegationMaxConcurrent:            intOrDefault(cfg.Mesnada.Delegation.MaxConcurrent, 8),
 		DelegationResurrectionTimeout:      delegationTimeoutOrDefault(cfg.Mesnada.Delegation.ResurrectionTimeout),
 		DelegationReuseWarmInstances:       cfg.Mesnada.Delegation.ReuseWarmInstances,
@@ -255,6 +265,7 @@ func buildSettingsResponse() (*SettingsResponse, error) {
 		OrchestratorMaxPerEngine:     cfg.Mesnada.Orchestrator.MaxPerEngine,
 		OrchestratorClaimTTL:         durationOrDefault(cfg.Mesnada.Orchestrator.ClaimTTL, "2m"),
 		OrchestratorDispatchInterval: durationOrDefault(cfg.Mesnada.Orchestrator.DispatchInterval, "10s"),
+		OrchestratorDisabledEngines:  nonNilStrings(config.NormalizeMesnadaDisabledEngines(cfg.Mesnada.Orchestrator.DisabledEngines)),
 	}, nil
 }
 
@@ -582,6 +593,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if req.DelegationEnabled != nil || req.DelegationInjectIntoLiveLoop != nil ||
 		req.DelegationResurrectIdleLoop != nil || req.DelegationSynthesizeFallback != nil ||
 		req.DelegationMaxResurrections != nil || req.DelegationMaxDepth != nil ||
+		req.DelegationAllowNestedSubagents != nil ||
 		req.DelegationMaxConcurrent != nil || req.DelegationResurrectionTimeout != nil ||
 		req.DelegationReuseWarmInstances != nil || req.DelegationAutoStartWarm != nil ||
 		req.DelegationWarmIdleTimeout != nil || req.DelegationWarmQueueDepth != nil ||
@@ -611,11 +623,17 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			del.MaxResurrections = *req.DelegationMaxResurrections
 		}
 		if req.DelegationMaxDepth != nil {
-			if *req.DelegationMaxDepth < 0 {
-				writeError(w, http.StatusBadRequest, "delegation_max_depth must be >= 0")
+			// 1 = only the main session delegates; 0 would silently read back
+			// as the default (3), so it is rejected rather than accepted.
+			if *req.DelegationMaxDepth < 1 {
+				writeError(w, http.StatusBadRequest, "delegation_max_depth must be >= 1")
 				return
 			}
 			del.MaxDepth = *req.DelegationMaxDepth
+		}
+		if req.DelegationAllowNestedSubagents != nil {
+			v := *req.DelegationAllowNestedSubagents
+			del.AllowNestedSubagents = &v
 		}
 		if req.DelegationMaxConcurrent != nil {
 			if *req.DelegationMaxConcurrent < 0 {
@@ -704,7 +722,8 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.OrchestratorMaxParallel != nil || req.OrchestratorMaxPerEngine != nil ||
-		req.OrchestratorClaimTTL != nil || req.OrchestratorDispatchInterval != nil {
+		req.OrchestratorClaimTTL != nil || req.OrchestratorDispatchInterval != nil ||
+		req.OrchestratorDisabledEngines != nil {
 		orch := config.Get().Mesnada.Orchestrator
 		if req.OrchestratorMaxParallel != nil {
 			if *req.OrchestratorMaxParallel < 1 {
@@ -733,6 +752,11 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			orch.DispatchInterval = *req.OrchestratorDispatchInterval
+		}
+		if req.OrchestratorDisabledEngines != nil {
+			// Native engines are stripped by the config layer; read live by
+			// every spawn path, so no restart is needed.
+			orch.DisabledEngines = *req.OrchestratorDisabledEngines
 		}
 		if err := config.UpdateMesnadaOrchestrator(orch); err != nil {
 			writeConfigError(w, http.StatusInternalServerError, "failed to update orchestrator settings", err)

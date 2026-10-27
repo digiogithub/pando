@@ -285,6 +285,24 @@
       "hero": {
         "title": "Mesnada",
         "tagline": "Orchestrierung von Agententeams: Subagenten delegieren, ausführen und überwachen."
+      },
+      "nesting": {
+        "title": "Verschachtelung von Subagenten",
+        "description": "Begrenzt, wie tief delegierte Subagenten weitere Subagenten starten dürfen. Gilt sofort, ohne Neustart.",
+        "allowNested": "Subagenten dürfen weitere Subagenten starten",
+        "allowNestedDescription": "Wenn aus, kann nur die Hauptsitzung delegieren: Subagenten können keine eigenen Subagenten starten, unabhängig von der maximalen Ebenenzahl.",
+        "maxDepth": "Maximale Delegationsebenen",
+        "maxDepthHint": "1 = Subagenten können keine weiteren Subagenten starten (mindestens 1).",
+        "maxDepthOverridden": "Überschrieben: Subagenten können keine Subagenten starten, daher ist das Limit 1."
+      },
+      "engines": {
+        "title": "Subagenten-Engines",
+        "description": "Engines, auf denen ein Subagent laufen darf. Deaktiviere die, die ein Subagent nicht versehentlich aufrufen soll; Pandos eingebaute Engines sind immer verfügbar.",
+        "builtIn": "Eingebaut",
+        "custom": "Benutzerdefiniert",
+        "installedAt": "Installiert: {{path}}",
+        "notInstalled": "Nicht installiert ({{binary}} nicht im PATH gefunden)",
+        "notDetected": "Nicht erkannt (Agent separat konfiguriert)"
       }
     },
     "general": {
@@ -340,7 +358,7 @@
       "delegationSynthesizeFallback": "Fallback synthetisieren",
       "delegationSynthesizeFallbackDescription": "Eine Schlussfolgerung synthetisieren, wenn der Subagent den Block weglässt",
       "delegationMaxResurrections": "Max. Wiederbelebungen",
-      "delegationMaxDepth": "Max. Tiefe",
+      "delegationMaxDepth": "Maximale Delegationsebenen",
       "delegationMaxConcurrent": "Max. gleichzeitig",
       "delegationResurrectionTimeout": "Wiederbelebungs-Timeout",
       "delegationReuseWarmInstances": "Warme Instanzen wiederverwenden",

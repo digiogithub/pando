@@ -7,6 +7,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/ipc/protocol"
+	"github.com/digiogithub/pando/internal/mesnada/depth"
 )
 
 // DelegateExternal runs promptText inside an external (editor-launched) peer
@@ -77,6 +78,9 @@ func (m *Manager) delegateViaIPC(ctx context.Context, endpoint, cwd, promptText,
 		Prompt:        promptText,
 		Cwd:           cwd,
 		CorrelationID: correlationID,
+	}
+	if level, ok := depth.FromContext(ctx); ok {
+		params.Depth = &level
 	}
 
 	runDone := make(chan struct{})

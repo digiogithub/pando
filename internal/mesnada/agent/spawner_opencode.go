@@ -94,6 +94,7 @@ func (s *OpenCodeSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	}
 
 	cmd.Env = env
+	cmd.Env = withDelegationDepth(cmd.Env, task.Depth)
 
 	// Opt-in only (Sandbox.ExtendTo must include "subagents"): OpenCode
 	// writes to ~/.config/opencode, plus s.logDir for the converted MCP

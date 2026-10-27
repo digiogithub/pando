@@ -70,7 +70,7 @@ func (s *PandoCLISpawner) Spawn(ctx context.Context, task *models.Task) error {
 	// Propagate the delegation depth so a delegated pando subprocess knows its own
 	// depth. The child's spawn tool reads PANDO_DELEGATION_DEPTH and sets its own
 	// children's Depth = parent+1, enabling the MaxDepth anti-fork-bomb cap.
-	cmd.Env = append(os.Environ(), "NO_COLOR=1", fmt.Sprintf("PANDO_DELEGATION_DEPTH=%d", task.Depth))
+	cmd.Env = withDelegationDepth(append(os.Environ(), "NO_COLOR=1"), task.Depth)
 
 	// Opt-in only (Sandbox.ExtendTo must include "subagents"): the spawned
 	// process is Pando itself, running task.WorkDir as its own project, so

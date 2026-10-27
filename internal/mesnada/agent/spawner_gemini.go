@@ -90,6 +90,7 @@ func (s *GeminiSpawner) Spawn(ctx context.Context, task *models.Task) error {
 	}
 
 	cmd.Env = env
+	cmd.Env = withDelegationDepth(cmd.Env, task.Depth)
 
 	// Opt-in only (Sandbox.ExtendTo must include "subagents"): Gemini CLI
 	// writes to ~/.gemini, plus s.logDir for the generated settings file.

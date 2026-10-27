@@ -361,14 +361,33 @@ export default function GeneralSettings() {
             onChange={(e) => updateField('delegation_max_resurrections', Number(e.target.value))}
           />
         </SettingsRow>
-        <SettingsRow label={t('settings.general.delegationMaxDepth')} htmlFor="general-delegation-max-depth">
+        <SettingsRow
+          label={t('settings.mesnada.nesting.allowNested')}
+          description={t('settings.mesnada.nesting.allowNestedDescription')}
+          htmlFor="general-delegation-allow-nested"
+        >
+          <Switch
+            id="general-delegation-allow-nested"
+            checked={config.delegation_allow_nested_subagents}
+            onCheckedChange={(v) => updateField('delegation_allow_nested_subagents', v)}
+          />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.general.delegationMaxDepth')}
+          description={
+            config.delegation_allow_nested_subagents
+              ? t('settings.mesnada.nesting.maxDepthHint')
+              : t('settings.mesnada.nesting.maxDepthOverridden')
+          }
+          htmlFor="general-delegation-max-depth"
+        >
           <Input
             id="general-delegation-max-depth"
             type="number"
-            min={0}
-            value={config.delegation_max_depth}
-            disabled={!config.delegation_enabled}
-            onChange={(e) => updateField('delegation_max_depth', Number(e.target.value))}
+            min={1}
+            value={config.delegation_allow_nested_subagents ? config.delegation_max_depth : 1}
+            disabled={!config.delegation_allow_nested_subagents}
+            onChange={(e) => updateField('delegation_max_depth', Math.max(1, Number(e.target.value) || 1))}
           />
         </SettingsRow>
         <SettingsRow label={t('settings.general.delegationMaxConcurrent')} htmlFor="general-delegation-max-conc">

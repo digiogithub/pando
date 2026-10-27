@@ -10,11 +10,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/digiogithub/pando/internal/mesnada/depth"
 	"github.com/digiogithub/pando/pkg/mesnada/models"
 )
 
@@ -121,6 +123,7 @@ func (s *CopilotSpawner) Spawn(ctx context.Context, task *models.Task) error {
 		"COPILOT_ALLOW_ALL=1",
 		"NO_COLOR=1",
 	)
+	cmd.Env = withDelegationDepth(cmd.Env, task.Depth)
 
 	// Opt-in only (Sandbox.ExtendTo must include "subagents"): Copilot has
 	// its own permission model and writes to ~/.copilot and
@@ -451,4 +454,21 @@ func (s *CopilotSpawner) Shutdown() {
 			}
 		}
 	}
+}
+
+// withDelegationDepth returns env with PANDO_DELEGATION_DEPTH set to level,
+// replacing any inherited value. Every subagent process gets it: a Pando child
+// reads it directly, and a third-party CLI passes it on to the "pando" MCP
+// server it launches, so spawns through Pando's tools count one level deeper.
+// Without the replacement a CLI subagent of a level-1 Pando would inherit "1"
+// although it runs at level 2.
+func withDelegationDepth(env []string, level int) []string {
+	prefix := depth.EnvVar + "="
+	out := make([]string, 0, len(env)+1)
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, prefix) {
+			out = append(out, kv)
+		}
+	}
+	return append(out, prefix+strconv.Itoa(level))
 }

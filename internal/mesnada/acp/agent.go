@@ -13,6 +13,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/mesnada/depth"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/notify"
 	"github.com/digiogithub/pando/internal/pubsub"
@@ -370,6 +371,12 @@ func (a *PandoACPAgent) Prompt(ctx context.Context, req acpsdk.PromptRequest) (r
 	// NOT apply model/persona overrides in this path to avoid mutating the active
 	// run mid-flight.
 	pandoSessionID := acpSession.PandoSessionID()
+	// A warm delegation declares the level its session runs at in _meta; record
+	// it so this session's spawn tools count one level deeper and the nesting
+	// cap holds inside this long-lived instance (where the env var cannot help).
+	if level, ok := depth.FromMeta(req.Meta); ok {
+		depth.SetSession(pandoSessionID, level)
+	}
 	if _, isCmd := parseSlashCommand(promptText); !isCmd && a.agentService.IsSessionBusy(pandoSessionID) {
 		if steerErr := a.agentService.Steer(pandoSessionID, promptText, attachments...); steerErr != nil {
 			// The run likely finished between the busy check and Steer (race), or

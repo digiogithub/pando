@@ -285,6 +285,24 @@
       "hero": {
         "title": "Mesnada",
         "tagline": "エージェントチームのオーケストレーション:サブエージェントの委任・実行・監視。"
+      },
+      "nesting": {
+        "title": "サブエージェントのネスト",
+        "description": "委任されたサブエージェントが他のサブエージェントを起動できる深さを制限します。再起動なしで即時に適用されます。",
+        "allowNested": "サブエージェントが他のサブエージェントを起動することを許可",
+        "allowNestedDescription": "オフにすると、委任できるのはメインセッションのみになります。最大レベルの設定に関係なく、サブエージェントは独自のサブエージェントを起動できません。",
+        "maxDepth": "最大委任レベル",
+        "maxDepthHint": "1 = サブエージェントは他のサブエージェントを起動できません（最小 1）。",
+        "maxDepthOverridden": "上書き中: サブエージェントはサブエージェントを起動できないため、上限は 1 です。"
+      },
+      "engines": {
+        "title": "サブエージェントのエンジン",
+        "description": "サブエージェントが実行できるエンジンです。サブエージェントに誤って呼び出させたくないものを無効にしてください。Pando の組み込みエンジンは常に利用できます。",
+        "builtIn": "組み込み",
+        "custom": "カスタム",
+        "installedAt": "インストール済み: {{path}}",
+        "notInstalled": "未インストール（PATH に {{binary}} が見つかりません）",
+        "notDetected": "未検出（エージェントは別途設定）"
       }
     },
     "general": {
@@ -340,7 +358,7 @@
       "delegationSynthesizeFallback": "フォールバック合成",
       "delegationSynthesizeFallbackDescription": "サブエージェントがブロックを省略した場合に結論を合成します",
       "delegationMaxResurrections": "最大復帰回数",
-      "delegationMaxDepth": "最大深度",
+      "delegationMaxDepth": "最大委任レベル",
       "delegationMaxConcurrent": "最大同時実行数",
       "delegationResurrectionTimeout": "復帰タイムアウト",
       "delegationReuseWarmInstances": "ウォームインスタンスを再利用",

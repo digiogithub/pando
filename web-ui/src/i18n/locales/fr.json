@@ -285,6 +285,24 @@
       "hero": {
         "title": "Mesnada",
         "tagline": "Orchestration d'équipes d'agents : déléguez, exécutez et supervisez des sous-agents."
+      },
+      "nesting": {
+        "title": "Imbrication des sous-agents",
+        "description": "Limite la profondeur à laquelle les sous-agents délégués peuvent lancer d'autres sous-agents. S'applique immédiatement, sans redémarrage.",
+        "allowNested": "Autoriser les sous-agents à lancer d'autres sous-agents",
+        "allowNestedDescription": "Désactivé, seule la session principale peut déléguer : les sous-agents ne peuvent pas lancer leurs propres sous-agents, quel que soit le nombre maximal de niveaux.",
+        "maxDepth": "Niveaux de délégation max.",
+        "maxDepthHint": "1 = les sous-agents ne peuvent pas lancer d'autres sous-agents (minimum 1).",
+        "maxDepthOverridden": "Remplacé : les sous-agents ne peuvent pas lancer de sous-agents, la limite est donc 1."
+      },
+      "engines": {
+        "title": "Moteurs des sous-agents",
+        "description": "Moteurs sur lesquels un sous-agent peut s'exécuter. Désactivez ceux qu'un sous-agent ne doit pas appeler par erreur ; les moteurs intégrés de Pando restent toujours disponibles.",
+        "builtIn": "Intégré",
+        "custom": "Personnalisé",
+        "installedAt": "Installé : {{path}}",
+        "notInstalled": "Non installé ({{binary}} introuvable dans le PATH)",
+        "notDetected": "Non détecté (agent configuré séparément)"
       }
     },
     "general": {
@@ -340,7 +358,7 @@
       "delegationSynthesizeFallback": "Synthèse de repli",
       "delegationSynthesizeFallbackDescription": "Synthétiser une conclusion lorsque le sous-agent omet le bloc",
       "delegationMaxResurrections": "Réveils max",
-      "delegationMaxDepth": "Profondeur max",
+      "delegationMaxDepth": "Niveaux de délégation max.",
       "delegationMaxConcurrent": "Concurrence max",
       "delegationResurrectionTimeout": "Délai de réveil",
       "delegationReuseWarmInstances": "Réutiliser les instances actives",

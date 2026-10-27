@@ -21,6 +21,7 @@ import (
 
 	llmtools "github.com/digiogithub/pando/internal/llm/tools"
 	config "github.com/digiogithub/pando/internal/mesnada/config"
+	"github.com/digiogithub/pando/internal/mesnada/depth"
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	rag "github.com/digiogithub/pando/internal/rag"
 	"github.com/digiogithub/pando/internal/sandbox/portguard"
@@ -197,7 +198,7 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Mcp-Session-Id, ACP-Session-Id")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Mcp-Session-Id, ACP-Session-Id, X-Pando-Delegation-Depth")
 			w.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id, ACP-Session-Id")
 		}
 
@@ -438,7 +439,15 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Mcp-Session-Id", sessionID)
 
-	response := s.handleRequest(r.Context(), session, &req)
+	// An HTTP MCP client may declare its own delegation level (a subagent's MCP
+	// connection) so spawns through these tools count one level deeper and the
+	// nesting cap holds. Stdio clients carry it in PANDO_DELEGATION_DEPTH instead.
+	ctx := r.Context()
+	if level, ok := depth.Parse(r.Header.Get(depth.HeaderName)); ok {
+		ctx = depth.WithContext(ctx, level)
+	}
+
+	response := s.handleRequest(ctx, session, &req)
 	if response == nil {
 		// Notification (e.g. notifications/initialized): acknowledge with a
 		// bare 202 and no JSON-RPC body, as the Streamable HTTP spec requires.

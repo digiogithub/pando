@@ -10,6 +10,7 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/ipc"
 	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/mesnada/depth"
 	"github.com/digiogithub/pando/internal/pubsub"
 	acpsdk "github.com/madeindigio/acp-go-sdk"
 )
@@ -368,10 +369,16 @@ func (m *Manager) delegateOn(ctx context.Context, projectID string, inst *Instan
 		}
 	}()
 
-	promptResp, promptErr := inst.conn.Prompt(ctx, acpsdk.PromptRequest{
+	promptReq := acpsdk.PromptRequest{
 		SessionId: sid,
 		Prompt:    []acpsdk.ContentBlock{acpsdk.TextBlock(promptText)},
-	})
+	}
+	// Carry the task's delegation level to the warm child: it runs many sessions
+	// in one process, so the level is per session (ACP _meta), not an env var.
+	if level, ok := depth.FromContext(ctx); ok {
+		promptReq.Meta = depth.Meta(level)
+	}
+	promptResp, promptErr := inst.conn.Prompt(ctx, promptReq)
 	close(promptDone)
 
 	// Best-effort close of the ephemeral child session regardless of outcome.

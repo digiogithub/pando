@@ -95,6 +95,10 @@ type DelegationRunParams struct {
 	Persona       string `json:"persona,omitempty"`
 	Model         string `json:"model,omitempty"`
 	CorrelationID string `json:"correlation_id,omitempty"`
+	// Depth is the delegation nesting level the delegated session runs at, so
+	// the target enforces mesnada.delegation.maxDepth for spawns made from it.
+	// Nil (an older caller) leaves the target's own process level in effect.
+	Depth *int `json:"depth,omitempty"`
 }
 
 // DelegationRunResult is the response for delegation.run. Output is the full

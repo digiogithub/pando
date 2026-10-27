@@ -102,7 +102,7 @@ func TestDelegationE2E_CapsRespected(t *testing.T) {
 		s := newResurrectSup(inj, &fakeLister{}, opts)
 
 		task := enrichedTask(t, "task-C", "sess-C", "corr-C")
-		task.Depth = 2 // >= MaxDepth
+		task.Depth = 3 // > MaxDepth
 		if s.handleCompletion(task) {
 			t.Fatal("expected depth cap to block resurrection")
 		}

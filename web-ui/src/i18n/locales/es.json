@@ -285,6 +285,24 @@
       "hero": {
         "title": "Mesnada",
         "tagline": "Orquestación de equipos de agentes: delega, ejecuta y supervisa subagentes."
+      },
+      "nesting": {
+        "title": "Anidamiento de subagentes",
+        "description": "Limita la profundidad con la que los subagentes delegados pueden lanzar otros subagentes. Se aplica al instante, sin reiniciar.",
+        "allowNested": "Permitir que los subagentes lancen otros subagentes",
+        "allowNestedDescription": "Si está desactivado, solo la sesión principal puede delegar: los subagentes no pueden lanzar subagentes propios, diga lo que diga el máximo de niveles.",
+        "maxDepth": "Máximo de niveles de delegación",
+        "maxDepthHint": "1 = los subagentes no pueden lanzar otros subagentes (mínimo 1).",
+        "maxDepthOverridden": "Anulado: los subagentes no pueden lanzar subagentes, así que el límite es 1."
+      },
+      "engines": {
+        "title": "Motores de subagentes",
+        "description": "Motores en los que puede ejecutarse un subagente. Desactiva los que no quieras que un subagente invoque por error; los motores propios de Pando siempre están disponibles.",
+        "builtIn": "Integrado",
+        "custom": "Personalizado",
+        "installedAt": "Instalado: {{path}}",
+        "notInstalled": "No instalado ({{binary}} no está en el PATH)",
+        "notDetected": "No detectado (agente configurado aparte)"
       }
     },
     "general": {
@@ -348,7 +366,7 @@
       "delegationSynthesizeFallback": "Sintetizar alternativa",
       "delegationSynthesizeFallbackDescription": "Sintetiza una conclusión cuando el subagente omite el bloque",
       "delegationMaxResurrections": "Máx. reactivaciones",
-      "delegationMaxDepth": "Profundidad máx.",
+      "delegationMaxDepth": "Máximo de niveles de delegación",
       "delegationMaxConcurrent": "Máx. concurrentes",
       "delegationResurrectionTimeout": "Tiempo de espera de reactivación",
       "delegationReuseWarmInstances": "Reutilizar instancias activas",

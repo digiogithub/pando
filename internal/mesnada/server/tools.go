@@ -9,6 +9,8 @@ import (
 	"time"
 
 	llmtools "github.com/digiogithub/pando/internal/llm/tools"
+	"github.com/digiogithub/pando/internal/mesnada/depth"
+	"github.com/digiogithub/pando/internal/mesnada/engines"
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	rag "github.com/digiogithub/pando/internal/rag"
 	"github.com/digiogithub/pando/pkg/mesnada/models"
@@ -133,6 +135,10 @@ func (s *Server) detectEngineForModel(modelID string) models.Engine {
 	}
 
 	for _, e := range engineOrder {
+		// Never auto-pick an engine the user disabled in the Mesnada settings.
+		if engines.IsDisabled(string(e.engine)) {
+			continue
+		}
 		if s.config.GetModelForEngine(string(e.engine), modelID) != nil {
 			if _, err := exec.LookPath(e.binaryName); err == nil {
 				return e.engine
@@ -202,9 +208,12 @@ func (s *Server) getToolDefinitions() []Tool {
 
 	// Build engine enum: built-in engines + any loaded custom template engines.
 	builtinEngines := []string{"copilot", "claude-code", "gemini-cli", "opencode", "ollama-claude", "ollama-opencode"}
-	engineEnumServer := append([]string{}, builtinEngines...)
+	engineEnumServer := engines.FilterEnabled(builtinEngines)
 	engineDescServer := "CLI engine to use: 'copilot' (GitHub Copilot CLI, default), 'claude-code' (Anthropic Claude CLI), 'gemini-cli' (Google Gemini CLI), 'opencode' (OpenCode.ai CLI), 'ollama-claude' (Ollama Claude interface), or 'ollama-opencode' (Ollama OpenCode interface). If not specified but model is provided, engine will be auto-detected based on the model configuration."
-	if customEngines := s.orchestrator.ListCustomEngines(); len(customEngines) > 0 {
+	if disabled := engines.Disabled(); len(disabled) > 0 {
+		engineDescServer += " Disabled in Mesnada settings (do not use): " + strings.Join(disabled, ", ") + "."
+	}
+	if customEngines := engines.FilterEnabled(s.orchestrator.ListCustomEngines()); len(customEngines) > 0 {
 		engineEnumServer = append(engineEnumServer, customEngines...)
 		engineDescServer += " Custom template engines: " + strings.Join(customEngines, ", ") + "."
 	}
@@ -727,9 +736,18 @@ func (s *Server) toolSpawnAgent(ctx context.Context, params json.RawMessage) (in
 		engine = s.detectEngineForModel(req.Model)
 	}
 
+	// Nesting cap: the caller's own level comes from the request context (HTTP
+	// header), its session, or PANDO_DELEGATION_DEPTH; the task runs one deeper.
+	callerSession, _ := ctx.Value(llmtools.SessionIDContextKey).(string)
+	taskDepth := depth.Resolve(ctx, callerSession) + 1
+	if err := engines.CheckSpawnDepth(taskDepth); err != nil {
+		return nil, err
+	}
+
 	task, err := s.orchestrator.Spawn(ctx, models.SpawnRequest{
 		Prompt:           req.Prompt,
 		WorkDir:          req.WorkDir,
+		Depth:            taskDepth,
 		ProjectID:        targetProjectID,
 		Engine:           engine,
 		Model:            req.Model,

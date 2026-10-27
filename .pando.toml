@@ -10,6 +10,7 @@ LSPInstallTimeout = '2m0s'
 LSPRunner = 'auto'
 LSPStartupTimeout = '20s'
 LogFile = ''
+WatchExclude = []
 WorkingDir = ''
 
 [AGUI]
@@ -29,6 +30,7 @@ Persona = ''
 Port = 0
 RequireToken = false
 ShutdownGrace = ''
+SystemPrompt = ''
 Tools = []
 
 [Agents]
@@ -569,7 +571,7 @@ ChatSidebar = ''
 ChatSidebarMinWidth = 0
 NerdFonts = true
 ShowHiddenFiles = true
-Theme = 'tron'
+Theme = 'tron-nobg'
 
 [TokenOptimization]
 BuildCodeGraph = true

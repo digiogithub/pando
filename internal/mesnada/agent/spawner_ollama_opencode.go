@@ -144,6 +144,7 @@ func (s *OllamaOpenCodeSpawner) Spawn(ctx context.Context, task *models.Task) er
 	)
 
 	cmd.Env = env
+	cmd.Env = withDelegationDepth(cmd.Env, task.Depth)
 
 	// Opt-in only (Sandbox.ExtendTo must include "subagents"): this spawner
 	// points OpenCode's XDG_CONFIG_HOME at configHome (under s.logDir)

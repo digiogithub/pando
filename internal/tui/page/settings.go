@@ -21,6 +21,7 @@ import (
 	llmtools "github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/mcpauth"
+	"github.com/digiogithub/pando/internal/mesnada/engines"
 	"github.com/digiogithub/pando/internal/rag/embeddings"
 	pandoruntime "github.com/digiogithub/pando/internal/runtime"
 	"github.com/digiogithub/pando/internal/skills/catalog"
@@ -1033,7 +1034,7 @@ func buildSections(app *pandoapp.App) []settings.Section {
 		withGroup(buildLuaSection(cfg), ""),
 		withGroup(buildEvaluatorSection(cfg), ""),
 
-		withGroup(buildMesnadaSection(cfg), "Services"),
+		withGroup(buildMesnadaSection(app, cfg), "Services"),
 		withGroup(buildRemembrancesSection(app, cfg), "Services"),
 		withGroup(buildSnapshotsSection(cfg), "Services"),
 		withGroup(buildServerSection(cfg), "Services"),
@@ -2410,7 +2411,7 @@ func buildContainerRuntimeSection(cfg *config.Config) settings.Section {
 	}
 }
 
-func buildMesnadaSection(cfg *config.Config) settings.Section {
+func buildMesnadaSection(app *pandoapp.App, cfg *config.Config) settings.Section {
 	fields := []settings.Field{
 		headerField("mesnada.header.general", "General"),
 		{Label: "Enabled", Key: "mesnada.enabled", Type: settings.FieldToggle, Value: fmt.Sprint(cfg.Mesnada.Enabled)},
@@ -2467,7 +2468,8 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 		{Label: "Delegation Resurrect Idle Loop", Key: "mesnada.delegation.resurrectIdleLoop", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.ResurrectIdleLoop), Hint: "Case B: resurrect an idle parent session when a correlated task completes"},
 		{Label: "Delegation Synthesize Fallback", Key: "mesnada.delegation.synthesizeFallback", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.SynthesizeFallback), Hint: "Synthesize a conclusion when the subagent omits the block"},
 		{Label: "Delegation Max Resurrections", Key: "mesnada.delegation.maxResurrections", Type: settings.FieldText, Value: intString(cfg.Mesnada.Delegation.MaxResurrections, 4), Hint: "Cap resurrections per session per turn-chain"},
-		{Label: "Delegation Max Depth", Key: "mesnada.delegation.maxDepth", Type: settings.FieldText, Value: intString(cfg.Mesnada.Delegation.MaxDepth, 3), Hint: "Cap delegated-of-delegated nesting (anti-fork-bomb)"},
+		{Label: "Allow Subagents To Launch Subagents", Key: "mesnada.delegation.allowNestedSubagents", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.NestedSubagentsAllowed()), Hint: "Off = only the main session can delegate; subagents cannot spawn other subagents (overrides Max Delegation Levels)"},
+		maxDepthField(cfg),
 		{Label: "Delegation Max Concurrent", Key: "mesnada.delegation.maxConcurrent", Type: settings.FieldText, Value: intString(cfg.Mesnada.Delegation.MaxConcurrent, 8), Hint: "Cap outstanding correlated tasks per parent"},
 		{Label: "Delegation Resurrection Timeout", Key: "mesnada.delegation.resurrectionTimeout", Type: settings.FieldText, Value: delegationTimeoutString(cfg.Mesnada.Delegation.ResurrectionTimeout), Hint: "How long to wait for pending sibling conclusions (e.g. 10m, 1h)"},
 		{Label: "Delegation Reuse Warm Instances", Key: "mesnada.delegation.reuseWarmInstances", Type: settings.FieldToggle, Value: boolString(cfg.Mesnada.Delegation.ReuseWarmInstances), Hint: "Route a delegated task to an already-running per-project instance instead of cold-spawning"},
@@ -2484,6 +2486,8 @@ func buildMesnadaSection(cfg *config.Config) settings.Section {
 		{Label: "Delegation Event Log", Key: "mesnada.delegation.eventLog", Type: settings.FieldToggle, Value: boolString(!cfg.Mesnada.Delegation.EventLogDisabled), Hint: "Record every terminal task outcome on disk and deliver it through an acked cursor, so a dropped or restart-lost signal is replayed"},
 		{Label: "Delegation Event Log Max Entries", Key: "mesnada.delegation.eventLogMaxEntries", Type: settings.FieldText, Value: intString(cfg.Mesnada.Delegation.EventLogMaxEntries, 5000), Hint: "How many events to retain before the log is compacted"},
 	}
+
+	fields = append(fields, mesnadaEngineFields(app, cfg)...)
 
 	if !cfg.Mesnada.Enabled {
 		for i := range fields {
@@ -4726,7 +4730,102 @@ func saveLSPActivation(key, value string) error {
 	return config.UpdateLSPActivation(settingsValue)
 }
 
+// mesnadaEngineKeyPrefix prefixes the per-engine enable toggles of the Mesnada
+// section ("mesnada.engine.<name>").
+const mesnadaEngineKeyPrefix = "mesnada.engine."
+
+// maxDepthField is the delegation nesting cap input. When nested subagents are
+// disallowed the cap is fixed at 1, so the input is shown disabled and marked as
+// overridden instead of displaying a value that is not enforced.
+func maxDepthField(cfg *config.Config) settings.Field {
+	f := settings.Field{
+		Label: "Max Delegation Levels",
+		Key:   "mesnada.delegation.maxDepth",
+		Type:  settings.FieldText,
+		Value: intString(cfg.Mesnada.Delegation.MaxDepth, 3),
+		Hint:  "1 = subagents cannot launch other subagents (min 1)",
+	}
+	if !cfg.Mesnada.Delegation.NestedSubagentsAllowed() {
+		f.Disabled = true
+		f.Hint = "Overridden: subagents cannot launch subagents (effective limit 1)"
+	}
+	return f
+}
+
+// mesnadaEngineFields lists every subagent engine with an enable toggle, so a
+// subagent cannot call an installed CLI the user does not want used. Pando's own
+// engines are shown locked ("Built-in"); engines whose binary is not on PATH
+// stay toggleable but say so in the hint.
+func mesnadaEngineFields(app *pandoapp.App, cfg *config.Config) []settings.Field {
+	var custom []engines.CustomEngine
+	if app != nil && app.MesnadaOrchestrator != nil {
+		for _, info := range app.MesnadaOrchestrator.CustomEngineInfos() {
+			custom = append(custom, engines.CustomEngine{Name: info.Name, Command: info.Command})
+		}
+	}
+	statuses := engines.Detect(custom, cfg.Mesnada.Orchestrator.DisabledEngines)
+	fields := []settings.Field{headerField("mesnada.header.engines", "Subagent engines")}
+	for _, st := range statuses {
+		f := settings.Field{
+			Label: st.Label + " (" + st.Name + ")",
+			Key:   mesnadaEngineKeyPrefix + st.Name,
+			Type:  settings.FieldToggle,
+			Value: boolString(st.Enabled),
+		}
+		switch {
+		case st.Locked:
+			f.Disabled = true
+			f.Hint = "Built-in: always enabled"
+		case st.Installed:
+			f.Hint = "Installed: " + st.Path
+		case st.Binary != "":
+			f.Hint = "Not installed (" + st.Binary + " not found on PATH)"
+		default:
+			f.Hint = "Not detected (agent configured separately)"
+		}
+		fields = append(fields, f)
+	}
+	return fields
+}
+
+// saveMesnadaEngineToggle enables or disables one subagent engine. The change is
+// read live by every spawn path, so it applies without a restart.
+func saveMesnadaEngineToggle(field settings.Field) error {
+	cfg := config.Get()
+	if cfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+	name := strings.TrimPrefix(field.Key, mesnadaEngineKeyPrefix)
+	if engines.IsNative(name) {
+		return fmt.Errorf("engine %q is built in and cannot be disabled", name)
+	}
+	enabled, err := parseBoolValue(field.Value)
+	if err != nil {
+		return fmt.Errorf("invalid engine toggle value: %w", err)
+	}
+	orch := cfg.Mesnada.Orchestrator
+	disabled := make([]string, 0, len(orch.DisabledEngines)+1)
+	for _, d := range orch.DisabledEngines {
+		if engines.Normalize(d) != engines.Normalize(name) {
+			disabled = append(disabled, d)
+		}
+	}
+	if !enabled {
+		disabled = append(disabled, name)
+	}
+	orch.DisabledEngines = disabled
+	return config.UpdateMesnadaOrchestrator(orch)
+}
+
 func saveMesnada(field settings.Field) error {
+	if strings.HasPrefix(field.Key, mesnadaEngineKeyPrefix) {
+		return saveMesnadaEngineToggle(field)
+	}
+	// Every delegation key is persisted by the dedicated delegation writer.
+	if strings.HasPrefix(field.Key, "mesnada.delegation.") {
+		return saveMesnadaDelegation(field)
+	}
+
 	cfg := config.Get()
 	if cfg == nil {
 		return fmt.Errorf("config not loaded")
@@ -4861,18 +4960,6 @@ func saveMesnada(field settings.Field) error {
 			return fmt.Errorf("invalid ACP server require auth value: %w", err)
 		}
 		mesnadaCfg.ACP.Server.RequireAuth = requireAuth
-	case "mesnada.delegation.enabled",
-		"mesnada.delegation.injectIntoLiveLoop",
-		"mesnada.delegation.resurrectIdleLoop",
-		"mesnada.delegation.synthesizeFallback",
-		"mesnada.delegation.maxResurrections",
-		"mesnada.delegation.maxDepth",
-		"mesnada.delegation.maxConcurrent",
-		"mesnada.delegation.resurrectionTimeout",
-		"mesnada.delegation.reuseWarmInstances",
-		"mesnada.delegation.autoStartWarmInstance",
-		"mesnada.delegation.warmInstanceIdleTimeout":
-		return saveMesnadaDelegation(field)
 	default:
 		return fmt.Errorf("unsupported Mesnada setting %q", field.Key)
 	}
@@ -4928,10 +5015,16 @@ func saveMesnadaDelegation(field settings.Field) error {
 		if err != nil {
 			return fmt.Errorf("invalid Delegation max depth: %w", err)
 		}
-		if v < 0 {
-			return fmt.Errorf("Delegation max depth must be >= 0")
+		if v < 1 {
+			return fmt.Errorf("Max delegation levels must be >= 1 (1 = subagents cannot launch other subagents)")
 		}
 		del.MaxDepth = v
+	case "mesnada.delegation.allowNestedSubagents":
+		v, err := parseBoolValue(field.Value)
+		if err != nil {
+			return fmt.Errorf("invalid Delegation allow-nested-subagents value: %w", err)
+		}
+		del.AllowNestedSubagents = &v
 	case "mesnada.delegation.maxConcurrent":
 		v, err := parseIntValue(field.Value)
 		if err != nil {

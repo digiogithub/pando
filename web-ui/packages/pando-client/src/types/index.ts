@@ -869,7 +869,8 @@ export interface SettingsConfig {
   delegation_resurrect_idle_loop: boolean
   delegation_synthesize_fallback: boolean
   delegation_max_resurrections: number
-  delegation_max_depth: number
+  delegation_max_depth: number                       // deepest delegation level allowed (1 = subagents cannot spawn)
+  delegation_allow_nested_subagents: boolean         // false = subagents cannot launch subagents (cap 1)
   delegation_max_concurrent: number
   delegation_resurrection_timeout: string  // e.g. "10m", "1h"
   delegation_reuse_warm_instances: boolean            // route delegated tasks to a warm per-project instance
@@ -1121,6 +1122,31 @@ export interface MesnadaOrchestratorConfig {
   defaultModel: string
   defaultMcpConfig: string
   personaPath: string
+  // Subagent engines a delegated task may not use (native Pando engines are never listed).
+  disabledEngines?: string[]
+}
+
+// Subset of mesnada.delegation edited from the Mesnada settings page. The
+// services config round-trips the whole object, so unknown keys are preserved.
+export interface MesnadaDelegationConfig {
+  maxDepth?: number
+  // Unset means true (subagents may launch subagents, capped by maxDepth).
+  allowNestedSubagents?: boolean
+  [key: string]: unknown
+}
+
+export type MesnadaEngineKind = 'native' | 'cli' | 'acp' | 'custom'
+
+// One entry of GET /api/v1/mesnada/engines.
+export interface MesnadaEngineStatus {
+  name: string
+  label: string
+  kind: MesnadaEngineKind
+  binary: string
+  installed: boolean
+  path: string
+  enabled: boolean
+  locked: boolean
 }
 
 export interface MesnadaACPServerConfig {
@@ -1151,6 +1177,7 @@ export interface MesnadaConfig {
   orchestrator: MesnadaOrchestratorConfig
   acp: MesnadaACPConfig
   tui: MesnadaTUIConfig
+  delegation?: MesnadaDelegationConfig
 }
 
 export interface RemembrancesConfig {

@@ -260,6 +260,62 @@ type MesnadaOrchestratorConfig struct {
 	DefaultModel     string `json:"defaultModel,omitempty"`
 	DefaultMCPConfig string `json:"defaultMcpConfig,omitempty"`
 	PersonaPath      string `json:"personaPath,omitempty"`
+	// DisabledEngines lists subagent engines (e.g. "claude", "copilot") that
+	// delegated tasks may not use, so a subagent cannot call an installed CLI by
+	// mistake. Pando's own engines (pando, warm-acp, acp-server) can never be
+	// disabled and are stripped on load and save. Empty (the default) leaves
+	// every engine available.
+	DisabledEngines []string `json:"disabledEngines,omitempty"`
+}
+
+// NestedSubagentsAllowed reports whether subagents may launch subagents of
+// their own (AllowNestedSubagents, default true).
+func (d MesnadaDelegationConfig) NestedSubagentsAllowed() bool {
+	return d.AllowNestedSubagents == nil || *d.AllowNestedSubagents
+}
+
+// EffectiveMaxDepth is the nesting cap actually enforced: MaxDepth (default 3
+// when unset), or 1 when nested subagents are disallowed.
+func (d MesnadaDelegationConfig) EffectiveMaxDepth() int {
+	if !d.NestedSubagentsAllowed() {
+		return 1
+	}
+	if d.MaxDepth <= 0 {
+		return defaultDelegationMaxDepth
+	}
+	return d.MaxDepth
+}
+
+// NormalizeMesnadaDisabledEngines canonicalises a disabled-engines list: it
+// resolves the claude-code / gemini-cli aliases, lowercases, drops blanks,
+// duplicates and Pando's native engines (never disableable), and sorts the
+// result. It returns nil when nothing remains so the key is omitted.
+func NormalizeMesnadaDisabledEngines(list []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(list))
+	for _, raw := range list {
+		n := strings.ToLower(strings.TrimSpace(raw))
+		switch n {
+		case "claude-code":
+			n = "claude"
+		case "gemini-cli":
+			n = "gemini"
+		}
+		switch n {
+		case "", "pando", "warm-acp", "acp-server":
+			continue
+		}
+		if seen[n] {
+			continue
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	sort.Strings(out)
+	return out
 }
 
 // MesnadaACPServerConfig holds configuration for the ACP server.
@@ -312,8 +368,18 @@ type MesnadaDelegationConfig struct {
 	SynthesizeFallback bool `json:"synthesizeFallback,omitempty"`
 	// MaxResurrections caps resurrections per session per turn-chain.
 	MaxResurrections int `json:"maxResurrections,omitempty"`
-	// MaxDepth caps delegated-of-delegated nesting (anti-fork-bomb).
+	// MaxDepth caps delegated-of-delegated nesting (anti-fork-bomb). It is the
+	// highest level a delegated task may run at: the main session is level 0, so
+	// MaxDepth=1 lets it delegate while its subagents cannot spawn their own.
+	// Enforced at spawn time; the spawn/swarm/await tools are hidden from an agent
+	// already at the cap.
 	MaxDepth int `json:"maxDepth,omitempty"`
+	// AllowNestedSubagents lets a subagent launch other subagents (still capped
+	// by MaxDepth). When false the effective cap is 1 whatever MaxDepth says: the
+	// main session can delegate, subagents cannot. A pointer so "unset" (nil, the
+	// default) reads as true while an explicit false survives viper's nested
+	// default shadowing and JSON omitempty. Read it via NestedSubagentsAllowed.
+	AllowNestedSubagents *bool `json:"allowNestedSubagents,omitempty"`
 	// MaxConcurrent caps outstanding correlated tasks per parent. It also bounds
 	// the number of concurrent delegated sessions routed to a single warm instance
 	// (Phase 7.3): over the cap a delegated task falls back to the cold path.
@@ -3320,6 +3386,7 @@ func normalizeMesnadaOrchestratorDefaults() {
 	}
 	// MaxPerEngine has no documented non-zero default: 0 genuinely means "no
 	// per-engine cap", so it is left alone.
+	o.DisabledEngines = NormalizeMesnadaDisabledEngines(o.DisabledEngines)
 }
 
 // MaxAGUISystemPromptBytes caps [AGUI] SystemPrompt and
@@ -5299,6 +5366,7 @@ func UpdateMesnada(mesnadaCfg MesnadaConfig) error {
 		return fmt.Errorf("config not loaded")
 	}
 
+	mesnadaCfg.Orchestrator.DisabledEngines = NormalizeMesnadaDisabledEngines(mesnadaCfg.Orchestrator.DisabledEngines)
 	oldMesnada := cfg.Mesnada
 	cfg.Mesnada = mesnadaCfg
 
@@ -5335,11 +5403,13 @@ func UpdateMesnadaDelegation(delegationCfg MesnadaDelegationConfig) error {
 // UpdateMesnadaOrchestrator updates the orchestrator (dispatcher) configuration
 // and persists it to the config file. The new caps take effect for orchestrators
 // created afterwards; a running orchestrator keeps the values it started with.
+// DisabledEngines is the exception: it is read live on every spawn.
 func UpdateMesnadaOrchestrator(orchestratorCfg MesnadaOrchestratorConfig) error {
 	if cfg == nil {
 		return fmt.Errorf("config not loaded")
 	}
 
+	orchestratorCfg.DisabledEngines = NormalizeMesnadaDisabledEngines(orchestratorCfg.DisabledEngines)
 	oldOrchestrator := cfg.Mesnada.Orchestrator
 	cfg.Mesnada.Orchestrator = orchestratorCfg
 
