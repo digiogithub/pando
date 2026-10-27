@@ -59,7 +59,7 @@ type Chat struct {
 	sessTotal   int
 	sessMore    bool
 	sessSearch  string
-	sessHidden  bool
+	sessHidden  bool // sessions pane collapsed; in memory (the UI prefs API has no field for it)
 	sessOffset  int
 	rows        []sessRow
 
@@ -651,9 +651,10 @@ func (ch *Chat) HeaderActions(c *ui.Context) {
 	if total, window := ch.sessionTokens(cv); window > 0 && total > 0 {
 		kit.Badge(c, ch.app.T("chat.composer.context", "pct", fmt.Sprintf("%.0f", contextPct(total, window))), kit.ToneNeutral)
 	}
-	if ch.simple {
-		if kit.IconButton(c, kit.IconPanelLeft, ch.app.T("chat.simple.toggleSessions")).Clicked() {
-			ch.sessHidden = !ch.sessHidden
+	if ch.sessHidden {
+		// Reopens the sessions pane (its own collapse button is gone with it).
+		if kit.IconButton(c.Key("sessshow"), kit.IconPanelLeft, ch.app.T("chat.simple.toggleSessions")).Clicked() {
+			ch.sessHidden = false
 		}
 	}
 	if !ch.infoOpen {
@@ -680,7 +681,7 @@ func (ch *Chat) Build(c *ui.Context, r *ui.Route) {
 	ch.shortcuts(c, cv)
 	ui.Column(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
 		ui.Row(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
-			if !(ch.simple && ch.sessHidden) {
+			if !ch.sessHidden {
 				ch.sessionsPane(c, t)
 			}
 			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).AlignItems(ui.Stretch).Children(func() {
@@ -727,7 +728,7 @@ func (ch *Chat) simpleFooter(c *ui.Context, t *kit.Tokens, cv *Conversation) {
 func (ch *Chat) transcript(c *ui.Context, t *kit.Tokens, cv *Conversation) {
 	list := ui.List(c.Key("transcript:"+cv.keyID()), &cv.List, len(cv.Items), func(i int) {
 		ch.item(c, t, cv, cv.Items[i])
-	}).Grow(1).Padding(20, 24).Gap(14).Justify(ui.End)
+	}).Grow(1).Padding(20, gutter).Gap(14).Justify(ui.End)
 	list.Children(func() {
 		switch {
 		case cv.Loading:

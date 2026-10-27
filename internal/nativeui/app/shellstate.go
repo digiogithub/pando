@@ -29,6 +29,34 @@ type Host interface {
 	Notify(id, title, body string)
 }
 
+// WindowHost is the part of the host that drives the window for the custom
+// title bar (Linux, Windows); *shell.Controller implements it.
+type WindowHost interface {
+	// Minimize hides into the tray or minimises, following the tray setting.
+	Minimize()
+	// ToggleMaximize maximises or restores.
+	ToggleMaximize()
+	// IsMaximized reports the maximised state.
+	IsMaximized() bool
+	// CloseWindow hides into the tray or closes (quitting), following the
+	// tray setting.
+	CloseWindow()
+	// ToggleFullScreen toggles full screen.
+	ToggleFullScreen()
+}
+
+// CustomFrame reports whether the UI draws its own title bar and window
+// buttons (no native ones): Linux and Windows, never macOS. A variable so
+// tests can switch the platform.
+var CustomFrame = shell.CustomFrame
+
+// windowHost returns the host's window controls, nil headless or when
+// the host cannot drive a window.
+func (a *Context) windowHost() WindowHost {
+	h, _ := a.Shell().Host.(WindowHost)
+	return h
+}
+
 // Shell is the window-level state shared by the chrome and the overlays:
 // which overlay is open, the sidebar, the host. UI thread only.
 type Shell struct {

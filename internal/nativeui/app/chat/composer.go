@@ -248,7 +248,11 @@ func (ch *Chat) onKey(k ui.TextKey) bool {
 func (ch *Chat) composer(c *ui.Context, t *kit.Tokens, cv *Conversation) {
 	ch.loadCommands()
 	ch.updateMenu()
-	ui.Column(c).Padding(4, 24, 14, 24).Gap(6).AlignItems(ui.Stretch).Children(func() {
+	centered(c, readingWidth, func() { ch.composerBody(c, t, cv) })
+}
+
+func (ch *Chat) composerBody(c *ui.Context, t *kit.Tokens, cv *Conversation) {
+	ui.Column(c).Padding(4, gutter, 14, gutter).Gap(6).AlignItems(ui.Stretch).Children(func() {
 		if cv.BusyElsewhere && !cv.Streaming {
 			muted(c, t, kit.IconInfo, ch.app.T("chat.busyElsewhere.notice"), false)
 		}

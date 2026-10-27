@@ -8,3 +8,10 @@ const (
 	IconLogOut   = "log-out"
 	IconKey      = "key"
 )
+
+// Icons of the custom window controls (minimise, maximise, restore).
+const (
+	IconMinus    = "minus"
+	IconMaximize = "square"
+	IconRestore  = "copy"
+)

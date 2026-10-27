@@ -34,3 +34,56 @@ func TestDefaultMenuHasEditMenu(t *testing.T) {
 		t.Fatal("no menu")
 	}
 }
+
+type fakeWin struct{ calls []string }
+
+func (f *fakeWin) Hide()           { f.calls = append(f.calls, "hide") }
+func (f *fakeWin) Minimize()       { f.calls = append(f.calls, "minimize") }
+func (f *fakeWin) Close()          { f.calls = append(f.calls, "close") }
+func (f *fakeWin) ToggleMaximize() { f.calls = append(f.calls, "toggle") }
+
+func TestMinimizeCloseFollowTraySetting(t *testing.T) {
+	c := newController(Options{})
+	w := &fakeWin{}
+	c.minimize(w)
+	c.closeWindow(w)
+	if got := w.calls; len(got) != 2 || got[0] != "minimize" || got[1] != "close" {
+		t.Fatalf("no tray: %v", got)
+	}
+	// Setting on but no live tray icon: still normal.
+	c.SetTrayOnClose(true)
+	w.calls = nil
+	c.minimize(w)
+	c.closeWindow(w)
+	if got := w.calls; got[0] != "minimize" || got[1] != "close" {
+		t.Fatalf("setting without tray icon: %v", got)
+	}
+	c.trayOK.Store(true)
+	w.calls = nil
+	c.minimize(w)
+	c.closeWindow(w)
+	if got := w.calls; len(got) != 2 || got[0] != "hide" || got[1] != "hide" {
+		t.Fatalf("tray: %v", got)
+	}
+	// An explicit quit closes for real.
+	c.quitting.Store(true)
+	w.calls = nil
+	c.closeWindow(w)
+	if w.calls[0] != "close" {
+		t.Fatalf("quitting: %v", w.calls)
+	}
+}
+
+func TestWindowFramePerPlatform(t *testing.T) {
+	cases := []struct {
+		goos      string
+		frameless bool
+		hidden    bool
+	}{{"darwin", false, false}, {"linux", true, false}, {"windows", false, true}}
+	for _, tc := range cases {
+		fl, style, hide := windowFrame(tc.goos)
+		if fl != tc.frameless || hide != tc.hidden || (style == "hidden") != tc.hidden {
+			t.Errorf("%s: frameless=%v style=%q hideButtons=%v", tc.goos, fl, style, hide)
+		}
+	}
+}

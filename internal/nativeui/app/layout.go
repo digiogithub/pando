@@ -254,14 +254,29 @@ func (r *Root) navItem(c *ui.Context, ar Area, active string) {
 }
 
 func (r *Root) header(c *ui.Context, t *kit.Tokens, title string, v View) {
-	ui.Row(c).Height(48).Shrink(0).Padding(0, 16).Gap(8).AlignItems(ui.Center).
-		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
+	// With window controls (custom frame, no project tab bar above) the
+	// header is the title bar: it drags the window, and the controls sit
+	// flush to its right edge.
+	ctl := r.windowControlsInHeader()
+	padR := float32(16)
+	if ctl {
+		padR = 0
+	}
+	row := ui.Row(c).Height(48).Shrink(0).Padding(0, padR, 0, 16).Gap(8).AlignItems(ui.Center).
+		BorderWidth(0, 0, 1, 0).BorderColor(t.Border)
+	if ctl {
+		row.DragWindow()
+	}
+	row.Children(func() {
 		ui.Text(c, title).FontSize(t.TextMD).FontWeight(600).SingleLine().Ellipsis("…").Grow(1).Shrink(1)
 		if ha, ok := v.(HeaderActions); ok {
 			ha.HeaderActions(c)
 		}
 		if !r.embedded {
 			r.headerSlots(c)
+		}
+		if ctl {
+			r.windowControls(c)
 		}
 	})
 }

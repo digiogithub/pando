@@ -20,13 +20,15 @@ func (ch *Chat) banners(c *ui.Context, t *kit.Tokens, cv *Conversation) {
 	if cv.Goal == nil && len(cv.Plan) == 0 && len(cv.Files) == 0 {
 		return
 	}
-	ui.Column(c).Padding(8, 24, 0, 24).Gap(6).AlignItems(ui.Stretch).Children(func() {
-		if cv.Goal != nil {
-			ch.goalBanner(c, t, cv)
-		}
-		if len(cv.Plan) > 0 {
-			ch.planBanner(c, t, cv)
-		}
+	centered(c, readingWidth, func() {
+		ui.Column(c).Padding(8, gutter, 0, gutter).Gap(6).AlignItems(ui.Stretch).Children(func() {
+			if cv.Goal != nil {
+				ch.goalBanner(c, t, cv)
+			}
+			if len(cv.Plan) > 0 {
+				ch.planBanner(c, t, cv)
+			}
+		})
 	})
 }
 
@@ -158,7 +160,11 @@ func (ch *Chat) filesBar(c *ui.Context, t *kit.Tokens, cv *Conversation) {
 		add += f.Additions
 		rem += f.Removals
 	}
-	ui.Column(c).Padding(0, 24, 6, 24).AlignItems(ui.Stretch).Children(func() {
+	centered(c, readingWidth, func() { ch.filesBarBody(c, t, cv, files, add, rem) })
+}
+
+func (ch *Chat) filesBarBody(c *ui.Context, t *kit.Tokens, cv *Conversation, files []*FileChange, add, rem int) {
+	ui.Column(c).Padding(0, gutter, 6, gutter).AlignItems(ui.Stretch).Children(func() {
 		banner(c.Key("files"), t).Padding(6, 12).Children(func() {
 			head := ui.Row(c).Gap(8).AlignItems(ui.Center).Cursor(ui.CursorPointer).Focusable().
 				Label(ch.app.T("chat.files.changed", "count", len(files)))

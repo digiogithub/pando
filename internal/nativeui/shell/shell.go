@@ -72,7 +72,13 @@ func Run(o Options) error {
 	}
 	app := mygo.App
 	app.SetName(o.Name)
-	app.SetMenu(DefaultMenu(o.Menu))
+	if !CustomFrame() {
+		// macOS keeps the native menu bar (app menu, Edit roles). Linux and
+		// Windows draw their own title bar and have no menu bar; their
+		// shortcuts are app-level keys (internal/nativeui/app/chrome.go)
+		// and the quick menu.
+		app.SetMenu(DefaultMenu(o.Menu))
+	}
 
 	c := newController(o)
 	app.WhenReady(func() {
@@ -134,6 +140,31 @@ func isNoDisplay(err error) bool {
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "cannot open display") || strings.Contains(msg, "no display") ||
 		strings.Contains(msg, "failed to init gtk") || strings.Contains(msg, "gtk_init")
+}
+
+// CustomFrame reports whether the window has no native title bar or menu
+// bar and the UI draws its own title bar with minimise, maximise and close
+// buttons: Linux and Windows. macOS keeps the native title bar (traffic
+// lights) and menu bar.
+func CustomFrame() bool { return runtime.GOOS != "darwin" }
+
+// windowFrame returns the frame options of the main window for a GOOS.
+//
+// Linux is Frameless: GTK decorates it itself on Wayland (client-side
+// decorations with shadow and resize borders, and MyGo announces CSD so
+// KWin/COSMIC/Sway draw no title bar), and resizes it from the outer 5 px
+// of the page on X11. Windows uses a hidden title bar without its buttons,
+// which keeps the DWM shadow, rounded corners, snap layouts and the
+// resizing edges (a plain frameless window lacks the top one).
+func windowFrame(goos string) (frameless bool, style mygo.TitleBarStyle, hideButtons bool) {
+	switch goos {
+	case "darwin":
+		return false, mygo.TitleBarDefault, false
+	case "windows":
+		return false, mygo.TitleBarHidden, true
+	default:
+		return true, mygo.TitleBarDefault, false
+	}
 }
 
 // DefaultMenu is the application menu: the app menu (macOS), File with the

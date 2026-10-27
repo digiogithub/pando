@@ -90,6 +90,9 @@ func (ch *Chat) sessionsPane(c *ui.Context, t *kit.Tokens) {
 			if ch.sessLoading {
 				kit.Spinner(c).FontSize(14).TextColor(t.FgFaint)
 			}
+			if kit.IconButton(c.Key("sesshide"), kit.IconPanelLeft, ch.app.T("chat.simple.toggleSessions")).Clicked() {
+				ch.sessHidden = true
+			}
 		})
 		ui.Row(c).Padding(0, 10, 6, 10).Children(func() {
 			kit.Input(c.Key("sesssearch"), &ch.sessSearch, ch.app.T("shell.searchSessions")).Grow(1)

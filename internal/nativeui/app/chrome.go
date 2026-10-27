@@ -35,6 +35,7 @@ func (r *Root) setCollapsed(v bool) {
 //	Ctrl+Alt+1..9               focus the main / project tab
 //	Ctrl+Alt+Left, Right        cycle tabs
 //	Ctrl+Alt+W                  close the project tab
+//	Ctrl+Q, F11                 quit, full screen (Linux, Windows: no menu bar)
 func (r *Root) shortcuts(c *ui.Context) {
 	a := r.App
 	if c.Shortcut(ui.Cmd, ui.KeyK) || c.Shortcut(ui.Cmd, ui.KeyP) {
@@ -49,6 +50,7 @@ func (r *Root) shortcuts(c *ui.Context) {
 	if c.Shortcut(ui.Cmd|ui.Shift, ui.KeyL) {
 		a.CycleThemeMode()
 	}
+	r.frameShortcuts(c)
 	if len(r.tabIDs()) <= 1 {
 		return
 	}
@@ -155,4 +157,25 @@ func extTitle(e ShellExt) string {
 		}
 	}
 	return ""
+}
+
+// frameShortcuts are the keys the native menu bar gave on macOS and that
+// Linux and Windows lack (they draw their own title bar and have no menu):
+// Ctrl+Q quits and F11 toggles full screen. Copy, paste, select all and
+// undo are handled by the text inputs themselves, which do not need a menu.
+func (r *Root) frameShortcuts(c *ui.Context) {
+	if !CustomFrame() {
+		return
+	}
+	a := r.App
+	if c.Shortcut(ui.Cmd, ui.KeyQ) {
+		if h := a.Shell().Host; h != nil {
+			h.Quit()
+		}
+	}
+	if c.Shortcut(0, ui.KeyF11) {
+		if h := a.windowHost(); h != nil {
+			h.ToggleFullScreen()
+		}
+	}
 }

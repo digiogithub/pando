@@ -24,7 +24,31 @@ type inlineDiff struct {
 	old, new string
 }
 
+// Reading column, as the web's `.chat-column` (web-ui/src/styles/chat.css):
+// 788 px = 740 of text + 2 x 24 of gutter. The transcript and the composer
+// stay in it, centered, however wide the window is.
+const (
+	readingWidth = float32(788)
+	gutter       = float32(24)
+	textWidth    = readingWidth - 2*gutter
+	// bubbleWidth is the user bubble's cap: 80% of the text column.
+	bubbleWidth = float32(592)
+)
+
+// centered builds fn in a column at most `width` wide, centered in the
+// available width (the surrounding row keeps the full width, so a scrolling
+// list around it keeps its scrollbar at the window edge).
+func centered(c *ui.Context, width float32, fn func()) {
+	ui.Row(c).Justify(ui.Center).AlignItems(ui.Start).Children(func() {
+		ui.Column(c).Grow(1).Shrink(1).MinWidth(0).MaxWidth(width).AlignItems(ui.Stretch).Children(fn)
+	})
+}
+
 func (ch *Chat) item(c *ui.Context, t *kit.Tokens, cv *Conversation, it *Item) {
+	centered(c, textWidth, func() { ch.itemBody(c, t, cv, it) })
+}
+
+func (ch *Chat) itemBody(c *ui.Context, t *kit.Tokens, cv *Conversation, it *Item) {
 	switch it.Kind {
 	case ItemUser:
 		ch.userRow(c, t, it)
@@ -66,7 +90,7 @@ func (ch *Chat) userRow(c *ui.Context, t *kit.Tokens, it *Item) {
 			}
 		}
 		if strings.TrimSpace(it.Text) != "" {
-			ui.Column(c).MaxWidth(640).Padding(10, 14).Radius(t.RadiusLG).Background(t.BgRaised).Children(func() {
+			ui.Column(c).MaxWidth(bubbleWidth).Padding(10, 14).Radius(t.RadiusLG).Background(t.BgRaised).Children(func() {
 				if it.Done {
 					markdown.View(c, it.Text, &ch.md)
 				} else {
@@ -105,7 +129,7 @@ func (ch *Chat) copyButton(c *ui.Context, id, text, label string) {
 
 func (ch *Chat) assistantTurn(c *ui.Context, t *kit.Tokens, cv *Conversation, it *Item) {
 	blocks := Blocks(it.Parts)
-	ui.Column(c).MaxWidth(820).Gap(8).AlignItems(ui.Stretch).Children(func() {
+	ui.Column(c).Gap(8).AlignItems(ui.Stretch).Children(func() {
 		for i, b := range blocks {
 			last := i == len(blocks)-1
 			if b.Text != nil {

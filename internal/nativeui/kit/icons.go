@@ -71,6 +71,7 @@ const (
 	IconClock       = "clock"
 	IconTodo        = "list-todo"
 	IconHome        = "house"
+	IconGlobe       = "globe"
 )
 
 var (

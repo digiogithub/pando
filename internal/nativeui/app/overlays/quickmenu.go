@@ -31,6 +31,8 @@ func init() {
 		Keywords: []string{"chat", "simple"}, Run: func(a *app.Context) { a.ToggleSimpleChat() }})
 	app.RegisterCommand(app.Command{ID: "docs", Title: "Open Documentation", TitleKey: "shell.documentation", Icon: kit.IconBookOpen,
 		Keywords: []string{"help", "docs"}, Run: func(*app.Context) { app.OpenExternal(app.DocsURL) }})
+	app.RegisterCommand(app.Command{ID: "open-browser", Title: "Open in Browser", Icon: kit.IconGlobe,
+		Keywords: []string{"web", "browser", "webui"}, Run: func(a *app.Context) { app.OpenExternal(a.Client.BaseURL()) }})
 	app.RegisterCommand(app.Command{ID: "quit", Title: "Quit Pando", Icon: kit.IconClose,
 		Keywords: []string{"exit", "close"}, Run: func(a *app.Context) {
 			if h := a.Shell().Host; h != nil {

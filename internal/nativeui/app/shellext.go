@@ -112,8 +112,17 @@ func (r *Root) tabBar(c *ui.Context, t *kit.Tokens) {
 	if e := r.activeExt(); e != nil {
 		active = e.Active()
 	}
-	ui.Row(c).Height(36).Shrink(0).Padding(0, 8).Gap(2).AlignItems(ui.Center).Background(t.BgShell).
-		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
+	ctl := r.windowControlsActive()
+	padR := float32(8)
+	if ctl {
+		padR = 0
+	}
+	row := ui.Row(c).Height(36).Shrink(0).Padding(0, padR, 0, 8).Gap(2).AlignItems(ui.Center).Background(t.BgShell).
+		BorderWidth(0, 0, 1, 0).BorderColor(t.Border)
+	if ctl {
+		row.DragWindow() // the tab bar is the title bar
+	}
+	row.Children(func() {
 		r.tabButton(c, t, "main", r.App.T("projects.tabs.main"), kit.IconHome, "running", false, active == "", false, func() {
 			for _, e := range r.exts {
 				e.Select("")
@@ -130,6 +139,10 @@ func (r *Root) tabBar(c *ui.Context, t *kit.Tokens) {
 			}
 			r.tabButton(c, t, it.tab.ID, it.tab.Title, icon, it.tab.State, it.tab.Busy, active == it.tab.ID, true,
 				func() { it.ext.Select(it.tab.ID) }, func() { it.ext.Close(it.tab.ID) })
+		}
+		if ctl {
+			ui.Box(c).Grow(1)
+			r.windowControls(c)
 		}
 	})
 }

@@ -3,6 +3,7 @@ package shell
 import (
 	_ "embed"
 	"log/slog"
+	"runtime"
 	"sync"
 	"sync/atomic"
 
@@ -69,6 +70,7 @@ type Controller struct {
 	trayOnClose atomic.Bool // setting: minimise/close go to the tray
 	quitting    atomic.Bool // an explicit quit started
 	focused     atomic.Bool // the window has the keyboard focus
+	maximized   atomic.Bool // the window is maximised (custom title bar icon)
 }
 
 func newController(o Options) *Controller {
@@ -91,6 +93,66 @@ func (c *Controller) Focused() bool { return c.focused.Load() }
 
 // Quitting reports whether an explicit quit started.
 func (c *Controller) Quitting() bool { return c.quitting.Load() }
+
+// windowActions is what the window controls ask of a window (*mygo.Window).
+type windowActions interface {
+	Hide()
+	Minimize()
+	Close()
+	ToggleMaximize()
+}
+
+// Minimize is the custom title bar's minimise button: it hides the window
+// into the tray when Desktop.TrayOnMinimizeClose is on and a tray icon is
+// live (UseTray), otherwise it minimises normally.
+func (c *Controller) Minimize() {
+	if w := c.Window(); w != nil && !w.IsDestroyed() {
+		c.minimize(w)
+	}
+}
+
+func (c *Controller) minimize(w windowActions) {
+	if c.UseTray() && !c.quitting.Load() {
+		w.Hide()
+		return
+	}
+	w.Minimize()
+}
+
+// ToggleMaximize maximises the window or restores it.
+func (c *Controller) ToggleMaximize() {
+	if w := c.Window(); w != nil && !w.IsDestroyed() {
+		w.ToggleMaximize()
+	}
+}
+
+// IsMaximized reports whether the window is maximised.
+func (c *Controller) IsMaximized() bool { return c.maximized.Load() }
+
+// CloseWindow is the custom title bar's close button. It closes the window
+// as the native button would: the OnClose listener hides it into the tray
+// when UseTray, otherwise the window closes and, being the last, quits the
+// app.
+func (c *Controller) CloseWindow() {
+	if w := c.Window(); w != nil && !w.IsDestroyed() {
+		c.closeWindow(w)
+	}
+}
+
+func (c *Controller) closeWindow(w windowActions) {
+	if c.UseTray() && !c.quitting.Load() {
+		w.Hide()
+		return
+	}
+	w.Close()
+}
+
+// ToggleFullScreen toggles full screen (F11, the View menu role elsewhere).
+func (c *Controller) ToggleFullScreen() {
+	if w := c.Window(); w != nil && !w.IsDestroyed() {
+		w.ToggleFullScreen()
+	}
+}
 
 // Quit quits the app, whatever the tray setting.
 func (c *Controller) Quit() {
@@ -172,14 +234,18 @@ func (c *Controller) openMain() {
 		return
 	}
 	o := c.opts
+	frameless, style, hideButtons := windowFrame(runtime.GOOS)
 	w = mygo.NewWindow(mygo.WindowOptions{
-		Title:     o.Title,
-		Width:     o.Width,
-		Height:    o.Height,
-		MinWidth:  720,
-		MinHeight: 480,
-		StateKey:  "main",
-		Content:   ui.View(o.View),
+		Title:             o.Title,
+		Width:             o.Width,
+		Height:            o.Height,
+		MinWidth:          720,
+		MinHeight:         480,
+		StateKey:          "main",
+		Content:           ui.View(o.View),
+		Frameless:         frameless,
+		TitleBarStyle:     style,
+		HideWindowButtons: hideButtons,
 	})
 	c.mu.Lock()
 	c.win = w
@@ -194,6 +260,15 @@ func (c *Controller) openMain() {
 		e.PreventDefault()
 		w.Hide()
 	})
+	c.maximized.Store(w.IsMaximized())
+	syncMax := func() {
+		if m := w.IsMaximized(); m != c.maximized.Swap(m) {
+			w.Invalidate()
+		}
+	}
+	w.OnMaximize(syncMax)
+	w.OnUnmaximize(syncMax)
+	w.OnResize(syncMax)
 	w.OnMinimize(func() {
 		if c.UseTray() && !c.quitting.Load() {
 			w.Hide()

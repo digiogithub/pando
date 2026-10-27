@@ -122,6 +122,7 @@ the chat pushes `/chat/s/{id}` on session clicks and follows Back/deep links
   `<dir>/capture-<n>s.png` with MyGo's renderer (works where compositor
   screenshots are refused).
 - `PANDO_NATIVE_PATH=/chat/s/<id>` opens a route at start.
+- `PANDO_NATIVE_SIZE=2400x900` sets the initial window size (wide-window checks).
 - `PANDO_NATIVE_CAPTURE_PATHS=/chat,/logs,/settings/appearance` (with
   `PANDO_NATIVE_CAPTURE`) visits each route in turn and writes
   `capture-<route slug>.png` (`PANDO_NATIVE_CAPTURE_STEP` seconds apart,

@@ -15,6 +15,7 @@ package nativeui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"slices"
@@ -145,10 +146,13 @@ func Run(o Options) error {
 		title = "Pando — " + o.CWD
 	}
 	var servicesOnce sync.Once
+	width, height := devWindowSize()
 	err = shell.Run(shell.Options{
-		Title: title,
-		Ctx:   ctx,
-		View:  root.View,
+		Title:  title,
+		Width:  width,
+		Height: height,
+		Ctx:    ctx,
+		View:   root.View,
 		OnReady: func(h *shell.Controller) {
 			// The window does not exist yet; services start with it.
 			a.Shell().Host = h
@@ -183,4 +187,14 @@ func Run(o Options) error {
 		return nil
 	}
 	return err
+}
+
+// devWindowSize reads PANDO_NATIVE_SIZE=<w>x<h> (development aid: wide-window
+// screenshots); zero values keep the shell's default size.
+func devWindowSize() (w, h int) {
+	_, err := fmt.Sscanf(os.Getenv("PANDO_NATIVE_SIZE"), "%dx%d", &w, &h)
+	if err != nil || w < 0 || h < 0 {
+		return 0, 0
+	}
+	return w, h
 }
