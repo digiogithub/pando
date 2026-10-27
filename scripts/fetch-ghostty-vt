@@ -32,6 +32,9 @@ dest="${2:?usage: fetch-ghostty-vt <goos>-<goarch> <dest-dir>}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# go list -m reports an empty Dir until the module is in the module cache
+# (fresh CI runners), so download it first.
+(cd "$REPO_ROOT" && go mod download github.com/egoist/mygo)
 mygo_dir="$(cd "$REPO_ROOT" && go list -m -f '{{.Dir}}' github.com/egoist/mygo)"
 manifest="$mygo_dir/plugins/terminal/mygo-plugin.json"
 [[ -f "$manifest" ]] || { echo "Error: $manifest not found (run 'go mod download')." >&2; exit 1; }
