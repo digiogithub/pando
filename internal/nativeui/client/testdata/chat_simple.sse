@@ -1,0 +1,27 @@
+event: session
+data: {"sessionId":"2bc571c2-eeab-41de-883d-2deafa7eefdb","running":true}
+
+event: run
+data: {"runSeq":1,"sessionId":"2bc571c2-eeab-41de-883d-2deafa7eefdb"}
+
+event: system_message
+data: {"session_id":"2bc571c2-eeab-41de-883d-2deafa7eefdb","text":"\n\n🧠 Context enrichment agent gathering project context...\n"}
+
+event: system_message
+data: {"session_id":"2bc571c2-eeab-41de-883d-2deafa7eefdb","text":"✓ Context enrichment done — no additional context found.\n\n"}
+
+event: system_message
+data: {"routing":{"model":"copilot.gpt-6-luna","matched":false,"probability":0.5715447657244805,"confidence":0.2952165452202812,"reason":"no_match","fallbackUsed":false,"routerProvider":"ollama","routerModel":"tev1:0.8b","routerLatencyMs":43,"candidates":["copilot.gpt-6-luna"],"kind":"no_match","notice":"Auto: no confident match (best Analiza p=0.19) → copilot.gpt-6-luna"},"session_id":"2bc571c2-eeab-41de-883d-2deafa7eefdb","text":"Auto: no confident match (best Analiza p=0.19) → copilot.gpt-6-luna\n"}
+
+event: content_delta
+data: {"text":"pong"}
+
+event: token_usage
+data: {"cache_creation_tokens":0,"cache_read_tokens":0,"completion_tokens":5,"context_window":400000,"cost":0.0031015,"estimated":false,"prompt_tokens":30990,"reasoning_tokens":0,"session_id":"2bc571c2-eeab-41de-883d-2deafa7eefdb"}
+
+event: goal_status
+data: {"goal":null}
+
+event: done
+data: {}
+

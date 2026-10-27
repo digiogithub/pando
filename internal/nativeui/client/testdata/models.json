@@ -1,0 +1,66 @@
+{
+ "autoSelected": true,
+ "errors": {},
+ "models": [
+  {
+   "id": "auto",
+   "name": "Auto",
+   "provider": "auto",
+   "description": "Routes each prompt to the best configured model",
+   "badges": [
+    "auto"
+   ],
+   "canReason": false,
+   "supportsReasoningEffort": false,
+   "supportsAttachments": false,
+   "routerProvider": "ollama",
+   "routerModel": "tev1:0.8b",
+   "routerHealthy": true
+  },
+  {
+   "id": "ollama.hf.co/brandtcormorant/CodeRankEmbed-Q8_0-GGUF:Q8_0",
+   "name": "hf.co/brandtcormorant/CodeRankEmbed-Q8_0-GGUF:Q8_0",
+   "provider": "ollama",
+   "accountId": "ollama",
+   "description": "",
+   "badges": [
+    "fast"
+   ],
+   "canReason": false,
+   "supportsReasoningEffort": false,
+   "supportsAttachments": false,
+   "contextWindow": 128000,
+   "maxOutputTokens": 4096
+  },
+  {
+   "id": "ollama.hf.co/ggml-org/jina-embeddings-v2-base-code-Q8_0-GGUF:Q8_0",
+   "name": "hf.co/ggml-org/jina-embeddings-v2-base-code-Q8_0-GGUF:Q8_0",
+   "provider": "ollama",
+   "accountId": "ollama",
+   "description": "",
+   "badges": [
+    "fast"
+   ],
+   "canReason": false,
+   "supportsReasoningEffort": false,
+   "supportsAttachments": false,
+   "contextWindow": 128000,
+   "maxOutputTokens": 4096
+  },
+  {
+   "id": "ollama.qwen3-embedding:0.6b",
+   "name": "qwen3-embedding:0.6b",
+   "provider": "ollama",
+   "accountId": "ollama",
+   "description": "",
+   "badges": [
+    "fast"
+   ],
+   "canReason": false,
+   "supportsReasoningEffort": false,
+   "supportsAttachments": false,
+   "contextWindow": 128000,
+   "maxOutputTokens": 4096
+  }
+ ]
+}

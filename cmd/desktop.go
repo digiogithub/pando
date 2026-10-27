@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -18,6 +19,7 @@ import (
 	"github.com/digiogithub/pando/internal/instanceregistry"
 	ipcruntime "github.com/digiogithub/pando/internal/ipc/runtime"
 	"github.com/digiogithub/pando/internal/logging"
+	"github.com/digiogithub/pando/internal/nativeui"
 	"github.com/digiogithub/pando/internal/version"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -25,28 +27,18 @@ import (
 
 var desktopCmd = &cobra.Command{
 	Use:   "desktop",
-	Short: "Launch Pando as a desktop app (WebView window)",
+	Short: "Launch Pando as a native desktop app",
 	Long: `Start Pando in desktop mode: starts the API server on a local port and
-opens the web UI inside a native WebView window instead of the system browser.
+opens the native desktop window (GPU-rendered Go UI, no web view) on it.
 
-The desktop window includes a system menu for:
-  - Showing or hiding the window
-  - Toggling between Simple and Advanced UI modes
+Linux requirements: GTK 3 runtime libraries (no WebKitGTK).
+  Ubuntu 22.04:         sudo apt install libgtk-3-0
+  Ubuntu 24.04, 26.04:  sudo apt install libgtk-3-0t64
 
-Requires the pando-desktop binary to be embedded (built with 'make desktop-embed').
+Without a display (SSH, WSL without WSLg) use the browser UI instead: pando app
 
-Linux requirements: GTK 3 and WebKitGTK 4.1 runtime libraries.
-  Ubuntu 22.04:         sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0
-  Ubuntu 24.04, 26.04:  sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0t64
-
-If the window stays blank on Linux (GPU/driver issues in WebKitGTK), try:
-  WEBKIT_DISABLE_DMABUF_RENDERER=1 pando desktop
-  WEBKIT_DISABLE_COMPOSITING_MODE=1 pando desktop
-or use the browser UI instead: pando app
-
-WSL: the window needs WSLg (WSL 2 with GUI app support). If it fails with
-"failed to init GTK", run 'wsl --update' and 'wsl --shutdown' from Windows, or try:
-  GDK_BACKEND=wayland pando desktop`,
+The previous WebView window (Wails) is still available behind the hidden
+--webview flag until the native desktop reaches parity.`,
 	Example: `
   # Launch desktop app on default port
   pando desktop
@@ -73,6 +65,10 @@ func init() {
 	desktopCmd.Flags().Bool("simple", false, "Start the desktop app in simple mode")
 	desktopCmd.Flags().Bool("debug", false, "Enable debug logging")
 	desktopCmd.Flags().StringP("cwd", "c", "", "Working directory (root path) for Pando to use")
+	// Transitional: the Wails WebView window, removed in P5 of the native
+	// desktop plan (.kb/pando/plans/native_desktop_mygo.md).
+	desktopCmd.Flags().Bool("webview", false, "Use the legacy WebView (Wails) window instead of the native UI")
+	_ = desktopCmd.Flags().MarkHidden("webview")
 }
 
 func runDesktopMode(cmd *cobra.Command) error {
@@ -85,6 +81,7 @@ func runDesktopMode(cmd *cobra.Command) error {
 	debug, _ := cmd.Flags().GetBool("debug")
 	simpleMode, _ := cmd.Flags().GetBool("simple")
 	cwdFlag, _ := cmd.Flags().GetString("cwd")
+	useWebView, _ := cmd.Flags().GetBool("webview")
 	ageKeys, _ := cmd.Flags().GetString("age-keys")
 	config.SetAgeKeysOverride(ageKeys)
 
@@ -220,6 +217,30 @@ func runDesktopMode(cmd *cobra.Command) error {
 
 	<-serverReady
 
+	if !useWebView {
+		// The native UI runs on this (main) goroutine: MyGo's event loop must
+		// own the thread that started the process.
+		if ctx.Err() == nil {
+			err := nativeui.Run(nativeui.Options{
+				Ctx:     ctx,
+				BaseURL: baseURL,
+				Token:   server.GetToken(),
+				CWD:     cwd,
+			})
+			if errors.Is(err, nativeui.ErrNoDisplay) {
+				err = fmt.Errorf("%w\nUse the browser UI instead: pando app", err)
+			}
+			if err != nil {
+				cancel()
+				shutdownServer(server)
+				return err
+			}
+		}
+		cancel()
+		shutdownServer(server)
+		return nil
+	}
+
 	createdEvents := design.Events().Subscribe(ctx)
 	openedDesignWindows := map[string]struct{}{}
 	var openedDesignWindowsMu sync.Mutex
@@ -270,11 +291,15 @@ func runDesktopMode(cmd *cobra.Command) error {
 
 	// Desktop window closed — shut down the API server gracefully.
 	cancel()
+	shutdownServer(server)
+	return nil
+}
+
+// shutdownServer stops the API server, waiting up to 5 seconds.
+func shutdownServer(server *api.Server) {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		logging.Error("API server shutdown error: %v", err)
 	}
-
-	return nil
 }

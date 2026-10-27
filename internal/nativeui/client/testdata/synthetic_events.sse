@@ -1,0 +1,51 @@
+event: session
+data: {"sessionId":"synthetic-session","running":true}
+
+event: run
+data: {"runSeq":2,"sessionId":"synthetic-session"}
+
+event: permission_request
+data: {"id":"perm-1","session_id":"synthetic-session","tool_name":"bash","description":"Run: rm -rf build","action":"execute","path":"/work/project","params":{"command":"rm -rf build"},"grant_key":"prefix:rm -rf","require_explicit_approval":true,"never_auto_approve":true}
+
+event: question_request
+data: {"id":"q-1","session_id":"synthetic-session","questions":[{"id":"q1","header":"Branch","question":"Which branch?","multi_select":false,"options":[{"label":"main","description":"default"},{"label":"dev","description":"integration"}]}]}
+
+event: plan_update
+data: {"entries":[{"title":"Write tests","status":"in_progress","active_form":"Writing tests"},{"title":"Ship","status":"pending"}]}
+
+event: todos_update
+data: {"session_id":"synthetic-session","todos":[{"content":"Write tests","status":"in_progress","priority":"high"}]}
+
+event: tool_call
+data: {"id":"call-1","name":"edit","kind":"edit","title":"Edit src/a.rs","status":"pending","input":"{\"file_path\":\"src/a.rs\"}","locations":[{"path":"src/a.rs"}]}
+
+event: tool_result
+data: {"tool_call_id":"call-1","name":"edit","kind":"edit","title":"Edit src/a.rs","status":"completed","content":"ok","is_error":false,"locations":[{"path":"src/a.rs"}],"raw_output":{"output":"ok","metadata":{"additions":1,"removals":1,"files_changed":1}},"diff":{"file_path":"src/a.rs","old_string":"a","new_string":"b"}}
+
+event: steering_queued
+data: {"session_id":"synthetic-session","message":"also add docs"}
+
+event: steering_injected
+data: {"session_id":"synthetic-session","message":"also add docs"}
+
+event: conclusion_queued
+data: {"session_id":"synthetic-session","message":"task t-1 finished"}
+
+event: conclusion_injected
+data: {"session_id":"synthetic-session","message":"task t-1 finished"}
+
+event: resurrected
+data: {"session_id":"synthetic-session","message":"delegated result arrived"}
+
+event: goal_status
+data: {"goal":{"objective":"ship it","status":"active","iteration":1,"maxIterations":5,"startedAt":"2026-10-12T00:00:00Z"}}
+
+event: some_future_event
+data: {"x":1}
+
+event: error
+data: {"error":"cancelled"}
+
+event: done
+data: {}
+

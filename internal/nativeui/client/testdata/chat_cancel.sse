@@ -1,0 +1,114 @@
+event: session
+data: {"sessionId":"116a8c82-42e9-4647-8f33-c65181323422","running":true}
+
+event: run
+data: {"runSeq":1,"sessionId":"116a8c82-42e9-4647-8f33-c65181323422"}
+
+event: system_message
+data: {"session_id":"116a8c82-42e9-4647-8f33-c65181323422","text":"\n\n🧠 Context enrichment agent gathering project context...\n"}
+
+event: system_message
+data: {"session_id":"116a8c82-42e9-4647-8f33-c65181323422","text":"✓ Context enrichment done — no additional context found.\n\n"}
+
+event: system_message
+data: {"routing":{"model":"copilot.gpt-6-luna","matched":false,"probability":0.471032460873912,"confidence":0.41914981926745676,"reason":"low_probability","fallbackUsed":false,"routerProvider":"ollama","routerModel":"tev1:0.8b","routerLatencyMs":68,"candidates":["copilot.gpt-6-luna"],"kind":"no_match","notice":"Auto: no confident match (best Analiza p=0.47) → copilot.gpt-6-luna"},"session_id":"116a8c82-42e9-4647-8f33-c65181323422","text":"Auto: no confident match (best Analiza p=0.47) → copilot.gpt-6-luna\n"}
+
+event: content_delta
+data: {"text":"#"}
+
+event: content_delta
+data: {"text":" The"}
+
+event: content_delta
+data: {"text":" Sea"}
+
+event: content_delta
+data: {"text":"\n\n"}
+
+event: content_delta
+data: {"text":"The"}
+
+event: content_delta
+data: {"text":" sea"}
+
+event: content_delta
+data: {"text":" is"}
+
+event: content_delta
+data: {"text":" never"}
+
+event: content_delta
+data: {"text":" only"}
+
+event: content_delta
+data: {"text":" water"}
+
+event: content_delta
+data: {"text":"."}
+
+event: content_delta
+data: {"text":" It"}
+
+event: content_delta
+data: {"text":" is"}
+
+event: content_delta
+data: {"text":" a"}
+
+event: content_delta
+data: {"text":" horizon"}
+
+event: content_delta
+data: {"text":","}
+
+event: content_delta
+data: {"text":" a"}
+
+event: content_delta
+data: {"text":" road"}
+
+event: content_delta
+data: {"text":","}
+
+event: content_delta
+data: {"text":" a"}
+
+event: content_delta
+data: {"text":" boundary"}
+
+event: content_delta
+data: {"text":","}
+
+event: content_delta
+data: {"text":" a"}
+
+event: content_delta
+data: {"text":" source"}
+
+event: content_delta
+data: {"text":" of"}
+
+event: content_delta
+data: {"text":" food"}
+
+event: content_delta
+data: {"text":","}
+
+event: content_delta
+data: {"text":" a"}
+
+event: content_delta
+data: {"text":" place"}
+
+event: content_delta
+data: {"text":" of"}
+
+event: error
+data: {"error":"request cancelled by user"}
+
+event: goal_status
+data: {"goal":null}
+
+event: done
+data: {}
+
