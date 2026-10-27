@@ -5,10 +5,15 @@ name: Release
 #   Linux/Windows  : cross-compiled on ubuntu (zig as the cross C toolchain).
 #   macOS          : built, signed (Developer ID + hardened runtime) and
 #                    notarized on a macOS runner — the CLI zips, the .app
-#                    bundles (which also ship libghostty-vt for the native
-#                    desktop's terminal) and the .pkg installers, exactly like
-#                    the `release-osx` xc task does manually on
-#                    mac-mini-de-digio.
+#                    bundles and the .pkg installers, exactly like the
+#                    `release-osx` xc task does manually on mac-mini-de-digio.
+#   Natives        : every pando binary embeds libghostty-vt (the native
+#                    desktop's terminal) with go:embed, fetched per target by
+#                    `make natives-<goos>-<goarch>` before compiling; on macOS
+#                    the dylib is signed with the Developer ID first, so the
+#                    hardened runtime's library validation accepts it. The
+#                    Windows DLL is embedded unsigned (only the .exe is
+#                    Authenticode-signed; see docs/release-pipeline.md).
 #   Windows        : the cross-compiled .exe is Authenticode-signed on a
 #                    windows runner with Azure Trusted Signing (OIDC, no
 #                    long-lived secret) and repackaged into its zip.
@@ -89,6 +94,13 @@ jobs:
 
       - name: Build the embedded web-ui
         run: make web-ui-embedded
+
+      - name: Fetch the embedded native libraries
+        # libghostty-vt for each target, verified against MyGo's manifest,
+        # into internal/nativeui/natives/<goos>-<goarch>/ (go:embed). The
+        # release-* targets depend on these too; fetching here first keeps a
+        # download failure separate from a compile failure.
+        run: make natives-linux-amd64 natives-linux-arm64 natives-windows-amd64
 
       - name: Build release archives
         env:
@@ -237,6 +249,14 @@ jobs:
 
       - name: Build the embedded web-ui
         run: make web-ui-embedded
+
+      - name: Fetch and sign the embedded libghostty-vt
+        # Signed with the Developer ID from the keychain above (hardened
+        # runtime + timestamp, scripts/codesign-macos) BEFORE pando is
+        # compiled around it: library validation requires the dylib to carry
+        # the same Team ID as pando-bin. NATIVES_SIGN=required fails the job
+        # instead of embedding an unsigned library.
+        run: make natives-darwin-arm64 natives-darwin-amd64 NATIVES_SIGN=required
 
       - name: Build and sign the CLI release archives
         env:

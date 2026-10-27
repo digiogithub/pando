@@ -3,9 +3,11 @@
 #
 # For each architecture (arm64, x64) this assembles a Pando.app around the CLI
 # binary (pando-bin), which renders the native desktop UI in-process
-# (`pando desktop`, internal/nativeui). The bundle also ships libghostty-vt,
-# the library the desktop's terminal panel loads, signed with the app: a
-# packaged app never downloads it at runtime (see scripts/fetch-ghostty-vt).
+# (`pando desktop`, internal/nativeui). pando-bin is self-contained: the
+# terminal panel's libghostty-vt is embedded in it with go:embed, signed with
+# the same Developer ID by 'make release-darwin-*' before compiling
+# (internal/nativeui/natives), and extracted to ~/Library/Caches/pando/natives
+# at start-up, so the bundle ships no separate dylib.
 #
 # Usage:
 #   scripts/build-macos-app [VERSION]
@@ -18,7 +20,6 @@
 # Prerequisites (macOS only):
 #   - Xcode Command Line Tools: lipo, iconutil, sips, pkgbuild, productbuild, productsign,
 #     pkgutil, codesign, spctl
-#   - go, curl and python3 (scripts/fetch-ghostty-vt reads MyGo's manifest)
 #   - PKG_SIGN_IDENTITY (recommended) Installer certificate common name for productsign,
 #     e.g. "Developer ID Installer: Example Corp (TEAMID)"
 #
@@ -309,11 +310,10 @@ SHARED_ICNS="$WORK_DIR/AppIcon.icns"
 iconutil -c icns "$ICONSET" -o "$SHARED_ICNS"
 
 # ── Per-arch bundle + pkg assembly ────────────────────────────────────────────
-# args: <arch-label> <goarch> <cli-zip>
+# args: <arch-label> <cli-zip>
 build_arch_package() {
     local arch_label="$1"      # arm64 | x64   (matches dist artifact naming)
-    local goarch="$2"          # arm64 | amd64 (GOARCH of the bundled libraries)
-    local cli_zip="$3"
+    local cli_zip="$2"
 
     echo ""
     echo "════════════════════════════════════════════════════════════════"
@@ -342,13 +342,6 @@ build_arch_package() {
     cp "$cli_bin" "$macos_dir/pando-bin"
     chmod +x "$macos_dir/pando-bin"
 
-    # libghostty-vt for the desktop terminal panel, next to pando-bin: MyGo
-    # looks for it in Contents/Resources and in the executable's directory, and
-    # a packaged app never downloads it. Signed below with the same identity,
-    # so the hardened runtime's library validation accepts it.
-    echo "Fetching libghostty-vt (darwin-${goarch})..."
-    "$SCRIPT_DIR/fetch-ghostty-vt" "darwin-${goarch}" "$macos_dir" >/dev/null
-
     # CFBundleExecutable wrapper — invoked when the user opens the .app.
     # Finder/Dock start app executables with cwd "/" (read-only, not a
     # workspace) and launchd's minimal PATH, so open Pando in the home directory
@@ -371,20 +364,18 @@ WRAPPER
     # 4. Sign inside-out: nested executables first, then the bundle.
     echo "Signing bundle executables (inside-out)..."
     run_codesign -o runtime --entitlements "$ENTITLEMENTS" "$macos_dir/pando-bin"
-    run_codesign -o runtime "$macos_dir/libghostty-vt.dylib"
 
     local final_app="$DIST_DIR/Pando-${arch_label}.app"
     rm -rf "$final_app"
     cp -R "$app_dir" "$final_app"
 
-    # --deep re-signs the nested pando-bin / libghostty-vt.dylib too, so the
-    # entitlements must be repeated here or the JIT grant is stripped from them.
+    # --deep re-signs the nested pando-bin too, so the entitlements must be
+    # repeated here or the JIT grant is stripped from it.
     echo "Signing Pando.app bundle..."
     run_codesign --deep -o runtime --entitlements "$ENTITLEMENTS" "$final_app"
 
     # Notarize & staple the .app BEFORE it goes into the .pkg. Stapling works on a
-    # bundle (unlike a bare Mach-O), so the installed app is offline-safe and the
-    # nested libghostty-vt.dylib is covered by the same notarization.
+    # bundle (unlike a bare Mach-O), so the installed app is offline-safe.
     # pkgbuild then copies the already-stapled .app into the installer.
     notarize_and_staple_app "$final_app"
     verify_app_signature "$final_app"
@@ -496,8 +487,8 @@ XML
     echo "  → $final_pkg"
 }
 
-build_arch_package arm64 arm64 "$ARM64_ZIP"
-build_arch_package x64   amd64 "$AMD64_ZIP"
+build_arch_package arm64 "$ARM64_ZIP"
+build_arch_package x64   "$AMD64_ZIP"
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 

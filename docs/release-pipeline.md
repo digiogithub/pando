@@ -11,6 +11,7 @@ repositories.
 tag v1.2.3
    ├── job linux-windows (ubuntu-latest)
    │     bun → web-ui embedded assets
+   │     make natives-linux-* / natives-windows-amd64 → libghostty-vt (go:embed)
    │     make release-linux-amd64 / release-linux-arm64 / release-windows-amd64
    │        (zig cc as the cross C toolchain, UPX on non-darwin)
    │
@@ -22,12 +23,14 @@ tag v1.2.3
    │
    ├── job macos (macos-latest, arm64)
    │     macos-signing-keychain  ← secret MACOS_SIGNING_BUNDLE
-   │     make release-darwin-*   → signs the CLI binaries (hardened runtime)
+   │     make natives-darwin-*   → fetches libghostty-vt and signs it with
+   │                               the Developer ID (NATIVES_SIGN=required)
+   │     make release-darwin-*   → compiles pando around the signed dylib
+   │                               (go:embed) and signs the CLI binaries
+   │                               (hardened runtime)
    │     scripts/build-macos-app → notarizes the CLI zips, builds the .app
-   │                               bundles (with libghostty-vt fetched by
-   │                               scripts/fetch-ghostty-vt) and the .pkg
-   │                               installers, signs them,
-   │                               notarizes and staples them
+   │                               bundles and the .pkg installers, signs
+   │                               them, notarizes and staples them
    │     stapler validate        → the job fails if anything is unstapled
    │
    └── job release (ubuntu-latest)
@@ -37,6 +40,34 @@ tag v1.2.3
 
 This mirrors the manual `xc release` + `xc release-osx` tasks exactly; those
 remain valid for a local dry run on `mac-mini-de-digio`.
+
+## One binary: the embedded terminal library
+
+`pando desktop`'s terminal (MyGo `plugins/terminal`) loads `libghostty-vt`
+with purego. Every release binary carries it inside (go:embed in
+`internal/nativeui/natives`), so a zip, a `.app` and a `.pkg` all ship one
+self-contained executable:
+
+- `make natives-<goos>-<goarch>` runs `scripts/fetch-ghostty-vt`, which
+  downloads the build pinned by MyGo's `plugins/terminal/mygo-plugin.json`
+  (SHA-256 verified, cached under `<user cache>/pando-build/natives`) into
+  `internal/nativeui/natives/<goos>-<goarch>/`. Every `release-*` target depends
+  on its platform's natives; `make build` fetches the host's and, offline, warns
+  and builds with whatever is there (only the committed `.keep` placeholder on a
+  fresh checkout; MyGo then downloads the library at run time).
+- On darwin the dylib is signed there with the same Developer ID as pando
+  (`scripts/codesign-macos`, hardened runtime, timestamp, no entitlements)
+  **before** `go build`. `release-darwin-*` set `NATIVES_SIGN=required`.
+  No `disable-library-validation` entitlement is needed: library validation
+  accepts a library signed by the same Team ID.
+- At start-up `pando desktop` writes the embedded bytes to
+  `<user cache>/pando/natives/<sha256 prefix>/<name>` (atomic, verified,
+  rewritten on mismatch) and sets `MYGO_GHOSTTY_VT`. The file is written by
+  pando itself, so it carries no quarantine attribute, and its embedded
+  Mach-O signature is intact. A user-set `MYGO_GHOSTTY_VT` wins.
+- Windows: the DLL is embedded unsigned; only `pando.exe` is Authenticode-signed
+  (the DLL is extracted by the signed exe). Signing the DLL itself would need
+  Trusted Signing on the ubuntu cross-build before `go build` — a follow-up.
 
 ## Artifacts
 

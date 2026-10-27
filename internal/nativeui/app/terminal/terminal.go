@@ -210,7 +210,7 @@ func (t *Terminal) unavailable(c *ui.Context, th *kit.Tokens) {
 		kit.Icon(c, kit.IconTerminal).FontSize(32).TextColor(th.FgFaint)
 		ui.Text(c, "The terminal engine could not be loaded").FontSize(th.TextLG).FontWeight(600)
 		ui.Text(c, t.libErr).FontSize(th.TextSM).TextColor(th.FgMuted).MaxWidth(560).TextAlign(ui.Center)
-		ui.Text(c, "The native terminal downloads libghostty-vt on first use (set MYGO_GHOSTTY_VT to use a local copy). The browser UI (pando app) has a terminal meanwhile.").
+		ui.Text(c, "The terminal library (libghostty-vt) could not be loaded. Release builds embed it; builds without it download it on first use, or set MYGO_GHOSTTY_VT to a local copy. The browser UI (pando app) has a terminal meanwhile.").
 			FontSize(th.TextSM).TextColor(th.FgMuted).MaxWidth(560).TextAlign(ui.Center)
 		if kit.Button(c.Key("term:lib-retry"), kit.ButtonOpts{Icon: kit.IconRefresh, Label: "Retry"}).Clicked() {
 			t.newTab()

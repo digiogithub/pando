@@ -148,7 +148,8 @@ cd web-ui && bun install && bun run build:embedded && cd ..
 
 ### build
 
-Compiles the binary
+Compiles the binary (`make build` also fetches `libghostty-vt` for this
+platform and embeds it; offline it warns and builds without it)
 
 requires: build-webui
 
@@ -184,6 +185,9 @@ rm -f *.upx
 > [docs/release-pipeline.md](docs/release-pipeline.md).
 
 Compiles the binaries for the different platforms (Linux x64, Windows x64, macOS aarch64) and zip them into `dist/`.
+Every `make release-*` target first fetches the native terminal library
+(`libghostty-vt`, `make natives-<goos>-<goarch>`) and embeds it, so each zip
+holds one self-contained binary.
 
 interactive:true
 
@@ -257,12 +261,16 @@ export MACOS_SIGN_KEYCHAIN_PATH="${MACOS_SIGN_KEYCHAIN_PATH:-$HOME/Library/Keych
 
 xc build
 
-# Signs the loose CLI binaries with the hardened runtime (codesign-macos).
+# Each target first fetches libghostty-vt into internal/nativeui/natives/ and
+# signs it with the same Developer ID (NATIVES_SIGN=required), then compiles
+# pando around it (go:embed: one self-contained binary) and signs the binary
+# with the hardened runtime (codesign-macos).
 make release-darwin-arm64
 make release-darwin-amd64
 
 # Notarizes the CLI zips (submit-only) and builds + notarizes + staples the
-# .app bundles and .pkg installers.
+# .app bundles and .pkg installers (the bundle holds only pando-bin: the
+# terminal library travels inside it).
 bash scripts/build-macos-app
 
 # Verify notarization stapling on the distributable bundles/installers.

@@ -69,3 +69,8 @@ __pycache__/
 # Playwright output
 web-ui/test-results/
 web-ui/playwright-report/
+
+# Native libraries fetched by `make natives-*` for go:embed (only the
+# placeholders are versioned; see internal/nativeui/natives)
+internal/nativeui/natives/*/*
+!internal/nativeui/natives/*/.keep

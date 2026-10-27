@@ -24,6 +24,7 @@ import (
 	"github.com/digiogithub/pando/internal/nativeui/client"
 	"github.com/digiogithub/pando/internal/nativeui/i18n"
 	"github.com/digiogithub/pando/internal/nativeui/kit"
+	"github.com/digiogithub/pando/internal/nativeui/natives"
 	"github.com/digiogithub/pando/internal/nativeui/shell"
 	"github.com/egoist/mygo"
 
@@ -100,6 +101,15 @@ func Run(o Options) error {
 	a.CWD = o.CWD
 	if o.Logger != nil {
 		a.Log = o.Logger.With("component", "nativeui")
+	}
+	// The terminal's libghostty-vt travels inside the binary: extract it
+	// before any area is built (MyGo reads $MYGO_GHOSTTY_VT when the
+	// terminal first loads). Without an embedded copy MyGo finds or
+	// downloads its own.
+	if p, err := natives.Install(); err != nil {
+		a.Log.Warn("embedded libghostty-vt not installed; terminal falls back to MyGo's lookup", "error", err)
+	} else if p != "" {
+		a.Log.Debug("libghostty-vt extracted", "path", p)
 	}
 	if o.Theme.Family != "" || o.Theme.Mode != "" {
 		a.Theme = o.Theme

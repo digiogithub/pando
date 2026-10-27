@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then
-    echo "Usage: $0 <mach-o-binary>" >&2
+    echo "Usage: $0 <mach-o-binary-or-dylib>" >&2
     exit 1
 fi
 
@@ -31,10 +31,15 @@ if [[ -n "$KEYCHAIN_PASSWORD" ]]; then
 fi
 
 ENT_ARGS=()
-if [[ -f "$ENTITLEMENTS" ]]; then
+if [[ "$TARGET" == *.dylib ]]; then
+    # A library carries no entitlements (they belong to the executable); it
+    # only needs the same Team ID as pando for hardened-runtime library
+    # validation (libghostty-vt embedded by internal/nativeui/natives).
+    :
+elif [[ -f "$ENTITLEMENTS" ]]; then
     ENT_ARGS=(--entitlements "$ENTITLEMENTS")
 else
     echo "Warning: entitlements file not found at $ENTITLEMENTS; signing without JIT entitlements (WASM will be killed at runtime)." >&2
 fi
 
-codesign --force -o runtime "${ENT_ARGS[@]}" --timestamp --keychain "$KEYCHAIN_PATH" --sign "$SIGNING_IDENTITY" "$TARGET"
+codesign --force -o runtime ${ENT_ARGS[@]+"${ENT_ARGS[@]}"} --timestamp --keychain "$KEYCHAIN_PATH" --sign "$SIGNING_IDENTITY" "$TARGET"

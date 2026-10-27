@@ -45,6 +45,12 @@ jobs:
         # GTK/WebKitGTK at runtime, so no system -dev packages are needed.
         run: make embed-stubs
 
+      - name: Fetch the embedded terminal library
+        # libghostty-vt for linux-amd64 into internal/nativeui/natives
+        # (go:embed), so the build below is the single self-contained binary
+        # a release ships and the extraction test runs against it.
+        run: make natives-linux-amd64
+
       - name: Vet
         run: go vet ${{ matrix.module_tags && format('-tags {0}', matrix.module_tags) || '' }} ./...
 
@@ -67,5 +73,5 @@ jobs:
       - name: Build xpando
         run: make xpando
 
-      - name: Test the builder
-        run: go test ./cmd/xpando ./pkg/extension ./internal/extensions
+      - name: Test the builder and the embedded natives
+        run: go test ./cmd/xpando ./pkg/extension ./internal/extensions ./internal/nativeui/natives

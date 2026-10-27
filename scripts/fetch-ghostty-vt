@@ -5,17 +5,24 @@
 #
 # Usage:
 #   scripts/fetch-ghostty-vt <goos>-<goarch> <dest-dir>
-#   e.g. scripts/fetch-ghostty-vt darwin-arm64 dist/Pando.app/Contents/MacOS
+#   e.g. scripts/fetch-ghostty-vt darwin-arm64 internal/nativeui/natives/darwin-arm64
 #
 # Prints the path of the written library. The URL, file name and checksum come
 # from plugins/terminal/mygo-plugin.json of the github.com/egoist/mygo version
 # in go.mod, so the library always matches the bindings compiled into pando.
 #
-# Why: a terminal run from a packaged app (a macOS .app bundle) never
-# downloads the library at runtime, it looks next to the executable and in
-# Contents/Resources. Unpackaged binaries (the Linux/Windows/macOS CLI zips)
-# download it on first use into ~/.cache/mygo/natives instead, or load the
-# file named by $MYGO_GHOSTTY_VT.
+# Why: the library is embedded into the pando binary with go:embed
+# (internal/nativeui/natives) so every distribution is a single file; the
+# Makefile's natives-<goos>-<goarch> targets call this script into the embed
+# directory before `go build` (and sign the darwin dylib there). At start-up
+# `pando desktop` extracts it to <user cache>/pando/natives/ and points
+# $MYGO_GHOSTTY_VT at it.
+#
+# The verified download is kept in a build cache
+# ($PANDO_NATIVES_CACHE, default <user cache>/pando-build/natives/<sha256>/), so
+# later builds copy it from there and work offline. The copy in <dest-dir> is
+# always the pristine download: a signature added afterwards (darwin) is
+# applied to <dest-dir> only.
 
 set -euo pipefail
 
@@ -50,20 +57,39 @@ name="$(sed -n 1p <<<"$info")"
 url="$(sed -n 2p <<<"$info")"
 sha="$(sed -n 3p <<<"$info")"
 
+sha_of() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+
+if [[ -n "${PANDO_NATIVES_CACHE:-}" ]]; then
+    cache_root="$PANDO_NATIVES_CACHE"
+elif [[ "$(uname)" == "Darwin" ]]; then
+    cache_root="$HOME/Library/Caches/pando-build/natives"
+else
+    cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/pando-build/natives"
+fi
+cached="$cache_root/$sha/$name"
+
+if [[ ! -f "$cached" || "$(sha_of "$cached")" != "$sha" ]]; then
+    mkdir -p "$(dirname "$cached")"
+    tmp="$cached.download.$$"
+    trap 'rm -f "$tmp"' EXIT
+    curl -fsSL --retry 3 -o "$tmp" "$url"
+    got="$(sha_of "$tmp")"
+    if [[ "$got" != "$sha" ]]; then
+        echo "Error: SHA-256 mismatch for $url: got $got, want $sha" >&2
+        exit 1
+    fi
+    mv "$tmp" "$cached"
+fi
+
 mkdir -p "$dest"
 out="$dest/$name"
-tmp="$out.download"
-curl -fsSL --retry 3 -o "$tmp" "$url"
-
-if command -v sha256sum >/dev/null 2>&1; then
-    got="$(sha256sum "$tmp" | awk '{print $1}')"
-else
-    got="$(shasum -a 256 "$tmp" | awk '{print $1}')"
-fi
-if [[ "$got" != "$sha" ]]; then
-    rm -f "$tmp"
-    echo "Error: SHA-256 mismatch for $url: got $got, want $sha" >&2
-    exit 1
-fi
-mv "$tmp" "$out"
+cp "$cached" "$out.tmp.$$"
+chmod 0644 "$out.tmp.$$"
+mv -f "$out.tmp.$$" "$out"
 echo "$out"

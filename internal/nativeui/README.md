@@ -19,6 +19,7 @@ Toolkit: [MyGo](https://github.com/egoist/mygo) **v0.7.1, pinned exactly**
 | `shell/` | `mygo.App`, main window, application menu (Edit roles), later tray/notifications/dock | yes |
 | `app/` | `Context`, area registry, router, window layout (sidebar + header + content), placeholders | yes |
 | `app/<area>/` | One package per area: `chat` (P0 MVP), then `settings`, `files`, `editor`, `terminal`, ... | yes |
+| `natives/` | libghostty-vt embedded per platform (go:embed, `make natives-<goos>-<goarch>`; signed on darwin), extracted to `<user cache>/pando/natives/` and exported as `$MYGO_GHOSTTY_VT` by `Run` before the terminal loads | no |
 | `nativeui.go` | `Run(Options)`: client + context + root view + shell; blank-imports the area packages | yes |
 
 ## Adding an area (parallel follow-up work)

@@ -75,7 +75,23 @@ MACOS_SYSROOT_FLAGS :=
 # optionally MACOS_ENTITLEMENTS from the environment; see scripts/codesign-macos).
 MACOS_CODESIGN_WRAPPER ?= $(CURDIR)/scripts/codesign-macos
 
-.PHONY: build-enterprise release-enterprise xpando embed-stubs build build-fast web-ui-embedded dist-clean release release-linux-amd64 release-linux-arm64 release-windows-amd64 release-darwin-amd64 release-darwin-arm64 test-integration help
+# ------------------------------------------------------------
+# Native libraries embedded into the binary (internal/nativeui/natives)
+# ------------------------------------------------------------
+# libghostty-vt (the desktop terminal) is fetched per target into
+# internal/nativeui/natives/<goos>-<goarch>/ and embedded with go:embed, so
+# every distribution is one self-contained binary. On darwin the dylib is
+# signed there with the same Developer ID as pando (MACOS_CODESIGN_WRAPPER,
+# hardened runtime, timestamp) BEFORE go build: hardened-runtime library
+# validation then accepts it without disable-library-validation.
+# NATIVES_SIGN: auto (sign when SIGNING_IDENTITY/MACOS_SIGN_IDENTITY is set),
+# required (fail without it; used by release-darwin-*) or off.
+NATIVES_DIR     := internal/nativeui/natives
+NATIVES_TARGETS := linux-amd64 linux-arm64 windows-amd64 windows-arm64 darwin-amd64 darwin-arm64
+NATIVES_SIGN    ?= auto
+HOST_NATIVES    := $(shell go env GOOS 2>/dev/null)-$(shell go env GOARCH 2>/dev/null)
+
+.PHONY: build-enterprise release-enterprise xpando embed-stubs build build-fast web-ui-embedded dist-clean natives natives-host natives-clean $(addprefix natives-,$(NATIVES_TARGETS)) release release-linux-amd64 release-linux-arm64 release-windows-amd64 release-darwin-amd64 release-darwin-arm64 test-integration help
 
 ## Create the generated go:embed placeholder for the web UI (fresh checkout / CI).
 ## internal/api/webui/dist is a gitignored build artifact, but its embed
@@ -89,8 +105,32 @@ embed-stubs:
 web-ui-embedded:
 	cd $(WEB_UI_DIR) && $(WEB_UI_INSTALL_CMD) && $(WEB_UI_EMBEDDED_BUILD_CMD)
 
-## Build local CLI binary with embedded web-ui and release version from git tag
-build: web-ui-embedded
+## Fetch libghostty-vt for natives-<goos>-<goarch> into the go:embed dir (darwin: signed, see NATIVES_SIGN)
+$(addprefix natives-,$(NATIVES_TARGETS)): natives-%:
+	@set -e; out="$$(scripts/fetch-ghostty-vt $* $(NATIVES_DIR)/$*)"; echo "Embedding $$out"; \
+	case "$*" in darwin-*) \
+		if [ "$(NATIVES_SIGN)" = off ]; then echo "NATIVES_SIGN=off: $$out left with its upstream signature"; \
+		elif [ -n "$${SIGNING_IDENTITY:-$${MACOS_SIGN_IDENTITY:-}}" ] && command -v codesign >/dev/null 2>&1; then \
+			echo "Signing $$out with $(MACOS_CODESIGN_WRAPPER)..."; "$(MACOS_CODESIGN_WRAPPER)" "$$out"; \
+			codesign --verify --strict --verbose=2 "$$out"; \
+		elif [ "$(NATIVES_SIGN)" = required ]; then \
+			rm -f "$$out"; echo "Error: $$out must be signed (set SIGNING_IDENTITY and MACOS_SIGN_KEYCHAIN_PATH, on macOS)." >&2; exit 1; \
+		else echo "Warning: $$out not signed with a Developer ID (no SIGNING_IDENTITY or codesign); a hardened-runtime pando will refuse to load it."; fi ;; \
+	esac
+
+## Fetch the native libraries for the host platform; offline it warns and builds with what is there
+natives-host:
+	@$(MAKE) --no-print-directory natives-$(HOST_NATIVES) || echo "Warning: could not fetch libghostty-vt for $(HOST_NATIVES); building without an embedded terminal library (MyGo downloads it at run time)."
+
+## Fetch the native libraries for every release target
+natives: $(addprefix natives-,$(NATIVES_TARGETS))
+
+## Remove fetched native libraries (keeps the .keep placeholders)
+natives-clean:
+	find $(NATIVES_DIR) -mindepth 2 -type f ! -name .keep -delete
+
+## Build local CLI binary with embedded web-ui, terminal library and release version from git tag
+build: web-ui-embedded natives-host
 	go build $(GO_TAGS_FLAG) -ldflags '$(LDFLAGS)' -o pando$(DIST_SUFFIX) .
 
 ## Build the enterprise-variant CLI binary (tags + version stamp + -enterprise suffix)
@@ -147,24 +187,25 @@ release-enterprise: MODULE_TAGS=enterprise
 release-enterprise: release
 
 ## Build Linux x64 release archive in dist/
-release-linux-amd64: | $(DIST_DIR)
+release-linux-amd64: natives-linux-amd64 | $(DIST_DIR)
 	$(call build_release,linux,amd64,linux-x64,)
 
 ## Build Linux arm64 release archive in dist/
-release-linux-arm64: | $(DIST_DIR)
+release-linux-arm64: natives-linux-arm64 | $(DIST_DIR)
 	$(call require_cmd,$(ZIG))
 	$(call build_release,linux,arm64,linux-arm64,,CC='$(CC_LINUX_ARM64)' CXX='$(CXX_LINUX_ARM64)')
 
 ## Build Windows x64 release archive in dist/
-release-windows-amd64: | $(DIST_DIR)
+release-windows-amd64: natives-windows-amd64 | $(DIST_DIR)
 	$(call require_cmd,$(ZIG))
 	$(call build_release,windows,amd64,windows-x64,.exe,CC='$(CC_WINDOWS_AMD64)' CXX='$(CXX_WINDOWS_AMD64)')
 
 ifeq ($(shell uname),Darwin)
 NATIVE_ARCH := $(shell uname -m)
 
-## Build macOS x64 release archive in dist/
-release-darwin-amd64: | $(DIST_DIR)
+## Build macOS x64 release archive in dist/ (signed; embeds the signed dylib)
+release-darwin-amd64: NATIVES_SIGN=required
+release-darwin-amd64: natives-darwin-amd64 | $(DIST_DIR)
 ifeq ($(NATIVE_ARCH),x86_64)
 	$(call build_release,darwin,amd64,darwin-x64,,)
 else
@@ -172,8 +213,9 @@ else
 	$(call build_release,darwin,amd64,darwin-x64,,CC='$(CC_DARWIN_AMD64)' CXX='$(CXX_DARWIN_AMD64)' $(MACOS_SYSROOT_FLAGS))
 endif
 
-## Build macOS arm64 release archive in dist/
-release-darwin-arm64: | $(DIST_DIR)
+## Build macOS arm64 release archive in dist/ (signed; embeds the signed dylib)
+release-darwin-arm64: NATIVES_SIGN=required
+release-darwin-arm64: natives-darwin-arm64 | $(DIST_DIR)
 ifeq ($(NATIVE_ARCH),arm64)
 	$(call build_release,darwin,arm64,darwin-arm64,,)
 else
