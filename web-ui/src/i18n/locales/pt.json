@@ -345,6 +345,8 @@
       "telemetryUnavailableHint": "Não disponível nesta compilação (nenhum token de telemetria configurado)",
       "telemetryDebugId": "ID de depuração",
       "telemetryRegenerateId": "Regenerar",
+      "telemetryCopyId": "Copiar ID de depuração",
+      "telemetryIdCopied": "ID de depuração copiado",
       "telemetryMinLevel": "Nível mínimo de registro",
       "telemetryMinLevelDebug": "Depuração",
       "telemetryMinLevelInfo": "Informação",
@@ -701,6 +703,9 @@
       "hintIdle": "Enter para enviar · Shift+Enter para nova linha · / para comandos",
       "hintRunning": "Enter enfileira o feedback para o próximo ponto seguro",
       "hintGoal": "Digite / para comandos",
+      "quiet": "Trabalhando · sem saída há {{seconds}} s",
+      "stalled": "Sem resposta do agente há {{seconds}} s, mas a execução não terminou. A conexão pode ter caído.",
+      "reconnect": "Reconectar",
       "chars": "{{count}} / {{max}} caracteres",
       "context": "{{pct}}% do contexto",
       "tokens": "{{formatted}} tokens"
@@ -824,6 +829,10 @@
   },
   "version": {
     "updateAvailable": "Atualização disponível: {{latest}}. Execute",
-    "upToDate": "Atualizado"
+    "upToDate": "Atualizado",
+    "banner": "Pando {{latest}} está disponível (você usa {{version}}).",
+    "updateWith": "Atualize com: {{command}}",
+    "releaseNotes": "Notas da versão",
+    "dismiss": "Dispensar"
   }
 }

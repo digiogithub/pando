@@ -345,6 +345,8 @@
       "telemetryUnavailableHint": "このビルドでは利用できません(テレメトリのトークンが設定されていません)",
       "telemetryDebugId": "デバッグ ID",
       "telemetryRegenerateId": "再生成",
+      "telemetryCopyId": "デバッグIDをコピー",
+      "telemetryIdCopied": "デバッグIDをコピーしました",
       "telemetryMinLevel": "最小ログレベル",
       "telemetryMinLevelDebug": "デバッグ",
       "telemetryMinLevelInfo": "情報",
@@ -701,6 +703,9 @@
       "hintIdle": "Enter で送信 · Shift+Enter で改行 · / でコマンド",
       "hintRunning": "Enter で次の安全なタイミング用にフィードバックを追加",
       "hintGoal": "/ でコマンド",
+      "quiet": "作業中 · {{seconds}} 秒間出力なし",
+      "stalled": "エージェントから {{seconds}} 秒間応答がありませんが、実行は終了していません。接続が切断されている可能性があります。",
+      "reconnect": "再接続",
       "chars": "{{count}} / {{max}} 文字",
       "context": "コンテキスト {{pct}}%",
       "tokens": "{{formatted}} トークン"
@@ -821,6 +826,10 @@
   },
   "version": {
     "updateAvailable": "アップデートがあります: {{latest}}。実行:",
-    "upToDate": "最新です"
+    "upToDate": "最新です",
+    "banner": "Pando {{latest}} が利用可能です（現在 {{version}}）。",
+    "updateWith": "更新コマンド: {{command}}",
+    "releaseNotes": "リリースノート",
+    "dismiss": "閉じる"
   }
 }

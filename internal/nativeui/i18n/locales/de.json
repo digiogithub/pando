@@ -345,6 +345,8 @@
       "telemetryUnavailableHint": "In diesem Build nicht verfügbar (kein Telemetrie-Token konfiguriert)",
       "telemetryDebugId": "Debug-ID",
       "telemetryRegenerateId": "Neu generieren",
+      "telemetryCopyId": "Debug-ID kopieren",
+      "telemetryIdCopied": "Debug-ID kopiert",
       "telemetryMinLevel": "Mindest-Protokollstufe",
       "telemetryMinLevelDebug": "Debug",
       "telemetryMinLevelInfo": "Info",
@@ -701,6 +703,9 @@
       "hintIdle": "Enter zum Senden · Umschalt+Enter für neue Zeile · / für Befehle",
       "hintRunning": "Enter reiht Feedback für den nächsten sicheren Punkt ein",
       "hintGoal": "/ für Befehle eingeben",
+      "quiet": "Arbeitet · seit {{seconds}} s keine Ausgabe",
+      "stalled": "Seit {{seconds}} s keine Antwort vom Agenten, aber der Lauf ist nicht beendet. Die Verbindung ist möglicherweise unterbrochen.",
+      "reconnect": "Neu verbinden",
       "chars": "{{count}} / {{max}} Zeichen",
       "context": "{{pct}} % Kontext",
       "tokens": "{{formatted}} Tokens"
@@ -824,6 +829,10 @@
   },
   "version": {
     "updateAvailable": "Update verfügbar: {{latest}}. Ausführen:",
-    "upToDate": "Aktuell"
+    "upToDate": "Aktuell",
+    "banner": "Pando {{latest}} ist verfügbar (installiert: {{version}}).",
+    "updateWith": "Aktualisieren mit: {{command}}",
+    "releaseNotes": "Versionshinweise",
+    "dismiss": "Ausblenden"
   }
 }

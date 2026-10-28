@@ -345,6 +345,8 @@
       "telemetryUnavailableHint": "此构建版本不支持(未配置遥测令牌)",
       "telemetryDebugId": "调试 ID",
       "telemetryRegenerateId": "重新生成",
+      "telemetryCopyId": "复制调试 ID",
+      "telemetryIdCopied": "已复制调试 ID",
       "telemetryMinLevel": "最低日志级别",
       "telemetryMinLevelDebug": "调试",
       "telemetryMinLevelInfo": "信息",
@@ -701,6 +703,9 @@
       "hintIdle": "Enter 发送 · Shift+Enter 换行 · / 调出命令",
       "hintRunning": "Enter 会将反馈排队到下一个安全点",
       "hintGoal": "输入 / 调出命令",
+      "quiet": "运行中 · {{seconds}} 秒无输出",
+      "stalled": "代理已 {{seconds}} 秒无响应，但运行尚未结束。连接可能已断开。",
+      "reconnect": "重新连接",
       "chars": "{{count}} / {{max}} 字符",
       "context": "上下文 {{pct}}%",
       "tokens": "{{formatted}} tokens"
@@ -821,6 +826,10 @@
   },
   "version": {
     "updateAvailable": "有可用更新：{{latest}}。运行",
-    "upToDate": "已是最新"
+    "upToDate": "已是最新",
+    "banner": "Pando {{latest}} 已发布（当前 {{version}}）。",
+    "updateWith": "更新命令：{{command}}",
+    "releaseNotes": "发行说明",
+    "dismiss": "忽略"
   }
 }

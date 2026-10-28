@@ -454,3 +454,10 @@ func TestSubscribeSessionEventsReconnects(t *testing.T) {
 		t.Errorf("events = %+v", got)
 	}
 }
+
+func TestParseHeartbeat(t *testing.T) {
+	ev := ParseStreamEvent(SSEFrame{Event: "heartbeat", Data: `{"sessionId":"s1","running":true}`})
+	if ev.Type != EventHeartbeat || !ev.Running || ev.SessionID != "s1" || ev.HasContent() {
+		t.Errorf("heartbeat = %+v", ev)
+	}
+}

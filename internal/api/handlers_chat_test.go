@@ -1,13 +1,18 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/llm/agent"
+	"github.com/digiogithub/pando/internal/permission"
+	"github.com/digiogithub/pando/internal/userinput"
 )
 
 func dispatchOne(t *testing.T, ev agent.AgentEvent) string {
@@ -85,5 +90,34 @@ func TestSSEForwardsContextFilterNotice(t *testing.T) {
 	// Message-less event with the payload is still forwarded.
 	if body = dispatchOne(t, agent.AgentEvent{Type: agent.AgentEventTypeSystemMessage, ContextFilter: &agent.ContextFilterInfo{}}); body == "" {
 		t.Fatal("payload-only frame dropped")
+	}
+}
+
+// A quiet run's stream sends heartbeats, so a client can tell it from a dead
+// connection.
+func TestStreamSendsHeartbeatsWhileQuiet(t *testing.T) {
+	prev := sseHeartbeatInterval
+	sseHeartbeatInterval = 10 * time.Millisecond
+	t.Cleanup(func() { sseHeartbeatInterval = prev })
+	a := &app.App{Permissions: permission.NewPermissionService(), UserInput: userinput.NewService()}
+	s := &Server{app: a, bgRunner: NewBackgroundSessionManager()}
+	ctx, cancel := context.WithCancel(context.Background())
+	events := make(chan agent.AgentEvent)
+	rec := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		s.streamSessionEvents(rec, rec, ctx, "s1", func() {}, events)
+		close(done)
+	}()
+	time.Sleep(80 * time.Millisecond)
+	cancel()
+	<-done
+	close(events)
+	body := rec.Body.String()
+	if n := strings.Count(body, "event: heartbeat\n"); n < 2 {
+		t.Fatalf("want heartbeats, got %d in %q", n, body)
+	}
+	if !strings.Contains(body, `"sessionId":"s1"`) || !strings.Contains(body, `"running":false`) {
+		t.Errorf("bad heartbeat payload: %q", body)
 	}
 }

@@ -264,16 +264,23 @@ func (ch *Chat) composerBody(c *ui.Context, t *kit.Tokens, cv *Conversation) {
 			})
 		}
 		ch.completionMenu(c, t)
-		ui.Column(c).Radius(t.RadiusLG).Border(1, t.BorderStrong).Background(t.BgInput).Padding(10, 12).Gap(8).
-			Children(func() {
-				placeholder := ch.app.T("chat.composer.placeholder")
-				if cv.Running {
-					placeholder = ch.app.T("chat.composer.placeholderRunning")
-				}
-				ui.TextAreaBase(c.Key("composer"), &ch.draft).Lines(1, 9).Placeholder(placeholder).
-					FontSize(t.TextBase).AutoFocus().OnTextKey(ch.onKey)
-				ch.composerActions(c, t, cv)
-			})
+		live := cv.liveness()
+		if live == liveStalled {
+			ch.stallNotice(c, t, cv)
+		}
+		box := ui.Column(c).Radius(t.RadiusLG).Border(1, t.BorderStrong).Background(t.BgInput).Padding(10, 12).Gap(8)
+		if live == liveActive {
+			trail(box, t)
+		}
+		box.Children(func() {
+			placeholder := ch.app.T("chat.composer.placeholder")
+			if cv.Running {
+				placeholder = ch.app.T("chat.composer.placeholderRunning")
+			}
+			ui.TextAreaBase(c.Key("composer"), &ch.draft).Lines(1, 9).Placeholder(placeholder).
+				FontSize(t.TextBase).AutoFocus().OnTextKey(ch.onKey)
+			ch.composerActions(c, t, cv)
+		})
 		ch.composerMeta(c, t, cv)
 	})
 }
@@ -317,6 +324,11 @@ func (ch *Chat) composerActions(c *ui.Context, t *kit.Tokens, cv *Conversation) 
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 		hint := ch.app.T("chat.composer.hintIdle")
 		switch {
+		case cv.liveness() == liveActive:
+			hint = ch.app.T("chat.composer.hintRunning")
+			if _, quiet := cv.silentFor(); quiet >= quietAfter {
+				hint = ch.app.T("chat.composer.quiet", "seconds", int(quiet.Seconds()))
+			}
 		case cv.Running:
 			hint = ch.app.T("chat.composer.hintRunning")
 		case cv.Goal != nil && cv.Goal.Status == "running":

@@ -89,7 +89,10 @@ func newGeneral(s *Settings) section {
 		}
 		kit.SettingsSection(c, "", "", func() {
 			kit.SettingsRow(c, s.app.T(g+"telemetryDebugId"), "", func() {
-				ui.Text(c, id).FontSize(kit.Current().TextSM)
+				ui.Text(c, id).FontSize(kit.Current().TextSM).Font(kit.Current().MonoFont)
+				if kit.IconButton(c.Key("copyid"), kit.IconCopy, s.app.T(g+"telemetryCopyId")).Clicked() && kit.CopyText(id) {
+					s.app.Toasts.Success(s.app.T(g+"telemetryIdCopied"), id)
+				}
 				if kit.Button(c.Key("regen"), kit.ButtonOpts{Label: s.app.T(g + "telemetryRegenerateId"), Size: kit.SizeSM, Disabled: d.saving}).Clicked() {
 					s.app.Go(func(ctx context.Context) {
 						nid, err := s.app.Client.RegenerateTelemetryID(ctx)

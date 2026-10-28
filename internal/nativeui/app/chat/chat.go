@@ -92,9 +92,13 @@ type Chat struct {
 	goalCancelling bool
 	diff           *diffViewer
 	infoOpen       bool
-	tasks          []client.Task
-	cwd            string
-	connected      bool
+	// version is the running build and its update status, fetched each
+	// time the info panel opens (the server caches the release lookup).
+	version    *client.VersionStatus
+	verFetched bool
+	tasks      []client.Task
+	cwd        string
+	connected  bool
 	// pickedAuto remembers sessions whose auto-approve was fetched.
 	autoFetched map[string]bool
 
@@ -496,6 +500,7 @@ func (ch *Chat) newTag(cv *Conversation) (int, context.Context) {
 	}
 	ctx, cancel := context.WithCancel(ch.app.Ctx)
 	cv.cancel = cancel
+	ch.watch(ctx)
 	return cv.streamTag, ctx
 }
 
@@ -597,6 +602,7 @@ func (ch *Chat) applyEvents(msgs []streamMsg) {
 			ch.endStream(cv, m.end)
 			continue
 		}
+		cv.heardFrom(m.ev)
 		if m.ev.Type == client.EventSession && m.ev.SessionID != "" && cv.ID == "" {
 			cv.ID = m.ev.SessionID
 			ch.convs[cv.ID] = cv
@@ -683,9 +689,20 @@ func (ch *Chat) Build(c *ui.Context, r *ui.Route) {
 				if !ch.simple {
 					ch.banners(c, t, cv)
 				}
-				ch.transcript(c, t, cv)
+				// An empty conversation centers its greeting, the composer
+				// and the suggestions; the composer keeps its place in the
+				// tree, so sending the first prompt does not remount it.
+				empty := cv.isEmpty()
+				if empty {
+					ch.emptyHead(c, t)
+				} else {
+					ch.transcript(c, t, cv)
+				}
 				ch.filesBar(c, t, cv)
 				ch.composer(c, t, cv)
+				if empty {
+					ch.suggestions(c, t)
+				}
 			})
 			ch.infoSidebar(c, t, cv)
 		})
@@ -730,8 +747,6 @@ func (ch *Chat) transcript(c *ui.Context, t *kit.Tokens, cv *Conversation) {
 			ui.Row(c).Margin(ui.Auto).Children(func() { kit.Spinner(c).FontSize(20).TextColor(t.FgFaint) })
 		case cv.LoadErr != "":
 			kit.EmptyState(c, kit.IconError, "Could not load the session", cv.LoadErr)
-		case len(cv.Items) == 0:
-			ch.emptyHead(c, t)
 		}
 	})
 	if !cv.List.AtEnd() && len(cv.Items) > 0 {
@@ -744,16 +759,34 @@ func (ch *Chat) transcript(c *ui.Context, t *kit.Tokens, cv *Conversation) {
 	}
 }
 
-// emptyHead is the empty conversation: the title and prompt suggestions.
+// isEmpty reports a conversation with nothing to show yet: a new chat, or
+// a loaded session without messages.
+func (cv *Conversation) isEmpty() bool {
+	return len(cv.Items) == 0 && !cv.Loading && cv.LoadErr == ""
+}
+
+// emptyHead is the greeting of an empty conversation, above the composer;
+// it takes half the free height, suggestions the other half, so the three
+// sit in the middle of the chat.
 func (ch *Chat) emptyHead(c *ui.Context, t *kit.Tokens) {
-	kit.EmptyState(c, kit.IconBot, ch.app.T("chat.empty.title"), ch.app.T("chat.composer.hintIdle"))
-	ui.Row(c).Gap(8).Justify(ui.Center).Wrap().Padding(0, 24, 24, 24).Children(func() {
-		for _, k := range []string{"explain", "bug", "tests", "review"} {
-			if kit.Button(c.Key("sg"+k), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSM,
-				Label: ch.app.T("chat.empty.suggestions." + k)}).Clicked() {
-				ch.draft = ch.app.T("chat.empty.prompts." + k)
+	ui.Column(c.Key("empty-head")).Grow(1).Shrink(1).MinHeight(0).Justify(ui.End).AlignItems(ui.Center).
+		Gap(12).Padding(20, gutter, 24, gutter).Children(func() {
+		kit.Icon(c, kit.IconBot).FontSize(36).TextColor(t.Fg)
+		ui.Text(c, ch.app.T("chat.empty.title")).FontSize(t.Text2XL).FontWeight(500).TextAlign(ui.Center)
+	})
+}
+
+// suggestions are starter prompts under the empty conversation's composer.
+func (ch *Chat) suggestions(c *ui.Context, t *kit.Tokens) {
+	ui.Column(c.Key("empty-sugg")).Grow(1).Shrink(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
+		ui.Row(c).Gap(8).Justify(ui.Center).Wrap().Padding(4, 24, 24, 24).Children(func() {
+			for _, k := range []string{"explain", "bug", "tests", "review"} {
+				if kit.Button(c.Key("sg"+k), kit.ButtonOpts{Variant: kit.Outline, Size: kit.SizeSM,
+					Label: ch.app.T("chat.empty.suggestions." + k)}).Clicked() {
+					ch.draft = ch.app.T("chat.empty.prompts." + k)
+				}
 			}
-		}
+		})
 	})
 }
 

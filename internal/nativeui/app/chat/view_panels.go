@@ -391,8 +391,10 @@ func (ch *Chat) diffOverlay(c *ui.Context, t *kit.Tokens) {
 // subagents, plan, modified files.
 func (ch *Chat) infoSidebar(c *ui.Context, t *kit.Tokens, cv *Conversation) {
 	if !ch.infoOpen {
+		ch.verFetched = false
 		return
 	}
+	ch.fetchVersion()
 	sess, hasSess := ch.session(cv.ID)
 	ui.Column(c).Width(280).Shrink(0).BorderWidth(0, 0, 0, 1).BorderColor(t.Border).Background(t.BgShell).Children(func() {
 		ui.Row(c).Padding(10, 12).Gap(8).AlignItems(ui.Center).Children(func() {
@@ -480,11 +482,46 @@ func (ch *Chat) infoSidebar(c *ui.Context, t *kit.Tokens, cv *Conversation) {
 						})
 					}
 				})
+				ch.versionSection(c, t)
 				// Panels extensions contribute to the chat side (none on
 				// standard builds).
 				extensions.Slot(ch.app, c, client.SlotChatSide, "", 220)
 			})
 		})
+	})
+}
+
+// fetchVersion loads the version status once per opening of the panel.
+func (ch *Chat) fetchVersion() {
+	if ch.verFetched || ch.app.Client == nil {
+		return
+	}
+	ch.verFetched = true
+	a := ch.app
+	a.Go(func(ctx context.Context) {
+		v, err := a.Client.Version(ctx)
+		if err != nil {
+			return
+		}
+		a.Update(func() { ch.version = &v })
+	})
+}
+
+// versionSection is the running Pando build and, when a newer release
+// exists, the command that installs it.
+func (ch *Chat) versionSection(c *ui.Context, t *kit.Tokens) {
+	v := ch.version
+	if v == nil || v.Version == "" {
+		return
+	}
+	section(c, t, kit.IconInfo, ch.app.T("chat.info.version"), "", func() {
+		ui.Text(c, "Pando "+v.Version).FontSize(t.TextXS).Font(t.MonoFont).Selectable()
+		if v.UpdateAvailable && v.Latest != "" {
+			ui.Column(c.Key("update")).Gap(4).Padding(6, 8).Radius(t.RadiusSM).Background(t.AccentSoft).Children(func() {
+				ui.Text(c, ch.app.T("version.updateAvailable", "latest", v.Latest)).FontSize(t.TextXS).TextColor(t.Accent)
+				ui.Text(c, cmp.Or(v.UpdateCommand, "pando update")).FontSize(t.TextXS).Font(t.MonoFont).Selectable()
+			})
+		}
 	})
 }
 

@@ -353,6 +353,8 @@
       "telemetryUnavailableHint": "Not available in this build (no telemetry ingest token configured)",
       "telemetryDebugId": "Debug ID",
       "telemetryRegenerateId": "Regenerate",
+      "telemetryCopyId": "Copy debug ID",
+      "telemetryIdCopied": "Debug ID copied",
       "telemetryMinLevel": "Minimum Log Level",
       "telemetryMinLevelDebug": "Debug",
       "telemetryMinLevelInfo": "Info",
@@ -701,6 +703,9 @@
       "hintIdle": "Enter to send · Shift+Enter for a new line · / for commands",
       "hintRunning": "Enter queues feedback for the next safe boundary",
       "hintGoal": "Type / for commands",
+      "quiet": "Working · no output for {{seconds}} s",
+      "stalled": "No response from the agent for {{seconds}} s, but the run has not finished. The connection may be down.",
+      "reconnect": "Reconnect",
       "chars": "{{count}} / {{max}} characters",
       "context": "{{pct}}% context",
       "tokens": "{{formatted}} tokens"
@@ -919,7 +924,11 @@
   },
   "version": {
     "updateAvailable": "Update available: {{latest}}. Run",
-    "upToDate": "Up to date"
+    "upToDate": "Up to date",
+    "banner": "Pando {{latest}} is available (running {{version}}).",
+    "updateWith": "Update with: {{command}}",
+    "releaseNotes": "Release notes",
+    "dismiss": "Dismiss"
   },
   "setup": {
     "title": "Welcome to Pando",

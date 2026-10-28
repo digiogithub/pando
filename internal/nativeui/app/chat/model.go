@@ -205,6 +205,11 @@ type Conversation struct {
 	// older streams (stopped, superseded) are dropped.
 	streamTag int
 	cancel    func()
+	// heard is when the stream last delivered anything, heartbeats
+	// included; worked when the agent last did. reconnected marks a stall
+	// already answered with a reattach (see liveness.go).
+	heard, worked time.Time
+	reconnected   bool
 	// checking is set while a /pending check is in flight.
 	checking bool
 	nextKey  int
@@ -293,12 +298,14 @@ func (cv *Conversation) BeginRun(prompt string) {
 	cv.runStart = len(cv.Items)
 	cv.content = false
 	cv.Running, cv.Streaming = true, true
+	cv.heard, cv.worked = clock(), clock()
 }
 
 // BeginAttach marks the conversation as following a run it did not start.
 func (cv *Conversation) BeginAttach() {
 	cv.content = false
 	cv.Running, cv.Streaming = true, true
+	cv.heard, cv.worked = clock(), clock()
 }
 
 // assistant returns the open assistant row of the run, creating one.
@@ -593,6 +600,9 @@ func (cv *Conversation) Finish() (reload bool) {
 		cv.Items[n-1].Done = true
 	}
 	cv.Running, cv.Streaming = false, false
+	if cv.cancel != nil {
+		cv.cancel() // the stream is over: stop its watch
+	}
 	cv.cancel = nil
 	cv.Queued = nil
 	return !cv.content

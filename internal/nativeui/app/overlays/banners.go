@@ -59,7 +59,7 @@ func (b *configInit) Build(c *ui.Context) {
 		if kit.Button(c.Key("ci-gen"), kit.ButtonOpts{Variant: kit.Secondary, Size: kit.SizeSM, Label: label, Disabled: b.generating}).Clicked() {
 			b.generate()
 		}
-		if kit.Button(c.Key("ci-dismiss"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSM, Label: "Dismiss"}).Clicked() {
+		if kit.Button(c.Key("ci-dismiss"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSM, Label: a.T("version.dismiss")}).Clicked() {
 			b.dismissed = true
 		}
 	})
@@ -121,17 +121,18 @@ func (u *updateNotice) Build(c *ui.Context) {
 		return
 	}
 	v := u.status
-	msg := "Pando " + v.Latest + " is available (running " + v.Version + ")."
+	a := u.a
+	msg := a.T("version.banner", "latest", v.Latest, "version", v.Version)
 	if v.UpdateCommand != "" {
-		msg += " Update with: " + v.UpdateCommand
+		msg += " " + a.T("version.updateWith", "command", v.UpdateCommand)
 	}
 	banner(c, kit.ToneAccent, kit.IconUpdate, msg, func() {
 		if v.ReleaseURL != "" {
-			if kit.Button(c.Key("up-notes"), kit.ButtonOpts{Variant: kit.Secondary, Size: kit.SizeSM, Label: "Release notes", Icon: kit.IconExternal}).Clicked() {
+			if kit.Button(c.Key("up-notes"), kit.ButtonOpts{Variant: kit.Secondary, Size: kit.SizeSM, Label: a.T("version.releaseNotes"), Icon: kit.IconExternal}).Clicked() {
 				app.OpenExternal(v.ReleaseURL)
 			}
 		}
-		if kit.Button(c.Key("up-dismiss"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSM, Label: "Dismiss"}).Clicked() {
+		if kit.Button(c.Key("up-dismiss"), kit.ButtonOpts{Variant: kit.Ghost, Size: kit.SizeSM, Label: a.T("version.dismiss")}).Clicked() {
 			u.dismissed = true
 		}
 	})

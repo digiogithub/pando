@@ -337,6 +337,10 @@ func (s *Server) handleSessionStream(w http.ResponseWriter, r *http.Request) {
 	s.streamRunningSession(w, flusher, r.Context(), sessionID)
 }
 
+// sseHeartbeatInterval is how often a chat stream sends `heartbeat` while
+// the run is quiet.
+var sseHeartbeatInterval = 5 * time.Second
+
 // streamSessionEvents reads events from eventChan and writes them as SSE to w.
 // It returns when eventChan is closed (agent done) or clientCtx is cancelled
 // (HTTP disconnect). On disconnect unsubFn is called to clean up the
@@ -384,12 +388,20 @@ func (s *Server) streamSessionEvents(
 		}
 	}
 
+	// A heartbeat proves the stream and the run alive while the agent is
+	// silent (a long tool, a slow model): without it a client cannot tell a
+	// quiet run from a dead connection.
+	heartbeat := time.NewTicker(sseHeartbeatInterval)
+	defer heartbeat.Stop()
+
 	for {
 		select {
 		case <-clientCtx.Done():
 			// Client disconnected — leave the agent running.
 			go cleanup()
 			return
+		case <-heartbeat.C:
+			writeSSEEvent(w, flusher, "heartbeat", map[string]any{"sessionId": sessionID, "running": s.sessionRunning(sessionID)})
 		case ev, open := <-permCh:
 			if !open {
 				permCh = nil

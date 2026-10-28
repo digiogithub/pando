@@ -345,6 +345,8 @@
       "telemetryUnavailableHint": "Non disponible dans cette version (aucun jeton de télémétrie configuré)",
       "telemetryDebugId": "ID de débogage",
       "telemetryRegenerateId": "Régénérer",
+      "telemetryCopyId": "Copier l'ID de débogage",
+      "telemetryIdCopied": "ID de débogage copié",
       "telemetryMinLevel": "Niveau de journalisation minimal",
       "telemetryMinLevelDebug": "Débogage",
       "telemetryMinLevelInfo": "Info",
@@ -701,6 +703,9 @@
       "hintIdle": "Entrée pour envoyer · Maj+Entrée pour une nouvelle ligne · / pour les commandes",
       "hintRunning": "Entrée met le retour en attente jusqu'au prochain point sûr",
       "hintGoal": "Tapez / pour les commandes",
+      "quiet": "En cours · aucune sortie depuis {{seconds}} s",
+      "stalled": "Aucune réponse de l'agent depuis {{seconds}} s, mais l'exécution n'est pas terminée. La connexion est peut-être interrompue.",
+      "reconnect": "Reconnecter",
       "chars": "{{count}} / {{max}} caractères",
       "context": "{{pct}} % du contexte",
       "tokens": "{{formatted}} tokens"
@@ -821,6 +826,10 @@
   },
   "version": {
     "updateAvailable": "Mise à jour disponible : {{latest}}. Exécutez",
-    "upToDate": "À jour"
+    "upToDate": "À jour",
+    "banner": "Pando {{latest}} est disponible (version actuelle : {{version}}).",
+    "updateWith": "Mettre à jour avec : {{command}}",
+    "releaseNotes": "Notes de version",
+    "dismiss": "Ignorer"
   }
 }

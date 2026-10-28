@@ -26,6 +26,9 @@ const (
 	EventSystemMessage      = "system_message"
 	EventError              = "error"
 	EventDone               = "done"
+	// EventHeartbeat comes every few seconds while the run is quiet: the
+	// stream and the run are alive (Running is the server's view).
+	EventHeartbeat = "heartbeat"
 
 	// EventReattach is synthetic: the client emits it right before it
 	// reattaches to a run whose stream closed without `done`. The server
@@ -40,7 +43,7 @@ const (
 type StreamEvent struct {
 	Type      string
 	SessionID string
-	// Running is set by `session`.
+	// Running is set by `session` and `heartbeat`.
 	Running bool
 	// RunSeq is set by `run`.
 	RunSeq int64
@@ -242,7 +245,7 @@ func ParseStreamEvent(f SSEFrame) StreamEvent {
 	ev.Text, ev.Error, ev.Message = base.Text, base.Error, base.Message
 	data := []byte(f.Data)
 	switch ev.Type {
-	case EventSession:
+	case EventSession, EventHeartbeat:
 		ev.Running = base.Running
 	case EventRun:
 		ev.RunSeq = base.RunSeq

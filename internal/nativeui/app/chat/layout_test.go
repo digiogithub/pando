@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/digiogithub/pando/internal/nativeui/app"
+	"github.com/digiogithub/pando/internal/nativeui/client"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -117,5 +118,45 @@ func TestSessionsPaneToggle(t *testing.T) {
 	}
 	if !tt.HasText("SESSIONS") || tt.HasText("Sessions") {
 		t.Errorf("sessions must be listed by the sidebar only: %q", tt.Texts())
+	}
+}
+
+// A new chat centers its greeting, the composer and the suggestions
+// vertically; once it has messages the composer goes back to the bottom.
+func TestEmptyChatCenteredVertically(t *testing.T) {
+	const h = 900
+	ch, tt := newWideChat(t, 1200, h)
+	cv := newConversation("")
+	cv.Loaded = true
+	ch.draftConv, ch.current = cv, ""
+	tt.Frame()
+	title, ok := tt.Find(ch.app.T("chat.empty.title"))
+	sugg, ok2 := tt.Find(ch.app.T("chat.empty.suggestions.explain"))
+	if !ok || !ok2 {
+		t.Fatalf("empty state missing: %q", tt.Texts())
+	}
+	if title.Y < h*0.15 || sugg.Y > h*0.85 || title.Y > sugg.Y {
+		t.Errorf("not centered: title y=%v, suggestions y=%v in %v", title.Y, sugg.Y, h)
+	}
+	if mid := (title.Y + sugg.Y + sugg.H) / 2; mid < h*0.35 || mid > h*0.65 {
+		t.Errorf("block middle at %v, want near %v", mid, h/2)
+	}
+}
+
+// The info panel shows the running version and a newer release.
+func TestInfoPanelShowsVersionUpdate(t *testing.T) {
+	ch, tt := newWideChat(t, 1400, 900)
+	ch.infoOpen, ch.verFetched = true, true
+	ch.version = &client.VersionStatus{Version: "1.5.0", Latest: "1.6.0", UpdateAvailable: true, UpdateCommand: "pando update"}
+	tt.Frame()
+	for _, s := range []string{"Pando 1.5.0", ch.app.T("version.updateAvailable", "latest", "1.6.0"), "pando update"} {
+		if !tt.HasText(s) {
+			t.Errorf("missing %q: %q", s, tt.Texts())
+		}
+	}
+	ch.version.UpdateAvailable = false
+	tt.Frame()
+	if tt.HasText("pando update") {
+		t.Error("no update: no command")
 	}
 }

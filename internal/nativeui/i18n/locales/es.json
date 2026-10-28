@@ -353,6 +353,8 @@
       "telemetryUnavailableHint": "No disponible en esta compilación (no hay token de telemetría configurado)",
       "telemetryDebugId": "ID de depuración",
       "telemetryRegenerateId": "Regenerar",
+      "telemetryCopyId": "Copiar ID de depuración",
+      "telemetryIdCopied": "ID de depuración copiado",
       "telemetryMinLevel": "Nivel mínimo de registro",
       "telemetryMinLevelDebug": "Depuración",
       "telemetryMinLevelInfo": "Información",
@@ -701,6 +703,9 @@
       "hintIdle": "Intro para enviar · Mayús+Intro para nueva línea · / para comandos",
       "hintRunning": "Intro encola el comentario para el próximo punto seguro",
       "hintGoal": "Escribe / para comandos",
+      "quiet": "Trabajando · sin salida desde hace {{seconds}} s",
+      "stalled": "Sin respuesta del agente desde hace {{seconds}} s, pero la ejecución no ha terminado. La conexión puede estar caída.",
+      "reconnect": "Reconectar",
       "chars": "{{count}} / {{max}} caracteres",
       "context": "{{pct}}% del contexto",
       "tokens": "{{formatted}} tokens"
@@ -919,7 +924,11 @@
   },
   "version": {
     "updateAvailable": "Actualización disponible: {{latest}}. Ejecuta",
-    "upToDate": "Actualizado"
+    "upToDate": "Actualizado",
+    "banner": "Pando {{latest}} está disponible (tienes {{version}}).",
+    "updateWith": "Actualiza con: {{command}}",
+    "releaseNotes": "Notas de la versión",
+    "dismiss": "Descartar"
   },
   "setup": {
     "title": "Bienvenido a Pando",
