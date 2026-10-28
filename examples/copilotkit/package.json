@@ -23,5 +23,9 @@
     "@types/node": "^20.12.0",
     "@types/react": "^19.0.0",
     "typescript": "^5.4.0"
+  },
+  "overrides": {
+    "katex": "^0.18.2",
+    "zod@^4": "^4.6.6"
   }
 }
