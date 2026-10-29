@@ -187,11 +187,10 @@ func (v *viewTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 		params.Limit = DefaultReadLimit
 	}
 
-	// Check if it's an image file
-	isImage, imageType := isImageFile(filePath)
-	// TODO: handle images
-	if isImage {
-		return NewTextErrorResponse(fmt.Sprintf("This is an image file of type: %s\nUse a different tool to process images", imageType)), nil
+	// Raster images are returned as image blocks so the model can see them.
+	// SVG is XML text, so it stays on the text path below.
+	if isImage, imageType := isImageFile(filePath); isImage && imageType != "SVG" {
+		return readImageForView(ctx, workspaceFS, filePath, imageType), nil
 	}
 
 	content, lineCount, err := v.readFileContent(ctx, workspaceFS, filePath, fileInfo, params.Offset, params.Limit)
@@ -524,6 +523,12 @@ func (v *viewTool) runWithACP(ctx context.Context, params ViewParams, acpConnInt
 	if !ok {
 		return ToolResponse{}, fmt.Errorf("invalid ACP client connection type")
 	}
+
+	// Resolve the path exactly like the local branch does. ACP clients expect
+	// absolute paths, and the read record must use the same key that edit/patch
+	// check (they always resolve); otherwise a relative read followed by an
+	// absolute edit fails with "you must read the file before editing it".
+	params.FilePath = resolveToolPath(params.FilePath)
 
 	logging.Debug("view tool using ACP callback", "filePath", params.FilePath)
 

@@ -29,6 +29,20 @@ func recordFileRead(path string) {
 	fileRecords[path] = record
 }
 
+// recordFileReadAt records a read of path at an explicit time (used when a read
+// is recovered from persisted session history).
+func recordFileReadAt(path string, t time.Time) {
+	fileRecordMutex.Lock()
+	defer fileRecordMutex.Unlock()
+
+	record, exists := fileRecords[path]
+	if !exists {
+		record = fileRecord{path: path}
+	}
+	record.readTime = t
+	fileRecords[path] = record
+}
+
 func getLastReadTime(path string) time.Time {
 	fileRecordMutex.RLock()
 	defer fileRecordMutex.RUnlock()

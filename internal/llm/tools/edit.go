@@ -267,12 +267,12 @@ func (e *editTool) deleteContent(ctx context.Context, filePath, oldString string
 		return NewTextErrorResponse(fmt.Sprintf("path is a directory, not a file: %s", filePath)), nil
 	}
 
-	if getLastReadTime(filePath).IsZero() {
+	if lastReadTimeForEdit(ctx, filePath).IsZero() {
 		return NewTextErrorResponse("you must read the file before editing it. Use the View tool first"), nil
 	}
 
 	modTime := fileInfo.ModTime()
-	lastRead := getLastReadTime(filePath)
+	lastRead := lastReadTimeForEdit(ctx, filePath)
 	if modTime.After(lastRead) {
 		return NewTextErrorResponse(
 			fmt.Sprintf("file %s has been modified since it was last read (mod time: %s, last read: %s)",
@@ -385,12 +385,12 @@ func (e *editTool) replaceContent(ctx context.Context, filePath, oldString, newS
 		return NewTextErrorResponse(fmt.Sprintf("path is a directory, not a file: %s", filePath)), nil
 	}
 
-	if getLastReadTime(filePath).IsZero() {
+	if lastReadTimeForEdit(ctx, filePath).IsZero() {
 		return NewTextErrorResponse("you must read the file before editing it. Use the View tool first"), nil
 	}
 
 	modTime := fileInfo.ModTime()
-	lastRead := getLastReadTime(filePath)
+	lastRead := lastReadTimeForEdit(ctx, filePath)
 	if modTime.After(lastRead) {
 		return NewTextErrorResponse(
 			fmt.Sprintf("file %s has been modified since it was last read (mod time: %s, last read: %s)",

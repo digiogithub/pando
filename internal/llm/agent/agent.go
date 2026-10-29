@@ -502,6 +502,10 @@ func NewAgent(
 		resurrectCount:            make(map[string]int),
 	}
 
+	// Let the read-before-edit guard recover reads from persisted history
+	// (e.g. after a restart). Same source for every agent/surface.
+	tools.SetSessionReadSource(newSessionReadSource(sessions, messages))
+
 	logging.Debug("Agent created", "name", string(agentName), "model", modelID, "toolCount", len(agentTools))
 	return agent, nil
 }

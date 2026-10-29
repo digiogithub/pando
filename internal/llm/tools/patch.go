@@ -100,7 +100,7 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 	for _, filePath := range filesToRead {
 		absPath := resolveToolPath(filePath)
 
-		if getLastReadTime(absPath).IsZero() {
+		if lastReadTimeForEdit(ctx, absPath).IsZero() {
 			return NewTextErrorResponse(fmt.Sprintf("you must read the file %s before patching it. Use the View tool first", filePath)), nil
 		}
 
@@ -117,7 +117,7 @@ func (p *patchTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		}
 
 		modTime := fileInfo.ModTime()
-		lastRead := getLastReadTime(absPath)
+		lastRead := lastReadTimeForEdit(ctx, absPath)
 		if modTime.After(lastRead) {
 			return NewTextErrorResponse(
 				fmt.Sprintf("file %s has been modified since it was last read (mod time: %s, last read: %s)",

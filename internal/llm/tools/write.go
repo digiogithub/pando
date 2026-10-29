@@ -126,7 +126,7 @@ func (w *writeTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error
 		}
 
 		modTime := fileInfo.ModTime()
-		lastRead := getLastReadTime(filePath)
+		lastRead := lastReadTimeForEdit(ctx, filePath)
 		if modTime.After(lastRead) {
 			return NewTextErrorResponse(fmt.Sprintf("File %s has been modified since it was last read.\nLast modification: %s\nLast read: %s\n\nPlease read the file again before modifying it.",
 				filePath, modTime.Format(time.RFC3339), lastRead.Format(time.RFC3339))), nil
