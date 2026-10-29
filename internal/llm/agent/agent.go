@@ -1516,6 +1516,7 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 	beginModelSwitchRun(sessionID, msgHistory)
 	defer endModelSwitchRun(sessionID)
 
+	outputLimitContinuations := 0
 	for {
 		// Check for cancellation before each iteration
 		select {
@@ -1607,6 +1608,34 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 			continue
 		}
 
+		// The response hit the output token limit. Any tool call it was writing
+		// was cut mid-arguments and discarded by the provider, so ending the turn
+		// here leaves the session silently stopped (and a resumed session repeats
+		// the same oversized call). Tell the model and let it retry in smaller
+		// pieces, a bounded number of times per run.
+		if agentMessage.FinishReason() == message.FinishReasonMaxTokens && outputLimitContinuations < maxOutputLimitContinuations {
+			outputLimitContinuations++
+			limit := effectiveMaxTokens(a.agentName, requestProvider.Model())
+			a.emitStatus(sessionID, eventCh,
+				fmt.Sprintf("\n\n⚠️ The response reached the output limit (%d tokens) and was cut off. Asking the model to continue in smaller steps...\n\n", limit),
+				fmt.Sprintf("Output limit reached (%d tokens); continuing (%d/%d)", limit, outputLimitContinuations, maxOutputLimitContinuations))
+			contMsg, contErr := a.createUserMessage(ctx, sessionID, outputLimitContinuationPrompt(limit), nil)
+			if contErr != nil {
+				return a.err(fmt.Errorf("failed to create continuation message: %w", contErr))
+			}
+			fitted, fitErr := a.ensureHistoryFitsBeforeSend(ctx, sessionID, append(msgHistory, agentMessage, contMsg), requestProvider, eventCh)
+			if fitErr != nil {
+				return a.err(fitErr)
+			}
+			msgHistory = fitted
+			continue
+		}
+		if agentMessage.FinishReason() == message.FinishReasonMaxTokens {
+			a.emitStatus(sessionID, eventCh,
+				"\n\n⚠️ The response reached the output limit again and was stopped. Ask for the remaining work in smaller parts, or raise MaxTokens for the coder agent.\n\n",
+				"Output limit reached repeatedly; turn stopped")
+		}
+
 		// End of turn: before finishing, check for queued steering feedback. If the
 		// user provided input while the model was responding, inject it as a new
 		// user turn and continue the loop instead of returning, so the run keeps
@@ -1627,6 +1656,19 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 			Done:      true,
 		}
 	}
+}
+
+// maxOutputLimitContinuations bounds how many times a single run continues
+// after a response is cut by the output token limit.
+const maxOutputLimitContinuations = 2
+
+// outputLimitContinuationPrompt is the user turn injected after a response was
+// cut by the output token limit.
+func outputLimitContinuationPrompt(limit int) string {
+	return fmt.Sprintf("Your previous response reached the output limit of %d tokens and was cut off. "+
+		"Any tool call you were writing at that point was discarded and NOT executed: nothing was written or saved. "+
+		"Continue the task from where you were. If you were writing a large file or document, split it: "+
+		"write a shorter first part, then add the rest with further edits or appends, keeping each tool call well under the limit.", limit)
 }
 
 func (a *agent) ensureHistoryFitsBeforeSend(ctx context.Context, sessionID string, msgHistory []message.Message, requestProvider provider.Provider, eventCh chan<- AgentEvent) ([]message.Message, error) {
@@ -2496,12 +2538,12 @@ func (a *agent) shouldCompact(sess session.Session) bool {
 	}
 	cfg := config.Get()
 	agentCfg, ok := cfg.Agents[a.agentName]
-	if !ok {
+	if !ok && a.agentName != config.AgentCoder {
 		return false
 	}
-	// The agent's own AutoCompact overrides the global switch when it is
-	// explicitly set in the config; otherwise the global value applies.
-	if !config.ResolveAutoCompact(cfg.AutoCompact, agentCfg) {
+	// The coder always auto-compacts; other agents use their own AutoCompact
+	// when it is explicitly set in the config, otherwise the global value.
+	if !config.ResolveAutoCompact(a.agentName, cfg.AutoCompact, agentCfg) {
 		return false
 	}
 	threshold := agentCfg.AutoCompactThreshold

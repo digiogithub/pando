@@ -179,18 +179,6 @@ function AgentCard({
 
           {showContextControls && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
-              <div className="flex items-center gap-3 pt-1">
-                <Switch
-                  id="agent-auto-compact"
-                  checked={agent.autoCompact}
-                  onCheckedChange={(v) => onUpdate({ autoCompact: v })}
-                />
-                <label htmlFor="agent-auto-compact" className="cursor-pointer">
-                  <div className="text-sm font-medium text-fg">Auto-compact</div>
-                  <div className="text-xs text-muted">Compress context automatically</div>
-                </label>
-              </div>
-
               <Field label="Compact threshold">
                 <Input
                   type="number"

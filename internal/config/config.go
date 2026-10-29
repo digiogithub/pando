@@ -2089,10 +2089,36 @@ func roleCeilingTokens(name AgentName) int64 {
 	case AgentSummarizer:
 		return 8192
 	case AgentCoder:
-		return 16384
+		return coderMaxOutputTokensCeiling
 	default:
 		return 16384
 	}
+}
+
+const (
+	// CoderAutoMaxTokensCap bounds the automatic coder budget when the model
+	// reports a larger output limit. A coder turn regularly writes whole files
+	// or plans in a single tool call; 8192 tokens cut those calls mid-JSON and
+	// the turn ended on max_tokens with nothing executed.
+	CoderAutoMaxTokensCap = 32_000
+	// coderMaxOutputTokensCeiling is the hard guardrail for the coder,
+	// including manual MaxTokens overrides.
+	coderMaxOutputTokensCeiling = 64_000
+)
+
+// coderAutoBudget returns the automatic coder budget for the model: its
+// reported output limit up to CoderAutoMaxTokensCap, never more than a quarter
+// of the context window, and never below the role default.
+func coderAutoBudget(model models.Model) int64 {
+	budget := AutoBudgetByRole(AgentCoder)
+	if model.DefaultMaxTokens <= budget {
+		return budget
+	}
+	upgraded := min(model.DefaultMaxTokens, CoderAutoMaxTokensCap)
+	if model.ContextWindow > 0 {
+		upgraded = min(upgraded, model.ContextWindow/4)
+	}
+	return max(upgraded, budget)
 }
 
 // ResolveAgentMaxTokens returns the effective max output tokens for the given agent.
@@ -2103,6 +2129,9 @@ func ResolveAgentMaxTokens(name AgentName, agentCfg Agent, model models.Model) i
 	budget := agentCfg.MaxTokens
 	if budget <= 0 {
 		budget = AutoBudgetByRole(name)
+		if name == AgentCoder {
+			budget = coderAutoBudget(model)
+		}
 	}
 	if model.DefaultMaxTokens > 0 && budget > model.DefaultMaxTokens {
 		budget = model.DefaultMaxTokens
@@ -4191,9 +4220,13 @@ func agentInheritingModel(base Agent, modelID models.ModelID) Agent {
 }
 
 // ResolveAutoCompact returns the effective auto-compaction switch for an
-// agent: the agent's own value when it is explicitly set, otherwise the global
-// AutoCompact.
-func ResolveAutoCompact(global bool, a Agent) bool {
+// agent. The coder always auto-compacts: without it a long session only ends
+// in a context-overflow error. Other agents use their own value when it is
+// explicitly set, otherwise the global AutoCompact.
+func ResolveAutoCompact(name AgentName, global bool, a Agent) bool {
+	if name == AgentCoder {
+		return true
+	}
 	if a.AutoCompact != nil {
 		return *a.AutoCompact
 	}

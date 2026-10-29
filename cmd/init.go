@@ -139,10 +139,9 @@ Languages = []  # Leave empty to apply to all files; e.g. ['.go']
 # Primary coding assistant — handles most interactive and non-interactive tasks.
 [Agents.coder]
 Model                 = 'anthropic.claude-sonnet-4-6'
-MaxTokens             = 0      # 0 = Auto (role default: 8192 tokens; override with a positive number)
+MaxTokens             = 0      # 0 = Auto (model output limit, up to 32000 tokens; override with a positive number)
 ReasoningEffort       = ''     # 'low' | 'medium' | 'high' (OpenAI o-series only)
-# AutoCompact         = true   # optional per-agent override; when omitted the global AutoCompact applies
-AutoCompactThreshold  = 0.0    # 0.0 = default threshold (0.85)
+AutoCompactThreshold  = 0.0    # 0.0 = default threshold (0.85); the coder always auto-compacts
 
 # Summariser — condenses long conversations to save tokens.
 [Agents.summarizer]

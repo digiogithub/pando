@@ -181,7 +181,7 @@ func (s *Server) handleGetConfigAgents(w http.ResponseWriter, r *http.Request) {
 			ResolvedMaxTokens:    config.ResolveAgentMaxTokens(name, a, model),
 			ReasoningEffort:      a.ReasoningEffort,
 			ThinkingMode:         a.ThinkingMode,
-			AutoCompact:          config.ResolveAutoCompact(cfg.AutoCompact, a),
+			AutoCompact:          config.ResolveAutoCompact(name, cfg.AutoCompact, a),
 			AutoCompactThreshold: a.AutoCompactThreshold,
 			ContextControls:      config.AgentExposesContextControls(name),
 			UseDecisionModel:     useDecisionModel,
@@ -229,7 +229,10 @@ func (s *Server) handlePutConfigAgents(w http.ResponseWriter, r *http.Request) {
 			// GET reports the effective value, so only persist a per-agent
 			// override when the payload differs from what is already in effect;
 			// otherwise the agent keeps inheriting (or keeps its own) setting.
-			if config.ResolveAutoCompact(cfg.AutoCompact, existing) == item.AutoCompact {
+			if name == config.AgentCoder {
+				// The coder always auto-compacts; the switch is not configurable.
+				agent.AutoCompact = existing.AutoCompact
+			} else if config.ResolveAutoCompact(name, cfg.AutoCompact, existing) == item.AutoCompact {
 				agent.AutoCompact = existing.AutoCompact
 			} else {
 				v := item.AutoCompact

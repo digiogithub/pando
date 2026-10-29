@@ -772,7 +772,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			model := a.app.CoderAgent.Model()
 			contextWindow := model.ContextWindow
 			tokens := a.selectedSession.CompletionTokens + a.selectedSession.PromptTokens
-			if (tokens >= int64(float64(contextWindow)*0.95)) && config.ResolveAutoCompact(config.Get().AutoCompact, config.Get().Agents[config.AgentCoder]) {
+			if (tokens >= int64(float64(contextWindow)*0.95)) && config.ResolveAutoCompact(config.AgentCoder, config.Get().AutoCompact, config.Get().Agents[config.AgentCoder]) {
 				return a, tea.Batch(append(cmds, util.CmdHandler(startCompactSessionMsg{}))...)
 			}
 		}

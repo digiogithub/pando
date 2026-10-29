@@ -1741,21 +1741,12 @@ func buildAgentsSection(cfg *config.Config) settings.Section {
 					CardID: string(agentName),
 				},
 				settings.Field{
-					Label:  "Auto Compact",
-					Key:    fmt.Sprintf("agents.%s.autoCompact", agentName),
-					Value:  boolString(config.ResolveAutoCompact(cfg.AutoCompact, agentCfg)),
-					Type:   settings.FieldToggle,
+					Label:  "Compact Threshold",
+					Key:    fmt.Sprintf("agents.%s.autoCompactThreshold", agentName),
+					Value:  fmt.Sprintf("%.2f", agentCfg.AutoCompactThreshold),
+					Type:   settings.FieldText,
 					Card:   card,
 					CardID: string(agentName),
-				},
-				settings.Field{
-					Label:    "Compact Threshold",
-					Key:      fmt.Sprintf("agents.%s.autoCompactThreshold", agentName),
-					Value:    fmt.Sprintf("%.2f", agentCfg.AutoCompactThreshold),
-					Type:     settings.FieldText,
-					Disabled: !config.ResolveAutoCompact(cfg.AutoCompact, agentCfg),
-					Card:     card,
-					CardID:   string(agentName),
 				},
 			)
 		}
@@ -1787,6 +1778,9 @@ func personaSelectorDecisionFields(cfg *config.Config, agentCfg config.Agent) []
 // When MaxTokens is 0 it shows the automatic budget that will be used at runtime.
 func agentTokensHint(agentName config.AgentName, agentCfg config.Agent) string {
 	if agentCfg.MaxTokens <= 0 {
+		if agentName == config.AgentCoder {
+			return fmt.Sprintf("0 = Auto (model output limit, up to %d tokens)", config.CoderAutoMaxTokensCap)
+		}
 		return fmt.Sprintf("0 = Auto (role default: %d tokens)", config.AutoBudgetByRole(agentName))
 	}
 	return "0 = Auto"

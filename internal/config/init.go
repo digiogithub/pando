@@ -235,8 +235,7 @@ Directory = './.pando/data'
 
 [Agents.coder]
 Model       = ''
-MaxTokens   = 0 # Auto (resolved by agent role and model; 0 = 8192 for coder)
-# AutoCompact = true # optional per-agent override; when omitted the global AutoCompact applies
+MaxTokens   = 0 # Auto (model output limit, up to 32000 for coder)
 
 [Agents.summarizer]
 Model     = ''
