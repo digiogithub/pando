@@ -2,13 +2,14 @@
 id: PANDO-EP-0023
 type: epic
 title: "Read-before-edit guard survives restarts: session-history fallback with content check and compaction cut-off"
-status: in_review
+status: done
 priority: high
 author: mcp
 labels: [tools, edit, webui, macos-report]
 created: 2026-11-03T12:02:02Z
-updated: 2026-11-03T12:06:20Z
+updated: 2026-11-03T12:52:21Z
 started: 2026-11-03T12:02:22Z
+closed: 2026-11-03T12:52:21Z
 ---
 
 ## Description

@@ -10,7 +10,7 @@ tags:
 ---
 # View images, ACP read path, and read-before-edit guard surviving restarts (EP-0023)
 
-Gintrack: [[PANDO-EP-0023]] (stories US-0133, US-0134, US-0135). Status: in_review, uncommitted.
+Gintrack: [[PANDO-EP-0023]] (stories US-0133, US-0134, US-0135). Status: done, released in v1.5.3 (commit d6340c51).
 
 ## Reported
 macOS user on WebUI (Pando v1.5.2, debug_id 7402-2673-1745-4679):
