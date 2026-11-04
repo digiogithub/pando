@@ -85,6 +85,11 @@ func newOpenAIClient(opts providerClientOptions) OpenAIClient {
 			Model:    opts.model.APIModel,
 		})))
 
+	// Route every event stream through Pando's SSE decoder (copilot_sse.go),
+	// whatever parameters the server adds to its Content-Type: the SDK's own
+	// decoder breaks on SSE keepalive comments such as ": ping".
+	openaiClientOptions = append(openaiClientOptions, option.WithMiddleware(sseNormalizeMimeMiddleware))
+
 	client := openai.NewClient(openaiClientOptions...)
 	if cfg := config.Get(); cfg != nil && cfg.Debug {
 		logging.Debug("Creating OpenAI client", "model", opts.model.APIModel, "baseURL", openaiOpts.baseURL)

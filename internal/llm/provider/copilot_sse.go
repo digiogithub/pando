@@ -9,9 +9,15 @@ package provider
 // Fix strategy:
 //   1. Register a custom "text/event-stream" decoder backed by a 10 MB buffer
 //      via ssestream.RegisterDecoder (handles the common case).
-//   2. Attach a middleware to every Copilot client that strips MIME type
-//      parameters from the Content-Type header so the exact-match lookup in the
-//      SDK always succeeds (handles edge cases like "text/event-stream; charset=utf-8").
+//   2. Attach a middleware to every OpenAI-protocol client (Copilot and every
+//      provider built by newOpenAIClient) that strips MIME type parameters from
+//      the Content-Type header so the exact-match lookup in the SDK always
+//      succeeds (handles edge cases like "text/event-stream; charset=utf-8").
+//
+// The decoder also skips the blank line that closes a comment-only block (an
+// SSE keepalive such as ": ping"), which the SDK's own decoder in this beta
+// dispatches as an empty event. That is why every OpenAI-protocol client must
+// reach this decoder, not only Copilot's.
 
 import (
 	"bufio"
@@ -74,8 +80,16 @@ func (s *largeBufferSSEDecoder) Next() bool {
 	for s.scn.Scan() {
 		txt := s.scn.Bytes()
 
-		// Empty line → dispatch event
+		// Empty line → dispatch event. Per the WHATWG SSE "dispatch the
+		// event" steps, a blank line with an empty data buffer dispatches
+		// nothing: it is how a comment-only block such as a ": ping"
+		// keepalive ends. Dispatching it would hand the stream an empty
+		// payload, which fails with "unexpected end of JSON input".
 		if len(txt) == 0 {
+			if data.Len() == 0 {
+				event = ""
+				continue
+			}
 			s.evt = ssestream.Event{
 				Type: event,
 				Data: data.Bytes(),
