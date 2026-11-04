@@ -730,14 +730,32 @@ func (r *Runtime) attachRun(reqCtx context.Context, sse *SSEWriter, run *activeR
 	run.unpark()
 
 	if !first {
+		buffered, lossy := run.replaySnapshot()
+		// Every AG-UI response must open with RUN_STARTED (the reference
+		// client's verifyEvents rejects anything else as the first event),
+		// exactly as runPrelude does for a new run. A resume segment's
+		// RUN_STARTED is the first buffered event (beginResumeSegment
+		// broadcasts it), so it is written first and dropped from the
+		// replay. The first segment's RUN_STARTED never reaches the buffer
+		// (runPrelude writes it straight to the creating request), and a
+		// lossy buffer may have dropped it, so in those cases the current
+		// segment's RUN_STARTED is rebuilt from its translator.
+		opening := run.currentTranslator().Start()
+		if len(buffered) > 0 && buffered[0].EventType() == EventRunStarted {
+			opening, buffered = buffered[:1], buffered[1:]
+		}
+		if err := sse.WriteAll(opening); err != nil {
+			run.unsubscribe(sub)
+			return
+		}
 		// A fresh, current state snapshot orients a (re)attaching client
 		// without depending on the bounded replay buffer to still hold the
-		// original one from run start.
+		// original one from run start. It goes right after RUN_STARTED, the
+		// order runPrelude uses.
 		if err := sse.Write(run.state.Snapshot()); err != nil {
 			run.unsubscribe(sub)
 			return
 		}
-		buffered, lossy := run.replaySnapshot()
 		if lossy {
 			if err := sse.Write(NewCustom("pando.replayLossy", true)); err != nil {
 				run.unsubscribe(sub)
