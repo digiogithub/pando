@@ -1493,6 +1493,15 @@ type AGUIConfig struct {
 	// FrontendTools allows RunAgentInput.tools to be proxied to the browser.
 	// Default: true.
 	FrontendTools bool `json:"frontendTools,omitempty" toml:"FrontendTools"`
+	// ContextDelivery selects how the run's AG-UI `context` entries reach the
+	// model. "message" sends them as a separate data message (a JSON array
+	// inside a <context_data> envelope that labels it as client-supplied
+	// data) placed before the user's message, never persisted in the session
+	// history; the client re-supplies its context on every run. "inline" is
+	// the legacy behaviour: a <context> block prefixed to the user's message
+	// and stored with it. Unknown values resolve to "message".
+	// Default: "message".
+	ContextDelivery string `json:"contextDelivery,omitempty" toml:"ContextDelivery"`
 	// AgentPoolSize caps how many agent instances the adapter keeps alive (one
 	// per distinct agent + frontend-toolset combination). Default: 4.
 	AgentPoolSize int `json:"agentPoolSize,omitempty" toml:"AgentPoolSize"`

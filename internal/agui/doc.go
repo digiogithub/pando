@@ -193,6 +193,31 @@
 //     Deps.Token), and is printed to stdout only in the generated case —
 //     the only one the operator has no other way to learn it.
 //
+// # Client context delivery
+//
+// RunAgentInput.context (ambient data the page attaches, CopilotKit's
+// useCopilotReadable) reaches the model according to Config.ContextDelivery:
+//
+//   - "message" (default): input.go's ContextDataMessage serialises the
+//     entries as a JSON array inside a <context_data source="client_application">
+//     envelope that states the content is client-supplied data, not
+//     instructions. handleRun attaches it to the run with
+//     agent.WithEphemeralUserMessages, so the agent sends it as its own
+//     user-role message immediately before the user's message on every
+//     request of that run, and never writes it to the session. The prompt
+//     handed to svc.Run -- and therefore the stored user message, the thread
+//     title and MESSAGES_SNAPSHOT -- is exactly the user's text. A later run
+//     sees only the context its own request carries.
+//   - "inline" (legacy): ContextBlock's <context> block is prefixed to the
+//     prompt, becomes part of the stored user message and is replayed on
+//     every later turn.
+//
+// A user role is used rather than a system one because every provider
+// converter accepts user messages and none forwards a mid-history system
+// message; consecutive user turns already occur (a compaction summary is
+// replayed as a user message) and the providers accept them. Invariant I1
+// holds: the data travels on the run's context, not in a new parameter.
+//
 // # Reverse-proxy contract (PANDO-US-0024)
 //
 // Everything a product's own backend needs to know to sit between a browser

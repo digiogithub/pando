@@ -3,12 +3,14 @@ package agui
 import (
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/llm/tools"
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/mcpgateway"
 	"github.com/digiogithub/pando/internal/mesnada/orchestrator"
 	"github.com/digiogithub/pando/internal/message"
@@ -67,9 +69,13 @@ type Config struct {
 	AllowedOrigins []string
 	RequireToken   bool
 	FrontendTools  bool
-	AgentPoolSize  int
-	AgentPoolTTL   time.Duration
-	AutoApprove    bool
+	// ContextDelivery selects how RunAgentInput.context reaches the model:
+	// ContextDeliveryMessage (the default) or ContextDeliveryInline. Always
+	// one of the two once resolved by ConfigFromApp.
+	ContextDelivery string
+	AgentPoolSize   int
+	AgentPoolTTL    time.Duration
+	AutoApprove     bool
 	// HumanInTheLoop surfaces permission prompts and questions to the AG-UI
 	// client. With it off (and AutoApprove off) a run that needs approval is
 	// denied instead of asking, which is the pre-P4 behaviour.
@@ -162,6 +168,37 @@ type Profile struct {
 	Mesnada bool
 }
 
+// Values of Config.ContextDelivery.
+const (
+	// ContextDeliveryMessage sends the run's context entries to the model as
+	// a separate, run-scoped data message placed before the user's message
+	// (RunAgentInput.ContextDataMessage). The message is never persisted:
+	// the session history keeps only the user's own text, and a client
+	// re-supplies its context on every run, as AG-UI clients do.
+	ContextDeliveryMessage = "message"
+	// ContextDeliveryInline is the legacy behaviour: the entries are rendered
+	// as a <context> block (RunAgentInput.ContextBlock) prefixed to the
+	// user's message, so they are stored with it and replayed on every later
+	// turn.
+	ContextDeliveryInline = "inline"
+)
+
+// resolveContextDelivery maps a configured ContextDelivery value onto one of
+// the supported modes. Anything but an explicit "inline" resolves to the
+// default, ContextDeliveryMessage, so a typo never falls back to the mode
+// that merges client data into the user's turn.
+func resolveContextDelivery(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case ContextDeliveryInline:
+		return ContextDeliveryInline
+	case "", ContextDeliveryMessage:
+		return ContextDeliveryMessage
+	default:
+		logging.Warn("agui: unknown ContextDelivery, using the default", "value", v, "default", ContextDeliveryMessage)
+		return ContextDeliveryMessage
+	}
+}
+
 const (
 	defaultPath         = "/api/v1/agui"
 	defaultPoolSize     = 4
@@ -192,18 +229,19 @@ const (
 // feature.
 func ConfigFromApp(c config.AGUIConfig) Config {
 	out := Config{
-		Path:           c.Path,
-		Port:           c.Port,
-		AllowedOrigins: c.AllowedOrigins,
-		RequireToken:   c.RequireToken,
-		FrontendTools:  c.FrontendTools,
-		AgentPoolSize:  c.AgentPoolSize,
-		AutoApprove:    c.AutoApprove,
-		HumanInTheLoop: c.HumanInTheLoop,
-		Persona:        c.Persona,
-		SystemPrompt:   c.SystemPrompt,
-		Tools:          c.Tools,
-		Mesnada:        true,
+		Path:            c.Path,
+		Port:            c.Port,
+		AllowedOrigins:  c.AllowedOrigins,
+		RequireToken:    c.RequireToken,
+		FrontendTools:   c.FrontendTools,
+		ContextDelivery: resolveContextDelivery(c.ContextDelivery),
+		AgentPoolSize:   c.AgentPoolSize,
+		AutoApprove:     c.AutoApprove,
+		HumanInTheLoop:  c.HumanInTheLoop,
+		Persona:         c.Persona,
+		SystemPrompt:    c.SystemPrompt,
+		Tools:           c.Tools,
+		Mesnada:         true,
 	}
 	if c.Mesnada != nil {
 		out.Mesnada = *c.Mesnada

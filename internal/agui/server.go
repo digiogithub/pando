@@ -422,8 +422,18 @@ func (r *Runtime) handleRun(w http.ResponseWriter, req *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "the trailing user message has no text content")
 		return
 	}
-	if ctxBlock := in.ContextBlock(); ctxBlock != "" {
-		prompt = ctxBlock + "\n\n" + prompt
+	// Client-supplied context never becomes part of the user's words by
+	// default: it travels as a separate, run-scoped data message (see
+	// Config.ContextDelivery), so prompt -- which is also what the session
+	// stores and titles itself after -- is exactly the user's text. The
+	// legacy inline mode keeps the old prefix for deployments that opt in.
+	var contextData string
+	if r.cfg.ContextDelivery == ContextDeliveryInline {
+		if ctxBlock := in.ContextBlock(); ctxBlock != "" {
+			prompt = ctxBlock + "\n\n" + prompt
+		}
+	} else {
+		contextData = in.ContextDataMessage()
 	}
 
 	// Draining (PANDO-US-0022) and the concurrency cap (PANDO-US-0021) are
@@ -503,7 +513,9 @@ func (r *Runtime) handleRun(w http.ResponseWriter, req *http.Request) {
 	runCtx, cancel := context.WithCancel(r.baseCtx)
 	suspend := r.pending.watch(sessionID)
 
-	events, err := svc.Run(runCtx, sessionID, prompt)
+	// The data message is attached to this run only: the agent sends it ahead
+	// of the user's message on every request of the run and never stores it.
+	events, err := svc.Run(agent.WithEphemeralUserMessages(runCtx, contextData), sessionID, prompt)
 	if err != nil {
 		cancel()
 		unlock()

@@ -1478,8 +1478,10 @@ func (a *agent) processGeneration(ctx context.Context, sessionID, content string
 	if err != nil {
 		return a.err(fmt.Errorf("failed to create user message: %w", err))
 	}
-	// Append the new user message to the conversation history.
-	msgHistory := append(msgs, userMsg)
+	// Append the new user message to the conversation history, preceded by any
+	// run-scoped data messages the caller attached (WithEphemeralUserMessages).
+	// Those are in-memory only: never persisted, never part of the transcript.
+	msgHistory := withEphemeralMessages(ctx, sessionID, append(msgs, userMsg))
 	if autoTurn != nil && autoTurn.modelChanged {
 		// The previous turn was answered by another model: its reasoning blocks
 		// and thought signatures are not valid for this one.
@@ -1726,7 +1728,9 @@ func (a *agent) loadSessionMessagesFromSummary(ctx context.Context, sessionID st
 	if err != nil {
 		return nil, fmt.Errorf("failed to reload session: %w", err)
 	}
-	return applySummaryBoundary(msgs, sess.SummaryMessageID), nil
+	// The reload replaces the run's in-memory history, so the run-scoped
+	// ephemeral messages (never persisted) are put back in front of the turn.
+	return withEphemeralMessages(ctx, sessionID, applySummaryBoundary(msgs, sess.SummaryMessageID)), nil
 }
 
 func applySummaryBoundary(msgs []message.Message, summaryMessageID string) []message.Message {
