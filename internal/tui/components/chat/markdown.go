@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/digiogithub/pando/internal/tui/components/editor"
 	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
@@ -85,6 +86,13 @@ func renderMarkdownCodeBlock(highlighter *editor.Highlighter, source, language s
 	}
 
 	rendered = strings.TrimRight(rendered, "\n")
+
+	if IsPlainMode() {
+		// Plain mode: no colors, no padding box, no language label chip. The
+		// fenced code is just indented text so a screen dump stays readable.
+		plain := ansi.Strip(rendered)
+		return lipgloss.NewStyle().PaddingLeft(2).Render(plain)
+	}
 
 	var codeBlock string
 	if t.HasBackground() {

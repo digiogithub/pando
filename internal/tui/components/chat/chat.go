@@ -35,6 +35,13 @@ type SessionSelectedMsg = session.Session
 
 type SessionClearedMsg struct{}
 
+// NoticeMsg appends a local, non-persisted informational block to the chat
+// transcript (for example the output of /model). It disappears when the session
+// changes or is cleared.
+type NoticeMsg struct {
+	Text string
+}
+
 // CompactSessionMsg requests a manual compaction of the current session.
 type CompactSessionMsg struct{}
 

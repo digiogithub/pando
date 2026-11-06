@@ -61,6 +61,7 @@ type messagesCmp struct {
 	rendering     bool
 	attachments   viewport.Model
 	renderSeq     int
+	notices       []string // local, non-persisted notices shown after the messages
 
 	// Mouse selection state
 	mouseDown       bool
@@ -117,9 +118,15 @@ func (m *messagesCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case dialog.ThemeChangedMsg:
 		m.rerender()
 		return m, nil
+	case NoticeMsg:
+		m.notices = append(m.notices, msg.Text)
+		m.rerender()
+		m.viewport.GotoBottom()
+		return m, nil
 	case SessionSelectedMsg:
 		if msg.ID != m.session.ID {
 			m.goal = nil
+			m.notices = nil
 			cmd := m.SetSession(msg)
 			return m, cmd
 		}
@@ -127,6 +134,7 @@ func (m *messagesCmp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case SessionClearedMsg:
 		m.session = session.Session{}
 		m.goal = nil
+		m.notices = nil
 		m.messages = make([]message.Message, 0)
 		m.currentMsgID = ""
 		m.rendering = false
@@ -473,6 +481,17 @@ func (m *messagesCmp) renderView() {
 				renderedAt: time.Now(),
 			}
 		}
+	}
+
+	for _, text := range m.notices {
+		content := roleBlock(wrapNotice(text, m.width-markerWidth), roleNotice)
+		m.uiMessages = append(m.uiMessages, uiMessage{
+			messageType: assistantMessageType,
+			position:    pos,
+			height:      lipgloss.Height(content),
+			content:     content,
+		})
+		pos += lipgloss.Height(content) + 1
 	}
 
 	messages := make([]string, 0)

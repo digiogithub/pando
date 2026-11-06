@@ -46,36 +46,30 @@ type uiMessage struct {
 func renderMessage(msg string, isUser bool, isFocused bool, width int, info ...string) string {
 	t := theme.CurrentTheme()
 
-	style := styles.BaseStyle().
-		Width(width - 1).
-		BorderLeft(true).
-		Foreground(t.TextMuted()).
-		BorderForeground(t.Primary()).
-		BorderStyle(lipgloss.ThickBorder())
-
-	if isUser {
-		style = style.BorderForeground(t.Secondary())
+	bodyWidth := width - markerWidth
+	if bodyWidth < 10 {
+		bodyWidth = width
 	}
 
-	// Apply markdown formatting and handle background color
+	// Apply markdown formatting; the body is wrapped to the width left by the
+	// role marker.
 	parts := []string{
-		renderMarkdown(msg, width),
+		strings.TrimSuffix(renderMarkdown(msg, bodyWidth), "\n"),
 	}
-
-	// Remove newline at the end
-	parts[0] = strings.TrimSuffix(parts[0], "\n")
 	if len(info) > 0 {
 		parts = append(parts, info...)
 	}
 
-	rendered := style.Render(
-		lipgloss.JoinVertical(
-			lipgloss.Left,
-			parts...,
-		),
-	)
+	body := lipgloss.JoinVertical(lipgloss.Left, parts...)
+	if !IsPlainMode() {
+		body = lipgloss.NewStyle().Foreground(t.TextMuted()).Render(body)
+	}
 
-	return rendered
+	kind := roleAssistant
+	if isUser {
+		kind = roleUser
+	}
+	return roleBlock(body, kind)
 }
 
 func renderUserMessage(msg message.Message, isFocused bool, width int, position int) uiMessage {
@@ -129,16 +123,9 @@ func renderThinkingBlock(thinking string, width int, inProgress bool) string {
 		Italic(true).
 		Render(headerText)
 
-	body := strings.TrimSuffix(renderMarkdown(thinking, width), "\n")
+	body := strings.TrimSuffix(renderMarkdown(thinking, width-markerWidth), "\n")
 
-	blockStyle := styles.BaseStyle().
-		Width(width - 1).
-		BorderLeft(true).
-		Foreground(t.TextMuted()).
-		BorderForeground(t.TextMuted()).
-		BorderStyle(lipgloss.NormalBorder())
-
-	return lipgloss.JoinVertical(lipgloss.Left, header, blockStyle.Render(body))
+	return lipgloss.JoinVertical(lipgloss.Left, header, roleBlock(body, roleThinking))
 }
 
 // Returns multiple uiMessages because of the tool calls
@@ -629,12 +616,7 @@ func renderToolMessage(
 	t := theme.CurrentTheme()
 	baseStyle := styles.BaseStyle()
 
-	style := baseStyle.
-		Width(width - 1).
-		BorderLeft(true).
-		BorderStyle(lipgloss.ThickBorder()).
-		PaddingLeft(1).
-		BorderForeground(t.TextMuted())
+	style := baseStyle.Width(width - markerWidth)
 
 	response := findToolResponse(toolCall.ID, allMessages)
 	toolNameText := baseStyle.Foreground(t.TextMuted()).
@@ -649,7 +631,7 @@ func renderToolMessage(
 			Foreground(t.TextMuted()).
 			Render(fmt.Sprintf("%s", toolAction))
 
-		content := style.Render(lipgloss.JoinHorizontal(lipgloss.Left, toolNameText, progressText))
+		content := roleBlock(style.Render(lipgloss.JoinHorizontal(lipgloss.Left, toolNameText, progressText)), roleTool)
 		toolMsg := uiMessage{
 			messageType: toolMessageType,
 			position:    position,
@@ -706,12 +688,12 @@ func renderToolMessage(
 		parts = append(parts, responseContent)
 	}
 
-	content := style.Render(
+	content := roleBlock(style.Render(
 		lipgloss.JoinVertical(
 			lipgloss.Left,
 			parts...,
 		),
-	)
+	), roleTool)
 	if nested {
 		content = lipgloss.JoinVertical(
 			lipgloss.Left,

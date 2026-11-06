@@ -834,7 +834,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if string(msg.Model.ID) == config.AutoModelID {
 			agent.SetSessionAutoMode(sessionID, true)
-			return a, util.ReportInfo("Model changed to Auto for this session")
+			return a, modelChangeReport(util.ReportInfo, "Model changed to Auto for this session")
 		}
 
 		// Without a configured coder model there is no default to fall back to,
@@ -842,13 +842,13 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cfg := config.Get(); cfg == nil || cfg.Agents[config.AgentCoder].Model == "" {
 			model, err := a.app.CoderAgent.Update(config.AgentCoder, msg.Model.ID)
 			if err != nil {
-				return a, util.ReportError(err)
+				return a, modelChangeReport(func(t string) tea.Cmd { return util.ReportError(errors.New(t)) }, err.Error())
 			}
-			return a, util.ReportInfo(fmt.Sprintf("Model changed to %s", model.Name))
+			return a, modelChangeReport(util.ReportInfo, fmt.Sprintf("Model changed to %s (id: %s)", model.Name, model.ID))
 		}
 
 		if err := config.ValidateAgentModel(config.AgentCoder, msg.Model.ID); err != nil {
-			return a, util.ReportError(err)
+			return a, modelChangeReport(func(t string) tea.Cmd { return util.ReportError(errors.New(t)) }, err.Error())
 		}
 		agent.SetSessionModelOverride(sessionID, models.NormalizeModelID(string(msg.Model.ID)))
 
@@ -856,7 +856,7 @@ func (a appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if name == "" {
 			name = string(msg.Model.ID)
 		}
-		return a, util.ReportInfo(fmt.Sprintf("Model changed to %s for this session", name))
+		return a, modelChangeReport(util.ReportInfo, fmt.Sprintf("Model changed to %s for this session (id: %s)", name, msg.Model.ID))
 
 	case dialog.ShowInitDialogMsg:
 		a.showInitDialog = msg.Show
@@ -3082,4 +3082,11 @@ If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (
 	}
 
 	return model
+}
+
+// modelChangeReport reports the outcome of a model change both as a toast and
+// as a chat notice, so non-interactive drivers (which read the transcript, not
+// the toasts) see the confirmation.
+func modelChangeReport(report func(string) tea.Cmd, text string) tea.Cmd {
+	return tea.Batch(report(text), util.CmdHandler(chat.NoticeMsg{Text: text}))
 }

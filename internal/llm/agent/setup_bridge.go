@@ -138,6 +138,8 @@ var setupBlockedCommands = map[string]string{
 	"compact":            "compaction cannot run inside an active turn",
 	"summarize":          "compaction cannot run inside an active turn",
 	"db-compact":         "database maintenance is triggered by the user",
+	"clear":              "clearing the session is triggered by the user",
+	"model":              "model selection is triggered by the user (use the pando_setup model tool)",
 	"superpowers-finish": "the closing turn is user-driven so the mode clears only on success",
 	"learning-finish":    "the closing turn is user-driven so the mode clears only on success",
 }

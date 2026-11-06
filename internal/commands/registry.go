@@ -24,6 +24,8 @@ func BuiltinCommands() []SlashCommand {
 		{Name: "goal-cancel", Description: "Cancel the current goal execution", AcceptsArgs: false},
 		{Name: "compact", Description: "Create a manual compact summary for the current session", AcceptsArgs: false},
 		{Name: "summarize", Description: "Alias for /compact", AcceptsArgs: false},
+		{Name: "clear", Description: "Clear the current session and start a new one", AcceptsArgs: false},
+		{Name: "model", Description: "List models of all configured providers, or select one: /model [provider/]<id>", AcceptsArgs: true},
 		{Name: "db-compact", Description: "Compact the database (VACUUM) and reclaim free space", AcceptsArgs: false},
 		{Name: "evaluate", Description: "Score a session with the self-improvement evaluator (optional session id; defaults to the current one)", AcceptsArgs: true},
 		{Name: "feedback", Description: "Rate the current session for the self-improvement evaluator: /feedback good|bad [note]", AcceptsArgs: true},

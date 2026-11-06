@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	chatcmp "github.com/digiogithub/pando/internal/tui/components/chat"
 	"io"
 	"log/slog"
 	"os"
@@ -284,6 +285,10 @@ The prompt can also be provided via the PANDO_PROMPT environment variable.`,
 		if yoloMode || (cfg != nil && cfg.Permissions.AutoApproveTools) {
 			app.Permissions.SetGlobalAutoApprove(true)
 		}
+
+		// Plain chat rendering for text-scraped terminals.
+		plain, _ := cmd.Flags().GetBool("plain")
+		chatcmp.SetPlainMode(plain || plainFromEnv())
 
 		// Set up the TUI
 		zone.NewGlobal()
@@ -1022,6 +1027,7 @@ func init() {
 	rootCmd.Flags().StringP("cwd", "c", "", "Current working directory")
 	rootCmd.Flags().String("goal", "", "Objective to run in autonomous goal mode")
 	rootCmd.Flags().StringP("prompt", "p", "", "Prompt to run in non-interactive mode")
+	rootCmd.Flags().Bool("plain", false, "Plain chat rendering: no colors or unicode markers, for terminals scraped as text (also PANDO_PLAIN=1)")
 	rootCmd.Flags().StringP("model", "m", "", "Override the model for this run without changing the saved config")
 	rootCmd.PersistentFlags().String("age-keys", "", "Named AGE keypair to use instead of the default one")
 
@@ -1059,4 +1065,19 @@ func init() {
 		sort.Strings(matches)
 		return matches, cobra.ShellCompDirectiveNoFileComp
 	})
+}
+
+// plainFromEnv reports whether the environment asks for plain chat rendering:
+// PANDO_PLAIN set to a truthy value, or an agent supervisor that scrapes the
+// screen as text (agentd sets AGENTD_ID; NO_COLOR is honored as well).
+func plainFromEnv() bool {
+	for _, name := range []string{"PANDO_PLAIN", "AGENTD_ID"} {
+		switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+		case "", "0", "false", "no", "off":
+		default:
+			return true
+		}
+	}
+	_, noColor := os.LookupEnv("NO_COLOR")
+	return noColor && os.Getenv("NO_COLOR") != ""
 }

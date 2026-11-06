@@ -20,6 +20,7 @@ import (
 	"github.com/digiogithub/pando/internal/history"
 	"github.com/digiogithub/pando/internal/learning"
 	agentpkg "github.com/digiogithub/pando/internal/llm/agent"
+	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/ponytail"
 	"github.com/digiogithub/pando/internal/pubsub"
@@ -854,6 +855,12 @@ func (p *ChatPageModel) sendMessage(text string, attachments []message.Attachmen
 	if cmd, ok := p.handleCompactCommand(text); ok {
 		return cmd
 	}
+	if cmd, ok := p.handleClearCommand(text); ok {
+		return cmd
+	}
+	if cmd, ok := p.handleModelCommand(text); ok {
+		return cmd
+	}
 	if cmd, ok := p.handleDBCompactCommand(text); ok {
 		return cmd
 	}
@@ -1520,6 +1527,44 @@ func (p *ChatPageModel) handleCompactCommand(input string) (tea.Cmd, bool) {
 		return util.CmdHandler(chat.CompactSessionMsg{}), true
 	}
 	return nil, false
+}
+
+// handleClearCommand implements /clear: it drops the current session from the
+// view and starts from a blank one, exactly like the New Session shortcut.
+func (p *ChatPageModel) handleClearCommand(input string) (tea.Cmd, bool) {
+	if strings.TrimSpace(input) != "/clear" {
+		return nil, false
+	}
+	if p.session.ID != "" && p.app.CoderAgent.IsSessionBusy(p.session.ID) {
+		p.app.CoderAgent.Cancel(p.session.ID)
+	}
+	p.session = session.Session{}
+	return util.CmdHandler(chat.SessionClearedMsg{}), true
+}
+
+// handleModelCommand implements /model without opening a dialog. With no
+// argument it prints every configured provider's models in the chat; with an
+// id (or provider/id) it selects that model and the confirmation is printed in
+// the chat by the app-level ModelSelectedMsg handler.
+func (p *ChatPageModel) handleModelCommand(input string) (tea.Cmd, bool) {
+	line := strings.TrimSpace(input)
+	if line != "/model" && !strings.HasPrefix(line, "/model ") {
+		return nil, false
+	}
+	arg := strings.TrimSpace(strings.TrimPrefix(line, "/model"))
+	groups := dialog.ListProviderModels(config.Get())
+	if arg == "" {
+		var current models.ModelID
+		if cfg := config.Get(); cfg != nil {
+			current = cfg.Agents[config.AgentCoder].Model
+		}
+		return util.CmdHandler(chat.NoticeMsg{Text: dialog.FormatProviderModels(groups, current)}), true
+	}
+	m, err := dialog.ResolveModelArg(groups, arg)
+	if err != nil {
+		return util.CmdHandler(chat.NoticeMsg{Text: err.Error()}), true
+	}
+	return util.CmdHandler(dialog.ModelSelectedMsg{Model: m}), true
 }
 
 // handleDBCompactCommand runs a database VACUUM in response to /db-compact. The
