@@ -29,6 +29,23 @@ type Embedder interface {
 	Dimension() int
 }
 
+// ModelNamer is implemented by embedders that know the id of the model they
+// call. Every provider in this package implements it. It is a separate
+// interface, not a method of Embedder, so embedders written elsewhere (test
+// fakes, wrappers) keep compiling.
+type ModelNamer interface {
+	Model() string
+}
+
+// ModelOf returns e's model id when e implements ModelNamer, and "" (unknown)
+// otherwise or when e is nil.
+func ModelOf(e Embedder) string {
+	if m, ok := e.(ModelNamer); ok && m != nil {
+		return m.Model()
+	}
+	return ""
+}
+
 // ErrUnsupportedProvider is returned when the provider name is not recognized.
 var ErrUnsupportedProvider = fmt.Errorf("unsupported embedding provider")
 

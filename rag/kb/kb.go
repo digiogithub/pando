@@ -153,7 +153,8 @@ type Options struct {
 	// leg of search; full-text search still works.
 	Embedder embeddings.Embedder
 	// EmbeddingModel is the embedder's model id, recorded on every chunk so a
-	// later embedder change can be detected (CountStaleEmbeddings).
+	// later embedder change can be detected (CountStaleEmbeddings). Empty
+	// falls back to the embedder's own Model() (embeddings.ModelOf).
 	EmbeddingModel string
 	// ChunkSize is the maximum chunk size in characters (0 = default).
 	ChunkSize int
@@ -185,6 +186,9 @@ func Open(db *sql.DB, opts Options) (*KBStore, error) {
 	}
 	s := newStore(db, opts.Embedder, opts.ChunkSize, opts.ChunkOverlap)
 	s.embeddingModel = opts.EmbeddingModel
+	if s.embeddingModel == "" {
+		s.embeddingModel = embeddings.ModelOf(opts.Embedder)
+	}
 	if opts.Workers > 0 {
 		s.SetSyncWorkers(opts.Workers)
 	}

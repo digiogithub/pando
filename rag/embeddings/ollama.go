@@ -185,6 +185,11 @@ func (e *OllamaEmbedder) Dimension() int {
 	return e.dim
 }
 
+// Model returns the embedding model id this embedder calls.
+func (e *OllamaEmbedder) Model() string {
+	return e.model
+}
+
 // embedSingle makes a single API call to embed one text.
 func (e *OllamaEmbedder) embedSingle(ctx context.Context, text string) ([]float32, error) {
 	reqBody := ollamaEmbeddingRequest{

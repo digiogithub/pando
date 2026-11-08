@@ -125,6 +125,11 @@ func (e *GoogleEmbedder) Dimension() int {
 	return e.dim
 }
 
+// Model returns the embedding model id this embedder calls.
+func (e *GoogleEmbedder) Model() string {
+	return e.model
+}
+
 // embedBatch makes a single API call to embed a batch of texts.
 func (e *GoogleEmbedder) embedBatch(ctx context.Context, texts []string, taskType string) ([][]float32, error) {
 	requests := make([]googleEmbedRequest, len(texts))

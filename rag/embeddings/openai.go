@@ -118,6 +118,11 @@ func (e *OpenAIEmbedder) Dimension() int {
 	return e.dim
 }
 
+// Model returns the embedding model id this embedder calls.
+func (e *OpenAIEmbedder) Model() string {
+	return e.model
+}
+
 // embedBatch makes a single API call to embed a batch of texts.
 func (e *OpenAIEmbedder) embedBatch(ctx context.Context, texts []string) ([][]float32, error) {
 	reqBody := openaiEmbeddingRequest{
