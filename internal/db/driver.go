@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	multiwriter "github.com/digiogithub/go-sqlite-multiwriter"
+	"github.com/digiogithub/pando/rag/sqlx"
 	"modernc.org/sqlite"
 )
 
@@ -32,10 +33,6 @@ import (
 // Statements inside an explicit transaction are passed through untouched: a
 // transaction that loses must be run again whole, which is what RunTx does.
 const DriverName = "pando-sqlite"
-
-// retryBudget bounds how long one autocommit statement keeps retrying a lost
-// commit before the error is returned to the caller.
-const retryBudget = 30 * time.Second
 
 func init() {
 	sql.Register(DriverName, &engineDriver{inner: &sqlite.Driver{}})
@@ -75,31 +72,10 @@ func IsRetryable(err error) bool {
 }
 
 // retryLoop runs fn until it succeeds, fails with a non-retryable error, the
-// context ends or the retry budget is spent. The backoff starts in the
-// microseconds: under the multiwriter engine a lost commit is retried against a
-// fresh snapshot and usually wins at once.
+// context ends or the retry budget is spent. It is sqlx.RetryLoop with the
+// engine-aware IsRetryable.
 func retryLoop(ctx context.Context, fn func() error) error {
-	deadline := time.Now().Add(retryBudget)
-	backoff := 100 * time.Microsecond
-	for attempt := 0; ; attempt++ {
-		err := fn()
-		if err == nil || !IsRetryable(err) || time.Now().After(deadline) {
-			return err
-		}
-		if attempt < 2 {
-			continue
-		}
-		t := time.NewTimer(backoff)
-		select {
-		case <-ctx.Done():
-			t.Stop()
-			return err
-		case <-t.C:
-		}
-		if backoff < 20*time.Millisecond {
-			backoff *= 2
-		}
-	}
+	return sqlx.RetryLoop(ctx, IsRetryable, fn)
 }
 
 // isWriteStatement reports whether query can modify the database, judged by its
