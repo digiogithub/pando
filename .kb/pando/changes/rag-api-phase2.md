@@ -53,3 +53,14 @@ All of these passed. The new tests use the offline `apiEmbedder` and a temp-file
 - `api_test.go`, `search_api_test.go`, `apply_test.go`, `chunker_test.go`.
 - `migrate_test.go`: `TestMemoryRowsGetMemoryKind`.
 - `memory_search_test.go`: `TestSearchMiddlewarePassesProjectID`.
+
+## Follow-up after Pips's review (#70)
+Phase 2 was accepted, with deviations 1–4 and 6 approved. (5), Markdown only, is OK for the PoC and is recorded as debt in the plan.
+
+Fix for gintrack memories (ADR-044):
+- `normalizeDoc` derives kind from `kind`, else `type`, so `type: memory` gives kind=memory.
+- `parseDocument` now reads the front matter as a plain map through `splitFrontMatter`. That helper was extracted from `ParseFrontMatterWithRaw` as a pure refactor, so Pando's behaviour is unchanged.
+- Before this, a host key whose shape differs from Pando's typed `FrontMatter` voided the whole front matter. ADR-044's `source: {kind, ref}` is such a key: it cannot decode into `FrontMatter.Source string`.
+- New test `TestApplyChangesIndexesGintrackMemories` uses the ADR-044 example file. It checks that `Search(Kinds: [memory], Statuses: [active])` finds the memory in all three modes, that the proposed memory is found only with `Statuses: [proposed]`, that front matter is stripped from chunks, and that line ranges are correct.
+
+Next: on hold. José reviews `rag-module` and `rag-api`; no `rag/vX` tag without his OK.

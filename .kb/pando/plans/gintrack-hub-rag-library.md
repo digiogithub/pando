@@ -47,3 +47,7 @@ En alchemai-agent, cuando memsync está activo, memorysync se aparta (`memorysyn
 
 ## Deuda técnica (Fase 1)
 - `watcher.go` (fsnotify), `selfwrite.go` y `filesystem.go` (mirror) se han movido a `rag/kb` porque son métodos de `KBStore`. El hub no los necesita: reindexa por commit con `ApplyChanges`. Separarlos en un paquete aparte o devolverlos a Pando es un cambio de diseño pendiente.
+
+## Deuda técnica (Fase 2)
+- `ApplyChanges` (y `SyncTree` sin `Include`) solo indexan `.md`. Vale para el PoC. Para indexar los pdf/docx del hub hay que habilitar `Include` y el `Converter` en `ApplyChanges`. Hoy el converter trabaja con rutas de disco, no con `fs.FS`, así que hay que adaptarlo (leer el blob a un fichero temporal o pasar el `io.Reader`).
+- Las memorias del hub (ADR-044) se indexan como ficheros normales: `type: memory` pasa a kind=memory y `status:` pasa a status. Se buscan con `Search(Kinds: [memory], Statuses: [active])` sin pasar por `UpsertMemory`, que queda solo como fachada de Pando.
