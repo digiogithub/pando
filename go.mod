@@ -139,6 +139,7 @@ require (
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/stargz-snapshotter/estargz v0.18.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/digiogithub/pando/rag v0.0.0
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/dlclark/regexp2 v1.11.4 // indirect
 	github.com/docker/cli v29.4.0+incompatible // indirect
@@ -275,3 +276,5 @@ require (
 
 //replace github.com/madeindigio/go-tree-sitter => /www/MCP/Remembrances/go-tree-sitter
 //replace github.com/madeindigio/acp-go-sdk => /www/MCP/Pando/acp-go-sdk
+
+replace github.com/digiogithub/pando/rag => ./rag
