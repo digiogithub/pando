@@ -90,19 +90,27 @@ func NewRemembrancesService(db *sql.DB, cfg *config.RemembrancesConfig) (*Rememb
 	}
 
 	workers := cfg.IndexWorkers
-	kbStore := kb.NewKBStore(db, docEmbedder, cfg.ChunkSize, cfg.ChunkOverlap)
-	// The store logs through slog and retries lost transactions with the
-	// classifier it is given; hand it Pando's, so its log lines keep their
-	// "source" attribute and the multiwriter engine's busy errors are retried.
-	kbStore.SetLogger(logging.SourceLogger())
-	kbStore.SetRetryable(pandodb.IsRetryable)
-	kbStore.SetSyncWorkers(workers)
-	// Recorded on every chunk this store writes so a later document embedder
-	// change can be detected instead of silently degrading recall (PANDO-US-0029).
-	kbStore.SetEmbeddingModel(cfg.DocumentEmbeddingModel)
-	// Honor Remembrances.KBWikiLinks: when off, no [[wiki link]] is indexed and
-	// the graph queries answer empty. config.Get() is nil-safe and defaults to on.
-	kbStore.SetWikiLinksEnabled(config.Get().KBWikiLinksEnabled())
+	kbStore, err := kb.Open(db, kb.Options{
+		Embedder:     docEmbedder,
+		ChunkSize:    cfg.ChunkSize,
+		ChunkOverlap: cfg.ChunkOverlap,
+		// SetSyncWorkers used to clamp an unset IndexWorkers to 1; keep that
+		// rather than taking the library's default for 0.
+		Workers: max(workers, 1),
+		// Recorded on every chunk this store writes so a later document embedder
+		// change can be detected instead of silently degrading recall (PANDO-US-0029).
+		EmbeddingModel: cfg.DocumentEmbeddingModel,
+		// Honor Remembrances.KBWikiLinks: when off, no [[wiki link]] is indexed and
+		// the graph queries answer empty. config.Get() is nil-safe and defaults to on.
+		DisableWikiLinks: !config.Get().KBWikiLinksEnabled(),
+		// Pando's logger keeps the "source" attribute on kb log lines, and its
+		// classifier retries the multiwriter engine's busy errors.
+		Logger:    logging.SourceLogger(),
+		Retryable: pandodb.IsRetryable,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("remembrances: open kb store: %w", err)
+	}
 	eventStore := events.NewEventStore(db, docEmbedder)
 	codeIndexer := code.NewCodeIndexer(db, codeEmbedder, workers)
 	// Honor the TokenOptimization.BuildCodeGraph toggle (lean-ctx Phase 4). The

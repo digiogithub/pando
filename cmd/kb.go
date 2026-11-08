@@ -52,9 +52,13 @@ link, which is what you want after an upgrade that changed how links are parsed.
 
 		// Link extraction reads stored content and writes kb_links: no embedder,
 		// no chunking, so a bare store is enough.
-		store := kb.NewKBStore(conn, nil, 0, 0)
-		store.SetLogger(logging.SourceLogger())
-		store.SetRetryable(db.IsRetryable)
+		store, err := kb.Open(conn, kb.Options{
+			Logger:    logging.SourceLogger(),
+			Retryable: db.IsRetryable,
+		})
+		if err != nil {
+			return err
+		}
 
 		var stats kb.BackfillStats
 		if kbRelinkForce {

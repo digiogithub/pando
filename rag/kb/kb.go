@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -144,6 +145,56 @@ type documentMetadata struct {
 	Metadata map[string]interface{}
 }
 
+// Options configures a store opened with Open. The zero value is valid: no
+// embedder (full-text search only), default chunking, default sync workers,
+// wiki links on, slog.Default() and sqlx.DefaultRetryable.
+type Options struct {
+	// Embedder computes chunk and query embeddings. Nil disables the vector
+	// leg of search; full-text search still works.
+	Embedder embeddings.Embedder
+	// EmbeddingModel is the embedder's model id, recorded on every chunk so a
+	// later embedder change can be detected (CountStaleEmbeddings).
+	EmbeddingModel string
+	// ChunkSize is the maximum chunk size in characters (0 = default).
+	ChunkSize int
+	// ChunkOverlap is the overlap between consecutive chunks (0 = default;
+	// clamped below ChunkSize).
+	ChunkOverlap int
+	// Workers is the number of parallel workers a directory sync uses
+	// (0 = default, at most 32).
+	Workers int
+	// DisableWikiLinks turns off [[wiki link]] extraction and the link graph
+	// queries. Links are on by default.
+	DisableWikiLinks bool
+	// Converter turns non-Markdown files (PDF, Office, HTML...) into Markdown
+	// during directory syncs. Nil indexes Markdown and plain text only.
+	Converter DocumentConverter
+	// Logger receives the store's diagnostics (nil = slog.Default()).
+	Logger *slog.Logger
+	// Retryable decides whether a failed transaction lost a race against a
+	// concurrent writer and should run again (nil = sqlx.DefaultRetryable).
+	Retryable sqlx.Retryable
+}
+
+// Open returns a store over db, which must already have the rag schema
+// (github.com/digiogithub/pando/rag/migrate). The store keeps no resources
+// of its own besides db, which stays owned by the caller.
+func Open(db *sql.DB, opts Options) (*KBStore, error) {
+	if db == nil {
+		return nil, errors.New("kb: Open: nil *sql.DB")
+	}
+	s := newStore(db, opts.Embedder, opts.ChunkSize, opts.ChunkOverlap)
+	s.embeddingModel = opts.EmbeddingModel
+	if opts.Workers > 0 {
+		s.SetSyncWorkers(opts.Workers)
+	}
+	s.wikiLinks = !opts.DisableWikiLinks
+	s.converter = opts.Converter
+	s.log = opts.Logger
+	s.retryable = opts.Retryable
+	return s, nil
+}
+
 // NewKBStore creates a new KBStore instance.
 //
 // Parameters:
@@ -151,7 +202,14 @@ type documentMetadata struct {
 //   - embedder: Embedder for generating chunk embeddings
 //   - chunkSize: Maximum chunk size in characters (0 = use default)
 //   - chunkOverlap: Overlap between consecutive chunks (0 = use default)
+//
+// Deprecated: use Open, which takes every setting (logger, retry classifier,
+// workers, wiki links, converter) in one Options value.
 func NewKBStore(db *sql.DB, embedder embeddings.Embedder, chunkSize, chunkOverlap int) *KBStore {
+	return newStore(db, embedder, chunkSize, chunkOverlap)
+}
+
+func newStore(db *sql.DB, embedder embeddings.Embedder, chunkSize, chunkOverlap int) *KBStore {
 	if chunkSize <= 0 {
 		chunkSize = embeddings.DefaultChunkSize
 	}
