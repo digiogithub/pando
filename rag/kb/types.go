@@ -67,6 +67,9 @@ type SyncStats struct {
 	Updated   int `json:"updated"`
 	Unchanged int `json:"unchanged"`
 	Deleted   int `json:"deleted"`
+	// Renamed counts documents ApplyChanges moved to a new path without
+	// re-embedding them.
+	Renamed int `json:"renamed,omitempty"`
 	// LinksIndexed counts the [[wiki links]] found in the documents this run
 	// added or updated. Unchanged documents keep the links they already had and
 	// are not counted, so this is what the run wrote, not the size of the graph.

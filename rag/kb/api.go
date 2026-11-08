@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/digiogithub/pando/rag/sqlx"
@@ -403,13 +402,3 @@ func (s *KBStore) DeletePrefix(ctx context.Context, prefix string) (int, error) 
 // Close releases the store. The *sql.DB passed to Open stays open: it is
 // owned by the caller.
 func (s *KBStore) Close() error { return nil }
-
-// hasPrefixAny reports whether p starts with any of prefixes.
-func hasPrefixAny(p string, prefixes []string) bool {
-	for _, x := range prefixes {
-		if strings.HasPrefix(p, x) {
-			return true
-		}
-	}
-	return false
-}
