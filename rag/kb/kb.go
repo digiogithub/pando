@@ -706,12 +706,12 @@ func (s *KBStore) searchDocumentsWithOptionsStats(ctx context.Context, query str
 	ftsCh := make(chan result, 1)
 
 	go func() {
-		items, skipped, err := s.searchVector(ctx, queryEmb, subLimit, opts.PathPrefix)
+		items, skipped, err := s.searchVector(ctx, queryEmb, subLimit, legacyFilter(opts))
 		vecCh <- result{items, skipped, err}
 	}()
 
 	go func() {
-		items, err := s.searchFTS(ctx, query, subLimit, opts.PathPrefix)
+		items, err := s.searchFTS(ctx, query, subLimit, legacyFilter(opts))
 		ftsCh <- result{items, 0, err}
 	}()
 
@@ -737,11 +737,6 @@ func (s *KBStore) searchDocumentsWithOptionsStats(ctx context.Context, query str
 	// Exclude outdated memory documents when requested.
 	if opts.ExcludeOutdated {
 		fused = filterOutdated(fused)
-	}
-
-	// Filter by memory scope prefix when requested.
-	if opts.Scope != "" {
-		fused = filterByScope(fused, opts.Scope)
 	}
 
 	// Apply chronological sorting if requested.
@@ -807,15 +802,34 @@ func filterOutdated(results []SearchResult) []SearchResult {
 	return filtered
 }
 
-// filterByScope keeps only results whose MemoryScope starts with the given prefix.
-func filterByScope(results []SearchResult, scope string) []SearchResult {
-	filtered := make([]SearchResult, 0, len(results))
-	for _, r := range results {
-		if strings.HasPrefix(r.Document.MemoryScope, scope) {
-			filtered = append(filtered, r)
-		}
+// sqlFilter is a WHERE fragment over kb_documents (aliased d) with its bound
+// arguments, appended to both search legs so a filter cuts the candidate set
+// before the top-k, never after fusion.
+type sqlFilter struct {
+	clause string
+	args   []interface{}
+}
+
+func (f *sqlFilter) add(clause string, args ...interface{}) {
+	f.clause += " AND " + clause
+	f.args = append(f.args, args...)
+}
+
+// legacyFilter pushes SearchOptions.PathPrefix (PANDO-US-0028) and
+// SearchOptions.Scope into SQL. Scope used to be filtered after fusion, which
+// under-returned whenever the best unfiltered candidates belonged to another
+// scope; it keeps its prefix semantics.
+func legacyFilter(opts SearchOptions) sqlFilter {
+	var f sqlFilter
+	// Bound parameters, never string concatenation; the prefix's own '%'/'_'
+	// are escaped so only the '%' appended in SQL is a wildcard.
+	if opts.PathPrefix != "" {
+		f.add(`d.file_path LIKE ? || '%' ESCAPE '\'`, escapeLikePrefix(opts.PathPrefix))
 	}
-	return filtered
+	if opts.Scope != "" {
+		f.add(`d.memory_scope LIKE ? || '%' ESCAPE '\'`, escapeLikePrefix(opts.Scope))
+	}
+	return f
 }
 
 // matchesTags returns true if any document tag fuzzy-matches any query tag.
@@ -838,7 +852,7 @@ func matchesTags(docTags []string, queryTags []string) bool {
 // not match queryEmb's — evidence the document embedding model changed since
 // those chunks were written (PANDO-US-0029). Skipped chunks are silently
 // excluded from results, not an error.
-func (s *KBStore) searchVector(ctx context.Context, queryEmb []float32, limit int, pathPrefix string) ([]SearchResult, int, error) {
+func (s *KBStore) searchVector(ctx context.Context, queryEmb []float32, limit int, filter sqlFilter) ([]SearchResult, int, error) {
 	queryNorm := l2norm(queryEmb)
 	if queryNorm == 0 {
 		return nil, 0, fmt.Errorf("kb: query embedding is zero vector")
@@ -859,15 +873,8 @@ func (s *KBStore) searchVector(ctx context.Context, queryEmb []float32, limit in
 		FROM kb_chunks c
 		JOIN kb_documents d ON d.id = c.document_id
 		WHERE c.embedding IS NOT NULL`
-	var args []interface{}
-	// PathPrefix is pushed into the SQL as a bound parameter, never string
-	// concatenation, and the prefix's own '%'/'_' are escaped so they match
-	// literally — only the '%' appended in SQL after the bound value is a
-	// wildcard (PANDO-US-0028).
-	if pathPrefix != "" {
-		sqlQuery += ` AND d.file_path LIKE ? || '%' ESCAPE '\'`
-		args = append(args, escapeLikePrefix(pathPrefix))
-	}
+	sqlQuery += filter.clause
+	args := filter.args
 
 	rows, err := s.db.QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
@@ -982,7 +989,7 @@ func escapeLikePrefix(prefix string) string {
 	return r.Replace(prefix)
 }
 
-func (s *KBStore) searchFTS(ctx context.Context, query string, limit int, pathPrefix string) ([]SearchResult, error) {
+func (s *KBStore) searchFTS(ctx context.Context, query string, limit int, filter sqlFilter) ([]SearchResult, error) {
 	escapedQuery := sanitizeFTSQuery(query)
 	if escapedQuery == "" {
 		return nil, nil
@@ -1001,13 +1008,8 @@ func (s *KBStore) searchFTS(ctx context.Context, query string, limit int, pathPr
 		JOIN kb_chunks c ON c.id = kb_fts.rowid
 		JOIN kb_documents d ON d.id = c.document_id
 		WHERE kb_fts MATCH ?`
-	args := []interface{}{escapedQuery}
-	// Same bound-parameter, ESCAPE-clause path prefix as searchVector
-	// (PANDO-US-0028) — never string concatenation.
-	if pathPrefix != "" {
-		sqlQuery += ` AND d.file_path LIKE ? || '%' ESCAPE '\'`
-		args = append(args, escapeLikePrefix(pathPrefix))
-	}
+	sqlQuery += filter.clause
+	args := append([]interface{}{escapedQuery}, filter.args...)
 	sqlQuery += `
 		ORDER BY score DESC
 		LIMIT ?`

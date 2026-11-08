@@ -99,7 +99,7 @@ func TestSearchPathPrefixAvoidsUnderReturn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EmbedQuery() error = %v", err)
 	}
-	scanned, _, err := store.searchVector(ctx, queryEmb, 1000, "target/")
+	scanned, _, err := store.searchVector(ctx, queryEmb, 1000, legacyFilter(SearchOptions{PathPrefix: "target/"}))
 	if err != nil {
 		t.Fatalf("searchVector() error = %v", err)
 	}
@@ -168,6 +168,43 @@ func assertOnlyPaths(t *testing.T, results []SearchResult, want ...string) {
 	for _, r := range results {
 		if !wantSet[r.Document.FilePath] {
 			t.Fatalf("unexpected result %q, want only %v", r.Document.FilePath, want)
+		}
+	}
+}
+
+// TestSearchScopeAvoidsUnderReturn is the scope counterpart of the path
+// prefix test above: Scope used to be filtered after fusion, so documents of
+// the requested scope that ranked below the fused cut were silently lost.
+func TestSearchScopeAvoidsUnderReturn(t *testing.T) {
+	db := openTestKBDB(t)
+	db.SetMaxOpenConns(1)
+	store := NewKBStore(db, prefixTestEmbedder{}, 0, 0)
+	ctx := context.Background()
+
+	for i := 0; i < 10; i++ {
+		if err := store.AddDocument(ctx, fmt.Sprintf("noise/doc-%02d.md", i), "HIGH relevance widget content", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, p := range []string{"mem/one.md", "mem/two.md"} {
+		if err := store.AddDocument(ctx, p, "low relevance filler", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`UPDATE kb_documents SET memory_scope = 'project/acme' WHERE file_path LIKE 'mem/%'`); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := store.SearchDocumentsWithOptions(ctx, "widget", 2, SearchOptions{Scope: "project/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("got %d results, want 2 (scope filtered after fusion?)", len(results))
+	}
+	for _, r := range results {
+		if r.Document.MemoryScope != "project/acme" {
+			t.Fatalf("result %s has scope %q", r.Document.FilePath, r.Document.MemoryScope)
 		}
 	}
 }
