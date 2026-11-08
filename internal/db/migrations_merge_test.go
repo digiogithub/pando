@@ -37,6 +37,7 @@ var wantMigrations = []string{
 	"20260929000003_add_template_variants.sql",
 	"20260929000004_add_reviewable_skills.sql",
 	"20261001214000_add_project_web_runtime.sql",
+	"20261108000001_add_kb_api_columns.sql",
 }
 
 func TestMergedMigrationsKeepVersionsAndOrder(t *testing.T) {
