@@ -455,72 +455,71 @@ func (s *KBStore) DeleteDocument(ctx context.Context, filePath string) error {
 
 func (s *KBStore) deleteDocument(ctx context.Context, filePath string) error {
 	return sqlx.RunTx(ctx, s.db, s.retryable, func(tx *sql.Tx) error {
-		// Get document ID
-		var docID int64
-		err := tx.QueryRowContext(ctx, `SELECT id FROM kb_documents WHERE file_path = ?`, filePath).Scan(&docID)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				return nil // Already deleted
-			}
-			return fmt.Errorf("kb: find document: %w", err)
-		}
-
-		// Get chunk IDs and content for FTS deletion
-		rows, err := tx.QueryContext(ctx, `
-			SELECT id, content FROM kb_chunks WHERE document_id = ?`,
-			docID,
-		)
-		if err != nil {
-			return fmt.Errorf("kb: list chunks: %w", err)
-		}
-
-		type chunkInfo struct {
-			id      int64
-			content string
-		}
-		var chunks []chunkInfo
-
-		for rows.Next() {
-			var c chunkInfo
-			if err := rows.Scan(&c.id, &c.content); err != nil {
-				rows.Close()
-				return fmt.Errorf("kb: scan chunk: %w", err)
-			}
-			chunks = append(chunks, c)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return err
-		}
-
-		// Delete from FTS index
-		for _, c := range chunks {
-			if _, err = tx.ExecContext(ctx, `
-				INSERT INTO kb_fts(kb_fts, rowid, content)
-				VALUES ('delete', ?, ?)`,
-				c.id, c.content,
-			); err != nil {
-				return fmt.Errorf("kb: fts delete chunk %d: %w", c.id, err)
-			}
-		}
-
-		// Delete chunks (CASCADE will handle this, but being explicit)
-		if _, err = tx.ExecContext(ctx, `DELETE FROM kb_chunks WHERE document_id = ?`, docID); err != nil {
-			return fmt.Errorf("kb: delete chunks: %w", err)
-		}
-
-		// Same for the document's wiki links.
-		if _, err = tx.ExecContext(ctx, `DELETE FROM kb_links WHERE source_document_id = ?`, docID); err != nil {
-			return fmt.Errorf("kb: delete links: %w", err)
-		}
-
-		// Delete document
-		if _, err = tx.ExecContext(ctx, `DELETE FROM kb_documents WHERE id = ?`, docID); err != nil {
-			return fmt.Errorf("kb: delete document: %w", err)
-		}
-
-		return nil
+		_, err := deleteDocTx(ctx, tx, filePath)
+		return err
 	})
+}
+
+// deleteDocTx removes a document, its chunks (and their FTS rows) and its
+// links inside tx. It reports whether the document existed.
+func deleteDocTx(ctx context.Context, tx *sql.Tx, filePath string) (bool, error) {
+	var docID int64
+	err := tx.QueryRowContext(ctx, `SELECT id FROM kb_documents WHERE file_path = ?`, filePath).Scan(&docID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil // Already deleted
+		}
+		return false, fmt.Errorf("kb: find document: %w", err)
+	}
+	if err := deleteChunksTx(ctx, tx, docID); err != nil {
+		return false, err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM kb_links WHERE source_document_id = ?`, docID); err != nil {
+		return false, fmt.Errorf("kb: delete links: %w", err)
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM kb_documents WHERE id = ?`, docID); err != nil {
+		return false, fmt.Errorf("kb: delete document: %w", err)
+	}
+	return true, nil
+}
+
+// deleteChunksTx removes a document's chunks and their rows in the external
+// content FTS index, which must be deleted with the exact indexed text.
+func deleteChunksTx(ctx context.Context, tx *sql.Tx, docID int64) error {
+	rows, err := tx.QueryContext(ctx, `SELECT id, content FROM kb_chunks WHERE document_id = ?`, docID)
+	if err != nil {
+		return fmt.Errorf("kb: list chunks: %w", err)
+	}
+	type chunkInfo struct {
+		id      int64
+		content string
+	}
+	var chunks []chunkInfo
+	for rows.Next() {
+		var c chunkInfo
+		if err := rows.Scan(&c.id, &c.content); err != nil {
+			rows.Close()
+			return fmt.Errorf("kb: scan chunk: %w", err)
+		}
+		chunks = append(chunks, c)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, c := range chunks {
+		if _, err = tx.ExecContext(ctx, `
+			INSERT INTO kb_fts(kb_fts, rowid, content)
+			VALUES ('delete', ?, ?)`,
+			c.id, c.content,
+		); err != nil {
+			return fmt.Errorf("kb: fts delete chunk %d: %w", c.id, err)
+		}
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM kb_chunks WHERE document_id = ?`, docID); err != nil {
+		return fmt.Errorf("kb: delete chunks: %w", err)
+	}
+	return nil
 }
 
 // UpdateDocument updates an existing document's content and metadata.
