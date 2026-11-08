@@ -3,6 +3,7 @@ package kb
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"testing/fstest"
 )
@@ -169,5 +170,79 @@ func TestSyncTree(t *testing.T) {
 	cancel()
 	if _, err := s.SyncTree(cctx, fsys, opts); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled sync = %v", err)
+	}
+}
+
+// gintrackMemory is the memory file of gintrack's ADR-044 (front matter
+// verbatim, including the map-valued "source" that Pando's typed FrontMatter
+// cannot decode).
+const gintrackMemory = `---
+id: ACME-MEM-0042
+type: memory
+title: "Customer X is invoiced quarterly"
+key: customer-x-invoicing
+status: active
+author: ana
+created: 2026-11-08
+updated: 2026-11-08
+version: 17
+content_hash: 9f2c
+local_id: project/acme/customer-x-invoicing
+valid_from: 2026-11-08T10:00:00Z
+labels: [billing]
+source: {kind: agent, ref: "memsync/inst-1"}
+links:
+  - {kind: supersedes, target: ACME-MEM-0017}
+---
+Customer X is invoiced at the end of each quarter, never monthly.
+
+## Evidence
+
+Contract signed 2026-10-01.
+`
+
+// Hub memories are plain files: their kind and status come from the front
+// matter, so Search finds them without going through UpsertMemory.
+func TestApplyChangesIndexesGintrackMemories(t *testing.T) {
+	ctx := context.Background()
+	s, _ := openAPIStore(t, Options{Embedder: &apiEmbedder{}})
+	proposed := strings.Replace(strings.Replace(gintrackMemory, "status: active", "status: proposed", 1), "quarter", "quarter (draft)", 1)
+	if _, err := s.ApplyChanges(ctx, nil, []Change{
+		{Op: OpAdd, Path: "memory/ACME-MEM-0042.md", Blob: "m1", Content: []byte(gintrackMemory)},
+		{Op: OpAdd, Path: "memory/ACME-MEM-0043.md", Blob: "m2", Content: []byte(proposed)},
+		{Op: OpAdd, Path: "kb/invoicing.md", Blob: "k1", Content: []byte("# Invoicing\n\nCustomer X invoicing overview.")},
+	}, "c1"); err != nil {
+		t.Fatal(err)
+	}
+
+	d, err := s.Get(ctx, "memory/ACME-MEM-0042.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Kind != KindMemory || d.Status != StatusActive || d.Author != "ana" || d.Meta["key"] != "customer-x-invoicing" ||
+		len(d.Tags) != 1 || d.Tags[0] != "billing" {
+		t.Fatalf("memory doc = %+v", d)
+	}
+
+	for _, mode := range []SearchMode{ModeHybrid, ModeFTS, ModeVector} {
+		hits, _, err := s.Search(ctx, "customer invoiced quarter", Query{Kinds: []string{KindMemory}, Statuses: []string{StatusActive}, Mode: mode})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(hits) != 1 || hits[0].Path != "memory/ACME-MEM-0042.md" || hits[0].Kind != KindMemory {
+			t.Fatalf("mode %d: hits = %v", mode, paths(hits))
+		}
+		if strings.Contains(hits[0].Chunk, "local_id") || hits[0].StartLine != 19 {
+			t.Fatalf("mode %d: chunk %d-%d %q", mode, hits[0].StartLine, hits[0].EndLine, hits[0].Chunk)
+		}
+	}
+	// The title is searchable on its own (front-matter fields index).
+	hits, _, _ := s.Search(ctx, "invoiced", Query{Kinds: []string{KindMemory}, Mode: ModeFTS})
+	if len(hits) != 1 {
+		t.Fatalf("title search = %v", paths(hits))
+	}
+	hits, _, _ = s.Search(ctx, "customer", Query{Kinds: []string{KindMemory}, Statuses: []string{"proposed"}})
+	if len(hits) != 1 || hits[0].Path != "memory/ACME-MEM-0043.md" {
+		t.Fatalf("proposed = %v", paths(hits))
 	}
 }

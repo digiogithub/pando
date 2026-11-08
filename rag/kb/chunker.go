@@ -7,6 +7,7 @@ import (
 	"unicode"
 
 	"github.com/digiogithub/pando/rag/embeddings"
+	"gopkg.in/yaml.v3"
 )
 
 // lineChunk is a piece of a document body with its 1-based, inclusive line
@@ -29,38 +30,47 @@ func (f docFields) empty() bool { return f.Title == "" && f.Labels == "" && f.Al
 
 // parsedDoc is a document split into its front matter and its body.
 type parsedDoc struct {
-	FM       FrontMatter
 	Raw      map[string]interface{}
+	Tags     []string
+	Aliases  []string
 	Body     string
 	BodyLine int // 1-based line of the body's first line in the source
 	Fields   docFields
 }
 
 // parseDocument strips the YAML front matter from content and extracts the
-// fields indexed for search. Invalid front matter is not an error: the whole
-// content is then the body, as in ParseFrontMatter.
+// fields indexed for search. The front matter is read as a plain map, not
+// into the typed FrontMatter, so host-defined keys whose shape differs from
+// Pando's (gintrack's "source: {kind, ref}", say) do not void the rest of it.
+// Front matter that is not valid YAML is not an error: the whole content is
+// then the body.
 func parseDocument(content string) parsedDoc {
-	fm, raw, body, err := ParseFrontMatterWithRaw(content)
-	if err != nil {
-		fm, raw, body = FrontMatter{}, nil, content
+	p := parsedDoc{Body: content, BodyLine: 1}
+	yamlBlock, body, ok := splitFrontMatter(content)
+	if ok {
+		var raw map[string]interface{}
+		if err := yaml.Unmarshal([]byte(yamlBlock), &raw); err == nil {
+			p.Raw, p.Body = raw, body
+		}
 	}
-	p := parsedDoc{FM: fm, Raw: raw, Body: body, BodyLine: 1}
-	if body != content {
-		// ParseFrontMatterWithRaw trims surrounding whitespace, so the body
-		// is a suffix of content with its trailing whitespace removed.
+	if p.Body != content {
+		// splitFrontMatter trims surrounding whitespace, so the body is a
+		// suffix of content with its trailing whitespace removed.
 		end := len(strings.TrimRightFunc(content, unicode.IsSpace))
-		trimmedBody := strings.TrimRightFunc(body, unicode.IsSpace)
+		trimmedBody := strings.TrimRightFunc(p.Body, unicode.IsSpace)
 		if strings.HasSuffix(content[:end], trimmedBody) {
 			p.BodyLine = strings.Count(content[:end-len(trimmedBody)], "\n") + 1
 		}
 	}
+	p.Tags = stringList(p.Raw["tags"])
+	p.Aliases = stringList(p.Raw["aliases"])
 	p.Fields = docFields{
-		Title:   firstString(raw["title"]),
-		Labels:  strings.Join(stringList(raw["labels"]), " "),
-		Aliases: strings.Join(fm.Aliases, " "),
+		Title:   firstString(p.Raw["title"]),
+		Labels:  strings.Join(stringList(p.Raw["labels"]), " "),
+		Aliases: strings.Join(p.Aliases, " "),
 	}
 	if p.Fields.Title == "" {
-		p.Fields.Title = firstHeading(body)
+		p.Fields.Title = firstHeading(p.Body)
 	}
 	return p
 }

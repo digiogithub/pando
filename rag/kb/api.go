@@ -27,7 +27,7 @@ var ErrNotFound = errors.New("kb: document not found")
 // Doc is a document as stored by Put and returned by Get. Path is its id.
 //
 // Fields left empty are taken from the content's YAML front matter when it
-// has them (kind, status, author, scope; tags, else labels), and otherwise
+// has them (kind, else type; status, author, scope; tags, else labels), and otherwise
 // default to KindDocument, StatusActive and no author/scope. Rev defaults to
 // the sha256 of Content. Meta is stored as JSON: the front-matter keys, with
 // Meta's own entries on top.
@@ -92,7 +92,8 @@ func normalizeDoc(d Doc) (preparedDoc, error) {
 		}
 		return firstString(raw[key])
 	}
-	d.Kind = pick(d.Kind, "kind")
+	// gintrack files name their kind "type" (story, spec, memory...).
+	d.Kind = pick(pick(d.Kind, "kind"), "type")
 	d.Status = pick(d.Status, "status")
 	d.Author = pick(d.Author, "author")
 	d.Scope = pick(d.Scope, "scope")
@@ -106,7 +107,7 @@ func normalizeDoc(d Doc) (preparedDoc, error) {
 		d.Rev = ContentRev(d.Content)
 	}
 	if d.Tags == nil {
-		d.Tags = p.FM.Tags
+		d.Tags = p.Tags
 		if len(d.Tags) == 0 {
 			d.Tags = stringList(raw["labels"])
 		}
@@ -120,8 +121,8 @@ func normalizeDoc(d Doc) (preparedDoc, error) {
 		meta[k] = v
 	}
 	meta = InjectTagsIntoMetadata(meta, d.Tags)
-	if len(p.FM.Aliases) > 0 {
-		meta = InjectAliasesIntoMetadata(meta, p.FM.Aliases)
+	if len(p.Aliases) > 0 {
+		meta = InjectAliasesIntoMetadata(meta, p.Aliases)
 	}
 	b, err := json.Marshal(meta)
 	if err != nil {

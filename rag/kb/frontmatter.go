@@ -55,39 +55,10 @@ func ParseFrontMatter(raw string) (FrontMatter, string, error) {
 // or "project"). If no valid front matter is found, it returns a zero
 // FrontMatter, a nil map, and the original content as body.
 func ParseFrontMatterWithRaw(raw string) (FrontMatter, map[string]interface{}, string, error) {
-	trimmed := strings.TrimSpace(raw)
-	if !strings.HasPrefix(trimmed, frontMatterDelimiter) {
+	yamlBlock, body, ok := splitFrontMatter(raw)
+	if !ok {
 		return FrontMatter{}, nil, raw, nil
 	}
-
-	// Find the closing delimiter after the opening one.
-	rest := trimmed[len(frontMatterDelimiter):]
-	// The opening delimiter must be followed by a newline.
-	nlIdx := strings.Index(rest, "\n")
-	if nlIdx == -1 {
-		return FrontMatter{}, nil, raw, nil
-	}
-	// Everything before the newline after "---" should be empty or whitespace.
-	if strings.TrimSpace(rest[:nlIdx]) != "" {
-		return FrontMatter{}, nil, raw, nil
-	}
-	rest = rest[nlIdx+1:]
-
-	// Handle case where closing delimiter is at the very start (empty YAML block).
-	var yamlBlock, afterClose string
-	if strings.HasPrefix(rest, frontMatterDelimiter+"\n") || rest == frontMatterDelimiter {
-		yamlBlock = ""
-		afterClose = strings.TrimPrefix(rest[len(frontMatterDelimiter):], "\n")
-	} else {
-		closeIdx := strings.Index(rest, "\n"+frontMatterDelimiter)
-		if closeIdx == -1 {
-			return FrontMatter{}, nil, raw, nil
-		}
-		yamlBlock = rest[:closeIdx]
-		afterClose = rest[closeIdx+1+len(frontMatterDelimiter):]
-		afterClose = strings.TrimPrefix(afterClose, "\n")
-	}
-	body := afterClose
 
 	var fm FrontMatter
 	if err := yaml.Unmarshal([]byte(yamlBlock), &fm); err != nil {
@@ -104,6 +75,44 @@ func ParseFrontMatterWithRaw(raw string) (FrontMatter, map[string]interface{}, s
 	}
 
 	return fm, rawFM, body, nil
+}
+
+// splitFrontMatter returns the YAML block and the body of a document that
+// starts with a "---" delimited front matter; ok is false when it has none.
+func splitFrontMatter(raw string) (yamlBlock, body string, ok bool) {
+	trimmed := strings.TrimSpace(raw)
+	if !strings.HasPrefix(trimmed, frontMatterDelimiter) {
+		return "", raw, false
+	}
+
+	// Find the closing delimiter after the opening one.
+	rest := trimmed[len(frontMatterDelimiter):]
+	// The opening delimiter must be followed by a newline.
+	nlIdx := strings.Index(rest, "\n")
+	if nlIdx == -1 {
+		return "", raw, false
+	}
+	// Everything before the newline after "---" should be empty or whitespace.
+	if strings.TrimSpace(rest[:nlIdx]) != "" {
+		return "", raw, false
+	}
+	rest = rest[nlIdx+1:]
+
+	// Handle case where closing delimiter is at the very start (empty YAML block).
+	var afterClose string
+	if strings.HasPrefix(rest, frontMatterDelimiter+"\n") || rest == frontMatterDelimiter {
+		yamlBlock = ""
+		afterClose = strings.TrimPrefix(rest[len(frontMatterDelimiter):], "\n")
+	} else {
+		closeIdx := strings.Index(rest, "\n"+frontMatterDelimiter)
+		if closeIdx == -1 {
+			return "", raw, false
+		}
+		yamlBlock = rest[:closeIdx]
+		afterClose = rest[closeIdx+1+len(frontMatterDelimiter):]
+		afterClose = strings.TrimPrefix(afterClose, "\n")
+	}
+	return yamlBlock, afterClose, true
 }
 
 // SerializeFrontMatter produces a document string with YAML front matter
