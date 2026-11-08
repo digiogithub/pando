@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/digiogithub/pando/internal/config"
-	"github.com/digiogithub/pando/internal/rag/kb"
+	"github.com/digiogithub/pando/rag/kb"
 )
 
 // scriptFilter drops the candidates whose ID is in drop.

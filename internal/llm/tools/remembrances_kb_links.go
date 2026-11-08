@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/digiogithub/pando/internal/rag/kb"
+	"github.com/digiogithub/pando/rag/kb"
 )
 
 const kbRelatedDocumentsToolName = "kb_related_documents"

@@ -19,7 +19,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/app"
 	rag "github.com/digiogithub/pando/internal/rag"
-	"github.com/digiogithub/pando/internal/rag/kb"
+	"github.com/digiogithub/pando/rag/kb"
 )
 
 // openTestKBDB creates an in-memory SQLite DB with the KB schema, mirroring

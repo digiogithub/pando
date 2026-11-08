@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/digiogithub/pando/internal/rag/kb"
+	"github.com/digiogithub/pando/rag/kb"
 )
 
 func TestKBLinkViewsOmitsEmpty(t *testing.T) {

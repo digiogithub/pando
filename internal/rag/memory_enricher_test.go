@@ -5,7 +5,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/digiogithub/pando/internal/rag/kb"
+	"github.com/digiogithub/pando/rag/kb"
 )
 
 func TestFormatMemoryLineKeepsShortContent(t *testing.T) {

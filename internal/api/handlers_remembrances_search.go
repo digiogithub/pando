@@ -11,8 +11,8 @@ import (
 
 	"github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/rag/code"
-	"github.com/digiogithub/pando/internal/rag/kb"
 	"github.com/digiogithub/pando/internal/rag/treesitter"
+	"github.com/digiogithub/pando/rag/kb"
 )
 
 // ---- KB search ----

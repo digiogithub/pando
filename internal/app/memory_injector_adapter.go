@@ -6,7 +6,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/config"
 	rag "github.com/digiogithub/pando/internal/rag"
-	"github.com/digiogithub/pando/internal/rag/kb"
+	"github.com/digiogithub/pando/rag/kb"
 )
 
 // memoryInjectorAdapter satisfies agent.MemoryInjector without creating an import

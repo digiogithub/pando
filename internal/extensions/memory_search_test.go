@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/digiogithub/pando/internal/rag/kb"
 	"github.com/digiogithub/pando/pkg/extension"
+	"github.com/digiogithub/pando/rag/kb"
 )
 
 type wrapExt struct {

@@ -13,7 +13,7 @@ import (
 	"github.com/digiogithub/pando/internal/app"
 	"github.com/digiogithub/pando/internal/config"
 	rag "github.com/digiogithub/pando/internal/rag"
-	"github.com/digiogithub/pando/internal/rag/kb"
+	"github.com/digiogithub/pando/rag/kb"
 )
 
 // enrichmentDimEmbedder returns a fixed-dimension, fixed-direction vector

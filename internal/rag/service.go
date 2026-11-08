@@ -12,8 +12,8 @@ import (
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/rag/code"
 	"github.com/digiogithub/pando/internal/rag/events"
-	"github.com/digiogithub/pando/internal/rag/kb"
 	"github.com/digiogithub/pando/rag/embeddings"
+	"github.com/digiogithub/pando/rag/kb"
 )
 
 // RemembrancesService groups KB, Events, and Code indexing stores.

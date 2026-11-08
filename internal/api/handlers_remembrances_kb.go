@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/digiogithub/pando/internal/rag/kb"
+	"github.com/digiogithub/pando/rag/kb"
 )
 
 // kbDocumentUpsertRequest is the request body for POST /api/v1/remembrances/kb/documents.

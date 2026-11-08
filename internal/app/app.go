@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/digiogithub/pando/internal/fswatch"
 	"io"
 	"maps"
 	"net"
@@ -17,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/digiogithub/pando/internal/fswatch"
 
 	"github.com/digiogithub/pando/internal/agentvcs"
 	"github.com/digiogithub/pando/internal/auth"
@@ -57,7 +58,6 @@ import (
 	"github.com/digiogithub/pando/internal/project"
 	"github.com/digiogithub/pando/internal/pubsub"
 	rag "github.com/digiogithub/pando/internal/rag"
-	"github.com/digiogithub/pando/internal/rag/kb"
 	"github.com/digiogithub/pando/internal/savings"
 	"github.com/digiogithub/pando/internal/session"
 	"github.com/digiogithub/pando/internal/skills"
@@ -66,6 +66,7 @@ import (
 	"github.com/digiogithub/pando/internal/userinput"
 	"github.com/digiogithub/pando/internal/version"
 	"github.com/digiogithub/pando/pkg/extension"
+	"github.com/digiogithub/pando/rag/kb"
 )
 
 type App struct {

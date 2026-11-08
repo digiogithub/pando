@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/digiogithub/pando/internal/rag/kb"
+	"github.com/digiogithub/pando/rag/kb"
 )
 
 const timeLayoutRFC3339 = time.RFC3339

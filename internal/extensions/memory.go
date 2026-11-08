@@ -8,8 +8,8 @@ import (
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/logging"
-	"github.com/digiogithub/pando/internal/rag/kb"
 	"github.com/digiogithub/pando/pkg/extension"
+	"github.com/digiogithub/pando/rag/kb"
 )
 
 // Host side of the memory capability: it turns the knowledge base's plain

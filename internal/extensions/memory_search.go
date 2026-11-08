@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/digiogithub/pando/internal/logging"
-	"github.com/digiogithub/pando/internal/rag/kb"
 	"github.com/digiogithub/pando/pkg/extension"
+	"github.com/digiogithub/pando/rag/kb"
 )
 
 // Read side of the memory capability: chaining RemembranceSearchWrappers in
