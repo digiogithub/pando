@@ -13,8 +13,8 @@ import (
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/pubsub"
 	rag "github.com/digiogithub/pando/internal/rag"
-	"github.com/digiogithub/pando/internal/rag/embeddings"
 	"github.com/digiogithub/pando/internal/rag/events"
+	"github.com/digiogithub/pando/rag/embeddings"
 )
 
 const sessionIndexSubject = "session"

@@ -10,7 +10,7 @@ import (
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 	"github.com/digiogithub/pando/internal/rag/code"
-	"github.com/digiogithub/pando/internal/rag/embeddings"
+	"github.com/digiogithub/pando/rag/embeddings"
 )
 
 // codeProjectResponse is a slimmed-down representation of a CodeProject for the API.

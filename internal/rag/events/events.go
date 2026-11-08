@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/db"
-	"github.com/digiogithub/pando/internal/rag/embeddings"
+	"github.com/digiogithub/pando/rag/embeddings"
 )
 
 // EventStore manages temporal events with semantic search capabilities.

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/digiogithub/pando/internal/rag/embeddings"
 	"github.com/digiogithub/pando/internal/rag/kb"
+	"github.com/digiogithub/pando/rag/embeddings"
 
 	_ "github.com/digiogithub/pando/internal/db"
 )

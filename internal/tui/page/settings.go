@@ -22,7 +22,6 @@ import (
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/mcpauth"
 	"github.com/digiogithub/pando/internal/mesnada/engines"
-	"github.com/digiogithub/pando/internal/rag/embeddings"
 	pandoruntime "github.com/digiogithub/pando/internal/runtime"
 	"github.com/digiogithub/pando/internal/skills/catalog"
 	"github.com/digiogithub/pando/internal/telemetry"
@@ -34,6 +33,7 @@ import (
 	"github.com/digiogithub/pando/internal/tui/styles"
 	"github.com/digiogithub/pando/internal/tui/theme"
 	"github.com/digiogithub/pando/internal/tui/util"
+	"github.com/digiogithub/pando/rag/embeddings"
 )
 
 // configExternalChangeMsg is sent to the settings page when the config file

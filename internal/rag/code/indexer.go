@@ -24,8 +24,8 @@ import (
 	"github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/fswatch"
 	"github.com/digiogithub/pando/internal/logging"
-	"github.com/digiogithub/pando/internal/rag/embeddings"
 	"github.com/digiogithub/pando/internal/rag/treesitter"
+	"github.com/digiogithub/pando/rag/embeddings"
 )
 
 const (
