@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/digiogithub/pando/internal/convert"
+	"github.com/digiogithub/pando/rag/convert"
 )
 
 var (

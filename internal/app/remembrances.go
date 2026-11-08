@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/digiogithub/pando/internal/config"
-	"github.com/digiogithub/pando/internal/convert"
 	"github.com/digiogithub/pando/internal/logging"
 	rag "github.com/digiogithub/pando/internal/rag"
+	"github.com/digiogithub/pando/rag/convert"
 )
 
 func sanitizeRemembrancesProjectID(s string) string {

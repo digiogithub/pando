@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/digiogithub/pando/internal/convert"
+	"github.com/digiogithub/pando/rag/convert"
 )
 
 func writeFile(t *testing.T, dir, name, content string) string {
