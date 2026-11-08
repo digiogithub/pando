@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/rag/embeddings"
 )
 
@@ -58,12 +58,12 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 	ctx = WithWriteOrigin(ctx, "sync")
 	var stats SyncStats
 	syncStartedAt := time.Now()
-	logging.Debug("kb sync: start",
+	s.logger().Debug("kb sync: start",
 		"dir", dirPath,
 		"workers", s.getSyncWorkers(),
 		"deleteMissing", deleteMissing,
 	)
-	logSyncMemStats("kb sync: start mem", 0, 0)
+	s.logSyncMemStats("kb sync: start mem", 0, 0)
 
 	baseDir, err := filepath.Abs(strings.TrimSpace(dirPath))
 	if err != nil {
@@ -97,7 +97,7 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 		}
 		offset += len(items)
 	}
-	logging.Debug("kb sync: metadata preloaded", "documents", len(existingByPath))
+	s.logger().Debug("kb sync: metadata preloaded", "documents", len(existingByPath))
 	// existingByPath is read-only from here on: the walker goroutine looks
 	// paths up in it while this goroutine consumes results, so writing to it
 	// below would be a concurrent map read/write. Nothing needs the written
@@ -220,7 +220,7 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 			errorCount++
 			firstErr = res.err
 			if processed%10 == 0 {
-				logSyncProgress(processed, -1, stats, errorCount)
+				s.logSyncProgress(processed, -1, stats, errorCount)
 			}
 			continue
 		}
@@ -228,12 +228,12 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 		if strings.TrimSpace(res.content) == "" {
 			stats.Unchanged++
 			if processed%10 == 0 {
-				logSyncProgress(processed, -1, stats, errorCount)
+				s.logSyncProgress(processed, -1, stats, errorCount)
 			}
 			continue
 		}
 
-		meta, bodyContent := buildDocumentMetadata(res.job.absPath, res.job.docPath, res.job.mtimeUnix, loadResult{
+		meta, bodyContent := buildDocumentMetadata(s.logger(), res.job.absPath, res.job.docPath, res.job.mtimeUnix, loadResult{
 			content:   res.content,
 			format:    res.format,
 			converted: res.converted,
@@ -242,7 +242,7 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 		processingCtx, cancel := context.WithTimeout(ctxSync, kbSyncPerFileTimeout)
 
 		if _, exists := existingByPath[res.job.docPath]; !exists {
-			logging.Debug("kb sync: indexing document",
+			s.logger().Debug("kb sync: indexing document",
 				"doc_path", res.job.docPath,
 				"mode", "add",
 				"bytes", len(bodyContent),
@@ -254,7 +254,7 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 					break
 				}
 				if processed%10 == 0 {
-					logSyncProgress(processed, -1, stats, errorCount)
+					s.logSyncProgress(processed, -1, stats, errorCount)
 				}
 				continue
 			}
@@ -263,12 +263,12 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 			stats.Added++
 			stats.LinksIndexed += s.countIndexedLinks(bodyContent)
 			if processed%10 == 0 {
-				logSyncProgress(processed, -1, stats, errorCount)
+				s.logSyncProgress(processed, -1, stats, errorCount)
 			}
 			continue
 		}
 
-		logging.Debug("kb sync: indexing document",
+		s.logger().Debug("kb sync: indexing document",
 			"doc_path", res.job.docPath,
 			"mode", "update",
 			"bytes", len(bodyContent),
@@ -280,7 +280,7 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 				break
 			}
 			if processed%10 == 0 {
-				logSyncProgress(processed, -1, stats, errorCount)
+				s.logSyncProgress(processed, -1, stats, errorCount)
 			}
 			continue
 		}
@@ -290,7 +290,7 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 		stats.LinksIndexed += s.countIndexedLinks(bodyContent)
 
 		if processed%10 == 0 {
-			logSyncProgress(processed, -1, stats, errorCount)
+			s.logSyncProgress(processed, -1, stats, errorCount)
 		}
 	}
 
@@ -302,7 +302,7 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 		}
 		<-summaryCh
 		<-walkErrCh
-		logging.Warn("kb sync: aborted, embedding backend unavailable",
+		s.logger().Warn("kb sync: aborted, embedding backend unavailable",
 			"dir", baseDir,
 			"elapsed", time.Since(syncStartedAt).String(),
 			"processed", processed,
@@ -321,7 +321,7 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 		firstErr = fmt.Errorf("kb: walk directory: %w", walkErr)
 	}
 	if firstErr != nil {
-		logging.Debug("kb sync: failed",
+		s.logger().Debug("kb sync: failed",
 			"elapsed", time.Since(syncStartedAt).String(),
 			"processed", processed,
 			"queued", jobCount,
@@ -331,7 +331,7 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 			"unchanged", stats.Unchanged,
 			"errors", errorCount,
 		)
-		logSyncMemStats("kb sync: failed mem", processed, jobCount)
+		s.logSyncMemStats("kb sync: failed mem", processed, jobCount)
 		return stats, firstErr
 	}
 	if processed != jobCount {
@@ -367,7 +367,7 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 		}
 	}
 
-	logging.Debug("kb sync: completed",
+	s.logger().Debug("kb sync: completed",
 		"elapsed", time.Since(syncStartedAt).String(),
 		"scanned", stats.Scanned,
 		"added", stats.Added,
@@ -377,15 +377,15 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 		"links_indexed", stats.LinksIndexed,
 		"errors", errorCount,
 	)
-	logSyncMemStats("kb sync: completed mem", processed, jobCount)
+	s.logSyncMemStats("kb sync: completed mem", processed, jobCount)
 
 	return stats, nil
 }
 
-func logSyncMemStats(prefix string, processed, queued int) {
+func (s *KBStore) logSyncMemStats(prefix string, processed, queued int) {
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
-	logging.Debug(prefix,
+	s.logger().Debug(prefix,
 		"processed", processed,
 		"queued", queued,
 		"alloc_mb", ms.Alloc/1024/1024,
@@ -396,8 +396,8 @@ func logSyncMemStats(prefix string, processed, queued int) {
 	)
 }
 
-func logSyncProgress(processed, queued int, stats SyncStats, errorCount int) {
-	logging.Debug("kb sync: progress",
+func (s *KBStore) logSyncProgress(processed, queued int, stats SyncStats, errorCount int) {
+	s.logger().Debug("kb sync: progress",
 		"processed", processed,
 		"queued", queued,
 		"added", stats.Added,
@@ -406,7 +406,7 @@ func logSyncProgress(processed, queued int, stats SyncStats, errorCount int) {
 		"deleted", stats.Deleted,
 		"errors", errorCount,
 	)
-	logSyncMemStats("kb sync: progress mem", processed, queued)
+	s.logSyncMemStats("kb sync: progress mem", processed, queued)
 }
 
 func isMarkdownFile(path string) bool {
@@ -459,7 +459,7 @@ type loadResult struct {
 // markdown document has its YAML front matter parsed, tags/aliases injected,
 // and every other front-matter key merged into metadata via
 // MergeUnknownFrontMatterKeys. docPath is used only for diagnostic logging.
-func buildDocumentMetadata(absPath, docPath string, mtimeUnix int64, res loadResult) (map[string]interface{}, string) {
+func buildDocumentMetadata(log *slog.Logger, absPath, docPath string, mtimeUnix int64, res loadResult) (map[string]interface{}, string) {
 	meta := map[string]interface{}{
 		"source_path":       absPath,
 		"source_mtime_unix": mtimeUnix,
@@ -481,7 +481,7 @@ func buildDocumentMetadata(absPath, docPath string, mtimeUnix int64, res loadRes
 		// Front matter did not parse; ParseFrontMatterWithRaw already falls
 		// back to returning the raw content as body, so the document is
 		// still indexed below, just without metadata pulled from front matter.
-		logging.Warn("kb: front matter parse failed, indexing body as-is",
+		loggerOrDefault(log).Warn("kb: front matter parse failed, indexing body as-is",
 			"doc_path", docPath,
 			"error", parseErr,
 		)

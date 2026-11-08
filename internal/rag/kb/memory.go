@@ -8,8 +8,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/digiogithub/pando/internal/logging"
 )
 
 // MemoryUpsertOptions configures a memory document upsert operation.
@@ -221,7 +219,7 @@ func (s *KBStore) upsertMemoryByKey(ctx context.Context, opts MemoryUpsertOption
 	// going through AddDocument, so links must be refreshed explicitly. A failure
 	// here costs the document its graph edges, not its content — don't fail the upsert.
 	if _, linkErr := s.indexDocumentLinks(ctx, s.db, doc.ID, doc.FilePath, bodyContent); linkErr != nil {
-		logging.Warn("kb: memory upsert link indexing failed", "file_path", doc.FilePath, "error", linkErr)
+		s.logger().Warn("kb: memory upsert link indexing failed", "file_path", doc.FilePath, "error", linkErr)
 	}
 
 	fm := NewFrontMatter(opts.Tags, &MemoryOptions{

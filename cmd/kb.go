@@ -8,6 +8,7 @@ import (
 
 	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/rag/kb"
 )
 
@@ -52,6 +53,8 @@ link, which is what you want after an upgrade that changed how links are parsed.
 		// Link extraction reads stored content and writes kb_links: no embedder,
 		// no chunking, so a bare store is enough.
 		store := kb.NewKBStore(conn, nil, 0, 0)
+		store.SetLogger(logging.SourceLogger())
+		store.SetRetryable(db.IsRetryable)
 
 		var stats kb.BackfillStats
 		if kbRelinkForce {

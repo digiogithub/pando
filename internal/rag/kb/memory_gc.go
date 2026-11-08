@@ -3,8 +3,6 @@ package kb
 import (
 	"context"
 	"time"
-
-	"github.com/digiogithub/pando/internal/logging"
 )
 
 // MemoryGCService periodically marks expired memory documents as outdated.
@@ -39,14 +37,14 @@ func (g *MemoryGCService) run(ctx context.Context) {
 
 	// Run once immediately so the first GC cycle doesn't wait a full interval.
 	if err := g.runOnce(ctx); err != nil {
-		logging.Debug("memory gc: initial run error", "error", err)
+		g.store.logger().Debug("memory gc: initial run error", "error", err)
 	}
 
 	for {
 		select {
 		case <-ticker.C:
 			if err := g.runOnce(ctx); err != nil {
-				logging.Debug("memory gc: run error", "error", err)
+				g.store.logger().Debug("memory gc: run error", "error", err)
 			}
 		case <-g.done:
 			return
@@ -69,14 +67,14 @@ func (g *MemoryGCService) runOnce(ctx context.Context) error {
 	marked := 0
 	for _, ref := range expired {
 		if err := g.store.MarkDocumentOutdated(ctx, ref.FilePath); err != nil {
-			logging.Debug("memory gc: mark outdated error", "file_path", ref.FilePath, "error", err)
+			g.store.logger().Debug("memory gc: mark outdated error", "file_path", ref.FilePath, "error", err)
 			continue
 		}
 		marked++
 	}
 
 	if marked > 0 {
-		logging.Debug("memory gc: marked documents as outdated", "count", marked)
+		g.store.logger().Debug("memory gc: marked documents as outdated", "count", marked)
 	}
 	return nil
 }

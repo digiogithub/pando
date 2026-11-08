@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/digiogithub/pando/internal/db"
+	"github.com/digiogithub/pando/rag/sqlx"
 )
 
 // backfillBatchSize is how many documents are re-linked per transaction. Small
@@ -147,7 +147,7 @@ func (s *KBStore) linkBackfillCandidates(ctx context.Context, force bool) ([]int
 func (s *KBStore) relinkBatch(ctx context.Context, ids []int64) (BackfillStats, error) {
 	var stats BackfillStats
 
-	err := db.RunTx(ctx, s.db, func(tx *sql.Tx) error {
+	err := sqlx.RunTx(ctx, s.db, s.retryable, func(tx *sql.Tx) error {
 		stats = BackfillStats{} // reset: the closure may run more than once
 
 		for _, id := range ids {

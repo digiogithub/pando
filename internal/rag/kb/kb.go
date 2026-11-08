@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"runtime"
 	"sort"
@@ -13,9 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/digiogithub/pando/internal/db"
-	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/rag/embeddings"
+	"github.com/digiogithub/pando/rag/sqlx"
 )
 
 const kbEmbeddingsTimeout = 45 * time.Second
@@ -58,6 +58,42 @@ type KBStore struct {
 	// model configured / not set by the caller) and is treated as "unknown",
 	// not a mismatch, everywhere it is read.
 	embeddingModel string
+
+	// log receives the store's diagnostics; nil means slog.Default(). It is
+	// set once, before the store is used (SetLogger).
+	log *slog.Logger
+
+	// retryable decides whether a transaction that failed lost a race against
+	// another writer and should run again; nil means sqlx.DefaultRetryable.
+	// Pando sets its engine-aware classifier (SetRetryable).
+	retryable sqlx.Retryable
+}
+
+// SetLogger sets the logger the store writes its diagnostics to. Call it
+// before the store is used; nil restores slog.Default().
+func (s *KBStore) SetLogger(l *slog.Logger) {
+	s.log = l
+}
+
+// SetRetryable sets the test that decides whether a failed transaction lost a
+// race against a concurrent writer and should run again. Call it before the
+// store is used; nil restores sqlx.DefaultRetryable.
+func (s *KBStore) SetRetryable(r sqlx.Retryable) {
+	s.retryable = r
+}
+
+// logger returns the store's logger, falling back to slog.Default().
+func (s *KBStore) logger() *slog.Logger {
+	return loggerOrDefault(s.log)
+}
+
+// loggerOrDefault returns l, or slog.Default() when l is nil. Resolving the
+// default at call time keeps a later slog.SetDefault effective.
+func loggerOrDefault(l *slog.Logger) *slog.Logger {
+	if l != nil {
+		return l
+	}
+	return slog.Default()
 }
 
 // SetEmbeddingModel records the document embedder's model id so it can be
@@ -216,7 +252,7 @@ func (s *KBStore) addDocument(ctx context.Context, filePath, content string, met
 	chunks := embeddings.ChunkText(content, s.chunkSize, s.chunkOverlap)
 	var embedVecs [][]float32
 	if len(chunks) > 0 {
-		logging.Debug("kb add: embedding start", "file_path", filePath, "chunks", len(chunks), "bytes", len(content))
+		s.logger().Debug("kb add: embedding start", "file_path", filePath, "chunks", len(chunks), "bytes", len(content))
 		embedStartedAt := time.Now()
 		embedCtx, embedCancel := context.WithTimeout(ctx, kbEmbeddingsTimeout)
 		defer embedCancel()
@@ -224,7 +260,7 @@ func (s *KBStore) addDocument(ctx context.Context, filePath, content string, met
 		var err error
 		embedVecs, err = s.embedder.EmbedDocuments(embedCtx, chunks)
 		if err != nil {
-			logging.Debug("kb add: embedding failed",
+			s.logger().Debug("kb add: embedding failed",
 				"file_path", filePath,
 				"chunks", len(chunks),
 				"elapsed", time.Since(embedStartedAt).String(),
@@ -232,7 +268,7 @@ func (s *KBStore) addDocument(ctx context.Context, filePath, content string, met
 			)
 			return fmt.Errorf("kb: embed chunks: %w", err)
 		}
-		logging.Debug("kb add: embedding completed",
+		s.logger().Debug("kb add: embedding completed",
 			"file_path", filePath,
 			"chunks", len(chunks),
 			"vectors", len(embedVecs),
@@ -356,7 +392,7 @@ func (s *KBStore) DeleteDocument(ctx context.Context, filePath string) error {
 }
 
 func (s *KBStore) deleteDocument(ctx context.Context, filePath string) error {
-	return db.RunTx(ctx, s.db, func(tx *sql.Tx) error {
+	return sqlx.RunTx(ctx, s.db, s.retryable, func(tx *sql.Tx) error {
 		// Get document ID
 		var docID int64
 		err := tx.QueryRowContext(ctx, `SELECT id FROM kb_documents WHERE file_path = ?`, filePath).Scan(&docID)
@@ -470,7 +506,7 @@ func (s *KBStore) AddDocumentWithEmbeddings(ctx context.Context, filePath, conte
 		metaJSON = string(b)
 	}
 
-	return db.RunTx(ctx, s.db, func(tx *sql.Tx) error {
+	return sqlx.RunTx(ctx, s.db, s.retryable, func(tx *sql.Tx) error {
 		now := time.Now().UTC()
 
 		res, err := tx.ExecContext(ctx, `

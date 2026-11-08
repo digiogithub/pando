@@ -6,8 +6,6 @@ import (
 	"os"
 	"strings"
 	"time"
-
-	"github.com/digiogithub/pando/internal/logging"
 )
 
 // frontMatterRepairMarkerPath is the file_path of an internal, synthetic KB
@@ -83,7 +81,7 @@ func (s *KBStore) RepairFrontMatterMetadata(ctx context.Context, dirPath string)
 
 			repaired, repairErr := s.repairDocumentFrontMatter(ctx, item, sourcePath, conv)
 			if repairErr != nil {
-				logging.Warn("kb repair: front matter repair failed",
+				s.logger().Warn("kb repair: front matter repair failed",
 					"doc_path", item.FilePath,
 					"error", repairErr,
 				)
@@ -126,7 +124,7 @@ func (s *KBStore) repairDocumentFrontMatter(ctx context.Context, item documentMe
 		return false, nil // No front matter to lose.
 	}
 
-	meta, body := buildDocumentMetadata(sourcePath, item.FilePath, fi.ModTime().Unix(), loadResult{
+	meta, body := buildDocumentMetadata(s.logger(), sourcePath, item.FilePath, fi.ModTime().Unix(), loadResult{
 		content:   content,
 		format:    format,
 		converted: converted,

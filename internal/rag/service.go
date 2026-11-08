@@ -7,7 +7,9 @@ import (
 	"strings"
 
 	"github.com/digiogithub/pando/internal/config"
+	pandodb "github.com/digiogithub/pando/internal/db"
 	"github.com/digiogithub/pando/internal/llm/models"
+	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/rag/code"
 	"github.com/digiogithub/pando/internal/rag/events"
 	"github.com/digiogithub/pando/internal/rag/kb"
@@ -89,6 +91,11 @@ func NewRemembrancesService(db *sql.DB, cfg *config.RemembrancesConfig) (*Rememb
 
 	workers := cfg.IndexWorkers
 	kbStore := kb.NewKBStore(db, docEmbedder, cfg.ChunkSize, cfg.ChunkOverlap)
+	// The store logs through slog and retries lost transactions with the
+	// classifier it is given; hand it Pando's, so its log lines keep their
+	// "source" attribute and the multiwriter engine's busy errors are retried.
+	kbStore.SetLogger(logging.SourceLogger())
+	kbStore.SetRetryable(pandodb.IsRetryable)
 	kbStore.SetSyncWorkers(workers)
 	// Recorded on every chunk this store writes so a later document embedder
 	// change can be detected instead of silently degrading recall (PANDO-US-0029).

@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/digiogithub/pando/internal/logging"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -31,12 +30,12 @@ func (s *KBStore) WatchDirectory(ctx context.Context, dirPath string) error {
 	defer watcher.Close()
 
 	if err := addWatchRecursively(watcher, baseDir, func(path string, err error) {
-		logKBWatchPermissionWarning(path, err)
+		s.logKBWatchPermissionWarning(path, err)
 	}); err != nil {
 		return err
 	}
 
-	logging.Debug("kb watcher: started", "path", baseDir)
+	s.logger().Debug("kb watcher: started", "path", baseDir)
 
 	var (
 		timersMu sync.Mutex
@@ -66,26 +65,26 @@ func (s *KBStore) WatchDirectory(ctx context.Context, dirPath string) error {
 				t.Stop()
 			}
 			timersMu.Unlock()
-			logging.Debug("kb watcher: stopped", "path", baseDir, "elapsed", time.Since(watchStartedAt).String())
+			s.logger().Debug("kb watcher: stopped", "path", baseDir, "elapsed", time.Since(watchStartedAt).String())
 			return nil
 		case err, ok := <-watcher.Errors:
 			if !ok {
 				return nil
 			}
-			logging.Warn("kb watcher: fsnotify error", "path", baseDir, "error", err)
+			s.logger().Warn("kb watcher: fsnotify error", "path", baseDir, "error", err)
 		case event, ok := <-watcher.Events:
 			if !ok {
 				return nil
 			}
-			logging.Debug("kb watcher: fs event", "path", event.Name, "op", event.Op.String())
+			s.logger().Debug("kb watcher: fs event", "path", event.Name, "op", event.Op.String())
 
 			// Newly created directories must be watched too.
 			if event.Op&fsnotify.Create != 0 {
 				if fi, statErr := os.Stat(event.Name); statErr == nil && fi.IsDir() {
 					if err := addWatchRecursively(watcher, event.Name, func(path string, err error) {
-						logKBWatchPermissionWarning(path, err)
+						s.logKBWatchPermissionWarning(path, err)
 					}); err != nil {
-						logging.Warn("kb watcher: add recursive watch failed", "path", event.Name, "error", err)
+						s.logger().Warn("kb watcher: add recursive watch failed", "path", event.Name, "error", err)
 					}
 					continue
 				}
@@ -101,7 +100,7 @@ func (s *KBStore) WatchDirectory(ctx context.Context, dirPath string) error {
 			// delete) the document with bare source_* metadata and clobber the
 			// metadata/tags the mirror write just stored (PANDO-US-0004).
 			if s.shouldSkipSelfWriteEvent(event) {
-				logging.Debug("kb watcher: skipping self-write event", "path", event.Name, "op", event.Op.String())
+				s.logger().Debug("kb watcher: skipping self-write event", "path", event.Name, "op", event.Op.String())
 				continue
 			}
 
@@ -141,7 +140,7 @@ func (s *KBStore) handleWatchEvent(ctx context.Context, baseDir string, event fs
 	ctx = WithWriteOrigin(ctx, "watcher")
 	absPath, err := filepath.Abs(event.Name)
 	if err != nil {
-		logging.Warn("kb watcher: abs path failed", "path", event.Name, "error", err)
+		s.logger().Warn("kb watcher: abs path failed", "path", event.Name, "error", err)
 		return
 	}
 	if !isPathWithinBase(absPath, baseDir) {
@@ -150,14 +149,14 @@ func (s *KBStore) handleWatchEvent(ctx context.Context, baseDir string, event fs
 
 	rel, err := filepath.Rel(baseDir, absPath)
 	if err != nil {
-		logging.Warn("kb watcher: relative path failed", "path", absPath, "error", err)
+		s.logger().Warn("kb watcher: relative path failed", "path", absPath, "error", err)
 		return
 	}
 	docPath := normalizeDocPath(rel)
 
 	if event.Op&(fsnotify.Remove|fsnotify.Rename) != 0 {
 		if err := s.DeleteDocument(ctx, docPath); err != nil {
-			logging.Warn("kb watcher: delete from kb failed", "doc_path", docPath, "error", err)
+			s.logger().Warn("kb watcher: delete from kb failed", "doc_path", docPath, "error", err)
 		}
 		return
 	}
@@ -166,15 +165,15 @@ func (s *KBStore) handleWatchEvent(ctx context.Context, baseDir string, event fs
 	if err != nil {
 		if os.IsNotExist(err) {
 			if delErr := s.DeleteDocument(ctx, docPath); delErr != nil {
-				logging.Warn("kb watcher: delete after missing file failed", "doc_path", docPath, "error", delErr)
+				s.logger().Warn("kb watcher: delete after missing file failed", "doc_path", docPath, "error", delErr)
 			}
 			return
 		}
 		if shouldIgnoreKBWatchPathError(err) {
-			logKBWatchPermissionWarning(absPath, err)
+			s.logKBWatchPermissionWarning(absPath, err)
 			return
 		}
-		logging.Warn("kb watcher: stat failed", "path", absPath, "error", err)
+		s.logger().Warn("kb watcher: stat failed", "path", absPath, "error", err)
 		return
 	}
 	if fi.IsDir() {
@@ -183,7 +182,7 @@ func (s *KBStore) handleWatchEvent(ctx context.Context, baseDir string, event fs
 
 	existingMeta, err := s.getDocumentMetadata(ctx, docPath)
 	if err != nil {
-		logging.Warn("kb watcher: get metadata failed", "doc_path", docPath, "error", err)
+		s.logger().Warn("kb watcher: get metadata failed", "doc_path", docPath, "error", err)
 		return
 	}
 	mtimeUnix := fi.ModTime().Unix()
@@ -197,17 +196,17 @@ func (s *KBStore) handleWatchEvent(ctx context.Context, baseDir string, event fs
 	content, format, converted, err := loadDocumentBody(absPath, s.documentConverter())
 	if err != nil {
 		if shouldIgnoreKBWatchPathError(err) {
-			logKBWatchPermissionWarning(absPath, err)
+			s.logKBWatchPermissionWarning(absPath, err)
 			return
 		}
-		logging.Warn("kb watcher: load failed", "path", absPath, "error", err)
+		s.logger().Warn("kb watcher: load failed", "path", absPath, "error", err)
 		return
 	}
 
 	// Build metadata and body through the same helper the sync path uses, so
 	// an edit made through the watcher cannot erase the tags and other
 	// front-matter keys the initial sync stored (PANDO-US-0003).
-	metadata, body := buildDocumentMetadata(absPath, docPath, mtimeUnix, loadResult{
+	metadata, body := buildDocumentMetadata(s.logger(), absPath, docPath, mtimeUnix, loadResult{
 		content:   content,
 		format:    format,
 		converted: converted,
@@ -215,13 +214,13 @@ func (s *KBStore) handleWatchEvent(ctx context.Context, baseDir string, event fs
 
 	if existingMeta == nil {
 		if err := s.AddDocument(ctx, docPath, body, metadata); err != nil {
-			logging.Warn("kb watcher: add document failed", "doc_path", docPath, "error", err)
+			s.logger().Warn("kb watcher: add document failed", "doc_path", docPath, "error", err)
 		}
 		return
 	}
 
 	if err := s.UpdateDocument(ctx, docPath, body, metadata); err != nil {
-		logging.Warn("kb watcher: update document failed", "doc_path", docPath, "error", err)
+		s.logger().Warn("kb watcher: update document failed", "doc_path", docPath, "error", err)
 	}
 }
 
@@ -266,6 +265,6 @@ func shouldIgnoreKBWatchPathError(err error) bool {
 	return errors.Is(err, fs.ErrPermission) || errors.Is(err, os.ErrPermission)
 }
 
-func logKBWatchPermissionWarning(path string, err error) {
-	logging.Warn("kb watcher: skipping inaccessible path", "path", path, "error", err)
+func (s *KBStore) logKBWatchPermissionWarning(path string, err error) {
+	s.logger().Warn("kb watcher: skipping inaccessible path", "path", path, "error", err)
 }
