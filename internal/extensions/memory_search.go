@@ -25,8 +25,10 @@ const remoteSourceKey = "remembrance_source"
 
 // SearchMiddleware builds the kb.SearchMiddleware for the wrappers in mgr, or
 // nil when there are none. Chaining runs in registration order, so the first
-// registered wrapper ends up outermost.
-func SearchMiddleware(mgr *extension.Manager) kb.SearchMiddleware {
+// registered wrapper ends up outermost. projectID, called per search like the
+// write side's attribution, fills RemembranceQuery.ProjectID; nil leaves it
+// empty.
+func SearchMiddleware(mgr *extension.Manager, projectID func() string) kb.SearchMiddleware {
 	if mgr == nil {
 		return nil
 	}
@@ -58,12 +60,16 @@ func SearchMiddleware(mgr *extension.Manager) kb.SearchMiddleware {
 			searcher = wrapSafely(wrappers[i], searcher)
 		}
 
-		out, err := searcher.SearchRemembrances(ctx, extension.RemembranceQuery{
+		q := extension.RemembranceQuery{
 			Query: query,
 			Limit: limit,
 			Tags:  opts.Tags,
 			Scope: opts.Scope,
-		})
+		}
+		if projectID != nil {
+			q.ProjectID = projectID()
+		}
+		out, err := searcher.SearchRemembrances(ctx, q)
 		if err != nil {
 			// A wrapper failing must not cost the agent its own memory: fall
 			// back to the local store rather than propagating the error.

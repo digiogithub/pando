@@ -18,6 +18,8 @@ type wrapExt struct {
 	fail bool
 	// sawQuery records the query the wrapper was given.
 	sawQuery string
+	// sawProject records the project id the wrapper was given.
+	sawProject string
 }
 
 func (e *wrapExt) ExtensionInfo() extension.Info { return e.info(e) }
@@ -28,6 +30,7 @@ func (e *wrapExt) WrapRemembranceSearch(next extension.RemembranceSearcher) exte
 	}
 	return extension.RemembranceSearcherFunc(func(ctx context.Context, q extension.RemembranceQuery) ([]extension.Remembrance, error) {
 		e.sawQuery = q.Query
+		e.sawProject = q.ProjectID
 		if e.fail {
 			return nil, errors.New("corporate store unreachable")
 		}
@@ -54,10 +57,10 @@ func localResults(paths ...string) kb.SearchNext {
 }
 
 func TestSearchMiddlewareNilWithoutWrappers(t *testing.T) {
-	if SearchMiddleware(managerWith(t)) != nil {
+	if SearchMiddleware(managerWith(t), nil) != nil {
 		t.Fatal("middleware built with no wrapper registered")
 	}
-	if SearchMiddleware(nil) != nil {
+	if SearchMiddleware(nil, nil) != nil {
 		t.Fatal("middleware built from a nil manager")
 	}
 }
@@ -69,7 +72,7 @@ func TestSearchMiddlewareMergesAndLabels(t *testing.T) {
 			{Path: "corp/a.md", Content: "remote", Score: 9, Source: "corp"},
 		},
 	}
-	mw := SearchMiddleware(managerWith(t, w))
+	mw := SearchMiddleware(managerWith(t, w), nil)
 	if mw == nil {
 		t.Fatal("middleware not built")
 	}
@@ -98,7 +101,7 @@ func TestSearchMiddlewareMergesAndLabels(t *testing.T) {
 // own memory.
 func TestSearchMiddlewareFallsBackOnError(t *testing.T) {
 	w := &wrapExt{baseExt: baseExt{id: "memory.store.corp"}, fail: true}
-	mw := SearchMiddleware(managerWith(t, w))
+	mw := SearchMiddleware(managerWith(t, w), nil)
 
 	got, err := mw(context.Background(), "q", 5, kb.SearchOptions{}, localResults("local/a.md", "local/b.md"))
 	if err != nil {
@@ -115,7 +118,7 @@ func TestSearchMiddlewareContainsPanic(t *testing.T) {
 		baseExt: baseExt{id: "memory.store.good"},
 		extra:   []extension.Remembrance{{Path: "corp/a.md", Source: "corp"}},
 	}
-	mw := SearchMiddleware(managerWith(t, bad, good))
+	mw := SearchMiddleware(managerWith(t, bad, good), nil)
 
 	got, err := mw(context.Background(), "q", 5, kb.SearchOptions{}, localResults("local/a.md"))
 	if err != nil {
@@ -133,7 +136,7 @@ func TestSearchMiddlewareChainOrder(t *testing.T) {
 		extra: []extension.Remembrance{{Path: "a", Source: "a"}}}
 	second := &wrapExt{baseExt: baseExt{id: "memory.store.b"},
 		extra: []extension.Remembrance{{Path: "b", Source: "b"}}}
-	mw := SearchMiddleware(managerWith(t, first, second))
+	mw := SearchMiddleware(managerWith(t, first, second), nil)
 
 	got, err := mw(context.Background(), "q", 5, kb.SearchOptions{}, localResults("local"))
 	if err != nil {
@@ -147,5 +150,18 @@ func TestSearchMiddlewareChainOrder(t *testing.T) {
 		if got[i].Document.FilePath != w {
 			t.Fatalf("result %d = %q, want %q", i, got[i].Document.FilePath, w)
 		}
+	}
+}
+
+// The remote store is told which project the search runs in, like the write
+// side's attribution.
+func TestSearchMiddlewarePassesProjectID(t *testing.T) {
+	w := &wrapExt{baseExt: baseExt{id: "memory.store.corp"}}
+	mw := SearchMiddleware(managerWith(t, w), func() string { return "/work/acme" })
+	if _, err := mw(context.Background(), "q", 5, kb.SearchOptions{}, localResults("local/a.md")); err != nil {
+		t.Fatal(err)
+	}
+	if w.sawProject != "/work/acme" {
+		t.Fatalf("wrapper saw project %q", w.sawProject)
 	}
 }

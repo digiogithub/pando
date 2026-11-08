@@ -2303,7 +2303,7 @@ func (app *App) startExtensionMemoryHooks(cfg *config.Config) {
 	// Reads are a smaller exposure than writes but still leak the query, so
 	// they have their own switch rather than riding on Enabled.
 	if memCfg.WrapSearch {
-		if mw := extensions.SearchMiddleware(app.Extensions); mw != nil {
+		if mw := extensions.SearchMiddleware(app.Extensions, config.WorkingDirectory); mw != nil {
 			app.Remembrances.KB.SetSearchMiddleware(mw)
 		}
 	}
