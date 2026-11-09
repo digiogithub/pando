@@ -52,6 +52,11 @@ type Query struct {
 	ExcludeOutdated bool
 	// Mode selects the search legs (default ModeHybrid).
 	Mode SearchMode
+	// MatchAll makes the full-text legs require every query word (FTS5
+	// AND). By default (false) a chunk or document matching any query word
+	// is a candidate (OR) and bm25 ranks those matching more, and rarer,
+	// words higher, so a multi-word query still finds partial matches.
+	MatchAll bool
 }
 
 // Hit is one ranked chunk.
@@ -204,11 +209,12 @@ func (s *KBStore) Search(ctx context.Context, text string, q Query) ([]Hit, Stat
 		lists = append(lists, vec)
 	}
 	if useFTS {
-		chunks, err := s.apiSearchFTS(ctx, text, sub, filter)
+		match := ftsMatch(text, q.MatchAll)
+		chunks, err := s.apiSearchFTS(ctx, match, sub, filter)
 		if err != nil {
 			return nil, stats, err
 		}
-		fields, err := s.apiSearchFields(ctx, text, sub, filter)
+		fields, err := s.apiSearchFields(ctx, match, sub, filter)
 		if err != nil {
 			return nil, stats, err
 		}
@@ -269,8 +275,23 @@ func (s *KBStore) apiSearchVector(ctx context.Context, emb []float32, limit int,
 	return out, nil
 }
 
-func (s *KBStore) apiSearchFTS(ctx context.Context, text string, limit int, f sqlFilter) ([]apiCandidate, error) {
-	match := sanitizeFTSQuery(text)
+// ftsMatch builds the FTS5 MATCH expression for a Search: every query word
+// quoted as a literal, joined with AND (matchAll) or OR. The legacy
+// SearchDocuments* path keeps sanitizeFTSQuery's implicit AND.
+func ftsMatch(text string, matchAll bool) string {
+	if matchAll {
+		return sanitizeFTSQuery(text)
+	}
+	words := strings.Fields(text)
+	parts := make([]string, 0, len(words))
+	for _, w := range words {
+		parts = append(parts, `"`+strings.ReplaceAll(w, `"`, `""`)+`"`)
+	}
+	return strings.Join(parts, " OR ")
+}
+
+// apiSearchFTS matches the chunk text index with the MATCH expression match.
+func (s *KBStore) apiSearchFTS(ctx context.Context, match string, limit int, f sqlFilter) ([]apiCandidate, error) {
 	if match == "" {
 		return nil, nil
 	}
@@ -301,8 +322,7 @@ func (s *KBStore) apiSearchFTS(ctx context.Context, text string, limit int, f sq
 
 // apiSearchFields matches the front-matter fields index and returns, for each
 // matching document, its first chunk.
-func (s *KBStore) apiSearchFields(ctx context.Context, text string, limit int, f sqlFilter) ([]apiCandidate, error) {
-	match := sanitizeFTSQuery(text)
+func (s *KBStore) apiSearchFields(ctx context.Context, match string, limit int, f sqlFilter) ([]apiCandidate, error) {
 	if match == "" {
 		return nil, nil
 	}

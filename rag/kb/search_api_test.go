@@ -149,3 +149,31 @@ func TestFuseAcrossProjects(t *testing.T) {
 		t.Fatalf("boost = %+v", got)
 	}
 }
+
+// A multi-word full-text query matches documents containing any of the words
+// and ranks those containing more of them first; MatchAll restores AND.
+func TestSearchFTSMatchesAnyWordUnlessMatchAll(t *testing.T) {
+	ctx := context.Background()
+	s, _ := openAPIStore(t, Options{})
+	mustPut(t, s, Doc{Path: "all.md", Content: "token rotation policy for service accounts"})
+	mustPut(t, s, Doc{Path: "some.md", Content: "rotation of the on-call schedule"})
+	mustPut(t, s, Doc{Path: "none.md", Content: "unrelated release notes"})
+
+	hits, _, err := s.Search(ctx, "token rotation policy accounts", Query{Mode: ModeFTS})
+	if err != nil || strings.Join(paths(hits), ",") != "all.md,some.md" {
+		t.Fatalf("OR: %v, %v", paths(hits), err)
+	}
+	hits, _, err = s.Search(ctx, "token rotation policy accounts", Query{Mode: ModeFTS, MatchAll: true})
+	if err != nil || strings.Join(paths(hits), ",") != "all.md" {
+		t.Fatalf("MatchAll: %v, %v", paths(hits), err)
+	}
+	// The front-matter fields leg follows the same rule.
+	mustPut(t, s, Doc{Path: "titled.md", Content: "---\ntitle: Kerberos handshake\n---\nBody."})
+	hits, _, _ = s.Search(ctx, "kerberos tickets", Query{Mode: ModeFTS})
+	if strings.Join(paths(hits), ",") != "titled.md" {
+		t.Fatalf("fields OR: %v", paths(hits))
+	}
+	if hits, _, _ = s.Search(ctx, "kerberos tickets", Query{Mode: ModeFTS, MatchAll: true}); len(hits) != 0 {
+		t.Fatalf("fields MatchAll: %v", paths(hits))
+	}
+}
