@@ -74,3 +74,6 @@ web-ui/playwright-report/
 # placeholders are versioned; see internal/nativeui/natives)
 internal/nativeui/natives/*/*
 !internal/nativeui/natives/*/.keep
+
+# Local Pando configuration (may contain private hosts); not versioned.
+.pando.toml
