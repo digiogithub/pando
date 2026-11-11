@@ -193,7 +193,42 @@ func (s *KBStore) getSyncWorkers() int {
 //
 // The write is published to the observer (observer.go) only after it commits.
 func (s *KBStore) AddDocument(ctx context.Context, filePath, content string, metadata map[string]interface{}) error {
-	if err := s.addDocument(ctx, filePath, content, metadata); err != nil {
+	return s.AddDocumentWithTimes(ctx, filePath, content, metadata, DocumentTimes{})
+}
+
+// DocumentTimes carries the creation and update times a caller wants recorded
+// for a document write. A zero field means "not provided": see
+// resolveDocumentTimes for how missing values are filled in.
+type DocumentTimes struct {
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// resolveDocumentTimes turns the requested times into the ones stored:
+// created_at defaults to now, updated_at defaults to now, both are stored in
+// UTC, and updated_at is never earlier than created_at.
+func resolveDocumentTimes(times DocumentTimes, now time.Time) (createdAt, updatedAt time.Time) {
+	createdAt = times.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = now
+	}
+	updatedAt = times.UpdatedAt
+	if updatedAt.IsZero() {
+		updatedAt = now
+	}
+	createdAt = createdAt.UTC()
+	updatedAt = updatedAt.UTC()
+	if updatedAt.Before(createdAt) {
+		updatedAt = createdAt
+	}
+	return createdAt, updatedAt
+}
+
+// AddDocumentWithTimes is AddDocument with explicit document times, used when
+// the document's history is known from elsewhere (its file's front matter).
+// Zero fields default to now.
+func (s *KBStore) AddDocumentWithTimes(ctx context.Context, filePath, content string, metadata map[string]interface{}, times DocumentTimes) error {
+	if err := s.addDocument(ctx, filePath, content, metadata, times); err != nil {
 		return err
 	}
 	s.publishWrite(ctx, WriteEvent{
@@ -206,7 +241,7 @@ func (s *KBStore) AddDocument(ctx context.Context, filePath, content string, met
 	return nil
 }
 
-func (s *KBStore) addDocument(ctx context.Context, filePath, content string, metadata map[string]interface{}) error {
+func (s *KBStore) addDocument(ctx context.Context, filePath, content string, metadata map[string]interface{}, times DocumentTimes) error {
 	if filePath == "" {
 		return fmt.Errorf("kb: file_path cannot be empty")
 	}
@@ -243,7 +278,7 @@ func (s *KBStore) addDocument(ctx context.Context, filePath, content string, met
 		}
 	}
 
-	return s.AddDocumentWithEmbeddings(ctx, filePath, content, metadata, chunks, embedVecs, s.embeddingModel)
+	return s.addDocumentWithEmbeddings(ctx, filePath, content, metadata, chunks, embedVecs, s.embeddingModel, times)
 }
 
 // GetDocument retrieves a document by file path.
@@ -427,8 +462,17 @@ func (s *KBStore) deleteDocument(ctx context.Context, filePath string) error {
 
 // UpdateDocument updates an existing document's content and metadata.
 // It re-chunks and re-embeds the content.
+//
+// The document keeps its stored created_at; updated_at becomes now.
 func (s *KBStore) UpdateDocument(ctx context.Context, filePath, content string, metadata map[string]interface{}) error {
-	if err := s.updateDocument(ctx, filePath, content, metadata); err != nil {
+	return s.UpdateDocumentWithTimes(ctx, filePath, content, metadata, DocumentTimes{})
+}
+
+// UpdateDocumentWithTimes is UpdateDocument with explicit document times. A
+// zero CreatedAt keeps the stored created_at (now if the document does not
+// exist); a zero UpdatedAt becomes now.
+func (s *KBStore) UpdateDocumentWithTimes(ctx context.Context, filePath, content string, metadata map[string]interface{}, times DocumentTimes) error {
+	if err := s.updateDocument(ctx, filePath, content, metadata, times); err != nil {
 		return err
 	}
 	s.publishWrite(ctx, WriteEvent{
@@ -441,7 +485,18 @@ func (s *KBStore) UpdateDocument(ctx context.Context, filePath, content string, 
 	return nil
 }
 
-func (s *KBStore) updateDocument(ctx context.Context, filePath, content string, metadata map[string]interface{}) error {
+func (s *KBStore) updateDocument(ctx context.Context, filePath, content string, metadata map[string]interface{}, times DocumentTimes) error {
+	// The update is a delete followed by an add, so the stored creation time
+	// must be read first or the add would reset it to now.
+	if times.CreatedAt.IsZero() {
+		var createdAt time.Time
+		err := s.db.QueryRowContext(ctx, `SELECT created_at FROM kb_documents WHERE file_path = ?`, filePath).Scan(&createdAt)
+		if err != nil && err != sql.ErrNoRows {
+			return fmt.Errorf("kb: read created_at for update: %w", err)
+		}
+		times.CreatedAt = createdAt
+	}
+
 	// Delete existing document (including chunks), then re-add with the new
 	// content. Both use the unpublished forms: an update is one write and must
 	// reach the observer as one event, not as a delete followed by a create.
@@ -449,7 +504,7 @@ func (s *KBStore) updateDocument(ctx context.Context, filePath, content string, 
 		return fmt.Errorf("kb: delete for update: %w", err)
 	}
 
-	return s.addDocument(ctx, filePath, content, metadata)
+	return s.addDocument(ctx, filePath, content, metadata, times)
 }
 
 // AddDocumentWithEmbeddings inserts a document using pre-computed chunks and embeddings.
@@ -457,6 +512,10 @@ func (s *KBStore) updateDocument(ctx context.Context, filePath, content string, 
 // embeddingModel is recorded on every inserted chunk that has an embedding
 // (PANDO-US-0029); embedding_dims is derived from each vector's own length.
 func (s *KBStore) AddDocumentWithEmbeddings(ctx context.Context, filePath, content string, metadata map[string]interface{}, chunks []string, embeddings [][]float32, embeddingModel string) error {
+	return s.addDocumentWithEmbeddings(ctx, filePath, content, metadata, chunks, embeddings, embeddingModel, DocumentTimes{})
+}
+
+func (s *KBStore) addDocumentWithEmbeddings(ctx context.Context, filePath, content string, metadata map[string]interface{}, chunks []string, embeddings [][]float32, embeddingModel string, times DocumentTimes) error {
 	if filePath == "" {
 		return fmt.Errorf("kb: file_path cannot be empty")
 	}
@@ -472,11 +531,12 @@ func (s *KBStore) AddDocumentWithEmbeddings(ctx context.Context, filePath, conte
 
 	return db.RunTx(ctx, s.db, func(tx *sql.Tx) error {
 		now := time.Now().UTC()
+		createdAt, updatedAt := resolveDocumentTimes(times, now)
 
 		res, err := tx.ExecContext(ctx, `
 			INSERT INTO kb_documents (file_path, content, metadata, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?)`,
-			filePath, content, metaJSON, now, now,
+			filePath, content, metaJSON, createdAt, updatedAt,
 		)
 		if err != nil {
 			return fmt.Errorf("kb: insert document: %w", err)

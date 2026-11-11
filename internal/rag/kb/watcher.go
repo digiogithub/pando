@@ -207,20 +207,20 @@ func (s *KBStore) handleWatchEvent(ctx context.Context, baseDir string, event fs
 	// Build metadata and body through the same helper the sync path uses, so
 	// an edit made through the watcher cannot erase the tags and other
 	// front-matter keys the initial sync stored (PANDO-US-0003).
-	metadata, body := buildDocumentMetadata(absPath, docPath, mtimeUnix, loadResult{
+	metadata, body, docTimes := buildDocumentMetadata(absPath, docPath, mtimeUnix, loadResult{
 		content:   content,
 		format:    format,
 		converted: converted,
 	})
 
 	if existingMeta == nil {
-		if err := s.AddDocument(ctx, docPath, body, metadata); err != nil {
+		if err := s.AddDocumentWithTimes(ctx, docPath, body, metadata, docTimes); err != nil {
 			logging.Warn("kb watcher: add document failed", "doc_path", docPath, "error", err)
 		}
 		return
 	}
 
-	if err := s.UpdateDocument(ctx, docPath, body, metadata); err != nil {
+	if err := s.UpdateDocumentWithTimes(ctx, docPath, body, metadata, docTimes); err != nil {
 		logging.Warn("kb watcher: update document failed", "doc_path", docPath, "error", err)
 	}
 }

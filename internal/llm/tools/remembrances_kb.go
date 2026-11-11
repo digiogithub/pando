@@ -174,49 +174,77 @@ func (t *KBAddDocumentTool) Run(ctx context.Context, params ToolCall) (ToolRespo
 			action, req.FilePath, req.Key, linkFeedback(ctx, t.store, req.FilePath))), nil
 	}
 
-	// Inject tags into metadata.
-	req.Metadata = kb.InjectTagsIntoMetadata(req.Metadata, req.Tags)
-
 	// Check if document already exists (update vs add)
 	existing, err := t.store.GetDocument(ctx, req.FilePath)
 	if err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("kb error: %v", err)), nil
 	}
 
-	if existing != nil {
-		// Merge front matter: preserve created_at, update updated_at, merge tags.
-		existingFM := kb.FrontMatter{
-			CreatedAt: existing.CreatedAt,
-			UpdatedAt: existing.UpdatedAt,
-			Tags:      existing.Tags,
+	// The front matter to keep comes from the document's file when it is on
+	// disk (it is the record a re-index reads back), then from the index.
+	// Reading the file also covers a document whose index entry was lost:
+	// rewriting it must not re-date it.
+	fileFM, extra, fileExists, err := t.store.ReadMirroredFrontMatter(req.FilePath)
+	if err != nil {
+		return NewTextErrorResponse(fmt.Sprintf("kb error: %v", err)), nil
+	}
+	var fm kb.FrontMatter
+	switch {
+	case existing != nil || fileExists:
+		previous := fileFM
+		if existing != nil {
+			if previous.CreatedAt.IsZero() {
+				previous.CreatedAt = existing.CreatedAt
+			}
+			if len(previous.Tags) == 0 {
+				previous.Tags = existing.Tags
+			}
+			if len(previous.Aliases) == 0 {
+				previous.Aliases = kb.ExtractAliasesFromMetadata(existing.Metadata)
+			}
 		}
-		incomingFM := kb.FrontMatter{Tags: req.Tags}
-		mergedFM := kb.MergeFrontMatter(existingFM, incomingFM)
-
-		if err := t.store.UpdateDocument(ctx, req.FilePath, bodyContent, req.Metadata); err != nil {
-			return NewTextErrorResponse(fmt.Sprintf("kb update error: %v", err)), nil
-		}
-		mirrorContent := kb.SerializeFrontMatter(mergedFM, bodyContent)
-		if err := t.store.WriteDocumentToFilesystem(req.FilePath, mirrorContent); err != nil {
-			return NewTextErrorResponse(fmt.Sprintf("kb filesystem mirror error: %v", err)), nil
-		}
-		return NewTextResponse(fmt.Sprintf("Document updated: %s (tags: %v)%s",
-			req.FilePath, mergedFM.Tags, linkFeedback(ctx, t.store, req.FilePath))), nil
+		// Preserves created_at, sets updated_at to now, keeps tags and
+		// aliases unless the caller supplies new ones.
+		fm = kb.MergeFrontMatter(previous, kb.FrontMatter{Tags: req.Tags})
+	default:
+		// New document: create front matter with current time.
+		fm = kb.NewFrontMatter(req.Tags, nil)
 	}
 
-	// New document: create front matter with current time.
-	newFM := kb.NewFrontMatter(req.Tags, nil)
-
-	if err := t.store.AddDocument(ctx, req.FilePath, bodyContent, req.Metadata); err != nil {
-		return NewTextErrorResponse(fmt.Sprintf("kb add error: %v", err)), nil
-	}
-	mirrorContent := kb.SerializeFrontMatter(newFM, bodyContent)
+	// Write the file first so the index can record the file's mtime: the
+	// next startup sync then sees it as unchanged instead of re-importing it.
+	mirrorContent := kb.SerializeFrontMatterWithExtra(fm, extra, bodyContent)
 	if err := t.store.WriteDocumentToFilesystem(req.FilePath, mirrorContent); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("kb filesystem mirror error: %v", err)), nil
 	}
 
+	// Index what the file now records: host-defined front-matter keys, then
+	// the caller's metadata over them, then tags, aliases and the file stamp.
+	metadata := kb.MergeUnknownFrontMatterKeys(make(map[string]interface{}), extra)
+	for k, v := range req.Metadata {
+		metadata[k] = v
+	}
+	metadata = kb.InjectTagsIntoMetadata(metadata, fm.Tags)
+	metadata = kb.InjectAliasesIntoMetadata(metadata, fm.Aliases)
+	for k, v := range t.store.MirrorSourceMetadata(req.FilePath) {
+		metadata[k] = v
+	}
+	times := kb.DocumentTimes{CreatedAt: fm.CreatedAt, UpdatedAt: fm.UpdatedAt}
+
+	if existing != nil {
+		if err := t.store.UpdateDocumentWithTimes(ctx, req.FilePath, bodyContent, metadata, times); err != nil {
+			return NewTextErrorResponse(fmt.Sprintf("kb update error: %v", err)), nil
+		}
+		return NewTextResponse(fmt.Sprintf("Document updated: %s (tags: %v)%s",
+			req.FilePath, fm.Tags, linkFeedback(ctx, t.store, req.FilePath))), nil
+	}
+
+	if err := t.store.AddDocumentWithTimes(ctx, req.FilePath, bodyContent, metadata, times); err != nil {
+		return NewTextErrorResponse(fmt.Sprintf("kb add error: %v", err)), nil
+	}
+
 	return NewTextResponse(fmt.Sprintf("Document added: %s (tags: %v)%s",
-		req.FilePath, newFM.Tags, linkFeedback(ctx, t.store, req.FilePath))), nil
+		req.FilePath, fm.Tags, linkFeedback(ctx, t.store, req.FilePath))), nil
 }
 
 // staleEmbeddingWarning formats the response warning for

@@ -233,7 +233,7 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 			continue
 		}
 
-		meta, bodyContent := buildDocumentMetadata(res.job.absPath, res.job.docPath, res.job.mtimeUnix, loadResult{
+		meta, bodyContent, docTimes := buildDocumentMetadata(res.job.absPath, res.job.docPath, res.job.mtimeUnix, loadResult{
 			content:   res.content,
 			format:    res.format,
 			converted: res.converted,
@@ -247,7 +247,7 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 				"mode", "add",
 				"bytes", len(bodyContent),
 			)
-			if addErr := s.AddDocument(processingCtx, res.job.docPath, bodyContent, meta); addErr != nil {
+			if addErr := s.AddDocumentWithTimes(processingCtx, res.job.docPath, bodyContent, meta, docTimes); addErr != nil {
 				cancel()
 				if recordWriteErr(fmt.Errorf("kb: add %s: %w", res.job.docPath, addErr)) {
 					backendTripped = true
@@ -273,7 +273,7 @@ func (s *KBStore) SyncDirectoryWithStats(ctx context.Context, dirPath string, de
 			"mode", "update",
 			"bytes", len(bodyContent),
 		)
-		if updateErr := s.UpdateDocument(processingCtx, res.job.docPath, bodyContent, meta); updateErr != nil {
+		if updateErr := s.UpdateDocumentWithTimes(processingCtx, res.job.docPath, bodyContent, meta, docTimes); updateErr != nil {
 			cancel()
 			if recordWriteErr(fmt.Errorf("kb: update %s: %w", res.job.docPath, updateErr)) {
 				backendTripped = true
@@ -458,8 +458,11 @@ type loadResult struct {
 // converted document is indexed verbatim and flagged "converted", while a
 // markdown document has its YAML front matter parsed, tags/aliases injected,
 // and every other front-matter key merged into metadata via
-// MergeUnknownFrontMatterKeys. docPath is used only for diagnostic logging.
-func buildDocumentMetadata(absPath, docPath string, mtimeUnix int64, res loadResult) (map[string]interface{}, string) {
+// MergeUnknownFrontMatterKeys. It also returns the created_at/updated_at the
+// front matter declares (zero when absent), so the document keeps the history
+// its file records instead of being re-dated to the moment it was indexed.
+// docPath is used only for diagnostic logging.
+func buildDocumentMetadata(absPath, docPath string, mtimeUnix int64, res loadResult) (map[string]interface{}, string, DocumentTimes) {
 	meta := map[string]interface{}{
 		"source_path":       absPath,
 		"source_mtime_unix": mtimeUnix,
@@ -470,7 +473,7 @@ func buildDocumentMetadata(absPath, docPath string, mtimeUnix int64, res loadRes
 		// Converted documents carry no front matter; index the markdown
 		// produced by the converter and flag the original source format.
 		meta["converted"] = true
-		return meta, res.content
+		return meta, res.content, DocumentTimes{}
 	}
 
 	// Parse YAML front matter from file content to extract tags and other
@@ -503,7 +506,7 @@ func buildDocumentMetadata(absPath, docPath string, mtimeUnix int64, res loadRes
 	// hosts writing structured records get them back in metadata.
 	meta = MergeUnknownFrontMatterKeys(meta, rawFM)
 
-	return meta, body
+	return meta, body, DocumentTimes{CreatedAt: fm.CreatedAt, UpdatedAt: fm.UpdatedAt}
 }
 
 // fileFormat returns the lower-cased file extension without the leading dot.

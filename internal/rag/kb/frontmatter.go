@@ -2,6 +2,7 @@ package kb
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -376,4 +377,82 @@ func jsonSafeValue(v interface{}) interface{} {
 	default:
 		return fmt.Sprintf("%v", val)
 	}
+}
+
+// typedFrontMatterKeys are the YAML keys the FrontMatter struct itself
+// serializes. Every other key in a file's front matter is host-defined.
+var typedFrontMatterKeys = map[string]struct{}{
+	"created_at": {},
+	"updated_at": {},
+	"tags":       {},
+	"aliases":    {},
+	"key":        {},
+	"scope":      {},
+	"outdated":   {},
+	"expires_at": {},
+	"hits":       {},
+	"importance": {},
+	"source":     {},
+}
+
+// ExtraFrontMatterKeys returns the keys of a raw front-matter map that the
+// typed FrontMatter struct does not serialize (host-defined keys such as
+// "status" or "project"), so a rewrite of the file can keep them. Returns nil
+// when there are none.
+func ExtraFrontMatterKeys(rawFM map[string]interface{}) map[string]interface{} {
+	var extra map[string]interface{}
+	for k, v := range rawFM {
+		if _, typed := typedFrontMatterKeys[k]; typed {
+			continue
+		}
+		if extra == nil {
+			extra = make(map[string]interface{})
+		}
+		extra[k] = v
+	}
+	return extra
+}
+
+// SerializeFrontMatterWithExtra is SerializeFrontMatter plus extra
+// host-defined keys, written after the typed fields in key order. Keys that
+// the typed FrontMatter serializes are ignored in extra, so they cannot be
+// written twice.
+func SerializeFrontMatterWithExtra(fm FrontMatter, extra map[string]interface{}, body string) string {
+	extra = ExtraFrontMatterKeys(extra)
+	if len(extra) == 0 {
+		return SerializeFrontMatter(fm, body)
+	}
+
+	var doc yaml.Node
+	if err := doc.Encode(&fm); err != nil || doc.Kind != yaml.MappingNode {
+		return SerializeFrontMatter(fm, body)
+	}
+	keys := make([]string, 0, len(extra))
+	for k := range extra {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		var valueNode yaml.Node
+		if err := valueNode.Encode(extra[k]); err != nil {
+			continue
+		}
+		doc.Content = append(doc.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: k},
+			&valueNode,
+		)
+	}
+	yamlBytes, err := yaml.Marshal(&doc)
+	if err != nil {
+		return SerializeFrontMatter(fm, body)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(frontMatterDelimiter)
+	sb.WriteString("\n")
+	sb.Write(yamlBytes)
+	sb.WriteString(frontMatterDelimiter)
+	sb.WriteString("\n")
+	sb.WriteString(body)
+	return sb.String()
 }

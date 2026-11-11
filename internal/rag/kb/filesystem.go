@@ -117,3 +117,61 @@ func resolveMirrorDocumentPath(basePath, docPath string) (string, error) {
 	}
 	return fullClean, nil
 }
+
+// ReadMirroredFrontMatter reads the front matter of filePath's file in the
+// filesystem mirror, so a tool rewriting the file can keep what it records
+// (created_at, aliases, host-defined keys) instead of rebuilding it from the
+// index alone. extra holds the keys the typed FrontMatter does not serialize.
+// ok is false when no mirror is configured, the file does not exist, or it has
+// no front matter that parses.
+func (s *KBStore) ReadMirroredFrontMatter(filePath string) (fm FrontMatter, extra map[string]interface{}, ok bool, err error) {
+	base := s.FilesystemMirrorPath()
+	if strings.TrimSpace(base) == "" {
+		return FrontMatter{}, nil, false, nil
+	}
+	targetPath, err := resolveMirrorDocumentPath(base, filePath)
+	if err != nil {
+		return FrontMatter{}, nil, false, err
+	}
+	raw, err := os.ReadFile(targetPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return FrontMatter{}, nil, false, nil
+		}
+		return FrontMatter{}, nil, false, fmt.Errorf("kb: read mirrored document %q: %w", targetPath, err)
+	}
+	parsed, rawFM, _, parseErr := ParseFrontMatterWithRaw(string(raw))
+	if parseErr != nil || rawFM == nil {
+		return FrontMatter{}, nil, false, nil
+	}
+	return parsed, ExtraFrontMatterKeys(rawFM), true, nil
+}
+
+// MirrorSourceMetadata returns the source_* metadata the directory sync records
+// for filePath's mirrored file (source_path, source_mtime_unix, source_format),
+// read after the file was written. Storing it with the document lets the next
+// startup sync see the file as unchanged instead of re-importing it.
+//
+// It returns nil when no mirror is configured, the file cannot be stat'd, or
+// the path is not a markdown file: the sync only indexes markdown (and
+// converted documents) by extension, and a source_path on a document whose
+// file the sync never visits would make its delete-missing pass remove it.
+func (s *KBStore) MirrorSourceMetadata(filePath string) map[string]interface{} {
+	base := s.FilesystemMirrorPath()
+	if strings.TrimSpace(base) == "" || !isMarkdownFile(filePath) {
+		return nil
+	}
+	targetPath, err := resolveMirrorDocumentPath(base, filePath)
+	if err != nil {
+		return nil
+	}
+	fi, err := os.Stat(targetPath)
+	if err != nil || fi.IsDir() {
+		return nil
+	}
+	return map[string]interface{}{
+		"source_path":       targetPath,
+		"source_mtime_unix": fi.ModTime().Unix(),
+		"source_format":     fileFormat(targetPath),
+	}
+}

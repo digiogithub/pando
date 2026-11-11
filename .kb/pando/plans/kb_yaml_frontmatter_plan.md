@@ -42,7 +42,7 @@ Functions:
 
 ### kb.go changes:
 - `AddDocument`: Extract tags from metadata, store in metadata JSON. DB `created_at`/`updated_at` already managed.
-- `UpdateDocument`: Preserve original `created_at`, update `updated_at` to now. Merge tags if provided.
+- [x] `UpdateDocument`: Preserve original `created_at`, update `updated_at` to now. Merge tags if provided. (Done in fix [[pando/fixes/kb_frontmatter_dates_preserved.md]]: the delete + re-add update reads the stored `created_at` first; `UpdateDocumentWithTimes` takes explicit dates.)
 - `GetDocument`: Parse tags from metadata JSON into `Document.Tags`.
 - `AddDocumentWithEmbeddings`: Same tag extraction logic.
 
@@ -109,7 +109,7 @@ type SearchOptions struct {
 When importing `.md` files from disk:
 - Parse YAML front matter from file content
 - Extract `tags` from front matter → store in metadata
-- Extract `created_at` from front matter → use as document creation time if present (don't overwrite with `now`)
+- [x] Extract `created_at` from front matter → use as document creation time if present (don't overwrite with `now`). (Done in fix [[pando/fixes/kb_frontmatter_dates_preserved.md]]: sync, watcher and repair also keep the front matter's `updated_at`; without it, `updated_at` is the import time.)
 - Strip front matter from content before storing (store pure body in DB)
 - On re-export (mirror write), regenerate front matter from DB dates + tags
 
