@@ -19,6 +19,21 @@ KBConvertDocuments = true            # default; convert documents in the KB fold
 # KBConvertExtensions = ["docx", "pdf", "xlsx"]   # optional: override the curated set
 ```
 
+## Document dates in the Knowledge Base
+
+Every KB file carries `created_at` and `updated_at` in its YAML front matter, and the file is
+the record of a document's history. Indexing it (the startup import, the watcher, a reindex,
+or a fresh index after the database was lost) stores those dates as they are, converted to
+UTC; touching the file, or a git checkout or pull that only changes its mtime, does not
+re-date it. A file with no `created_at` keeps the creation time already in the index (now for
+a new document); a file with no `updated_at` gets the import time; `updated_at` is never
+stored earlier than `created_at`.
+
+`kb_add_document` rewrites a document's file from the file's own front matter: it keeps
+`created_at`, `aliases` and any host-defined keys (`status`, `project`, ...), replaces the
+tags only when new ones are given, and sets `updated_at` to now. It records the file it wrote
+in the index, so the next startup import leaves that file alone.
+
 ## Filtering injected context with the decision model
 
 Context enrichment (KB, events and code snippets added to the user message) and memory

@@ -126,7 +126,7 @@ func (s *KBStore) repairDocumentFrontMatter(ctx context.Context, item documentMe
 		return false, nil // No front matter to lose.
 	}
 
-	meta, body := buildDocumentMetadata(sourcePath, item.FilePath, fi.ModTime().Unix(), loadResult{
+	meta, body, docTimes := buildDocumentMetadata(sourcePath, item.FilePath, fi.ModTime().Unix(), loadResult{
 		content:   content,
 		format:    format,
 		converted: converted,
@@ -136,7 +136,7 @@ func (s *KBStore) repairDocumentFrontMatter(ctx context.Context, item documentMe
 		return false, nil
 	}
 
-	if err := s.UpdateDocument(ctx, item.FilePath, body, meta); err != nil {
+	if err := s.UpdateDocumentWithTimes(ctx, item.FilePath, body, meta, docTimes); err != nil {
 		return false, err
 	}
 	return true, nil
