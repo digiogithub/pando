@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -36,6 +37,20 @@ type geminiClient struct {
 
 type GeminiClient ProviderClient
 
+// defaultGeminiAPIVersion keeps API-key clients on v1beta. genai v1.78.0 moved
+// the SDK default to v1, which does not serve the "*-latest" model aliases.
+const defaultGeminiAPIVersion = "v1beta"
+
+// geminiAPIVersion returns the Gemini API version for API-key clients. The
+// GOOGLE_GENAI_API_VERSION environment variable overrides the default; when it
+// is set the SDK reads it itself, so an empty string is returned.
+func geminiAPIVersion() string {
+	if strings.TrimSpace(os.Getenv("GOOGLE_GENAI_API_VERSION")) != "" {
+		return ""
+	}
+	return defaultGeminiAPIVersion
+}
+
 func newGeminiClient(opts providerClientOptions) GeminiClient {
 	geminiOpts := geminiOptions{}
 	for _, o := range opts.geminiOptions {
@@ -43,6 +58,9 @@ func newGeminiClient(opts providerClientOptions) GeminiClient {
 	}
 
 	genaiConfig := &genai.ClientConfig{APIKey: opts.apiKey, Backend: genai.BackendGeminiAPI}
+	if v := geminiAPIVersion(); v != "" {
+		genaiConfig.HTTPOptions = genai.HTTPOptions{APIVersion: v}
+	}
 	if cfg := config.Get(); cfg != nil && cfg.Debug {
 		// Inject the debug HTTP transport so every API call is logged to disk.
 		genaiConfig.HTTPClient = &http.Client{Transport: newDebugRoundTripper(nil)}

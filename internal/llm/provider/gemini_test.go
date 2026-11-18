@@ -250,3 +250,14 @@ func TestGeminiConvertMessagesUsesUserRoleForToolResponses(t *testing.T) {
 		t.Fatalf("FunctionResponse.Name = %q, want %q", contents[1].Parts[0].FunctionResponse.Name, "code_list_projects")
 	}
 }
+
+func TestGeminiAPIVersionPinsV1beta(t *testing.T) {
+	t.Setenv("GOOGLE_GENAI_API_VERSION", "")
+	if got := geminiAPIVersion(); got != "v1beta" {
+		t.Fatalf("default = %q, want v1beta", got)
+	}
+	t.Setenv("GOOGLE_GENAI_API_VERSION", "v1")
+	if got := geminiAPIVersion(); got != "" {
+		t.Fatalf("env override must defer to the SDK, got %q", got)
+	}
+}
