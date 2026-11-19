@@ -53,9 +53,13 @@ Reference: opencode `packages/core/src/plugin/provider/github-copilot.ts` and
   client bound to the model picked by `POST {base}/auto` (`prompt`, `has_image`), sends
   `Copilot-Session-Token`, caches the pick per session until 5 min before `expires_at`,
   re-routes after a compaction request or an account change. A pick missing from the catalog
-  is built from the router's own `selected_model` metadata. Router failure with a previous
-  pick keeps that model without the token; without one the request fails with an error
-  (opencode instead falls back to the `is_chat_fallback` model; Pando does not persist that flag).
+  is built from the router's own `selected_model` metadata.
+- Router failure: a session with a previous pick keeps that model without the token.
+  Without one the fallback chain is: (1) the coder agent's model configured in Pando
+  (`configuredCoderCopilotModel`), when it is a Copilot model other than Auto; (2) otherwise
+  `autoFallbackModel` reads `GET {base}/models` and uses the account's default chat model
+  (`is_chat_fallback`), or else the first Auto pool model. The fallback is kept for 5 min
+  before the router is asked again. Only when none of these exist does the request fail.
 
 ### 5. Session titles on Copilot's free utility model
 - `provider.WithCopilotUtilityModel` / `CopilotUtilityTitleModel = "gpt-4o-mini"`:

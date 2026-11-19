@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/auth"
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 	toolsPkg "github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/message"
@@ -189,16 +190,143 @@ func TestCopilotAutoRoutesAgainAfterCompaction(t *testing.T) {
 	}
 }
 
-func TestCopilotAutoRoutingFailureIsAnError(t *testing.T) {
-	resetCopilotAutoRoutes(t)
+// failingRouter rejects POST /auto and serves the given model listing.
+func failingRouter(t *testing.T, routerCalls *atomic.Int32, listing string) *httptest.Server {
+	t.Helper()
+	// No coder agent configured unless the test sets one afterwards.
+	setProviderConfigForTests(t)
+	t.Cleanup(config.ResetForTests)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "nope", http.StatusBadGateway)
+		switch r.URL.Path {
+		case "/auto":
+			routerCalls.Add(1)
+			http.Error(w, "nope", http.StatusBadGateway)
+		case "/models":
+			_, _ = w.Write([]byte(listing))
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
+	return server
+}
+
+func TestCopilotAutoRoutingFailureUsesConfiguredCoderModel(t *testing.T) {
+	resetCopilotAutoRoutes(t)
+	var routerCalls atomic.Int32
+	server := failingRouter(t, &routerCalls, `{"data":[
+		{"id":"pando-test-default-model","model_picker_enabled":true,"is_chat_fallback":true,
+		 "capabilities":{"type":"chat","supports":{"tool_calls":true}}}
+	]}`)
+	coder := models.Model{
+		ID:                 "copilot.pando-test-coder-model",
+		APIModel:           "pando-test-coder-model",
+		Provider:           models.ProviderCopilot,
+		SupportedEndpoints: []string{"/responses"},
+	}
+	models.SetSupportedModel(coder)
+	config.Get().Agents = map[config.AgentName]config.Agent{config.AgentCoder: {Model: coder.ID}}
+
+	c := newTestCopilotClient(t, server.URL, autoModel(), "")
+	routed, err := c.forRequest(sessionContext("s1"), []message.Message{userMessage("hi")})
+	if err != nil {
+		t.Fatalf("forRequest: %v", err)
+	}
+	if got := routed.providerOptions.model.APIModel; got != "pando-test-coder-model" {
+		t.Fatalf("model = %q, want the coder model configured in Pando", got)
+	}
+	if !routed.isResponsesAPIModel() || routed.autoSessionToken != "" {
+		t.Fatal("the coder model must keep its own route and carry no Auto token")
+	}
+}
+
+func TestCopilotAutoRoutingFailureSkipsCoderModelThatIsAuto(t *testing.T) {
+	resetCopilotAutoRoutes(t)
+	var routerCalls atomic.Int32
+	server := failingRouter(t, &routerCalls, `{"data":[
+		{"id":"pando-test-default-model","model_picker_enabled":true,"is_chat_fallback":true,
+		 "capabilities":{"type":"chat","supports":{"tool_calls":true}}}
+	]}`)
+	// The coder itself runs on Auto: that cannot be the fallback.
+	auto := autoModel()
+	models.SetSupportedModel(auto)
+	config.Get().Agents = map[config.AgentName]config.Agent{config.AgentCoder: {Model: auto.ID}}
+
+	c := newTestCopilotClient(t, server.URL, auto, "")
+	routed, err := c.forRequest(sessionContext("s1"), []message.Message{userMessage("hi")})
+	if err != nil {
+		t.Fatalf("forRequest: %v", err)
+	}
+	if got := routed.providerOptions.model.APIModel; got != "pando-test-default-model" {
+		t.Fatalf("model = %q, want the account's default chat model", got)
+	}
+}
+
+func TestCopilotAutoRoutingFailureUsesDefaultModel(t *testing.T) {
+	resetCopilotAutoRoutes(t)
+	var routerCalls atomic.Int32
+	server := failingRouter(t, &routerCalls, `{"data":[
+		{"id":"pando-test-pool-model","model_picker_enabled":true,"billing":{"auto_discount":0.1},
+		 "capabilities":{"type":"chat","supports":{"tool_calls":true}}},
+		{"id":"pando-test-hidden-default","model_picker_enabled":false,"is_chat_fallback":true,
+		 "capabilities":{"type":"chat","supports":{"tool_calls":true}}},
+		{"id":"pando-test-default-model","model_picker_enabled":true,"is_chat_fallback":true,
+		 "supported_endpoints":["/responses"],
+		 "capabilities":{"type":"chat","limits":{"max_output_tokens":256},"supports":{"tool_calls":true}}}
+	]}`)
+	c := newTestCopilotClient(t, server.URL, autoModel(), "")
+	msgs := []message.Message{userMessage("hi")}
+
+	routed, err := c.forRequest(sessionContext("s1"), msgs)
+	if err != nil {
+		t.Fatalf("forRequest: %v", err)
+	}
+	if got := routed.providerOptions.model.APIModel; got != "pando-test-default-model" {
+		t.Fatalf("model = %q, want the account's default chat model", got)
+	}
+	if !routed.isResponsesAPIModel() {
+		t.Fatal("the default model must keep the route Copilot advertises for it")
+	}
+	if routed.autoSessionToken != "" {
+		t.Fatal("a fallback has no Auto session token")
+	}
+	// The fallback is kept for a while instead of hitting the router each turn.
+	if _, err := c.forRequest(sessionContext("s1"), msgs); err != nil {
+		t.Fatalf("forRequest: %v", err)
+	}
+	if got := routerCalls.Load(); got != 1 {
+		t.Fatalf("router called %d times, want 1", got)
+	}
+}
+
+func TestCopilotAutoRoutingFailureUsesPoolWithoutDefault(t *testing.T) {
+	resetCopilotAutoRoutes(t)
+	var routerCalls atomic.Int32
+	server := failingRouter(t, &routerCalls, `{"data":[
+		{"id":"pando-test-plain-model","model_picker_enabled":true,
+		 "capabilities":{"type":"chat","supports":{"tool_calls":true}}},
+		{"id":"pando-test-pool-model","model_picker_enabled":true,"billing":{"auto_discount":0.1},
+		 "capabilities":{"type":"chat","supports":{"tool_calls":true}}}
+	]}`)
+	c := newTestCopilotClient(t, server.URL, autoModel(), "")
+
+	routed, err := c.forRequest(sessionContext("s1"), []message.Message{userMessage("hi")})
+	if err != nil {
+		t.Fatalf("forRequest: %v", err)
+	}
+	if got := routed.providerOptions.model.APIModel; got != "pando-test-pool-model" {
+		t.Fatalf("model = %q, want the first Auto pool model", got)
+	}
+}
+
+func TestCopilotAutoRoutingFailureWithoutAnyDefaultIsAnError(t *testing.T) {
+	resetCopilotAutoRoutes(t)
+	var routerCalls atomic.Int32
+	server := failingRouter(t, &routerCalls, `{"data":[]}`)
 	c := newTestCopilotClient(t, server.URL, autoModel(), "")
 
 	if _, err := c.forRequest(sessionContext("s1"), []message.Message{userMessage("hi")}); err == nil {
-		t.Fatal("expected an error when the router fails and there is no previous pick")
+		t.Fatal("expected an error when the router fails and no default model exists")
 	}
 }
 

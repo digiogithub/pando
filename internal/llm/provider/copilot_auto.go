@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/auth"
+	"github.com/digiogithub/pando/internal/config"
 	"github.com/digiogithub/pando/internal/llm/models"
 	toolsPkg "github.com/digiogithub/pando/internal/llm/tools"
 	"github.com/digiogithub/pando/internal/logging"
@@ -112,7 +113,20 @@ func (c *copilotClient) autoRoute(ctx context.Context, messages []message.Messag
 			cached.token = ""
 			return cached, nil
 		}
-		return copilotAutoRoute{}, fmt.Errorf("copilot auto routing failed: %w", err)
+		// No pick to fall back on: use the coder model configured in Pando, and
+		// ask the router again soon.
+		fallback, ok := configuredCoderCopilotModel()
+		if !ok {
+			// The coder is not on a callable Copilot model (it is Auto itself, or
+			// another provider's): use the account's default chat model.
+			var fallbackErr error
+			fallback, fallbackErr = c.autoFallbackModel(ctx)
+			if fallbackErr != nil {
+				return copilotAutoRoute{}, fmt.Errorf("copilot auto routing failed: %w (no default model: %v)", err, fallbackErr)
+			}
+		}
+		logging.Warn("Copilot Auto routing failed, using the default model", "model", fallback.APIModel, "error", err)
+		route = copilotAutoRoute{model: fallback, until: now.Add(copilotAutoRenewMargin)}
 	}
 	route.account = account
 
@@ -131,24 +145,9 @@ func (c *copilotClient) autoRoute(ctx context.Context, messages []message.Messag
 
 // copilotAutoSelection is the body of a successful POST /auto.
 type copilotAutoSelection struct {
-	SessionToken  string `json:"session_token"`
-	ExpiresAt     int64  `json:"expires_at"`
-	SelectedModel struct {
-		ID                 string   `json:"id"`
-		Name               string   `json:"name"`
-		SupportedEndpoints []string `json:"supported_endpoints"`
-		Capabilities       struct {
-			Limits struct {
-				MaxContextWindowTokens int64 `json:"max_context_window_tokens"`
-				MaxOutputTokens        int64 `json:"max_output_tokens"`
-				MaxPromptTokens        int64 `json:"max_prompt_tokens"`
-			} `json:"limits"`
-			Supports struct {
-				ReasoningEffort []string `json:"reasoning_effort"`
-				Vision          bool     `json:"vision"`
-			} `json:"supports"`
-		} `json:"capabilities"`
-	} `json:"selected_model"`
+	SessionToken  string             `json:"session_token"`
+	ExpiresAt     int64              `json:"expires_at"`
+	SelectedModel copilotRemoteModel `json:"selected_model"`
 }
 
 func (c *copilotClient) requestAutoRoute(ctx context.Context, messages []message.Message) (copilotAutoRoute, error) {
@@ -209,17 +208,121 @@ func (c *copilotClient) requestAutoRoute(ctx context.Context, messages []message
 		until = time.Unix(selection.ExpiresAt, 0).Add(-copilotAutoRenewMargin)
 	}
 	return copilotAutoRoute{
-		model: c.autoSelectedModel(selection),
+		model: c.catalogModel(selection.SelectedModel),
 		token: selection.SessionToken,
 		until: until,
 	}, nil
 }
 
-// autoSelectedModel resolves the router's pick to a catalog model, which
-// carries the curated metadata (costs, reasoning support). A pick the catalog
-// does not list is built from what the router itself reported about it.
-func (c *copilotClient) autoSelectedModel(selection copilotAutoSelection) models.Model {
-	picked := selection.SelectedModel
+// copilotRemoteModel is what Copilot reports about a model, both in the router's
+// answer and in the model listing.
+type copilotRemoteModel struct {
+	ID                 string   `json:"id"`
+	Name               string   `json:"name"`
+	ModelPickerEnabled bool     `json:"model_picker_enabled"`
+	IsChatFallback     bool     `json:"is_chat_fallback"`
+	SupportedEndpoints []string `json:"supported_endpoints"`
+	Policy             *struct {
+		State string `json:"state"`
+	} `json:"policy"`
+	Billing *struct {
+		AutoDiscount *float64 `json:"auto_discount"`
+	} `json:"billing"`
+	Capabilities struct {
+		Type   string `json:"type"`
+		Limits struct {
+			MaxContextWindowTokens int64 `json:"max_context_window_tokens"`
+			MaxOutputTokens        int64 `json:"max_output_tokens"`
+			MaxPromptTokens        int64 `json:"max_prompt_tokens"`
+		} `json:"limits"`
+		Supports struct {
+			ReasoningEffort []string `json:"reasoning_effort"`
+			Vision          bool     `json:"vision"`
+			ToolCalls       bool     `json:"tool_calls"`
+		} `json:"supports"`
+	} `json:"capabilities"`
+}
+
+// configuredCoderCopilotModel returns the model configured for Pando's coder
+// agent when this client can serve it: a Copilot model other than Auto.
+func configuredCoderCopilotModel() (models.Model, bool) {
+	cfg := config.Get()
+	if cfg == nil {
+		return models.Model{}, false
+	}
+	coder, ok := cfg.Agents[config.AgentCoder]
+	if !ok {
+		return models.Model{}, false
+	}
+	model, ok := models.SupportedModels()[coder.Model]
+	if !ok || model.Provider != models.ProviderCopilot || models.IsCopilotAutoModel(model) {
+		return models.Model{}, false
+	}
+	return model, true
+}
+
+// autoFallbackModel returns the model that serves an Auto session when neither
+// the router nor the configured coder model can: the one Copilot marks as the account's default chat
+// model (is_chat_fallback), or else the first model of the Auto pool.
+func (c *copilotClient) autoFallbackModel(ctx context.Context) (models.Model, error) {
+	ctx, cancel := context.WithTimeout(ctx, copilotAutoRouteTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(c.baseURL, "/")+"/models", nil)
+	if err != nil {
+		return models.Model{}, err
+	}
+	auth.ApplyCopilotClientHeaders(req.Header)
+	for key, value := range c.options.extraHeaders {
+		req.Header.Set(key, value)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.options.bearerToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return models.Model{}, err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return models.Model{}, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return models.Model{}, fmt.Errorf("models status %d", resp.StatusCode)
+	}
+	var listing struct {
+		Data []copilotRemoteModel `json:"data"`
+	}
+	if err := json.Unmarshal(data, &listing); err != nil {
+		return models.Model{}, fmt.Errorf("parse models: %w", err)
+	}
+
+	var pool *copilotRemoteModel
+	for i := range listing.Data {
+		remote := &listing.Data[i]
+		usable := remote.ModelPickerEnabled && remote.Capabilities.Supports.ToolCalls &&
+			(remote.Policy == nil || remote.Policy.State != "disabled") &&
+			(remote.Capabilities.Type == "" || remote.Capabilities.Type == "chat")
+		if !usable {
+			continue
+		}
+		if remote.IsChatFallback {
+			return c.catalogModel(*remote), nil
+		}
+		if pool == nil && remote.Billing != nil && remote.Billing.AutoDiscount != nil {
+			pool = remote
+		}
+	}
+	if pool != nil {
+		return c.catalogModel(*pool), nil
+	}
+	return models.Model{}, fmt.Errorf("the account lists no default chat model")
+}
+
+// catalogModel resolves a model Copilot named to a catalog model, which
+// carries the curated metadata (costs, reasoning support). One the catalog
+// does not list is built from what Copilot itself reported about it.
+func (c *copilotClient) catalogModel(picked copilotRemoteModel) models.Model {
 	accountID := c.providerOptions.model.AccountID
 	for _, candidate := range models.SupportedModels() {
 		if candidate.Provider == models.ProviderCopilot && candidate.APIModel == picked.ID && candidate.AccountID == accountID {
