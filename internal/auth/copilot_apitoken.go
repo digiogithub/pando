@@ -236,6 +236,14 @@ func ResolveCopilotAPIAccess(ctx context.Context, token, enterpriseURL, configur
 		exchanged = exchangeAnyLocalToken(ctx, token, enterpriseURL)
 	}
 	if exchanged == nil || strings.TrimSpace(exchanged.Token) == "" {
+		// No exchanged token: the raw OAuth token is the bearer. It still has to
+		// go to the account's own API host (it changes with the plan), which
+		// GitHub reports on the account record.
+		if strings.TrimSpace(configuredBaseURL) == "" {
+			if endpoint := DiscoverCopilotAPIEndpoint(ctx, token, enterpriseURL); endpoint != "" {
+				return token, endpoint
+			}
+		}
 		return token, fallbackBaseURL
 	}
 

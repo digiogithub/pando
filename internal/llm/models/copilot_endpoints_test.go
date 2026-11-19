@@ -199,3 +199,80 @@ func TestModelFromFetchedAccountModelCarriesCapabilities(t *testing.T) {
 		t.Fatal("CopilotModelUsesResponsesAPI() = false, want true")
 	}
 }
+
+func TestFetchCopilotModelsAddsAutoFromPool(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-GitHub-Api-Version"); got == "" {
+			t.Error("X-GitHub-Api-Version header missing on the models request")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[
+			{"id":"gpt-6-luna","name":"GPT-6 Luna","model_picker_enabled":true,
+			 "billing":{"auto_discount":0.1},
+			 "capabilities":{"type":"chat","limits":{"max_context_window_tokens":1000000,"max_output_tokens":128000},
+			  "supports":{"tool_calls":true,"vision":true}}},
+			{"id":"claude-sonnet-5.5","name":"Claude Sonnet 5.5","model_picker_enabled":true,
+			 "billing":{"auto_discount":0.1},
+			 "capabilities":{"type":"chat","limits":{"max_context_window_tokens":200000,"max_output_tokens":64000},
+			  "supports":{"tool_calls":true,"vision":true}}},
+			{"id":"gpt-4.1","name":"GPT-4.1","model_picker_enabled":false,
+			 "billing":{"auto_discount":0.1},
+			 "capabilities":{"type":"chat","limits":{"max_context_window_tokens":1000,"max_output_tokens":100},
+			  "supports":{"tool_calls":true}}},
+			{"id":"gemini-4-argon","name":"Gemini 4 Argon","model_picker_enabled":true,
+			 "capabilities":{"type":"chat","limits":{"max_context_window_tokens":50000,"max_output_tokens":8000},
+			  "supports":{"tool_calls":true}}}
+		]}`))
+	}))
+	defer server.Close()
+
+	oldURL := copilotModelsURL
+	copilotModelsURL = server.URL
+	t.Cleanup(func() { copilotModelsURL = oldURL })
+
+	fetched, err := fetchCopilotModels(context.Background(), "test-token")
+	if err != nil {
+		t.Fatalf("fetchCopilotModels() error = %v", err)
+	}
+	var auto *FetchedModel
+	for i := range fetched {
+		if fetched[i].ID == CopilotAutoModelID {
+			auto = &fetched[i]
+		}
+	}
+	if auto == nil {
+		t.Fatalf("Auto model missing from %d fetched models", len(fetched))
+	}
+	// Smallest window and cap of the pool; models outside the picker or
+	// without an Auto discount do not count.
+	if auto.ContextWindow != 200000 || auto.MaxOutputTokens != 64000 {
+		t.Fatalf("Auto limits = %d/%d, want 200000/64000", auto.ContextWindow, auto.MaxOutputTokens)
+	}
+	if !auto.SupportsAttachments {
+		t.Fatal("Auto should accept images when every pool model does")
+	}
+}
+
+func TestFetchCopilotModelsOmitsAutoWithoutPool(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[
+			{"id":"gemini-4-argon","name":"Gemini 4 Argon","model_picker_enabled":true,
+			 "capabilities":{"type":"chat","limits":{"max_context_window_tokens":50000},"supports":{"tool_calls":true}}}
+		]}`))
+	}))
+	defer server.Close()
+
+	oldURL := copilotModelsURL
+	copilotModelsURL = server.URL
+	t.Cleanup(func() { copilotModelsURL = oldURL })
+
+	fetched, err := fetchCopilotModels(context.Background(), "test-token")
+	if err != nil {
+		t.Fatalf("fetchCopilotModels() error = %v", err)
+	}
+	for _, model := range fetched {
+		if model.ID == CopilotAutoModelID {
+			t.Fatal("Auto must not be listed when no model is in the Auto pool")
+		}
+	}
+}

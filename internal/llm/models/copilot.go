@@ -36,6 +36,16 @@ func IsCopilotAnthropicModel(apiModel string) bool {
 	return strings.Contains(strings.ToLower(apiModel), "claude")
 }
 
+// CopilotAutoModelID is the API id of Copilot's Auto model. It is not a model
+// that can be called: the provider asks Copilot's router (POST /auto) which
+// pool model serves the session and sends the request to that one.
+const CopilotAutoModelID = "auto"
+
+// IsCopilotAutoModel reports whether m is Copilot's Auto router model.
+func IsCopilotAutoModel(m Model) bool {
+	return m.Provider == ProviderCopilot && m.APIModel == CopilotAutoModelID
+}
+
 // Endpoint identifiers as reported by the Copilot /models API in
 // "supported_endpoints".
 const (

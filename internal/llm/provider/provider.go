@@ -377,7 +377,8 @@ func WithBedrockOptions(bedrockOptions ...BedrockOption) ProviderClientOption {
 
 func WithCopilotOptions(copilotOptions ...CopilotOption) ProviderClientOption {
 	return func(options *providerClientOptions) {
-		options.copilotOptions = copilotOptions
+		// Append: the agent adds its own options on top of the account's.
+		options.copilotOptions = append(options.copilotOptions, copilotOptions...)
 	}
 }
 

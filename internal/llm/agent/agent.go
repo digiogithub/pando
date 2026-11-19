@@ -3099,6 +3099,9 @@ func createAgentProvider(ctx context.Context, agentName config.AgentName, agentT
 				provider.WithCopilotReasoningEffort(effectiveReasoningEffort(model, agentConfig, sessionOverrides)),
 			))
 		}
+		if model.Provider == models.ProviderCopilot {
+			opts = append(opts, provider.WithCopilotOptions(copilotAgentOptions(agentName)...))
+		}
 		if model.Provider == models.ProviderAnthropic && model.CanReason {
 			opts = append(opts, provider.WithAnthropicOptions(
 				provider.WithAnthropicThinkingMode(effectiveAnthropicThinkingMode(model, agentConfig, sessionOverrides)),
@@ -3132,11 +3135,35 @@ func createAgentProvider(ctx context.Context, agentName config.AgentName, agentT
 	if retryBudget > 0 {
 		extraOpts = append(extraOpts, provider.WithMaxRetries(retryBudget))
 	}
+	if model.Provider == models.ProviderCopilot {
+		extraOpts = append(extraOpts, provider.WithCopilotOptions(copilotAgentOptions(agentName)...))
+	}
 	agentProvider, err := provider.NewProviderFromAccount(*acc, model, maxTokens, systemMessage, extraOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("could not create provider: %w", err)
 	}
 	return agentProvider, nil
+}
+
+// copilotAgentOptions tells Copilot what kind of request an agent makes. The
+// coder is the agent loop the user drives; every other agent runs on its behalf.
+// Titles additionally go to Copilot's free utility model first.
+func copilotAgentOptions(agentName config.AgentName) []provider.CopilotOption {
+	switch agentName {
+	case config.AgentTitle:
+		return []provider.CopilotOption{
+			provider.WithCopilotInteractionType(provider.CopilotInteractionBackground),
+			provider.WithCopilotUtilityModel(provider.CopilotUtilityTitleModel),
+		}
+	case config.AgentSummarizer:
+		return []provider.CopilotOption{provider.WithCopilotInteractionType(provider.CopilotInteractionCompaction)}
+	case config.AgentTask:
+		return []provider.CopilotOption{provider.WithCopilotInteractionType(provider.CopilotInteractionSubagent)}
+	case config.AgentPersonaSelector, config.AgentContextEnricher:
+		return []provider.CopilotOption{provider.WithCopilotInteractionType(provider.CopilotInteractionBackground)}
+	default:
+		return []provider.CopilotOption{provider.WithCopilotInteractionType(provider.CopilotInteractionAgent)}
+	}
 }
 
 func defaultAnthropicThinkingMode(model models.Model, configuredMode config.ThinkingMode) config.ThinkingMode {

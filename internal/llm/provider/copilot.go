@@ -17,7 +17,6 @@ import (
 	"github.com/digiogithub/pando/internal/logging"
 	"github.com/digiogithub/pando/internal/message"
 	"github.com/digiogithub/pando/internal/notify"
-	"github.com/digiogithub/pando/internal/version"
 	"github.com/google/uuid"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
@@ -30,6 +29,11 @@ type copilotOptions struct {
 	extraHeaders    map[string]string
 	bearerToken     string
 	baseURL         string
+	// interactionType is sent as X-Interaction-Type; empty means the agent loop.
+	interactionType string
+	// utilityModel, when set, is tried first for non-streaming requests. It is
+	// Copilot's free utility model, used for session titles.
+	utilityModel string
 }
 
 type CopilotOption func(*copilotOptions)
@@ -44,6 +48,9 @@ type copilotClient struct {
 	// re-run the exchange when the current one is about to expire.
 	sourceToken   string
 	enterpriseURL string
+	// autoSessionToken unlocks the model Copilot's Auto router picked for this
+	// request. It is only set on the per-request copy made by forRequest.
+	autoSessionToken string
 }
 
 type CopilotClient ProviderClient
@@ -116,14 +123,50 @@ func newCopilotOpenAIClient(accessToken, baseURL string, headers map[string]stri
 	return openai.NewClient(options...)
 }
 
-func (c *copilotClient) requestHeaders(messages []message.Message) map[string]string {
-	headers := map[string]string{
-		"Editor-Version":         "Pando/" + version.Version,
-		"Editor-Plugin-Version":  "Pando/" + version.Version,
-		"Copilot-Integration-Id": "vscode-chat",
-		"User-Agent":             "Pando/" + version.Version,
-		"Openai-Intent":          "conversation-edits",
-		"x-initiator":            c.initiator(messages),
+// Copilot's X-Interaction-Type vocabulary: the agent loop is the default, and
+// the other values mark requests the user did not directly ask for.
+const (
+	CopilotInteractionAgent      = "conversation-agent"
+	CopilotInteractionSubagent   = "conversation-subagent"
+	CopilotInteractionBackground = "conversation-background"
+	CopilotInteractionCompaction = "conversation-compaction"
+)
+
+func (c *copilotClient) interactionType() string {
+	if c.options.interactionType != "" {
+		return c.options.interactionType
+	}
+	return CopilotInteractionAgent
+}
+
+// copilotInteractionID is the session the request belongs to, so Copilot can
+// group the turns of one conversation.
+func copilotInteractionID(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	sessionID, _ := ctx.Value(toolsPkg.SessionIDContextKey).(string)
+	return strings.TrimSpace(sessionID)
+}
+
+func (c *copilotClient) requestHeaders(ctx context.Context, messages []message.Message) map[string]string {
+	headers := auth.CopilotClientHeaders()
+	headers["Openai-Intent"] = "conversation-edits"
+
+	interaction := c.interactionType()
+	headers["X-Interaction-Type"] = interaction
+	if id := copilotInteractionID(ctx); id != "" {
+		headers["X-Interaction-Id"] = id
+	}
+	// Subagent, title and compaction requests are agent-initiated whatever the
+	// last message is; the agent loop decides from the conversation.
+	if interaction != CopilotInteractionAgent {
+		headers["x-initiator"] = "agent"
+	} else {
+		headers["x-initiator"] = c.initiator(messages)
+	}
+	if c.autoSessionToken != "" {
+		headers["Copilot-Session-Token"] = c.autoSessionToken
 	}
 	if c.hasVisionInput(messages) {
 		headers["Copilot-Vision-Request"] = "true"
@@ -141,9 +184,9 @@ func (c *copilotClient) requestHeaders(messages []message.Message) map[string]st
 	return headers
 }
 
-func (c *copilotClient) requestClient(messages []message.Message) openai.Client {
+func (c *copilotClient) requestClient(ctx context.Context, messages []message.Message) openai.Client {
 	c.refreshBearerToken()
-	return newCopilotOpenAIClient(c.options.bearerToken, c.baseURL, c.requestHeaders(messages))
+	return newCopilotOpenAIClient(c.options.bearerToken, c.baseURL, c.requestHeaders(ctx, messages))
 }
 
 // refreshBearerToken renews the exchanged Copilot API token when it is close to
@@ -159,7 +202,7 @@ func (c *copilotClient) refreshBearerToken() {
 	}
 	c.options.bearerToken = bearer
 	c.baseURL = baseURL
-	c.client = newCopilotOpenAIClient(bearer, baseURL, c.requestHeaders(nil))
+	c.client = newCopilotOpenAIClient(bearer, baseURL, c.requestHeaders(context.Background(), nil))
 }
 
 func (c *copilotClient) initiator(messages []message.Message) string {
@@ -195,7 +238,7 @@ func (c *copilotClient) reloadCredentials() bool {
 	c.baseURL = creds.baseURL
 	c.sourceToken = creds.sourceToken
 	c.enterpriseURL = creds.enterpriseURL
-	c.client = newCopilotOpenAIClient(creds.bearerToken, creds.baseURL, c.requestHeaders(nil))
+	c.client = newCopilotOpenAIClient(creds.bearerToken, creds.baseURL, c.requestHeaders(context.Background(), nil))
 	if cfg := config.Get(); cfg != nil && cfg.Debug {
 		logging.Debug("Copilot credentials reloaded", "baseURL", creds.baseURL)
 	}
@@ -251,25 +294,18 @@ func newCopilotClient(opts providerClientOptions) CopilotClient {
 		return &copilotClient{providerOptions: opts, options: copilotOpts, baseURL: baseURL}
 	}
 
-	client := newCopilotOpenAIClient(bearerToken, baseURL, map[string]string{
-		"Editor-Version":         "Pando/" + version.Version,
-		"Editor-Plugin-Version":  "Pando/" + version.Version,
-		"Copilot-Integration-Id": "vscode-chat",
-		"User-Agent":             "Pando/" + version.Version,
-		"Openai-Intent":          "conversation-edits",
-		"x-initiator":            "user",
-	})
-	if cfg := config.Get(); cfg != nil && cfg.Debug {
-		logging.Debug("Copilot client created", "model", opts.model.APIModel, "baseURL", baseURL)
-	}
-	return &copilotClient{
+	built := &copilotClient{
 		providerOptions: opts,
 		options:         copilotOpts,
-		client:          client,
 		baseURL:         baseURL,
 		sourceToken:     creds.sourceToken,
 		enterpriseURL:   creds.enterpriseURL,
 	}
+	built.client = newCopilotOpenAIClient(bearerToken, baseURL, built.requestHeaders(context.Background(), nil))
+	if cfg := config.Get(); cfg != nil && cfg.Debug {
+		logging.Debug("Copilot client created", "model", opts.model.APIModel, "baseURL", baseURL)
+	}
+	return built
 }
 
 func (c *copilotClient) convertMessages(messages []message.Message) (copilotMessages []openai.ChatCompletionMessageParamUnion) {
@@ -421,6 +457,13 @@ func (c *copilotClient) preparedParams(messages []openai.ChatCompletionMessagePa
 }
 
 func (c *copilotClient) send(ctx context.Context, messages []message.Message, tools []toolsPkg.BaseTool) (response *ProviderResponse, err error) {
+	if utility, ok := c.sendWithUtilityModel(ctx, messages, tools); ok {
+		return utility, nil
+	}
+	c, err = c.forRequest(ctx, messages)
+	if err != nil {
+		return nil, err
+	}
 	if c.isResponsesAPIModel() {
 		return c.sendWithResponsesAPI(ctx, messages, tools)
 	}
@@ -446,7 +489,7 @@ func (c *copilotClient) send(ctx context.Context, messages []message.Message, to
 	attempts := 0
 	for {
 		attempts++
-		client := c.requestClient(messages)
+		client := c.requestClient(ctx, messages)
 		copilotResponse, err := client.Chat.Completions.New(
 			ctx,
 			params,
@@ -515,6 +558,13 @@ func (c *copilotClient) send(ctx context.Context, messages []message.Message, to
 }
 
 func (c *copilotClient) stream(ctx context.Context, messages []message.Message, tools []toolsPkg.BaseTool) <-chan ProviderEvent {
+	c, routeErr := c.forRequest(ctx, messages)
+	if routeErr != nil {
+		errChan := make(chan ProviderEvent, 1)
+		errChan <- ProviderEvent{Type: EventError, Error: routeErr}
+		close(errChan)
+		return errChan
+	}
 	if c.isResponsesAPIModel() {
 		return c.streamWithResponsesAPI(ctx, messages, tools)
 	}
@@ -549,7 +599,7 @@ func (c *copilotClient) stream(ctx context.Context, messages []message.Message, 
 			if cfg.Debug {
 				logging.Debug("Copilot stream started", "model", c.providerOptions.model.APIModel, "attempt", attempts, "isAnthropicModel", c.isAnthropicModel())
 			}
-			client := c.requestClient(messages)
+			client := c.requestClient(ctx, messages)
 			copilotStream := client.Chat.Completions.NewStreaming(
 				ctx,
 				params,
@@ -904,7 +954,7 @@ func (c *copilotClient) sendWithResponsesAPI(ctx context.Context, msgs []message
 	reasoningStripped := false
 	for {
 		attempts++
-		client := c.requestClient(msgs)
+		client := c.requestClient(ctx, msgs)
 		resp, err := client.Responses.New(ctx, params, responsesReasoningSummaryOpts(params)...)
 		if err != nil {
 			if !reasoningStripped && params.Reasoning.IsPresent() && isReasoningSummaryRejection(err) {
@@ -1005,7 +1055,7 @@ func (c *copilotClient) streamWithResponsesAPI(ctx context.Context, msgs []messa
 			if cfg.Debug {
 				logging.Debug("Copilot Responses API stream started", "model", c.providerOptions.model.APIModel, "attempt", attempts)
 			}
-			client := c.requestClient(msgs)
+			client := c.requestClient(ctx, msgs)
 			stream := client.Responses.NewStreaming(ctx, params, responsesReasoningSummaryOpts(params)...)
 
 			currentContent := ""
@@ -1217,6 +1267,23 @@ func WithCopilotReasoningEffort(effort string) CopilotOption {
 func WithCopilotExtraHeaders(headers map[string]string) CopilotOption {
 	return func(options *copilotOptions) {
 		options.extraHeaders = headers
+	}
+}
+
+// WithCopilotInteractionType sets the X-Interaction-Type header, telling Copilot
+// which kind of request this client makes (see the CopilotInteraction* values).
+func WithCopilotInteractionType(interactionType string) CopilotOption {
+	return func(options *copilotOptions) {
+		options.interactionType = interactionType
+	}
+}
+
+// WithCopilotUtilityModel makes non-streaming requests try Copilot's free
+// utility model first, falling back to the configured model when it is not
+// available. Meant for session titles.
+func WithCopilotUtilityModel(model string) CopilotOption {
+	return func(options *copilotOptions) {
+		options.utilityModel = model
 	}
 }
 

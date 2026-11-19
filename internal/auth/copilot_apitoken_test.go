@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"net/http"
 	"testing"
 	"time"
 )
@@ -78,6 +79,10 @@ func TestResolveCopilotAPIAccessFallsBack(t *testing.T) {
 	// happens whenever the exchange request fails: the raw token and the default
 	// host must be returned unchanged.
 	t.Setenv("PANDO_COPILOT_TOKEN_EXCHANGE", "0")
+	// The account lookup fails too, so nothing advertises another host.
+	stubCopilotUser(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	})
 
 	token, baseURL := ResolveCopilotAPIAccess(context.Background(), "gho_test", "", "")
 	if token != "gho_test" {

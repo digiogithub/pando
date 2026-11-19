@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -366,6 +367,13 @@ func CompleteCopilotDeviceFlow(ctx context.Context, enterpriseURL string, device
 	if err != nil {
 		return nil, err
 	}
+	// OAuth succeeds for any GitHub account; only the account record says
+	// whether it can chat. A failed lookup must not turn into a denial.
+	if user, userErr := FetchCopilotUser(ctx, session.AccessToken, session.EnterpriseURL); userErr == nil {
+		if denied := CopilotEntitlementError(user); denied != "" {
+			return nil, errors.New(denied)
+		}
+	}
 	if err := ValidateCopilotToken(ctx, *session); err != nil {
 		return nil, err
 	}
@@ -416,18 +424,19 @@ func ValidateCopilotToken(ctx context.Context, session CopilotSession) error {
 		return fmt.Errorf("copilot access token cannot be empty")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, CopilotAPIBaseURL(session.EnterpriseURL)+"/models", nil)
+	baseURL := CopilotAPIBaseURL(session.EnterpriseURL)
+	if endpoint := DiscoverCopilotAPIEndpoint(ctx, token, session.EnterpriseURL); endpoint != "" {
+		baseURL = endpoint
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/models", nil)
 	if err != nil {
 		return fmt.Errorf("create validation request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("User-Agent", "Pando/"+version.Version)
 	// The per-seat hosts (api.business/api.enterprise.githubcopilot.com) reject
 	// requests that do not identify an editor with 400 model_not_supported.
-	req.Header.Set("Editor-Version", "Pando/"+version.Version)
-	req.Header.Set("Editor-Plugin-Version", "Pando/"+version.Version)
-	req.Header.Set("Copilot-Integration-Id", "vscode-chat")
+	ApplyCopilotClientHeaders(req.Header)
 	req.Header.Set("Openai-Intent", "conversation-edits")
 	req.Header.Set("x-initiator", "user")
 
@@ -462,12 +471,9 @@ func CheckCopilotModelsAPI(token, baseURL string) error {
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("User-Agent", "Pando/"+version.Version)
 	// The per-seat hosts (api.business/api.enterprise.githubcopilot.com) reject
 	// requests that do not identify an editor with 400 model_not_supported.
-	req.Header.Set("Editor-Version", "Pando/"+version.Version)
-	req.Header.Set("Editor-Plugin-Version", "Pando/"+version.Version)
-	req.Header.Set("Copilot-Integration-Id", "vscode-chat")
+	ApplyCopilotClientHeaders(req.Header)
 	req.Header.Set("Openai-Intent", "conversation-edits")
 	req.Header.Set("x-initiator", "user")
 

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/digiogithub/pando/internal/auth"
-	"github.com/digiogithub/pando/internal/version"
 )
 
 const defaultCopilotModelsURL = "https://api.githubcopilot.com/models"
@@ -298,10 +297,7 @@ func requestCopilotModels(ctx context.Context, modelsURL, bearerToken string) ([
 	}
 	req.Header.Set("Authorization", "Bearer "+bearerToken)
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "Pando/"+version.Version)
-	req.Header.Set("Editor-Version", "Pando/"+version.Version)
-	req.Header.Set("Editor-Plugin-Version", "Pando/"+version.Version)
-	req.Header.Set("Copilot-Integration-Id", "vscode-chat")
+	auth.ApplyCopilotClientHeaders(req.Header)
 
 	return doModelRequest(req, func(body []byte) ([]FetchedModel, error) {
 		var response struct {
@@ -311,9 +307,13 @@ func requestCopilotModels(ctx context.Context, modelsURL, bearerToken string) ([
 				Version            string   `json:"version"`
 				ModelPickerEnabled bool     `json:"model_picker_enabled"`
 				SupportedEndpoints []string `json:"supported_endpoints,omitempty"`
+				IsChatFallback     bool     `json:"is_chat_fallback,omitempty"`
 				Policy             *struct {
 					State string `json:"state,omitempty"`
 				} `json:"policy,omitempty"`
+				Billing *struct {
+					AutoDiscount *float64 `json:"auto_discount,omitempty"`
+				} `json:"billing,omitempty"`
 				Capabilities struct {
 					Type   string `json:"type,omitempty"`
 					Limits struct {
@@ -332,7 +332,10 @@ func requestCopilotModels(ctx context.Context, modelsURL, bearerToken string) ([
 		if err := json.Unmarshal(body, &response); err != nil {
 			return nil, fmt.Errorf("parse response: %w", err)
 		}
-		result := make([]FetchedModel, 0, len(response.Data))
+		result := make([]FetchedModel, 0, len(response.Data)+1)
+		// Copilot's Auto pool: the models its router may pick for a session.
+		auto := FetchedModel{ID: CopilotAutoModelID, Name: "Auto"}
+		autoPool := 0
 		for _, m := range response.Data {
 			// Filter out models not shown in the model picker or explicitly disabled.
 			// Matches the opencode reference implementation filter logic.
@@ -365,9 +368,40 @@ func requestCopilotModels(ctx context.Context, modelsURL, bearerToken string) ([
 				SupportsReasoningEffort: supportsReasoningEffort,
 				SupportsAttachments:     m.Capabilities.Supports.Vision,
 			})
+
+			if m.Billing == nil || m.Billing.AutoDiscount == nil || !m.Capabilities.Supports.ToolCalls {
+				continue
+			}
+			// Any pool model may serve a session, so Auto advertises the
+			// smallest window and output cap, and images only if all take them.
+			maxOutput := m.Capabilities.Limits.MaxOutputTokens
+			if autoPool == 0 {
+				auto.ContextWindow, auto.MaxOutputTokens = contextWindow, maxOutput
+				auto.SupportsAttachments = m.Capabilities.Supports.Vision
+			} else {
+				auto.ContextWindow = minPositive(auto.ContextWindow, contextWindow)
+				auto.MaxOutputTokens = minPositive(auto.MaxOutputTokens, maxOutput)
+				auto.SupportsAttachments = auto.SupportsAttachments && m.Capabilities.Supports.Vision
+			}
+			autoPool++
+		}
+		if autoPool > 0 {
+			auto.Description = "Copilot picks the model for each session from the account's Auto pool."
+			result = append(result, auto)
 		}
 		return result, nil
 	})
+}
+
+// minPositive returns the smaller of two values, ignoring non-positive ones.
+func minPositive(a, b int64) int64 {
+	if a <= 0 {
+		return b
+	}
+	if b <= 0 || a < b {
+		return a
+	}
+	return b
 }
 
 func fetchOpenAIModels(ctx context.Context, apiKey string) ([]FetchedModel, error) {
