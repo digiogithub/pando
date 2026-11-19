@@ -53,8 +53,11 @@ const (
 // gpt-version heuristic can classify. This mirrors how the official VS Code
 // extension routes requests (see chatEndpoint.ts, useResponsesApi).
 //
-// When a model advertises both routes we keep the historical name-based
-// decision, so models like gpt-5-mini keep working over Chat Completions.
+// When a model advertises both routes /responses wins, matching the opencode
+// reference (messages > responses > chat): "mai-code-2" lists both yet answers
+// 400 "no model endpoints available given user constraints" on
+// /chat/completions. The only exception is the gpt-5-mini family, which has
+// always been served over Chat Completions.
 // Models with no advertised endpoints (static catalogue entries, older API
 // responses) fall back to the name heuristic entirely.
 func CopilotModelUsesResponsesAPI(m Model) bool {
@@ -67,7 +70,11 @@ func CopilotModelUsesResponsesAPI(m Model) bool {
 	if !slices.Contains(m.SupportedEndpoints, CopilotEndpointChatCompletions) {
 		return true
 	}
-	return IsCopilotResponsesAPIModel(m.APIModel)
+	return !isCopilotGPT5Mini(m.APIModel)
+}
+
+func isCopilotGPT5Mini(apiModel string) bool {
+	return strings.HasPrefix(strings.ToLower(apiModel), "gpt-5-mini")
 }
 
 // responsesAPIModelRE matches models like "gpt-5", "gpt-5.4"; compiled once at package level.
@@ -77,13 +84,18 @@ var responsesAPIModelRE = regexp.MustCompile(`(?i)^gpt-(\d+)`)
 // based on its name alone. It is the fallback used by CopilotModelUsesResponsesAPI
 // when the provider does not advertise the model's supported endpoints; prefer
 // that function whenever a full Model is available.
-// GPT-5+ models (except gpt-5-mini variants) require the Responses API.
+// GPT-5+ models (except gpt-5-mini variants), Grok and MAI Code require the
+// Responses API.
 func IsCopilotResponsesAPIModel(apiModel string) bool {
+	lower := strings.ToLower(apiModel)
+	if strings.HasPrefix(lower, "grok-") || strings.HasPrefix(lower, "mai-code-") {
+		return true
+	}
 	m := responsesAPIModelRE.FindStringSubmatch(apiModel)
 	if m == nil {
 		return false
 	}
 	major := 0
 	fmt.Sscanf(m[1], "%d", &major)
-	return major >= 5 && !strings.HasPrefix(strings.ToLower(apiModel), "gpt-5-mini")
+	return major >= 5 && !isCopilotGPT5Mini(apiModel)
 }

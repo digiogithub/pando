@@ -31,7 +31,23 @@ func TestCopilotModelUsesResponsesAPI(t *testing.T) {
 			expected: false,
 		},
 		{
-			// Advertising both routes keeps the historical name-based decision.
+			// mai-code-2 lists both routes but rejects /chat/completions with
+			// 400 "no model endpoints available given user constraints".
+			name:     "both endpoints, non-gpt name prefers responses",
+			model:    Model{APIModel: "mai-code-2", SupportedEndpoints: []string{"/chat/completions", "/responses"}},
+			expected: true,
+		},
+		{
+			name:     "no metadata, mai-code name",
+			model:    Model{APIModel: "mai-code-2"},
+			expected: true,
+		},
+		{
+			name:     "no metadata, grok name",
+			model:    Model{APIModel: "grok-4.7"},
+			expected: true,
+		},
+		{
 			name:     "both endpoints, name says responses",
 			model:    Model{APIModel: "gpt-5.4", SupportedEndpoints: []string{"/responses", "/chat/completions", "ws:/responses"}},
 			expected: true,
